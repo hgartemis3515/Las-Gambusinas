@@ -1,0 +1,29 @@
+[
+    {
+        "id":"1",
+        "category":"pescados",
+        "cantidad":"5",
+        "dish":"ceviche"
+    },
+    {
+        "id":"2",
+        "category":"carnes",
+        "cantidad":"1",
+        "dish":"lomo saltado"
+    },{
+        "id":"3",
+        "category":"pescados",
+        "cantidad":"1",
+        "dish":"trucha"
+    },{
+        "id":"4",
+        "category":"filetes",
+        "cantidad":"3",
+        "dish":"filete de pollo"
+    },{
+        "id":"5",
+        "category":"filetes",
+        "cantidad":"2",
+        "dish":"milanesa"
+    }
+]
