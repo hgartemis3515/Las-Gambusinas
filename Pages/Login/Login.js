@@ -13,6 +13,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { useNavigation } from "@react-navigation/native";
 
+const API_URL = 'http://192.168.1.8:8000/api/mozos/auth';
+
 const Login = () => {
   const navigation = useNavigation();
   const [username, setUsername] = useState("");
@@ -20,14 +22,16 @@ const Login = () => {
 
   const handleLogin = async () => {
     try {
-      const response = await axios.post("http://192.168.1.10:8000/api/mozos/auth", {
+      const response = await axios.post(API_URL, {
         name: username,
         DNI: password,
       });
       const mozo = response.data.mozo;
       await AsyncStorage.setItem('user', JSON.stringify({
-        name: mozo.name,
+        name: mozo.name, 
+        id: mozo._id,
       }));
+      console.log(`_id del mozo almacenado: ${mozo._id}`); // Agregar console.log
       navigation.replace("Navbar", { username: `${mozo.name}` });
     } catch (error) {
       Alert.alert("Error", "Usuario o contraseña incorrectos.");

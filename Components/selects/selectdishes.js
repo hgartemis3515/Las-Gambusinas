@@ -6,11 +6,12 @@ const SelectDishes = () => {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedDish, setSelectedDish] = useState(null);
   const [categories, setCategories] = useState([]);
+  const [selectedPlates, setSelectedPlates] = useState([]); // Estado para almacenar los platos seleccionados
 
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await fetch('http://192.168.1.10:8000/api/platos');
+        const response = await fetch('http://192.168.1.8:8000/api/platos');
         const data = await response.json();
         const groupedCategories = {};
         data.forEach(plato => {
@@ -42,6 +43,7 @@ const SelectDishes = () => {
     if (value !== selectedDish) { // Agregar validación para evitar ejecución duplicada
       setSelectedDish(value);
       console.log("Plato seleccionado:", value);
+      setSelectedPlates(prevPlates => [...prevPlates, value]); // Agregar el _id del plato seleccionado al array
     }
   };
 
