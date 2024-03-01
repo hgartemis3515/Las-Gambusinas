@@ -15,7 +15,7 @@ const MesasScreen = () => {
 
   const obtenerMesas = async () => {
     try {
-      const response = await axios.get("http://192.168.1.8:8000/api/mesas");
+      const response = await axios.get("http://192.168.1.5:8000/api/mesas");
       setMesas(response.data);
     } catch (error) {
       console.error("Error al obtener las mesas:", error.message);
@@ -43,7 +43,7 @@ const MesasScreen = () => {
       const isActive = !mesa.isActive; // Cambiar el estado
 
       // Actualizar el estado de la mesa en el backend
-      await axios.put(`http://192.168.1.8:8000/api/mesas/${mesaId}`, {
+      await axios.put(`http://192.168.1.5:8000/api/mesas/${mesaId}`, {
         isActive,
       });
 

@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from "react";
 import RNPickerSelect from "react-native-picker-select";
 import { View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const SelectDishes = () => {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedDish, setSelectedDish] = useState(null);
   const [categories, setCategories] = useState([]);
-  const [selectedPlates, setSelectedPlates] = useState([]); // Estado para almacenar los platos seleccionados
+  const [selectedPlates, setSelectedPlates] = useState([]);
 
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await fetch('http://192.168.1.8:8000/api/platos');
+        const response = await fetch('http://192.168.1.5:8000/api/platos');
         const data = await response.json();
         const groupedCategories = {};
         data.forEach(plato => {
@@ -40,12 +41,42 @@ const SelectDishes = () => {
   };
 
   const handleDishChange = (value) => {
-    if (value !== selectedDish) { // Agregar validación para evitar ejecución duplicada
+    if (value !== selectedDish) {
+      console.log("Plato seleccionado _id:", value); // Agregando console.log para imprimir el _id del plato seleccionado
+      const updatedPlates = [...selectedPlates, value];
       setSelectedDish(value);
-      console.log("Plato seleccionado:", value);
-      setSelectedPlates(prevPlates => [...prevPlates, value]); // Agregar el _id del plato seleccionado al array
+      setSelectedPlates(updatedPlates);
+      storePlates(updatedPlates);
     }
   };
+
+  const storePlates = async (plates) => {
+    try {
+      await AsyncStorage.setItem('selectedPlates', JSON.stringify(plates));
+    } catch (error) {
+      console.error('Error storing plates:', error);
+    }
+  };
+
+  const retrievePlates = async () => {
+    try {
+      const platesString = await AsyncStorage.getItem('selectedPlates');
+      if (platesString !== null) {
+        return JSON.parse(platesString);
+      }
+    } catch (error) {
+      console.error('Error retrieving plates:', error);
+    }
+    return [];
+  };
+  
+  useEffect(() => {
+    const getSelectedPlates = async () => {
+      const plates = await retrievePlates();
+      setSelectedPlates(plates);
+    };
+    getSelectedPlates();
+  }, []);
 
   return (
     <View style={{ flex:1, width:'100%', gap:8 }}>
