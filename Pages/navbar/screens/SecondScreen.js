@@ -6,35 +6,104 @@ import {
   Button,
   ScrollView,
   Modal,
-  StyleSheet
+  StyleSheet,
+  Alert,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Comandastyle from "../../../Components/aditionals/Comandastyle";
 import Selectable from "../../../Components/selects/selectable";
+import axios from "axios";
+import SelectDishes from "../../../Components/selects/selectdishes";
+import mongoose from "mongoose";
 
 const SecondScreen = () => {
-  const currentDate = new Date();
-  const formattedDate = currentDate.toLocaleDateString();
-  const formattedTime = currentDate.toLocaleTimeString();
+  const [userInfo, setUserInfo] = useState(null);
+  const [selectedTableInfo, setSelectedTableInfo] = useState(null);
+  const [selectedPlatos, setSelectedPlatos] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
-  const [userInfo, setUserInfo] = useState(null); // Estado para almacenar la información del usuario
-  const [selectedTable, setSelectedTable] = useState(null); // Estado para almacenar el número de la mesa seleccionada
 
   useEffect(() => {
-    // Función asincrónica para obtener la información del usuario del AsyncStorage
-    const fetchUserInfo = async () => {
+    const fetchData = async () => {
       try {
-        const user = await AsyncStorage.getItem('user'); // Recupera la información del usuario del AsyncStorage
+        const user = await AsyncStorage.getItem("user");
         if (user !== null) {
-          setUserInfo(JSON.parse(user)); // Establece la información del usuario en el estado
+          setUserInfo(JSON.parse(user));
         }
       } catch (error) {
         console.error("Error fetching user info: ", error);
       }
+
+      try {
+        const mesaSeleccionada = await AsyncStorage.getItem("mesaSeleccionada");
+        if (mesaSeleccionada !== null) {
+          const [id, nummesa] = mesaSeleccionada.split("-");
+          setSelectedTableInfo({ id, nummesa });
+        }
+      } catch (error) {
+        console.error("Error fetching selected table info: ", error);
+      }
     };
 
-    fetchUserInfo(); // Llama a la función para obtener la información del usuario al cargar el componente
+    fetchData();
+
+    const intervalId = setInterval(fetchData, 1000);
+
+    return () => clearInterval(intervalId);
   }, []);
+
+  const handleSelectMesa = async (mesaId, mesaNum) => {
+    try {
+      const mesaSeleccionada = `${mesaId}-${mesaNum}`;
+      await AsyncStorage.setItem("mesaSeleccionada", mesaSeleccionada);
+      setSelectedTableInfo({ id: mesaId, nummesa: mesaNum });
+      setModalVisible(false);
+    } catch (error) {
+      console.error("Error al seleccionar la mesa:", error.message);
+    }
+  };
+
+  const handleEnviarComanda = async () => {
+    try {
+      const selectedPlatos_ = await AsyncStorage.getItem("selectedPlates");
+      console.log(selectedPlatos_);
+      const platosIds = JSON.parse(selectedPlatos_).map(
+        (plato) => new mongoose.Types.ObjectId(plato)
+      );
+      console.log(platosIds, selectedPlatos_);
+      const response = await axios.post("http://192.168.1.5:8000/api/comanda", {
+        mozos: userInfo.id,
+        mesas: selectedTableInfo.id,
+        platos: platosIds,
+      });
+      Alert.alert("Comanda enviada exitosamente");
+    } catch (error) {
+      console.error("Error al enviar la comanda:", error);
+      Alert.alert("Error", "No se pudo enviar la comanda");
+    }
+  };
+
+  const handleSelectPlato = (platoId) => {
+    const platoIndex = selectedPlatos.findIndex((plato) => plato === platoId);
+    if (platoIndex === -1) {
+      setSelectedPlatos([...selectedPlatos, platoId]);
+    } else {
+      const updatedPlatos = selectedPlatos.filter((plato) => plato !== platoId);
+      setSelectedPlatos(updatedPlatos);
+    }
+  };
+
+  const handleLimpiarComanda = async () => {
+    try {
+      await AsyncStorage.removeItem("mesaSeleccionada");
+      await AsyncStorage.removeItem("selectedPlates");
+      setSelectedTableInfo(null);
+      setSelectedPlatos([]);
+      Alert.alert("Comanda limpiada exitosamente");
+    } catch (error) {
+      console.error("Error al limpiar la comanda:", error);
+      Alert.alert("Error", "No se pudo limpiar la comanda");
+    }
+  };
 
   return (
     <SafeAreaView>
@@ -50,22 +119,35 @@ const SecondScreen = () => {
             <Text style={{ fontWeight: "bold", fontSize: 18, marginLeft: 20 }}>
               Mozo: {userInfo ? `${userInfo.name}` : "Nombre de usuario"}
             </Text>
-            <Text style={{ marginRight: 20, fontWeight: "bold", fontSize: 17 }}>
-              {formattedDate} {formattedTime}
-            </Text>
           </View>
-          <View style={{ flexDirection: "row", marginLeft: 20, marginTop: 30, gap:80 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              marginLeft: 20,
+              marginTop: 30,
+              gap: 80,
+            }}
+          >
             <Text style={{ fontWeight: "bold", fontSize: 18 }}>Mesa:</Text>
             <Button
-              title={selectedTable ? `Mesa ${selectedTable}` : "Seleccionar Mesa"} // Modifica el título del botón para mostrar el número de la mesa seleccionada si existe
+              title={
+                selectedTableInfo
+                  ? `Mesa ${selectedTableInfo.nummesa}`
+                  : "Seleccionar Mesa"
+              }
               onPress={() => setModalVisible(true)}
             />
           </View>
           <View style={{ marginTop: 40 }}>
             <Comandastyle />
           </View>
+          <SelectDishes onSelectPlato={handleSelectPlato} />
+          <View style={{ gap:20, marginTop: 32 }}>
+            <Button title="Enviar comanda" onPress={handleEnviarComanda} />
+            <Button title="Limpiar Comanda" onPress={handleLimpiarComanda} />
+          </View>
         </View>
-        
+
         <Modal
           animationType="slide"
           transparent={true}
@@ -76,19 +158,18 @@ const SecondScreen = () => {
         >
           <View style={styles.modalBackground}>
             <View style={styles.modalContainer}>
-              <Text style={{ fontSize: 20, marginBottom: 20 }}>Seleccionar Mesa</Text>
-              <Selectable onSelectTable={(tableNumber) => {
-                setSelectedTable(tableNumber); // Actualiza el número de la mesa seleccionada
-                setModalVisible(false); // Cierra el modal después de seleccionar una mesa
-              }} />
-              <Button
-                title="Cerrar"
-                onPress={() => setModalVisible(false)}
+              <Text style={{ fontSize: 20, marginBottom: 20 }}>
+                Seleccionar Mesa
+              </Text>
+              <Selectable
+                onSelectTable={(tableNumber) =>
+                  handleSelectMesa(tableNumber.id, tableNumber.nummesa)
+                }
               />
+              <Button title="Cerrar" onPress={() => setModalVisible(false)} />
             </View>
           </View>
         </Modal>
-
       </ScrollView>
     </SafeAreaView>
   );

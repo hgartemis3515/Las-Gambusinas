@@ -1,90 +1,86 @@
-import React, { useState, useEffect } from 'react';
-import { View, Button } from 'react-native';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialIcons';
+import React, { useState, useEffect } from "react";
+import { View, Text, TouchableOpacity } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
 
-const Selectable = ({ onSelectTable }) => { // Acepta onSelectTable como una prop
+const MesasScreen = () => {
   const [mesas, setMesas] = useState([]);
+  const [mesaSeleccionadaId, setMesaSeleccionadaId] = useState(null);
+  const [mesaSeleccionadaNum, setMesaSeleccionadaNum] = useState(null);
 
   useEffect(() => {
-    const fetchMesas = async () => {
-      try {
-        const response = await fetch('http://192.168.1.10:8000/api/mesas');
-        if (!response.ok) {
-          throw new Error('Error al obtener las mesas');
-        }
-        const data = await response.json();
-        const mappedMesas = data.map(mesa => ({
-          id: mesa.id,
-          disponible: mesa.isActive
-        }));
-        setMesas(mappedMesas);
-      } catch (error) {
-        console.error('Error al obtener las mesas:', error);
-      }
-    };
-    fetchMesas();
+    obtenerMesas();
+    obtenerMesaSeleccionada();
   }, []);
 
-  const ocuparMesa = async (id) => {
+  const obtenerMesas = async () => {
     try {
-      const response = await fetch(`http://192.168.1.10:8000/api/mesas/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ isActive: false })
-      });
-      if (!response.ok) {
-        throw new Error('Error al ocupar la mesa');
-      }
-      setMesas(mesas.map(mesa => mesa.id === id ? { ...mesa, disponible: false } : mesa));
-      console.log(`Has ocupado la mesa ${id}`);
-      onSelectTable(id); // Llama a la función onSelectTable con el número de la mesa seleccionada
+      const response = await axios.get("http://192.168.1.5:8000/api/mesas");
+      setMesas(response.data);
     } catch (error) {
-      console.error('Error al ocupar la mesa:', error);
+      console.error("Error al obtener las mesas:", error.message);
     }
   };
 
-  const desocuparMesa = async (id) => {
+  const obtenerMesaSeleccionada = async () => {
     try {
-      const response = await fetch(`http://192.168.1.10:8000/api/mesas/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ isActive: true })
-      });
-      if (!response.ok) {
-        throw new Error('Error al desocupar la mesa');
+      const mesaSeleccionada = await AsyncStorage.getItem("mesaSeleccionada");
+      if (mesaSeleccionada) {
+        const [id, nummesa] = mesaSeleccionada.split("-");
+        setMesaSeleccionadaId(id);
+        setMesaSeleccionadaNum(nummesa);
+        console.log("Mesa seleccionada almacenada:", mesaSeleccionada);
       }
-      setMesas(mesas.map(mesa => mesa.id === id ? { ...mesa, disponible: true } : mesa));
-      console.log(`Has desocupado la mesa ${id}`);
     } catch (error) {
-      console.error('Error al desocupar la mesa:', error);
+      console.error("Error al obtener la mesa seleccionada:", error.message);
+    }
+  };
+
+  const handleSelectMesa = async (mesaId, mesaNum) => {
+    try {
+      // Obtener el estado actual de la mesa
+      const mesa = mesas.find((m) => m._id === mesaId);
+      const isActive = !mesa.isActive; // Cambiar el estado
+
+      // Actualizar el estado de la mesa en el backend
+      await axios.put(`http://192.168.1.5:8000/api/mesas/${mesaId}`, {
+        isActive,
+      });
+
+      // Almacenar el _id y el nummesa de la mesa seleccionada en AsyncStorage
+      const mesaSeleccionada = `${mesaId}-${mesaNum}`;
+      await AsyncStorage.setItem("mesaSeleccionada", mesaSeleccionada);
+      console.log("Mesa seleccionada:", mesaSeleccionada);
+      
+      // Actualizar el estado local de la mesa seleccionada
+      setMesaSeleccionadaId(mesaId);
+      setMesaSeleccionadaNum(mesaNum);
+
+      // Actualizar la lista de mesas
+      obtenerMesas();
+    } catch (error) {
+      console.error("Error al seleccionar la mesa:", error.message);
     }
   };
 
   return (
-    <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', padding: 10}}>
-      {mesas.map(mesa => (
-        <View key={mesa.id} style={{ margin:5, flexDirection: 'column', alignItems: 'center' }}>
-          <Button
-            title={`Mesa ${mesa.id}`}
-            onPress={() => {
-              if (mesa.disponible) {
-                ocuparMesa(mesa.id);
-              } else {
-                desocuparMesa(mesa.id);
-              }
-            }}
-            disabled={!mesa.disponible}
-            color={mesa.disponible ? 'green' : 'red'}
-          />
-          <MaterialCommunityIcons name="table-restaurant" size={30} color={mesa.disponible ? 'green' : 'red'} />
-        </View>
+    <View>
+      {mesas.map((mesa) => (
+        <TouchableOpacity
+          key={mesa._id}
+          style={{
+            backgroundColor: mesa.isActive ? "green" : "red",
+            padding: 10,
+            margin: 5,
+          }}
+          onPress={() => handleSelectMesa(mesa._id, mesa.nummesa)}
+          disabled={!mesa.isActive}
+        >
+          <Text style={{ color: "white" }}>{mesa.nummesa}</Text>
+        </TouchableOpacity>
       ))}
     </View>
   );
 };
 
-export default Selectable;
+export default MesasScreen;
