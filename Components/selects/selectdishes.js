@@ -3,6 +3,8 @@ import RNPickerSelect from "react-native-picker-select";
 import { View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+const API_URL = 'http://192.168.1.5:8000/api/platos';
+
 const SelectDishes = () => {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedDish, setSelectedDish] = useState(null);
@@ -12,7 +14,7 @@ const SelectDishes = () => {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await fetch('http://192.168.1.5:8000/api/platos');
+        const response = await fetch(API_URL);
         const data = await response.json();
         const groupedCategories = {};
         data.forEach(plato => {

@@ -3,6 +3,8 @@ import { View, Text, TouchableOpacity } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 
+const API_URL = 'http://192.168.1.5:8000/api/mesas';
+
 const MesasScreen = () => {
   const [mesas, setMesas] = useState([]);
   const [mesaSeleccionadaId, setMesaSeleccionadaId] = useState(null);
@@ -15,7 +17,7 @@ const MesasScreen = () => {
 
   const obtenerMesas = async () => {
     try {
-      const response = await axios.get("http://192.168.1.5:8000/api/mesas");
+      const response = await axios.get(API_URL);
       setMesas(response.data);
     } catch (error) {
       console.error("Error al obtener las mesas:", error.message);
@@ -69,12 +71,11 @@ const MesasScreen = () => {
         <TouchableOpacity
           key={mesa._id}
           style={{
-            backgroundColor: mesa.isActive ? "green" : "red",
+            backgroundColor: mesa.isActive && mesa._id !== mesaSeleccionadaId ? "green" : "red",
             padding: 10,
             margin: 5,
           }}
           onPress={() => handleSelectMesa(mesa._id, mesa.nummesa)}
-          disabled={!mesa.isActive}
         >
           <Text style={{ color: "white" }}>{mesa.nummesa}</Text>
         </TouchableOpacity>

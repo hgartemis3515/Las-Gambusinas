@@ -13,13 +13,13 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Comandastyle from "../../../Components/aditionals/Comandastyle";
 import Selectable from "../../../Components/selects/selectable";
 import axios from "axios";
-import SelectDishes from "../../../Components/selects/selectdishes";
 import mongoose from "mongoose";
 
 const SecondScreen = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [selectedTableInfo, setSelectedTableInfo] = useState(null);
   const [selectedPlatos, setSelectedPlatos] = useState([]);
+  const [additionalDetails, setAdditionalDetails] = useState("");
   const [modalVisible, setModalVisible] = useState(false);
 
   useEffect(() => {
@@ -41,6 +41,15 @@ const SecondScreen = () => {
         }
       } catch (error) {
         console.error("Error fetching selected table info: ", error);
+      }
+
+      try {
+        const storedDetails = await AsyncStorage.getItem("additionalDetails");
+        if (storedDetails !== null) {
+          setAdditionalDetails(storedDetails);
+        }
+      } catch (error) {
+        console.error("Error fetching additional details: ", error);
       }
     };
 
@@ -65,15 +74,14 @@ const SecondScreen = () => {
   const handleEnviarComanda = async () => {
     try {
       const selectedPlatos_ = await AsyncStorage.getItem("selectedPlates");
-      console.log(selectedPlatos_);
       const platosIds = JSON.parse(selectedPlatos_).map(
         (plato) => new mongoose.Types.ObjectId(plato)
       );
-      console.log(platosIds, selectedPlatos_);
       const response = await axios.post("http://192.168.1.5:8000/api/comanda", {
         mozos: userInfo.id,
         mesas: selectedTableInfo.id,
         platos: platosIds,
+        observaciones: additionalDetails,
       });
       Alert.alert("Comanda enviada exitosamente");
     } catch (error) {
@@ -96,8 +104,10 @@ const SecondScreen = () => {
     try {
       await AsyncStorage.removeItem("mesaSeleccionada");
       await AsyncStorage.removeItem("selectedPlates");
+      await AsyncStorage.removeItem("additionalDetails");
       setSelectedTableInfo(null);
       setSelectedPlatos([]);
+      setAdditionalDetails("");
       Alert.alert("Comanda limpiada exitosamente");
     } catch (error) {
       console.error("Error al limpiar la comanda:", error);
@@ -141,7 +151,6 @@ const SecondScreen = () => {
           <View style={{ marginTop: 40 }}>
             <Comandastyle />
           </View>
-          <SelectDishes onSelectPlato={handleSelectPlato} />
           <View style={{ gap:20, marginTop: 32 }}>
             <Button title="Enviar comanda" onPress={handleEnviarComanda} />
             <Button title="Limpiar Comanda" onPress={handleLimpiarComanda} />
