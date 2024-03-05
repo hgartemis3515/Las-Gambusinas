@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { View, Text, SafeAreaView, FlatList, TouchableOpacity, Alert } from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
+import { COMANDASEARCH_API_GET } from "../../apiConfig";
 
 const ComandaSearch = () => {
   const [comandaData, setComandaData] = useState([]);
@@ -19,7 +20,7 @@ const ComandaSearch = () => {
         console.error("Error fetching user info: ", error);
       }
       
-      axios.get("http://192.168.1.5:8000/api/comanda")
+      axios.get(COMANDASEARCH_API_GET)
         .then(response => {
           const filteredComandas = response.data.filter(comanda => comanda.mozos.name === mozoName);
           setComandaData(filteredComandas);
@@ -60,6 +61,14 @@ const ComandaSearch = () => {
     } catch (error) {
       console.error("Error al eliminar la comanda:", error);
     }
+  };
+
+  const calcularTotal = (platos) => {
+    let total = 0;
+    platos.forEach(plato => {
+      total += plato.precio;
+    });
+    return total;
   };
 
   const renderItem = ({ item }) => (
@@ -113,9 +122,12 @@ const ComandaSearch = () => {
             contentContainerStyle={{ paddingHorizontal: 16 }}
           />
         </View>
-        <View style={{ marginTop:20, marginBottom: 30 }}>
+        <View style={{ marginTop:20 }}>
           <Text style={{ textAlign:"center", fontWeight: "bold", fontSize: 20 }}>Detalles del Pedido</Text>
           <Text style={{ textAlign:"center", marginTop: 20, fontWeight: "bold" }}>{item.observaciones}</Text>
+        </View>
+        <View style={{ marginTop:30, marginBottom:20 }}>
+          <Text style={{ textAlign:"center", fontWeight: "normal", fontSize: 20 }}>Cuenta Total: {calcularTotal(item.platos)}</Text>
         </View>
       </View>
     </TouchableOpacity>

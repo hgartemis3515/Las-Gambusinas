@@ -2,8 +2,7 @@ import React, { useState, useEffect } from "react";
 import RNPickerSelect from "react-native-picker-select";
 import { View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-const API_URL = 'http://192.168.1.5:8000/api/platos';
+import { DISHES_API } from "../../apiConfig"; 
 
 const SelectDishes = () => {
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -14,7 +13,7 @@ const SelectDishes = () => {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await fetch(API_URL);
+        const response = await fetch(DISHES_API);
         const data = await response.json();
         const groupedCategories = {};
         data.forEach(plato => {
@@ -83,14 +82,14 @@ const SelectDishes = () => {
   return (
     <View style={{ flex:1, width:'100%', gap:8 }}>
       <RNPickerSelect
-        placeholder={{ label: "Seleccionar categoría", value: null }}
+        placeholder={{ label: "categoría", value: null }}
         items={categories.map(category => ({ label: category.label, value: category.value }))}
         onValueChange={handleCategoryChange}
         value={selectedCategory}
       />
       {selectedCategory && (
         <RNPickerSelect
-          placeholder={{ label: "Seleccionar plato", value: null }}
+          placeholder={{ label: "plato", value: null }}
           items={categories.find(category => category.value === selectedCategory).platos}
           onValueChange={handleDishChange}
           value={selectedDish}

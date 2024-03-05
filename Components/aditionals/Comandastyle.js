@@ -71,9 +71,9 @@ const ComandaStyle = () => {
             paddingRight: 20,
           }}
         >
-          <TextInput placeholder="Seleccionar Cantidad" />
+          <TextInput placeholder="Cantidad" />
           <SelectDishes onValueChange={handleDishChange} />
-          <Button title="Quitar" onPress={() => handleRemoveInput(input.id)} />
+          <Button title="X" onPress={() => handleRemoveInput(input.id)} />
         </View>
       ))}
       <Button title="Agregar" onPress={handleAddInput} />

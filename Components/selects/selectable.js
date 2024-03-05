@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
-
-const API_URL = 'http://192.168.1.5:8000/api/mesas';
+import { SELECTABLE_API_GET } from "../../apiConfig";
 
 const MesasScreen = () => {
   const [mesas, setMesas] = useState([]);
@@ -17,7 +17,7 @@ const MesasScreen = () => {
 
   const obtenerMesas = async () => {
     try {
-      const response = await axios.get(API_URL);
+      const response = await axios.get(SELECTABLE_API_GET);
       setMesas(response.data);
     } catch (error) {
       console.error("Error al obtener las mesas:", error.message);
@@ -53,7 +53,7 @@ const MesasScreen = () => {
       const mesaSeleccionada = `${mesaId}-${mesaNum}`;
       await AsyncStorage.setItem("mesaSeleccionada", mesaSeleccionada);
       console.log("Mesa seleccionada:", mesaSeleccionada);
-      
+
       // Actualizar el estado local de la mesa seleccionada
       setMesaSeleccionadaId(mesaId);
       setMesaSeleccionadaNum(mesaNum);
@@ -66,21 +66,36 @@ const MesasScreen = () => {
   };
 
   return (
-    <View>
-      {mesas.map((mesa) => (
-        <TouchableOpacity
-          key={mesa._id}
-          style={{
-            backgroundColor: mesa.isActive && mesa._id !== mesaSeleccionadaId ? "green" : "red",
-            padding: 10,
-            margin: 5,
-          }}
-          onPress={() => handleSelectMesa(mesa._id, mesa.nummesa)}
-        >
-          <Text style={{ color: "white" }}>{mesa.nummesa}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
+    <ScrollView>
+      <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+        {mesas.map((mesa) => (
+          <TouchableOpacity
+            key={mesa._id}
+            style={{
+              backgroundColor:
+                mesa.isActive && mesa._id !== mesaSeleccionadaId
+                  ? "green"
+                  : "red",
+              padding: 8,
+              margin: 2,
+            }}
+            onPress={() => handleSelectMesa(mesa._id, mesa.nummesa)}
+          >
+            <Text
+              style={{
+                color: "white",
+                textAlign: "center",
+                fontWeight: "bold",
+                fontSize: 20,
+              }}
+            >
+              {mesa.nummesa}
+            </Text>
+            <MaterialCommunityIcons name="table-picnic" size={40} />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </ScrollView>
   );
 };
 

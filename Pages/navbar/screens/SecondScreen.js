@@ -14,6 +14,7 @@ import Comandastyle from "../../../Components/aditionals/Comandastyle";
 import Selectable from "../../../Components/selects/selectable";
 import axios from "axios";
 import mongoose from "mongoose";
+import { COMANDA_API } from "../../../apiConfig";
 
 const SecondScreen = () => {
   const [userInfo, setUserInfo] = useState(null);
@@ -77,7 +78,7 @@ const SecondScreen = () => {
       const platosIds = JSON.parse(selectedPlatos_).map(
         (plato) => new mongoose.Types.ObjectId(plato)
       );
-      const response = await axios.post("http://192.168.1.5:8000/api/comanda", {
+      const response = await axios.post(COMANDA_API, {
         mozos: userInfo.id,
         mesas: selectedTableInfo.id,
         platos: platosIds,
@@ -87,16 +88,6 @@ const SecondScreen = () => {
     } catch (error) {
       console.error("Error al enviar la comanda:", error);
       Alert.alert("Error", "No se pudo enviar la comanda");
-    }
-  };
-
-  const handleSelectPlato = (platoId) => {
-    const platoIndex = selectedPlatos.findIndex((plato) => plato === platoId);
-    if (platoIndex === -1) {
-      setSelectedPlatos([...selectedPlatos, platoId]);
-    } else {
-      const updatedPlatos = selectedPlatos.filter((plato) => plato !== platoId);
-      setSelectedPlatos(updatedPlatos);
     }
   };
 
