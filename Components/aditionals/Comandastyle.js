@@ -4,14 +4,14 @@ import SelectDishes from "../selects/selectdishes";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const ComandaStyle = () => {
-  const [inputs, setInputs] = useState([{ id: 1 }]);
+  const [inputs, setInputs] = useState([{ id: 1, cantidad: '' }]);
   const [additionalDetails, setAdditionalDetails] = useState("");
   const [showDetailsInput, setShowDetailsInput] = useState(false);
   const [selectedDish, setSelectedDish] = useState(null);
 
   const handleAddInput = () => {
     const newId = inputs.length + 1;
-    setInputs([...inputs, { id: newId }]);
+    setInputs([...inputs, { id: newId, cantidad: '' }]);
   };
 
   const handleRemoveInput = (idToRemove) => {
@@ -26,8 +26,9 @@ const ComandaStyle = () => {
   const handleSaveDetails = async () => {
     setShowDetailsInput(false);
     console.log("Detalle del pedido:", additionalDetails);
-    
     try {
+      const updatedInputs = [...inputs];
+      saveCantidades(updatedInputs);
       // Guardar los detalles adicionales en AsyncStorage
       await AsyncStorage.setItem('additionalDetails', additionalDetails);
       console.log("Detalles adicionales almacenados exitosamente");
@@ -43,6 +44,26 @@ const ComandaStyle = () => {
   const handleDishChange = (value) => {
     setSelectedDish(value);
     console.log("Plato seleccionado:", value);
+  };
+
+  const handleCantidadChange = (text, id) => {
+    const updatedInputs = inputs.map(input =>
+      input.id === id ? { ...input, cantidad: text } : input
+    );
+    setInputs(updatedInputs);
+    console.log("Cantidad ingresada:", text);
+    // Guardar las cantidades automáticamente
+    saveCantidades(updatedInputs);
+  };
+
+  const saveCantidades = async (updatedInputs) => {
+    try {
+      const cantidades = updatedInputs.map(input => input.cantidad);
+      await AsyncStorage.setItem('cantidadesComanda', JSON.stringify(cantidades));
+      console.log("Cantidades guardadas exitosamente");
+    } catch (error) {
+      console.error("Error al guardar las cantidades:", error);
+    }
   };
 
   return (
@@ -66,12 +87,17 @@ const ComandaStyle = () => {
             marginTop: 22,
             flexDirection: "row",
             marginBottom: 40,
-            gap: 32,
-            paddingLeft: 20,
+            gap: 60,
+            paddingLeft: 30,
             paddingRight: 20,
           }}
         >
-          <TextInput placeholder="Cantidad" />
+          <TextInput
+            placeholder="Cantidad"
+            value={input.cantidad}
+            onChangeText={(text) => handleCantidadChange(text, input.id)}
+            keyboardType="numeric"
+          />
           <SelectDishes onValueChange={handleDishChange} />
           <Button title="X" onPress={() => handleRemoveInput(input.id)} />
         </View>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, SafeAreaView, FlatList, TouchableOpacity, Alert } from "react-native";
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { COMANDASEARCH_API_GET } from "../../apiConfig";
 
 const ComandaSearch = () => {
@@ -11,30 +11,23 @@ const ComandaSearch = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const response = await axios.get(COMANDASEARCH_API_GET);
         const user = await AsyncStorage.getItem("user");
         if (user !== null) {
           const userInfo = JSON.parse(user);
           setMozoName(userInfo.name);
+          const filteredComandas = response.data.filter(comanda => comanda.mozos.name === userInfo.name);
+          setComandaData(filteredComandas);
         }
       } catch (error) {
-        console.error("Error fetching user info: ", error);
+        console.error("Error fetching comanda data:", error);
       }
-      
-      axios.get(COMANDASEARCH_API_GET)
-        .then(response => {
-          const filteredComandas = response.data.filter(comanda => comanda.mozos.name === mozoName);
-          setComandaData(filteredComandas);
-        })
-        .catch(error => {
-          console.error("Error fetching comanda data:", error);
-        });
     };
-
     fetchData();
 
     const interval = setInterval(fetchData, 2000);
     return () => clearInterval(interval);
-  }, [mozoName]);
+  }, []);
 
   const handleComandaPress = (comandaId) => {
     Alert.alert(
@@ -54,7 +47,7 @@ const ComandaSearch = () => {
 
   const handleEliminarComanda = async (comandaId) => {
     try {
-      await axios.delete(`http://192.168.1.5:8000/api/comanda/${comandaId}`);
+      await axios.delete(`http://192.168.1.11:8000/api/comanda/${comandaId}`);
       const updatedComandas = comandaData.filter(comanda => comanda._id !== comandaId);
       setComandaData(updatedComandas);
       console.log(`Comanda con ID ${comandaId} eliminada`);
@@ -102,7 +95,7 @@ const ComandaSearch = () => {
             </Text>
           </View>
           <FlatList
-            data={item.platos}
+            data={item.platos.map((plato, index) => ({ ...plato, cantidad: item.cantidades[index] }))}
             renderItem={({ item }) => (
               <View
                 style={{

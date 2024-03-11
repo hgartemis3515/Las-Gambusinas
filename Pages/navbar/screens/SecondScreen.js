@@ -22,6 +22,7 @@ const SecondScreen = () => {
   const [selectedPlatos, setSelectedPlatos] = useState([]);
   const [additionalDetails, setAdditionalDetails] = useState("");
   const [modalVisible, setModalVisible] = useState(false);
+  const [cantidadesComanda, setCantidadesComanda] = useState([]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -52,6 +53,16 @@ const SecondScreen = () => {
       } catch (error) {
         console.error("Error fetching additional details: ", error);
       }
+
+      try {
+        const storedCantidades = await AsyncStorage.getItem("cantidadesComanda");
+        if (storedCantidades !== null) {
+          const cantidades = JSON.parse(storedCantidades);
+          setCantidadesComanda(cantidades);
+        }
+      } catch (error) {
+        console.error("Error al obtener las cantidades de la comanda:", error);
+      }
     };
 
     fetchData();
@@ -78,10 +89,12 @@ const SecondScreen = () => {
       const platosIds = JSON.parse(selectedPlatos_).map(
         (plato) => new mongoose.Types.ObjectId(plato)
       );
+      console.log(cantidadesComanda)
       const response = await axios.post(COMANDA_API, {
         mozos: userInfo.id,
         mesas: selectedTableInfo.id,
         platos: platosIds,
+        cantidades: cantidadesComanda, 
         observaciones: additionalDetails,
       });
       Alert.alert("Comanda enviada exitosamente");
@@ -96,14 +109,20 @@ const SecondScreen = () => {
       await AsyncStorage.removeItem("mesaSeleccionada");
       await AsyncStorage.removeItem("selectedPlates");
       await AsyncStorage.removeItem("additionalDetails");
+      await AsyncStorage.removeItem("cantidadesComanda");
       setSelectedTableInfo(null);
       setSelectedPlatos([]);
       setAdditionalDetails("");
+      setCantidadesComanda([]);
       Alert.alert("Comanda limpiada exitosamente");
     } catch (error) {
       console.error("Error al limpiar la comanda:", error);
       Alert.alert("Error", "No se pudo limpiar la comanda");
     }
+  };
+
+  const handleCantidadesChange = (cantidades) => {
+    setCantidadesComanda(cantidades);
   };
 
   return (
@@ -140,7 +159,7 @@ const SecondScreen = () => {
             />
           </View>
           <View style={{ marginTop: 40 }}>
-            <Comandastyle />
+            <Comandastyle onCantidadesChange={handleCantidadesChange} />
           </View>
           <View style={{ gap:20, marginTop: 32 }}>
             <Button title="Enviar comanda" onPress={handleEnviarComanda} />

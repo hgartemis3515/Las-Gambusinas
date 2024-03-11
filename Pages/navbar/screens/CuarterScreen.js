@@ -31,15 +31,21 @@ const CuarterScreen = () => {
     }
   };
 
-  const handleMesaClick = async (numMesa) => {
-    setSelectedMesa(numMesa);
-    setModalVisible(true);
+  const obtenerComandasPorMesa = async (numMesa) => {
     try {
-      const response = await axios.get(`${COMANDA_API}?mesa=${numMesa}`);
-      setComandas(response.data);
+      const response = await axios.get(COMANDA_API);
+      const comandasData = response.data;
+      const comandasMesa = comandasData.filter(comanda => comanda.mesas.nummesa === numMesa);
+      setComandas(comandasMesa);
     } catch (error) {
       console.error("Error al obtener las comandas:", error.message);
     }
+  };
+
+  const handleMesaClick = async (numMesa) => {
+    setSelectedMesa(numMesa);
+    await obtenerComandasPorMesa(numMesa);
+    setModalVisible(true);
   };
 
   const renderComandaItem = ({ item }) => (
@@ -60,20 +66,15 @@ const CuarterScreen = () => {
         Observaciones: {item.observaciones}
       </Text>
       <FlatList
-        data={item.platos}
+        data={item.platos.map((plato, index) => ({ ...plato, cantidad: item.cantidades[index] }))}
         renderItem={({ item }) => (
           <Text style={{ fontSize: 15, paddingHorizontal: 4 }}>
-            {item.nombre} - S/ {item.precio}
+            Cantidad: {item.cantidad} - {item.nombre} - S/ {item.precio}
           </Text>
         )}
         keyExtractor={(item) => item._id}
       />
     </View>
-  );
-
-  // Filtrar las comandas por la mesa seleccionada
-  const comandasFiltradas = comandas.filter(
-    (comanda) => comanda.mesas.nummesa === selectedMesa
   );
 
   return (
@@ -146,7 +147,7 @@ const CuarterScreen = () => {
               Número de mesa: {selectedMesa}
             </Text>
             <FlatList
-              data={comandasFiltradas}
+              data={comandas}
               renderItem={renderComandaItem}
               keyExtractor={(item) => item._id}
             />
@@ -163,4 +164,5 @@ const CuarterScreen = () => {
     </SafeAreaView>
   );
 };
+
 export default CuarterScreen;
