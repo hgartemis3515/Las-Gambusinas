@@ -19,6 +19,8 @@ const CuarterScreen = () => {
   const [comandas, setComandas] = useState([]);
 
   useEffect(() => {
+    const interval = setInterval(obtenerMesas, 2000);
+    return () => clearInterval(interval);
     obtenerMesas();
   }, []);
 

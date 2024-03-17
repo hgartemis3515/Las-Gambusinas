@@ -47,7 +47,7 @@ const ComandaSearch = () => {
 
   const handleEliminarComanda = async (comandaId) => {
     try {
-      await axios.delete(`http://192.168.1.11:8000/api/comanda/${comandaId}`);
+      await axios.delete(`https://backend-lasgambusinas.onrender.com/api/comanda/${comandaId}`);
       const updatedComandas = comandaData.filter(comanda => comanda._id !== comandaId);
       setComandaData(updatedComandas);
       console.log(`Comanda con ID ${comandaId} eliminada`);

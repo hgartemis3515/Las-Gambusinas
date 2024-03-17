@@ -45,7 +45,7 @@ const MesasScreen = () => {
       const isActive = !mesa.isActive; // Cambiar el estado
 
       // Actualizar el estado de la mesa en el backend
-      await axios.put(`http://192.168.1.11:8000/api/mesas/${mesaId}`, {
+      await axios.put(`https://backend-lasgambusinas.onrender.com/api/mesas/${mesaId}`, {
         isActive,
       });
 
