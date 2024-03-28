@@ -43,7 +43,7 @@ const SelectDishes = () => {
 
   const handleDishChange = (value) => {
     if (value !== selectedDish) {
-      console.log("Plato seleccionado _id:", value); // Agregando console.log para imprimir el _id del plato seleccionado
+      console.log("Plato seleccionado _id:", value);
       const updatedPlates = [...selectedPlates, value];
       setSelectedDish(value);
       setSelectedPlates(updatedPlates);
@@ -54,6 +54,8 @@ const SelectDishes = () => {
   const storePlates = async (plates) => {
     try {
       await AsyncStorage.setItem('selectedPlates', JSON.stringify(plates));
+      const platoseleccionado = await AsyncStorage.getItem("selectedPlates");
+      console.log('plato seleccionado test',platoseleccionado);
     } catch (error) {
       console.error('Error storing plates:', error);
     }

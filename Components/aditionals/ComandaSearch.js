@@ -56,10 +56,10 @@ const ComandaSearch = () => {
     }
   };
 
-  const calcularTotal = (platos) => {
+  const calcularTotal = (platos, cantidades) => {
     let total = 0;
-    platos.forEach(plato => {
-      total += plato.precio;
+    platos.forEach((plato, index) => {
+      total += plato.precio * cantidades[index];
     });
     return total;
   };
@@ -120,7 +120,7 @@ const ComandaSearch = () => {
           <Text style={{ textAlign:"center", marginTop: 20, fontWeight: "bold" }}>{item.observaciones}</Text>
         </View>
         <View style={{ marginTop:30, marginBottom:20 }}>
-          <Text style={{ textAlign:"center", fontWeight: "normal", fontSize: 20 }}>Cuenta Total: {calcularTotal(item.platos)}</Text>
+          <Text style={{ textAlign:"center", fontWeight: "normal", fontSize: 20 }}>Cuenta Total: {calcularTotal(item.platos, item.cantidades)}</Text>
         </View>
       </View>
     </TouchableOpacity>

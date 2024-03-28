@@ -12,11 +12,32 @@ const ComandaStyle = () => {
   const handleAddInput = () => {
     const newId = inputs.length + 1;
     setInputs([...inputs, { id: newId, cantidad: '' }]);
+    console.log(newId);
   };
 
-  const handleRemoveInput = (idToRemove) => {
-    const updatedInputs = inputs.filter((input) => input.id !== idToRemove);
-    setInputs(updatedInputs);
+  const handleRemoveInput = async (idToRemove) => {
+    try {
+      let newId = idToRemove - 1; 
+
+      const updatedInputs = inputs.filter((input) => input.id !== idToRemove);
+      setInputs(updatedInputs);
+      const deleteselectplates = await AsyncStorage.getItem('selectedPlates');
+      const deletecantidades = await AsyncStorage.getItem('cantidadesComanda');
+  
+      let platos = JSON.parse(deleteselectplates);
+      let cantidades = JSON.parse(deletecantidades);
+  
+      platos.splice(newId,1);
+      cantidades.splice(newId,1);
+  
+      await AsyncStorage.setItem('selectedPlates', JSON.stringify(platos));
+      await AsyncStorage.setItem('cantidadesComanda', JSON.stringify(cantidades));
+  
+      console.log('Plato eliminado:', deleteselectplates);
+      console.log('Cantidad eliminada:', deletecantidades);
+    } catch (error) {
+      console.error('Error al eliminar el plato y la cantidad:', error);
+    }
   };
 
   const handleShowDetailsInput = () => {
@@ -29,7 +50,6 @@ const ComandaStyle = () => {
     try {
       const updatedInputs = [...inputs];
       saveCantidades(updatedInputs);
-      // Guardar los detalles adicionales en AsyncStorage
       await AsyncStorage.setItem('additionalDetails', additionalDetails);
       console.log("Detalles adicionales almacenados exitosamente");
     } catch (error) {
@@ -52,7 +72,6 @@ const ComandaStyle = () => {
     );
     setInputs(updatedInputs);
     console.log("Cantidad ingresada:", text);
-    // Guardar las cantidades automáticamente
     saveCantidades(updatedInputs);
   };
 

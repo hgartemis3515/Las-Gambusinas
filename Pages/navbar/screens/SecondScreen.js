@@ -89,7 +89,8 @@ const SecondScreen = () => {
       const platosIds = JSON.parse(selectedPlatos_).map(
         (plato) => new mongoose.Types.ObjectId(plato)
       );
-      console.log(cantidadesComanda)
+      console.log(platosIds);
+      console.log(cantidadesComanda);
       const response = await axios.post(COMANDA_API, {
         mozos: userInfo.id,
         mesas: selectedTableInfo.id,
