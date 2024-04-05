@@ -94,21 +94,19 @@ const ComandaStyle = () => {
           alignItems: "center",
         }}
       >
-        <Text style={{ fontWeight: "bold" }}>Cantidad</Text>
-        <Text style={{ fontWeight: "bold" }}>Descripción</Text>
+        <Text style={{ fontWeight: "bold"}}>Cantidad</Text>
+        <Text style={{ fontWeight: "bold", paddingRight: "19%" }}>Descripción</Text>
       </View>
       {inputs.map((input) => (
         <View
           key={input.id}
           style={{
-            justifyContent: "space-around",
             alignItems: "center",
+            justifyContent: "space-between",
             marginTop: 22,
             flexDirection: "row",
             marginBottom: 40,
-            gap: 60,
-            paddingLeft: 30,
-            paddingRight: 20,
+            paddingRight: "5%",
           }}
         >
           <TextInput
@@ -116,18 +114,22 @@ const ComandaStyle = () => {
             value={input.cantidad}
             onChangeText={(text) => handleCantidadChange(text, input.id)}
             keyboardType="numeric"
+            style={{ flex: 1, paddingLeft: "10%" }}
           />
-          <SelectDishes onValueChange={handleDishChange} />
-          <Button title="X" onPress={() => handleRemoveInput(input.id)} />
+          <SelectDishes onValueChange={handleDishChange} style={{ flex: 1 }}/>
+          <Button title="X" onPress={() => handleRemoveInput(input.id)} style={{ flex: 1 }}/>
         </View>
       ))}
       <Button title="Agregar" onPress={handleAddInput} />
       {showDetailsInput && (
-        <View style={{ marginTop: 20, marginLeft: 20 }}>
+        <View style={{ marginTop: 20 }}>
           <TextInput
             placeholder="Ingrese detalles adicionales aquí"
             onChangeText={handleDetailsChange}
             value={additionalDetails}
+            style={{ textAlign: "center" }}
+            multiline={true}
+            numberOfLines={5}
           />
           <View style={{ marginTop: 20 }}>
             <Button title="Guardar" onPress={handleSaveDetails} />
