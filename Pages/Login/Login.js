@@ -60,7 +60,6 @@ const Login = () => {
             alignItems: "center",
           }}
         >
-          <Image source={require("./assets/logo.png")} />
         </View>
         <View style={{ marginTop: 50, gap: 40 }}>
           <Text
