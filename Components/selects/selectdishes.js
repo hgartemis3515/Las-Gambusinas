@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import RNPickerSelect from "react-native-picker-select";
 import { View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { DISHES_API } from "../../apiConfig"; 
 
 const SelectDishes = () => {
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -12,7 +13,7 @@ const SelectDishes = () => {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await fetch('http://192.168.1.5:8000/api/platos');
+        const response = await fetch(DISHES_API);
         const data = await response.json();
         const groupedCategories = {};
         data.forEach(plato => {
@@ -42,7 +43,7 @@ const SelectDishes = () => {
 
   const handleDishChange = (value) => {
     if (value !== selectedDish) {
-      console.log("Plato seleccionado _id:", value); // Agregando console.log para imprimir el _id del plato seleccionado
+      console.log("Plato seleccionado _id:", value);
       const updatedPlates = [...selectedPlates, value];
       setSelectedDish(value);
       setSelectedPlates(updatedPlates);
@@ -53,6 +54,8 @@ const SelectDishes = () => {
   const storePlates = async (plates) => {
     try {
       await AsyncStorage.setItem('selectedPlates', JSON.stringify(plates));
+      const platoseleccionado = await AsyncStorage.getItem("selectedPlates");
+      console.log('plato seleccionado test',platoseleccionado);
     } catch (error) {
       console.error('Error storing plates:', error);
     }
@@ -81,14 +84,14 @@ const SelectDishes = () => {
   return (
     <View style={{ flex:1, width:'100%', gap:8 }}>
       <RNPickerSelect
-        placeholder={{ label: "Seleccionar categoría", value: null }}
+        placeholder={{ label: "categoría", value: null }}
         items={categories.map(category => ({ label: category.label, value: category.value }))}
         onValueChange={handleCategoryChange}
         value={selectedCategory}
       />
       {selectedCategory && (
         <RNPickerSelect
-          placeholder={{ label: "Seleccionar plato", value: null }}
+          placeholder={{ label: "plato", value: null }}
           items={categories.find(category => category.value === selectedCategory).platos}
           onValueChange={handleDishChange}
           value={selectedDish}

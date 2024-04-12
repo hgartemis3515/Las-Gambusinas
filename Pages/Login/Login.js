@@ -12,8 +12,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { useNavigation } from "@react-navigation/native";
-
-const API_URL = 'http://192.168.1.5:8000/api/mozos/auth';
+import { LOGIN_AUTH_API } from "../../apiConfig";
 
 const Login = () => {
   const navigation = useNavigation();
@@ -22,7 +21,7 @@ const Login = () => {
 
   const handleLogin = async () => {
     try {
-      const response = await axios.post(API_URL, {
+      const response = await axios.post(LOGIN_AUTH_API, {
         name: username,
         DNI: password,
       });
@@ -61,7 +60,6 @@ const Login = () => {
             alignItems: "center",
           }}
         >
-          <Image source={require("./assets/logo.png")} />
         </View>
         <View style={{ marginTop: 50, gap: 40 }}>
           <Text

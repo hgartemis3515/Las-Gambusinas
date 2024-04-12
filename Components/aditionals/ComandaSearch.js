@@ -1,68 +1,139 @@
-import React from "react";
-import { View, Text, SafeAreaView, FlatList } from "react-native";
-import jsonData from "../../json/ShowDishes.json";
+import React, { useEffect, useState } from "react";
+import { View, Text, SafeAreaView, FlatList, TouchableOpacity, Alert } from "react-native";
+import axios from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { COMANDASEARCH_API_GET } from "../../apiConfig";
 
 const ComandaSearch = () => {
+  const [comandaData, setComandaData] = useState([]);
+  const [mozoName, setMozoName] = useState('');
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await axios.get(COMANDASEARCH_API_GET);
+        const user = await AsyncStorage.getItem("user");
+        if (user !== null) {
+          const userInfo = JSON.parse(user);
+          setMozoName(userInfo.name);
+          const filteredComandas = response.data.filter(comanda => comanda.mozos.name === userInfo.name);
+          setComandaData(filteredComandas);
+        }
+      } catch (error) {
+        console.error("Error fetching comanda data:", error);
+      }
+    };
+    fetchData();
+
+    const interval = setInterval(fetchData, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleComandaPress = (comandaId) => {
+    Alert.alert(
+      "Eliminar comanda",
+      "¿Estás seguro de que quieres eliminar esta comanda?",
+      [
+        {
+          text: "Cancelar",
+          onPress: () => console.log("Cancelado"),
+          style: "cancel",
+        },
+        { text: "Eliminar", onPress: () => handleEliminarComanda(comandaId) },
+      ],
+      { cancelable: false }
+    );
+  };
+
+  const handleEliminarComanda = async (comandaId) => {
+    try {
+      await axios.delete(`https://backend-lasgambusinas.onrender.com/api/comanda/${comandaId}`);
+      const updatedComandas = comandaData.filter(comanda => comanda._id !== comandaId);
+      setComandaData(updatedComandas);
+      console.log(`Comanda con ID ${comandaId} eliminada`);
+    } catch (error) {
+      console.error("Error al eliminar la comanda:", error);
+    }
+  };
+
+  const calcularTotal = (platos, cantidades) => {
+    let total = 0;
+    platos.forEach((plato, index) => {
+      total += plato.precio * cantidades[index];
+    });
+    return total;
+  };
+
   const renderItem = ({ item }) => (
-    <View
-      style={{
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        paddingVertical: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: "lightgray",
-      }}
-    >
-      <Text style={{ flex: 1, textAlign: "center" }}>{item.cantidad}</Text>
-      <Text style={{ flex: 1, textAlign: "center" }}>{item.dish}</Text>
-    </View>
+    <TouchableOpacity onPress={() => handleComandaPress(item._id)}>
+      <View style={{ borderColor: "orange", borderWidth: 4, borderRadius: 30, marginBottom: 20 }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-around", marginTop: 20, marginBottom: 20 }}>
+          <Text>
+            Mesa: {item.mesas.nummesa}
+          </Text>
+          <Text>
+            Mozo: {item.mozos.name}
+          </Text>
+        </View>
+        <View style={{ flexDirection: "column" }}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              paddingVertical: 8,
+              borderBottomWidth: 1,
+              borderBottomColor: "lightgray",
+              backgroundColor: "lightblue",
+            }}
+          >
+            <Text style={{ flex: 1, textAlign: "center", fontWeight: "bold" }}>
+              Cantidad
+            </Text>
+            <Text style={{ flex: 1, textAlign: "center", fontWeight: "bold" }}>
+              Pedido
+            </Text>
+          </View>
+          <FlatList
+            data={item.platos.map((plato, index) => ({ ...plato, cantidad: item.cantidades[index] }))}
+            renderItem={({ item }) => (
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  paddingVertical: 8,
+                  borderBottomWidth: 1,
+                  borderBottomColor: "lightgray",
+                }}
+              >
+                <Text style={{ flex: 1, textAlign: "center" }}>{item.cantidad}</Text>
+                <Text style={{ flex: 1, textAlign: "center" }}>{item.nombre}</Text>
+              </View>
+            )}
+            keyExtractor={(item) => item._id}
+            contentContainerStyle={{ paddingHorizontal: 16 }}
+          />
+        </View>
+        <View style={{ marginTop:20 }}>
+          <Text style={{ textAlign:"center", fontWeight: "bold", fontSize: 20 }}>Detalles del Pedido</Text>
+          <Text style={{ textAlign:"center", marginTop: 20, fontWeight: "bold" }}>{item.observaciones}</Text>
+        </View>
+        <View style={{ marginTop:30, marginBottom:20 }}>
+          <Text style={{ textAlign:"center", fontWeight: "normal", fontSize: 20 }}>Cuenta Total: {calcularTotal(item.platos, item.cantidades)}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
   );
 
   return (
     <SafeAreaView>
-      <View>
-        <View style={{ borderColor: "orange", borderWidth: 4, borderRadius: 30}}>
-          <View style={{ flexDirection: "row", justifyContent: "space-around", marginTop: 20, marginBottom: 20 }}>
-            <Text>
-              Mesa: 10 personas
-            </Text>
-            <Text>
-              Mozo: Carlos Herrera
-            </Text>
-          </View>
-          <View style={{ flexDirection: "column" }}>
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-                paddingVertical: 8,
-                borderBottomWidth: 1,
-                borderBottomColor: "lightgray",
-                backgroundColor: "lightblue",
-              }}
-            >
-              <Text style={{ flex: 1, textAlign: "center", fontWeight: "bold" }}>
-                Cantidad
-              </Text>
-              <Text style={{ flex: 1, textAlign: "center", fontWeight: "bold" }}>
-                Pedido
-              </Text>
-            </View>
-            <FlatList
-              data={jsonData}
-              renderItem={renderItem}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={{ paddingHorizontal: 16 }}
-            />
-          </View>
-          <View style={{ marginTop:20, marginBottom: 30 }}>
-            <Text style={{ textAlign:"center", fontWeight: "bold", fontSize: 20 }}>Detalles del Pedido</Text>
-            <Text style={{ textAlign:"center", marginTop: 20, fontWeight: "bold" }}>Detalle del pedido 1</Text>
-          </View>
-        </View>
-      </View>
+      <FlatList
+        data={comandaData}
+        renderItem={renderItem}
+        keyExtractor={(item) => item._id}
+        contentContainerStyle={{ paddingHorizontal: 16 }}
+      />
     </SafeAreaView>
   );
 };
