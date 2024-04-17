@@ -1,13 +1,20 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, Button } from "react-native";
 import SelectDishes from "../selects/selectdishes";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const ComandaStyle = () => {
+const ComandaStyle = ({ cleanComanda, setCleanComanda }) => {
   const [inputs, setInputs] = useState([{ id: 1, cantidad: '' }]);
   const [additionalDetails, setAdditionalDetails] = useState("");
   const [showDetailsInput, setShowDetailsInput] = useState(false);
   const [selectedDish, setSelectedDish] = useState(null);
+
+  useEffect(() => {
+    if (cleanComanda) {
+      setInputs([{ id: 1, cantidad: '' }]);
+      setCleanComanda(false);
+    }
+  }, [cleanComanda]);
 
   const handleAddInput = () => {
     const newId = inputs.length + 1;
@@ -90,7 +97,9 @@ const ComandaStyle = () => {
       <View
         style={{
           flexDirection: "row",
-          justifyContent: "space-around",
+          justifyContent: "space-between",
+          marginRight: "30%",
+          marginLeft: "5%",
           alignItems: "center",
         }}
       >
@@ -105,8 +114,9 @@ const ComandaStyle = () => {
             justifyContent: "space-between",
             marginTop: 22,
             flexDirection: "row",
-            marginBottom: 40,
-            paddingRight: "5%",
+            marginBottom: 30,
+            paddingLeft: "6%",
+            paddingRight: "4%",
           }}
         >
           <TextInput
@@ -114,13 +124,15 @@ const ComandaStyle = () => {
             value={input.cantidad}
             onChangeText={(text) => handleCantidadChange(text, input.id)}
             keyboardType="numeric"
-            style={{ flex: 1, paddingLeft: "10%" }}
+            style={{ flex: 1, maxWidth: "20%"}}
           />
           <SelectDishes onValueChange={handleDishChange} style={{ flex: 1 }}/>
           <Button title="X" onPress={() => handleRemoveInput(input.id)} style={{ flex: 1 }}/>
         </View>
       ))}
-      <Button title="Agregar" onPress={handleAddInput} />
+      <View style={{ maxWidth: "60%", justifyContent:"center", alignSelf: "center"  }}>
+        <Button title="Agregar" onPress={handleAddInput} />
+      </View>
       {showDetailsInput && (
         <View style={{ marginTop: 20 }}>
           <TextInput
@@ -131,13 +143,13 @@ const ComandaStyle = () => {
             multiline={true}
             numberOfLines={5}
           />
-          <View style={{ marginTop: 20 }}>
+          <View style={{ marginTop: 20,  maxWidth: "60%", justifyContent:"center", alignSelf: "center"  }}>
             <Button title="Guardar" onPress={handleSaveDetails} />
           </View>
         </View>
       )}
       {!showDetailsInput && (
-        <View style={{ marginTop: 20 }}>
+        <View style={{ marginTop: 20, maxWidth: "60%", justifyContent:"center", alignSelf: "center"  }}>
           <Button
             title="Detalles adicionales"
             onPress={handleShowDetailsInput}

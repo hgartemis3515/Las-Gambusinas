@@ -83,12 +83,14 @@ const SelectDishes = () => {
 
   return (
     <View style={{ flex:1, width:'100%', gap:8 }}>
-      <RNPickerSelect
-        placeholder={{ label: "categoría", value: null }}
-        items={categories.map(category => ({ label: category.label, value: category.value }))}
-        onValueChange={handleCategoryChange}
-        value={selectedCategory}
-      />
+      {!selectedCategory && (
+        <RNPickerSelect
+          placeholder={{ label: "categoría", value: null }}
+          items={categories.map(category => ({ label: category.label, value: category.value }))}
+          onValueChange={handleCategoryChange}
+          value={selectedCategory}
+        />
+      )}
       {selectedCategory && (
         <RNPickerSelect
           placeholder={{ label: "plato", value: null }}

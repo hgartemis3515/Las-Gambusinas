@@ -17,6 +17,7 @@ import mongoose from "mongoose";
 import { COMANDA_API } from "../../../apiConfig";
 
 const SecondScreen = () => {
+  const [cleanComanda, setCleanComanda] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
   const [selectedTableInfo, setSelectedTableInfo] = useState(null);
   const [selectedPlatos, setSelectedPlatos] = useState([]);
@@ -115,6 +116,7 @@ const SecondScreen = () => {
       setSelectedPlatos([]);
       setAdditionalDetails("");
       setCantidadesComanda([]);
+      setCleanComanda(true);
       Alert.alert("Comanda limpiada exitosamente");
     } catch (error) {
       console.error("Error al limpiar la comanda:", error);
@@ -160,9 +162,9 @@ const SecondScreen = () => {
             />
           </View>
           <View style={{ marginTop: 40 }}>
-            <Comandastyle onCantidadesChange={handleCantidadesChange} />
+            <Comandastyle onCantidadesChange={handleCantidadesChange} cleanComanda={cleanComanda} setCleanComanda={setCleanComanda} />
           </View>
-          <View style={{ gap:20, marginTop: 32 }}>
+          <View style={{ gap:20, marginTop: 32, maxWidth: "60%", justifyContent:"center", alignSelf: "center"  }}>
             <Button title="Enviar comanda" onPress={handleEnviarComanda} />
             <Button title="Limpiar Comanda" onPress={handleLimpiarComanda} />
           </View>

@@ -64,18 +64,18 @@ const CuarterScreen = () => {
       <Text style={{ fontSize: 15, paddingHorizontal: 4 }}>
         Mozo: {item.mozos.name}
       </Text>
-      <Text style={{ fontSize: 15, paddingHorizontal: 4 }}>
-        Observaciones: {item.observaciones}
-      </Text>
       <FlatList
         data={item.platos.map((plato, index) => ({ ...plato, cantidad: item.cantidades[index] }))}
         renderItem={({ item }) => (
           <Text style={{ fontSize: 15, paddingHorizontal: 4 }}>
-            Cantidad: {item.cantidad} - {item.nombre} - S/ {item.precio}
+            Cantidad: {item.cantidad} - {item.nombre}
           </Text>
         )}
         keyExtractor={(item) => item._id}
       />
+      <Text style={{ fontSize: 15, paddingHorizontal: 4 }}>
+        Observaciones: {item.observaciones}
+      </Text>
     </View>
   );
 
