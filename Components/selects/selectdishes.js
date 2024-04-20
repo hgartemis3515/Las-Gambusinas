@@ -1,104 +1,101 @@
 import React, { useState, useEffect } from "react";
-import RNPickerSelect from "react-native-picker-select";
-import { View } from "react-native";
+import { View, TextInput, FlatList, Button, Text } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { DISHES_API } from "../../apiConfig"; 
+import { DISHES_API } from "../../apiConfig";
 
-const SelectDishes = () => {
-  const [selectedCategory, setSelectedCategory] = useState(null);
-  const [selectedDish, setSelectedDish] = useState(null);
-  const [categories, setCategories] = useState([]);
+const SelectDishes = ({ onValueChange }) => {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [dishes, setDishes] = useState([]);
   const [selectedPlates, setSelectedPlates] = useState([]);
+  const [selectedPlate, setSelectedPlate] = useState(null);
+  const [filteredDishes, setFilteredDishes] = useState([]);
 
   useEffect(() => {
-    const fetchCategories = async () => {
+    const fetchDishes = async () => {
       try {
         const response = await fetch(DISHES_API);
         const data = await response.json();
-        const groupedCategories = {};
-        data.forEach(plato => {
-          if (!groupedCategories[plato.categoria]) {
-            groupedCategories[plato.categoria] = [];
-          }
-          groupedCategories[plato.categoria].push(plato);
-        });
-        const formattedCategories = Object.keys(groupedCategories).map(categoria => ({
-          label: categoria,
-          value: categoria,
-          platos: groupedCategories[categoria].map(plato => ({ label: plato.nombre, value: plato._id }))
-        }));
-        setCategories(formattedCategories);
+        setDishes(data);
       } catch (error) {
-        console.error('Error fetching categories:', error);
+        console.error('Error fetching dishes:', error);
       }
     };
 
-    fetchCategories();
+    fetchDishes();
   }, []);
 
-  const handleCategoryChange = (value) => {
-    setSelectedCategory(value);
-    setSelectedDish(null);
-  };
-
-  const handleDishChange = (value) => {
-    if (value !== selectedDish) {
-      console.log("Plato seleccionado _id:", value);
-      const updatedPlates = [...selectedPlates, value];
-      setSelectedDish(value);
-      setSelectedPlates(updatedPlates);
-      storePlates(updatedPlates);
-    }
-  };
-
-  const storePlates = async (plates) => {
-    try {
-      await AsyncStorage.setItem('selectedPlates', JSON.stringify(plates));
-      const platoseleccionado = await AsyncStorage.getItem("selectedPlates");
-      console.log('plato seleccionado test',platoseleccionado);
-    } catch (error) {
-      console.error('Error storing plates:', error);
-    }
-  };
-
-  const retrievePlates = async () => {
-    try {
-      const platesString = await AsyncStorage.getItem('selectedPlates');
-      if (platesString !== null) {
-        return JSON.parse(platesString);
-      }
-    } catch (error) {
-      console.error('Error retrieving plates:', error);
-    }
-    return [];
-  };
-  
   useEffect(() => {
-    const getSelectedPlates = async () => {
-      const plates = await retrievePlates();
-      setSelectedPlates(plates);
+    const retrieveSelectedPlates = async () => {
+      try {
+        const selectedPlatesString = await AsyncStorage.getItem('selectedPlates');
+        if (selectedPlatesString !== null) {
+          const selectedPlates = JSON.parse(selectedPlatesString);
+          setSelectedPlates(selectedPlates);
+          onValueChange(selectedPlates.map(plate => plate._id));
+        }
+      } catch (error) {
+        console.error('Error retrieving selected plates:', error);
+      }
     };
-    getSelectedPlates();
+
+    retrieveSelectedPlates();
   }, []);
+
+  useEffect(() => {
+    if (searchTerm.length >= 3) {
+      const filtered = dishes.filter(plate =>
+        plate.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredDishes(filtered);
+    } else {
+      setFilteredDishes([]);
+    }
+  }, [searchTerm, dishes]);
+
+  const handleSearch = (text) => {
+    setSearchTerm(text);
+    setSelectedPlate(null);
+  };
+
+  const handlePlateSelect = async (plateId) => {
+    const selectedPlate = dishes.find(plate => plate._id === plateId);
+    setSelectedPlate(selectedPlate);
+    const updatedPlates = [...selectedPlates, selectedPlate];
+    setSelectedPlates(updatedPlates);
+    onValueChange(updatedPlates.map(plate => plate._id));
+
+    try {
+      await AsyncStorage.setItem('selectedPlates', JSON.stringify(updatedPlates));
+    } catch (error) {
+      console.error('Error storing selected plates:', error);
+    }
+  };
+
+  const renderItem = ({ item }) => (
+    <Button title={item.nombre} onPress={() => handlePlateSelect(item._id)} />
+  );
 
   return (
-    <View style={{ flex:1, width:'100%', gap:8 }}>
-      {!selectedCategory && (
-        <RNPickerSelect
-          placeholder={{ label: "categoría", value: null }}
-          items={categories.map(category => ({ label: category.label, value: category.value }))}
-          onValueChange={handleCategoryChange}
-          value={selectedCategory}
+    <View>
+      {selectedPlate ? null : (
+        <TextInput
+          placeholder="Buscar plato"
+          onChangeText={handleSearch}
+          value={searchTerm}
         />
       )}
-      {selectedCategory && (
-        <RNPickerSelect
-          placeholder={{ label: "plato", value: null }}
-          items={categories.find(category => category.value === selectedCategory).platos}
-          onValueChange={handleDishChange}
-          value={selectedDish}
-        />
+      {selectedPlate ? null : (
+        searchTerm.length >= 3 && (
+          <FlatList
+            data={filteredDishes}
+            renderItem={renderItem}
+            keyExtractor={item => item._id}
+          />
+        )
       )}
+      {selectedPlate ? (
+        <Text>{selectedPlate.nombre}</Text>
+      ) : null}
     </View>
   );
 };

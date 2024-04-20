@@ -87,11 +87,8 @@ const SecondScreen = () => {
   const handleEnviarComanda = async () => {
     try {
       const selectedPlatos_ = await AsyncStorage.getItem("selectedPlates");
-      const platosIds = JSON.parse(selectedPlatos_).map(
-        (plato) => new mongoose.Types.ObjectId(plato)
-      );
-      console.log(platosIds);
-      console.log(cantidadesComanda);
+      const platos = JSON.parse(selectedPlatos_);
+      const platosIds = platos.map(plato => plato._id);
       const response = await axios.post(COMANDA_API, {
         mozos: userInfo.id,
         mesas: selectedTableInfo.id,
@@ -99,6 +96,7 @@ const SecondScreen = () => {
         cantidades: cantidadesComanda, 
         observaciones: additionalDetails,
       });
+      await handleLimpiarComanda();
       Alert.alert("Comanda enviada exitosamente");
     } catch (error) {
       console.error("Error al enviar la comanda:", error);
