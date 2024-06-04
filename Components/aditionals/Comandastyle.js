@@ -8,7 +8,7 @@ const ComandaStyle = ({ cleanComanda, setCleanComanda }) => {
   const [additionalDetails, setAdditionalDetails] = useState("");
   const [showDetailsInput, setShowDetailsInput] = useState(false);
   const [selectedDish, setSelectedDish] = useState(null);
-
+  
   useEffect(() => {
     if (cleanComanda) {
       setInputs([{ id: 1, cantidad: '' }]);
@@ -91,7 +91,7 @@ const ComandaStyle = ({ cleanComanda, setCleanComanda }) => {
       console.error("Error al guardar las cantidades:", error);
     }
   };
-
+  
   return (
     <View style={{ flexDirection: "column" }}>
       <View

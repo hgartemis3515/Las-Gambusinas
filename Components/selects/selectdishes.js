@@ -76,7 +76,7 @@ const SelectDishes = ({ onValueChange }) => {
   );
 
   return (
-    <View>
+    <View style={{maxWidth:'70%'}}>
       {selectedPlate ? null : (
         <TextInput
           placeholder="Buscar plato"

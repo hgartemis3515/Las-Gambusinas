@@ -3,16 +3,19 @@ import { View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
-import { SELECTABLE_API_GET } from "../../apiConfig";
+import { SELECTABLE_API_GET, COMANDASEARCH_API_GET } from "../../apiConfig";
+import moment from "moment-timezone";
 
 const MesasScreen = () => {
   const [mesas, setMesas] = useState([]);
   const [mesaSeleccionadaId, setMesaSeleccionadaId] = useState(null);
   const [mesaSeleccionadaNum, setMesaSeleccionadaNum] = useState(null);
+  const [comandas, setComandas] = useState([]);
 
   useEffect(() => {
     obtenerMesas();
     obtenerMesaSeleccionada();
+    obtenerComandasHoy();
   }, []);
 
   const obtenerMesas = async () => {
@@ -35,6 +38,18 @@ const MesasScreen = () => {
       }
     } catch (error) {
       console.error("Error al obtener la mesa seleccionada:", error.message);
+    }
+  };
+
+  const obtenerComandasHoy = async () => {
+    try {
+      const currentDate = moment().tz('America/Lima').format('YYYY-MM-DD');
+      const response = await axios.get(
+        `${COMANDASEARCH_API_GET}/fecha/${currentDate}`
+      );
+      setComandas(response.data);
+    } catch (error) {
+      console.error("Error al obtener las comandas de hoy:", error.message);
     }
   };
 
@@ -68,32 +83,37 @@ const MesasScreen = () => {
   return (
     <ScrollView>
       <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-        {mesas.map((mesa) => (
-          <TouchableOpacity
-            key={mesa._id}
-            style={{
-              backgroundColor:
-                mesa.isActive && mesa._id !== mesaSeleccionadaId
-                  ? "green"
-                  : "red",
-              padding: 8,
-              margin: 2,
-            }}
-            onPress={() => handleSelectMesa(mesa._id, mesa.nummesa)}
-          >
-            <Text
-              style={{
-                color: "white",
-                textAlign: "center",
-                fontWeight: "bold",
-                fontSize: 20,
-              }}
+        {mesas.map((mesa) => {
+          // Verificar si la mesa tiene comandas para el día actual
+          const tieneComandasHoy = comandas.some(
+            (comanda) => comanda.mesas.nummesa === mesa.nummesa
+          );
+          // Determinar el estilo en función de si tiene comandas hoy
+          const mesaStyle = {
+            backgroundColor: tieneComandasHoy ? "red" : "green",
+            padding: 8,
+            margin: 2,
+          };
+          return (
+            <TouchableOpacity
+              key={mesa._id}
+              style={mesaStyle}
+              onPress={() => handleSelectMesa(mesa._id, mesa.nummesa)}
             >
-              {mesa.nummesa}
-            </Text>
-            <MaterialCommunityIcons name="table-picnic" size={40} />
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={{
+                  color: "black",
+                  textAlign: "center",
+                  fontWeight: "bold",
+                  fontSize: 20,
+                }}
+              >
+                {mesa.nummesa}
+              </Text>
+              <MaterialCommunityIcons name="table-picnic" size={40} />
+            </TouchableOpacity>
+          );
+        })}
       </View>
     </ScrollView>
   );

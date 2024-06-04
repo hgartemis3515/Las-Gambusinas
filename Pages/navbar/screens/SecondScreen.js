@@ -13,7 +13,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Comandastyle from "../../../Components/aditionals/Comandastyle";
 import Selectable from "../../../Components/selects/selectable";
 import axios from "axios";
-import mongoose from "mongoose";
 import { COMANDA_API } from "../../../apiConfig";
 
 const SecondScreen = () => {
@@ -88,11 +87,13 @@ const SecondScreen = () => {
     try {
       const selectedPlatos_ = await AsyncStorage.getItem("selectedPlates");
       const platos = JSON.parse(selectedPlatos_);
-      const platosIds = platos.map(plato => plato._id);
+      const platosData = platos.map((plato, index) => ({
+        plato: plato._id,
+      }));
       const response = await axios.post(COMANDA_API, {
         mozos: userInfo.id,
         mesas: selectedTableInfo.id,
-        platos: platosIds,
+        platos: platosData,
         cantidades: cantidadesComanda, 
         observaciones: additionalDetails,
       });

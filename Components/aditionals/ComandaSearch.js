@@ -3,6 +3,7 @@ import { View, Text, SafeAreaView, FlatList, TouchableOpacity, Alert } from "rea
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { COMANDASEARCH_API_GET } from "../../apiConfig";
+import moment from "moment-timezone";
 
 const ComandaSearch = () => {
   const [comandaData, setComandaData] = useState([]);
@@ -11,7 +12,8 @@ const ComandaSearch = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await axios.get(COMANDASEARCH_API_GET);
+        const currentDate = moment().tz('America/Lima').format('YYYY-MM-DD');
+        const response = await axios.get(`${COMANDASEARCH_API_GET}/fecha/${currentDate}`);
         const user = await AsyncStorage.getItem("user");
         if (user !== null) {
           const userInfo = JSON.parse(user);
@@ -87,10 +89,10 @@ const ComandaSearch = () => {
               backgroundColor: "lightblue",
             }}
           >
-            <Text style={{ flex: 1, textAlign: "center", fontWeight: "bold" }}>
+            <Text style={{ textAlign: "center", fontWeight: "bold", width:"25%" }}>
               Cantidad
             </Text>
-            <Text style={{ flex: 1, textAlign: "center", fontWeight: "bold" }}>
+            <Text style={{ textAlign: "center", fontWeight: "bold", width:"75%" }}>
               Pedido
             </Text>
           </View>
@@ -107,8 +109,8 @@ const ComandaSearch = () => {
                   borderBottomColor: "lightgray",
                 }}
               >
-                <Text style={{ flex: 1, textAlign: "center" }}>{item.cantidad}</Text>
-                <Text style={{ flex: 1, textAlign: "center" }}>{item.nombre}</Text>
+                <Text style={{ textAlign: "center", width:"25%" }}>{item.cantidad}</Text>
+                <Text style={{ textAlign: "center", width:"75%" }}>{item.nombre}</Text>
               </View>
             )}
             keyExtractor={(item) => item._id}
