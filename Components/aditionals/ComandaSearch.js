@@ -3,6 +3,7 @@ import { View, Text, SafeAreaView, FlatList, TouchableOpacity, Alert } from "rea
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { COMANDASEARCH_API_GET } from "../../apiConfig";
+import moment from "moment-timezone";
 
 const ComandaSearch = () => {
   const [comandaData, setComandaData] = useState([]);
@@ -11,7 +12,8 @@ const ComandaSearch = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await axios.get(COMANDASEARCH_API_GET);
+        const currentDate = moment().tz('America/Lima').format('YYYY-MM-DD');
+        const response = await axios.get(`${COMANDASEARCH_API_GET}/fecha/${currentDate}`);
         const user = await AsyncStorage.getItem("user");
         if (user !== null) {
           const userInfo = JSON.parse(user);
@@ -59,7 +61,7 @@ const ComandaSearch = () => {
   const calcularTotal = (platos, cantidades) => {
     let total = 0;
     platos.forEach((plato, index) => {
-      total += plato.precio * cantidades[index];
+      total += plato.plato.precio * cantidades[index];
     });
     return total;
   };
@@ -68,6 +70,9 @@ const ComandaSearch = () => {
     <TouchableOpacity onPress={() => handleComandaPress(item._id)}>
       <View style={{ borderColor: "orange", borderWidth: 4, borderRadius: 30, marginBottom: 20 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-around", marginTop: 20, marginBottom: 20 }}>
+          <Text>
+            Nro: {item.comandaNumber}
+          </Text>
           <Text>
             Mesa: {item.mesas.nummesa}
           </Text>
@@ -87,10 +92,10 @@ const ComandaSearch = () => {
               backgroundColor: "lightblue",
             }}
           >
-            <Text style={{ flex: 1, textAlign: "center", fontWeight: "bold" }}>
+            <Text style={{ textAlign: "center", fontWeight: "bold", width:"25%" }}>
               Cantidad
             </Text>
-            <Text style={{ flex: 1, textAlign: "center", fontWeight: "bold" }}>
+            <Text style={{ textAlign: "center", fontWeight: "bold", width:"75%" }}>
               Pedido
             </Text>
           </View>
@@ -107,11 +112,11 @@ const ComandaSearch = () => {
                   borderBottomColor: "lightgray",
                 }}
               >
-                <Text style={{ flex: 1, textAlign: "center" }}>{item.cantidad}</Text>
-                <Text style={{ flex: 1, textAlign: "center" }}>{item.nombre}</Text>
+                <Text style={{ textAlign: "center", width:"25%" }}>{item.cantidad}</Text>
+                <Text style={{ textAlign: "center", width:"75%" }}>{item.plato.nombre}</Text>
               </View>
             )}
-            keyExtractor={(item) => item._id}
+            keyExtractor={(item) => item.plato._id}
             contentContainerStyle={{ paddingHorizontal: 16 }}
           />
         </View>

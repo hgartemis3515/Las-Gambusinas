@@ -13,10 +13,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Comandastyle from "../../../Components/aditionals/Comandastyle";
 import Selectable from "../../../Components/selects/selectable";
 import axios from "axios";
-import mongoose from "mongoose";
 import { COMANDA_API } from "../../../apiConfig";
 
 const SecondScreen = () => {
+  const [cleanComanda, setCleanComanda] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
   const [selectedTableInfo, setSelectedTableInfo] = useState(null);
   const [selectedPlatos, setSelectedPlatos] = useState([]);
@@ -86,18 +86,18 @@ const SecondScreen = () => {
   const handleEnviarComanda = async () => {
     try {
       const selectedPlatos_ = await AsyncStorage.getItem("selectedPlates");
-      const platosIds = JSON.parse(selectedPlatos_).map(
-        (plato) => new mongoose.Types.ObjectId(plato)
-      );
-      console.log(platosIds);
-      console.log(cantidadesComanda);
+      const platos = JSON.parse(selectedPlatos_);
+      const platosData = platos.map((plato, index) => ({
+        plato: plato._id,
+      }));
       const response = await axios.post(COMANDA_API, {
         mozos: userInfo.id,
         mesas: selectedTableInfo.id,
-        platos: platosIds,
+        platos: platosData,
         cantidades: cantidadesComanda, 
         observaciones: additionalDetails,
       });
+      await handleLimpiarComanda();
       Alert.alert("Comanda enviada exitosamente");
     } catch (error) {
       console.error("Error al enviar la comanda:", error);
@@ -115,6 +115,7 @@ const SecondScreen = () => {
       setSelectedPlatos([]);
       setAdditionalDetails("");
       setCantidadesComanda([]);
+      setCleanComanda(true);
       Alert.alert("Comanda limpiada exitosamente");
     } catch (error) {
       console.error("Error al limpiar la comanda:", error);
@@ -160,9 +161,9 @@ const SecondScreen = () => {
             />
           </View>
           <View style={{ marginTop: 40 }}>
-            <Comandastyle onCantidadesChange={handleCantidadesChange} />
+            <Comandastyle onCantidadesChange={handleCantidadesChange} cleanComanda={cleanComanda} setCleanComanda={setCleanComanda} />
           </View>
-          <View style={{ gap:20, marginTop: 32 }}>
+          <View style={{ gap:20, marginTop: 32, maxWidth: "60%", justifyContent:"center", alignSelf: "center"  }}>
             <Button title="Enviar comanda" onPress={handleEnviarComanda} />
             <Button title="Limpiar Comanda" onPress={handleLimpiarComanda} />
           </View>

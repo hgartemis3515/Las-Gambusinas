@@ -30,7 +30,7 @@ const Login = () => {
         name: mozo.name, 
         id: mozo._id,
       }));
-      console.log(`_id del mozo almacenado: ${mozo._id}`); // Agregar console.log
+      console.log(`_id del mozo almacenado: ${mozo._id}`);
       navigation.replace("Navbar", { username: `${mozo.name}` });
     } catch (error) {
       Alert.alert("Error", "Usuario o contraseña incorrectos.");

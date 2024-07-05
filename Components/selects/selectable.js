@@ -3,16 +3,19 @@ import { View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
-import { SELECTABLE_API_GET } from "../../apiConfig";
+import { SELECTABLE_API_GET, COMANDASEARCH_API_GET } from "../../apiConfig";
+import moment from "moment-timezone";
 
 const MesasScreen = () => {
   const [mesas, setMesas] = useState([]);
   const [mesaSeleccionadaId, setMesaSeleccionadaId] = useState(null);
   const [mesaSeleccionadaNum, setMesaSeleccionadaNum] = useState(null);
+  const [comandas, setComandas] = useState([]);
 
   useEffect(() => {
     obtenerMesas();
     obtenerMesaSeleccionada();
+    obtenerComandasHoy();
   }, []);
 
   const obtenerMesas = async () => {
@@ -38,27 +41,32 @@ const MesasScreen = () => {
     }
   };
 
+  const obtenerComandasHoy = async () => {
+    try {
+      const currentDate = moment().tz('America/Lima').format('YYYY-MM-DD');
+      const response = await axios.get(
+        `${COMANDASEARCH_API_GET}/fecha/${currentDate}`
+      );
+      setComandas(response.data);
+    } catch (error) {
+      console.error("Error al obtener las comandas de hoy:", error.message);
+    }
+  };
+
   const handleSelectMesa = async (mesaId, mesaNum) => {
     try {
-      // Obtener el estado actual de la mesa
       const mesa = mesas.find((m) => m._id === mesaId);
-      const isActive = !mesa.isActive; // Cambiar el estado
+      const isActive = !mesa.isActive;
 
-      // Actualizar el estado de la mesa en el backend
       await axios.put(`https://backend-lasgambusinas.onrender.com/api/mesas/${mesaId}`, {
         isActive,
       });
 
-      // Almacenar el _id y el nummesa de la mesa seleccionada en AsyncStorage
       const mesaSeleccionada = `${mesaId}-${mesaNum}`;
       await AsyncStorage.setItem("mesaSeleccionada", mesaSeleccionada);
       console.log("Mesa seleccionada:", mesaSeleccionada);
-
-      // Actualizar el estado local de la mesa seleccionada
       setMesaSeleccionadaId(mesaId);
       setMesaSeleccionadaNum(mesaNum);
-
-      // Actualizar la lista de mesas
       obtenerMesas();
     } catch (error) {
       console.error("Error al seleccionar la mesa:", error.message);
@@ -68,32 +76,35 @@ const MesasScreen = () => {
   return (
     <ScrollView>
       <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-        {mesas.map((mesa) => (
-          <TouchableOpacity
-            key={mesa._id}
-            style={{
-              backgroundColor:
-                mesa.isActive && mesa._id !== mesaSeleccionadaId
-                  ? "green"
-                  : "red",
-              padding: 8,
-              margin: 2,
-            }}
-            onPress={() => handleSelectMesa(mesa._id, mesa.nummesa)}
-          >
-            <Text
-              style={{
-                color: "white",
-                textAlign: "center",
-                fontWeight: "bold",
-                fontSize: 20,
-              }}
+        {mesas.map((mesa) => {
+          const tieneComandasHoy = comandas.some(
+            (comanda) => comanda.mesas.nummesa === mesa.nummesa
+          );
+          const mesaStyle = {
+            backgroundColor: tieneComandasHoy ? "red" : "green",
+            padding: 8,
+            margin: 2,
+          };
+          return (
+            <TouchableOpacity
+              key={mesa._id}
+              style={mesaStyle}
+              onPress={() => handleSelectMesa(mesa._id, mesa.nummesa)}
             >
-              {mesa.nummesa}
-            </Text>
-            <MaterialCommunityIcons name="table-picnic" size={40} />
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={{
+                  color: "black",
+                  textAlign: "center",
+                  fontWeight: "bold",
+                  fontSize: 20,
+                }}
+              >
+                {mesa.nummesa}
+              </Text>
+              <MaterialCommunityIcons name="table-picnic" size={40} />
+            </TouchableOpacity>
+          );
+        })}
       </View>
     </ScrollView>
   );
