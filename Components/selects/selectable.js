@@ -55,25 +55,18 @@ const MesasScreen = () => {
 
   const handleSelectMesa = async (mesaId, mesaNum) => {
     try {
-      // Obtener el estado actual de la mesa
       const mesa = mesas.find((m) => m._id === mesaId);
-      const isActive = !mesa.isActive; // Cambiar el estado
+      const isActive = !mesa.isActive;
 
-      // Actualizar el estado de la mesa en el backend
       await axios.put(`https://backend-lasgambusinas.onrender.com/api/mesas/${mesaId}`, {
         isActive,
       });
 
-      // Almacenar el _id y el nummesa de la mesa seleccionada en AsyncStorage
       const mesaSeleccionada = `${mesaId}-${mesaNum}`;
       await AsyncStorage.setItem("mesaSeleccionada", mesaSeleccionada);
       console.log("Mesa seleccionada:", mesaSeleccionada);
-
-      // Actualizar el estado local de la mesa seleccionada
       setMesaSeleccionadaId(mesaId);
       setMesaSeleccionadaNum(mesaNum);
-
-      // Actualizar la lista de mesas
       obtenerMesas();
     } catch (error) {
       console.error("Error al seleccionar la mesa:", error.message);
@@ -84,11 +77,9 @@ const MesasScreen = () => {
     <ScrollView>
       <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
         {mesas.map((mesa) => {
-          // Verificar si la mesa tiene comandas para el día actual
           const tieneComandasHoy = comandas.some(
             (comanda) => comanda.mesas.nummesa === mesa.nummesa
           );
-          // Determinar el estilo en función de si tiene comandas hoy
           const mesaStyle = {
             backgroundColor: tieneComandasHoy ? "red" : "green",
             padding: 8,

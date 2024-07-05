@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -13,12 +13,16 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import axios from "axios";
 import { COMANDASEARCH_API_GET, SELECTABLE_API_GET } from "../../../apiConfig";
 import moment from "moment-timezone";
+import * as Print from 'expo-print';
+import * as FileSystem from 'expo-file-system';
+import { shareAsync } from 'expo-sharing';
 
 const CuarterScreen = () => {
   const [mesas, setMesas] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedMesa, setSelectedMesa] = useState(null);
   const [comandas, setComandas] = useState([]);
+  const [comandasMesa, setComandasMesa] = useState([]);
 
   useEffect(() => {
     const interval = setInterval(obtenerMesas, 2000);
@@ -26,21 +30,23 @@ const CuarterScreen = () => {
   }, []);
 
   useEffect(() => {
-    obtenerComandasHoy();
+    if (mesas.length) {
+      obtenerComandasHoy();
+    }
   }, [mesas]);
 
-  const obtenerMesas = async () => {
+  const obtenerMesas = useCallback(async () => {
     try {
       const response = await axios.get(SELECTABLE_API_GET);
       setMesas(response.data);
     } catch (error) {
       console.error("Error al obtener las mesas:", error.message);
     }
-  };
+  }, []);
 
-  const obtenerComandasHoy = async () => {
+  const obtenerComandasHoy = useCallback(async () => {
     try {
-      const currentDate = moment().tz('America/Lima').format('YYYY-MM-DD');
+      const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
       const response = await axios.get(
         `${COMANDASEARCH_API_GET}/fecha/${currentDate}`
       );
@@ -48,12 +54,19 @@ const CuarterScreen = () => {
     } catch (error) {
       console.error("Error al obtener las comandas de hoy:", error.message);
     }
-  };
+  }, []);
 
-  const handleMesaClick = async (numMesa) => {
-    setSelectedMesa(numMesa);
-    setModalVisible(true);
-  };
+  const handleMesaClick = useCallback(
+    (numMesa) => {
+      setSelectedMesa(numMesa);
+      const comandasFiltradas = comandas.filter(
+        (comanda) => comanda.mesas.nummesa === numMesa
+      );
+      setComandasMesa(comandasFiltradas);
+      setModalVisible(true);
+    },
+    [comandas]
+  );
 
   const renderComandaItem = ({ item }) => (
     <TouchableOpacity
@@ -68,6 +81,7 @@ const CuarterScreen = () => {
               style: "cancel",
             },
             { text: "Sí", onPress: () => handleCancelComanda(item._id) },
+            { text: "Imprimir", onPress: () => handlePrintComanda(item) },
           ],
           { cancelable: false }
         );
@@ -83,9 +97,12 @@ const CuarterScreen = () => {
           padding: 2,
         }}
       >
-        <Text style={{ fontSize: 15, paddingHorizontal: 4 }}>
-          Mozo: {item.mozos.name}
-        </Text>
+        <View style={{ flexDirection: "row", gap: 20 }}>
+          <Text style={{ fontSize: 15, paddingHorizontal: 4 }}>
+            Mozo: {item.mozos.name}
+          </Text>
+          <Text>Nro: {item.comandaNumber}</Text>
+        </View>
         <FlatList
           data={item.platos.map((plato, index) => ({
             ...plato,
@@ -93,7 +110,7 @@ const CuarterScreen = () => {
           }))}
           renderItem={({ item }) => (
             <Text style={{ fontSize: 15, paddingHorizontal: 4 }}>
-              Cantidad: {item.cantidad} - {item.nombre}
+              Cantidad: {item.cantidad} - {item.plato.nombre}
             </Text>
           )}
           keyExtractor={(item) => item._id}
@@ -122,9 +139,44 @@ const CuarterScreen = () => {
   const calcularTotal = (platos, cantidades) => {
     let total = 0;
     platos.forEach((plato, index) => {
-      total += plato.precio * cantidades[index];
+      total += plato.plato.precio * cantidades[index];
     });
     return total;
+  };
+
+  const handlePrintComanda = async (comanda) => {
+    const htmlContent = `
+      <html>
+        <body>
+          <h1>Comanda</h1>
+          <p>Fecha: ${moment().tz("America/Lima").format("DD/MM/YYYY HH:mm:ss")}</p>
+          <p>Mozo: ${comanda.mozos.name}</p>
+          <p>Nro: ${comanda.comandaNumber}</p>
+          <p>Mesa: ${comanda.mesas.nummesa}</p>
+          <h2>Platos</h2>
+          <ul>
+            ${comanda.platos.map((plato, index) => `
+              <li>${comanda.cantidades[index]} : ${plato.plato.nombre} - S/.${plato.plato.precio * comanda.cantidades[index]} </li>
+            `).join('')}
+          </ul>
+          <p>Observaciones: ${comanda.observaciones}</p>
+          <p>Cuenta Total: ${calcularTotal(comanda.platos, comanda.cantidades)}</p>
+        </body>
+      </html>
+    `;
+
+    try {
+      const { uri } = await Print.printToFileAsync({ html: htmlContent });
+      const newUri = `${FileSystem.documentDirectory}comanda.pdf`;
+      await FileSystem.moveAsync({
+        from: uri,
+        to: newUri,
+      });
+      await shareAsync(newUri, { UTI: '.pdf', mimeType: 'application/pdf' });
+      console.log("Comanda impresa exitosamente");
+    } catch (error) {
+      console.error("Error al imprimir la comanda:", error);
+    }
   };
 
   return (
@@ -203,7 +255,7 @@ const CuarterScreen = () => {
               Número de mesa: {selectedMesa}
             </Text>
             <FlatList
-              data={comandas}
+              data={comandasMesa}
               renderItem={renderComandaItem}
               keyExtractor={(item) => item._id}
             />

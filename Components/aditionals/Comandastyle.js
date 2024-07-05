@@ -8,7 +8,7 @@ const ComandaStyle = ({ cleanComanda, setCleanComanda }) => {
   const [additionalDetails, setAdditionalDetails] = useState("");
   const [showDetailsInput, setShowDetailsInput] = useState(false);
   const [selectedDish, setSelectedDish] = useState(null);
-  
+
   useEffect(() => {
     if (cleanComanda) {
       setInputs([{ id: 1, cantidad: '' }]);
@@ -24,22 +24,27 @@ const ComandaStyle = ({ cleanComanda, setCleanComanda }) => {
 
   const handleRemoveInput = async (idToRemove) => {
     try {
-      let newId = idToRemove - 1; 
+      let newId = idToRemove - 1;
 
       const updatedInputs = inputs.filter((input) => input.id !== idToRemove);
       setInputs(updatedInputs);
+
       const deleteselectplates = await AsyncStorage.getItem('selectedPlates');
       const deletecantidades = await AsyncStorage.getItem('cantidadesComanda');
-  
-      let platos = JSON.parse(deleteselectplates);
-      let cantidades = JSON.parse(deletecantidades);
-  
-      platos.splice(newId,1);
-      cantidades.splice(newId,1);
-  
+
+      let platos = JSON.parse(deleteselectplates) || [];
+      let cantidades = JSON.parse(deletecantidades) || [];
+
+      if (newId < platos.length) {
+        platos.splice(newId, 1);
+      }
+      if (newId < cantidades.length) {
+        cantidades.splice(newId, 1);
+      }
+
       await AsyncStorage.setItem('selectedPlates', JSON.stringify(platos));
       await AsyncStorage.setItem('cantidadesComanda', JSON.stringify(cantidades));
-  
+
       console.log('Plato eliminado:', deleteselectplates);
       console.log('Cantidad eliminada:', deletecantidades);
     } catch (error) {
@@ -91,7 +96,7 @@ const ComandaStyle = ({ cleanComanda, setCleanComanda }) => {
       console.error("Error al guardar las cantidades:", error);
     }
   };
-  
+
   return (
     <View style={{ flexDirection: "column" }}>
       <View
@@ -103,7 +108,7 @@ const ComandaStyle = ({ cleanComanda, setCleanComanda }) => {
           alignItems: "center",
         }}
       >
-        <Text style={{ fontWeight: "bold"}}>Cantidad</Text>
+        <Text style={{ fontWeight: "bold" }}>Cantidad</Text>
         <Text style={{ fontWeight: "bold", paddingRight: "19%" }}>Descripción</Text>
       </View>
       {inputs.map((input) => (
@@ -124,13 +129,13 @@ const ComandaStyle = ({ cleanComanda, setCleanComanda }) => {
             value={input.cantidad}
             onChangeText={(text) => handleCantidadChange(text, input.id)}
             keyboardType="numeric"
-            style={{ flex: 1, maxWidth: "20%"}}
+            style={{ flex: 1, maxWidth: "20%" }}
           />
-          <SelectDishes onValueChange={handleDishChange} style={{ flex: 1 }}/>
-          <Button title="X" onPress={() => handleRemoveInput(input.id)} style={{ flex: 1 }}/>
+          <SelectDishes onValueChange={handleDishChange} style={{ flex: 1 }} />
+          <Button title="X" onPress={() => handleRemoveInput(input.id)} style={{ flex: 1 }} />
         </View>
       ))}
-      <View style={{ maxWidth: "60%", justifyContent:"center", alignSelf: "center"  }}>
+      <View style={{ maxWidth: "60%", justifyContent: "center", alignSelf: "center" }}>
         <Button title="Agregar" onPress={handleAddInput} />
       </View>
       {showDetailsInput && (
@@ -143,13 +148,13 @@ const ComandaStyle = ({ cleanComanda, setCleanComanda }) => {
             multiline={true}
             numberOfLines={5}
           />
-          <View style={{ marginTop: 20,  maxWidth: "60%", justifyContent:"center", alignSelf: "center"  }}>
+          <View style={{ marginTop: 20, maxWidth: "60%", justifyContent: "center", alignSelf: "center" }}>
             <Button title="Guardar" onPress={handleSaveDetails} />
           </View>
         </View>
       )}
       {!showDetailsInput && (
-        <View style={{ marginTop: 20, maxWidth: "60%", justifyContent:"center", alignSelf: "center"  }}>
+        <View style={{ marginTop: 20, maxWidth: "60%", justifyContent: "center", alignSelf: "center" }}>
           <Button
             title="Detalles adicionales"
             onPress={handleShowDetailsInput}

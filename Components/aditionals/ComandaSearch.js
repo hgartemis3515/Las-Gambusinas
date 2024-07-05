@@ -61,7 +61,7 @@ const ComandaSearch = () => {
   const calcularTotal = (platos, cantidades) => {
     let total = 0;
     platos.forEach((plato, index) => {
-      total += plato.precio * cantidades[index];
+      total += plato.plato.precio * cantidades[index];
     });
     return total;
   };
@@ -70,6 +70,9 @@ const ComandaSearch = () => {
     <TouchableOpacity onPress={() => handleComandaPress(item._id)}>
       <View style={{ borderColor: "orange", borderWidth: 4, borderRadius: 30, marginBottom: 20 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-around", marginTop: 20, marginBottom: 20 }}>
+          <Text>
+            Nro: {item.comandaNumber}
+          </Text>
           <Text>
             Mesa: {item.mesas.nummesa}
           </Text>
@@ -110,10 +113,10 @@ const ComandaSearch = () => {
                 }}
               >
                 <Text style={{ textAlign: "center", width:"25%" }}>{item.cantidad}</Text>
-                <Text style={{ textAlign: "center", width:"75%" }}>{item.nombre}</Text>
+                <Text style={{ textAlign: "center", width:"75%" }}>{item.plato.nombre}</Text>
               </View>
             )}
-            keyExtractor={(item) => item._id}
+            keyExtractor={(item) => item.plato._id}
             contentContainerStyle={{ paddingHorizontal: 16 }}
           />
         </View>
