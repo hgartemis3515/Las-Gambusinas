@@ -23,6 +23,7 @@ const SecondScreen = () => {
   const [additionalDetails, setAdditionalDetails] = useState("");
   const [modalVisible, setModalVisible] = useState(false);
   const [cantidadesComanda, setCantidadesComanda] = useState([]);
+  const [isSendingComanda, setIsSendingComanda] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -85,6 +86,8 @@ const SecondScreen = () => {
 
   const handleEnviarComanda = async () => {
     try {
+      setIsSendingComanda(true);
+
       const selectedPlatos_ = await AsyncStorage.getItem("selectedPlates");
       const platos = JSON.parse(selectedPlatos_);
       const platosData = platos.map((plato, index) => ({
@@ -102,6 +105,10 @@ const SecondScreen = () => {
     } catch (error) {
       console.error("Error al enviar la comanda:", error);
       Alert.alert("Error", "No se pudo enviar la comanda");
+    } finally {
+      setTimeout(() => {
+        setIsSendingComanda(false);
+      }, 4000);
     }
   };
 
@@ -164,7 +171,7 @@ const SecondScreen = () => {
             <Comandastyle onCantidadesChange={handleCantidadesChange} cleanComanda={cleanComanda} setCleanComanda={setCleanComanda} />
           </View>
           <View style={{ gap:20, marginTop: 32, maxWidth: "60%", justifyContent:"center", alignSelf: "center"  }}>
-            <Button title="Enviar comanda" onPress={handleEnviarComanda} />
+            <Button title="Enviar comanda" onPress={handleEnviarComanda} disabled={isSendingComanda} />
             <Button title="Limpiar Comanda" onPress={handleLimpiarComanda} />
           </View>
         </View>

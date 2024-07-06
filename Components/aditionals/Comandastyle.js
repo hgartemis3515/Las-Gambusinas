@@ -4,14 +4,17 @@ import SelectDishes from "../selects/selectdishes";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const ComandaStyle = ({ cleanComanda, setCleanComanda }) => {
-  const [inputs, setInputs] = useState([{ id: 1, cantidad: '' }]);
+  const [inputs, setInputs] = useState([]);
   const [additionalDetails, setAdditionalDetails] = useState("");
   const [showDetailsInput, setShowDetailsInput] = useState(false);
   const [selectedDish, setSelectedDish] = useState(null);
 
   useEffect(() => {
     if (cleanComanda) {
-      setInputs([{ id: 1, cantidad: '' }]);
+      setInputs([]);
+      setAdditionalDetails("");
+      setShowDetailsInput(false);
+      setSelectedDish(null);
       setCleanComanda(false);
     }
   }, [cleanComanda]);
@@ -24,8 +27,6 @@ const ComandaStyle = ({ cleanComanda, setCleanComanda }) => {
 
   const handleRemoveInput = async (idToRemove) => {
     try {
-      let newId = idToRemove - 1;
-
       const updatedInputs = inputs.filter((input) => input.id !== idToRemove);
       setInputs(updatedInputs);
 
@@ -35,11 +36,11 @@ const ComandaStyle = ({ cleanComanda, setCleanComanda }) => {
       let platos = JSON.parse(deleteselectplates) || [];
       let cantidades = JSON.parse(deletecantidades) || [];
 
-      if (newId < platos.length) {
-        platos.splice(newId, 1);
+      if (idToRemove - 1 < platos.length) {
+        platos.splice(idToRemove - 1, 1);
       }
-      if (newId < cantidades.length) {
-        cantidades.splice(newId, 1);
+      if (idToRemove - 1 < cantidades.length) {
+        cantidades.splice(idToRemove - 1, 1);
       }
 
       await AsyncStorage.setItem('selectedPlates', JSON.stringify(platos));
