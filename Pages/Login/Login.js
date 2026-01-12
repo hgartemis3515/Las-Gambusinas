@@ -21,9 +21,10 @@ const Login = () => {
 
   const handleLogin = async () => {
     try {
+      console.log('Intentando conectar con:', LOGIN_AUTH_API);
       const response = await axios.post(LOGIN_AUTH_API, {
-        name: username,
-        DNI: password,
+        name: username.trim(),
+        DNI: password.trim(),
       });
       const mozo = response.data.mozo;
       await AsyncStorage.setItem('user', JSON.stringify({
@@ -33,7 +34,14 @@ const Login = () => {
       console.log(`_id del mozo almacenado: ${mozo._id}`);
       navigation.replace("Navbar", { username: `${mozo.name}` });
     } catch (error) {
-      Alert.alert("Error", "Usuario o contraseña incorrectos.");
+      console.error('Error de conexión:', error.message);
+      if (error.code === 'ECONNREFUSED' || error.message.includes('Network Error')) {
+        Alert.alert("Error de Conexión", "No se pudo conectar con el servidor. Verifica que:\n\n1. El backend esté corriendo\n2. Tu teléfono y computadora estén en la misma red WiFi\n3. La IP en apiConfig.js sea correcta");
+      } else if (error.response?.status === 401) {
+        Alert.alert("Error", "Usuario o contraseña incorrectos.");
+      } else {
+        Alert.alert("Error", error.response?.data?.message || "Error al conectar con el servidor.");
+      }
     }
   };
 
