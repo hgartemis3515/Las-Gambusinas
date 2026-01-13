@@ -90,6 +90,9 @@ const SelectDishes = ({ onValueChange }) => {
             data={filteredDishes}
             renderItem={renderItem}
             keyExtractor={item => item._id}
+            nestedScrollEnabled={true}
+            keyboardShouldPersistTaps="handled"
+            style={{ maxHeight: 200 }}
           />
         )
       )}

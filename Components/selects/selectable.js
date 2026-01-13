@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, ScrollView } from "react-native";
+import { View, Text, TouchableOpacity } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { SELECTABLE_API_GET, COMANDASEARCH_API_GET } from "../../apiConfig";
 import moment from "moment-timezone";
 
-const MesasScreen = () => {
+const MesasScreen = ({ onSelectTable }) => {
   const [mesas, setMesas] = useState([]);
   const [mesaSeleccionadaId, setMesaSeleccionadaId] = useState(null);
   const [mesaSeleccionadaNum, setMesaSeleccionadaNum] = useState(null);
@@ -55,27 +55,34 @@ const MesasScreen = () => {
 
   const handleSelectMesa = async (mesaId, mesaNum) => {
     try {
-      const mesa = mesas.find((m) => m._id === mesaId);
-      const isActive = !mesa.isActive;
+      console.log('🍽️ Mesa seleccionada:', mesaId, mesaNum);
+      
+      // Si hay una función callback, llamarla
+      if (onSelectTable) {
+        onSelectTable({ id: mesaId, nummesa: mesaNum });
+      } else {
+        // Comportamiento por defecto (para compatibilidad)
+        const mesa = mesas.find((m) => m._id === mesaId);
+        const isActive = !mesa.isActive;
 
-      await axios.put(`https://backend-lasgambusinas.onrender.com/api/mesas/${mesaId}`, {
-        isActive,
-      });
+        await axios.put(`https://backend-lasgambusinas.onrender.com/api/mesas/${mesaId}`, {
+          isActive,
+        });
 
-      const mesaSeleccionada = `${mesaId}-${mesaNum}`;
-      await AsyncStorage.setItem("mesaSeleccionada", mesaSeleccionada);
-      console.log("Mesa seleccionada:", mesaSeleccionada);
-      setMesaSeleccionadaId(mesaId);
-      setMesaSeleccionadaNum(mesaNum);
-      obtenerMesas();
+        const mesaSeleccionada = `${mesaId}-${mesaNum}`;
+        await AsyncStorage.setItem("mesaSeleccionada", mesaSeleccionada);
+        console.log("Mesa seleccionada:", mesaSeleccionada);
+        setMesaSeleccionadaId(mesaId);
+        setMesaSeleccionadaNum(mesaNum);
+        obtenerMesas();
+      }
     } catch (error) {
       console.error("Error al seleccionar la mesa:", error.message);
     }
   };
 
   return (
-    <ScrollView>
-      <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+    <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
         {mesas.map((mesa) => {
           const tieneComandasHoy = comandas.some(
             (comanda) => comanda.mesas.nummesa === mesa.nummesa
@@ -102,11 +109,10 @@ const MesasScreen = () => {
                 {mesa.nummesa}
               </Text>
               <MaterialCommunityIcons name="table-picnic" size={40} />
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    </ScrollView>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
   );
 };
 
