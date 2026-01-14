@@ -196,11 +196,18 @@ const SecondScreen = () => {
         return;
       }
 
-      // Preparar datos
+      // Preparar datos - incluir tanto _id como id numérico
       const platosData = selectedPlatos.map(plato => ({
         plato: plato._id,
+        platoId: plato.id || null, // ID numérico del plato
         estado: "pendiente"
       }));
+      
+      console.log("🍽️ Platos preparados:", platosData.map(p => ({
+        _id: p.plato,
+        id: p.platoId,
+        estado: p.estado
+      })));
 
       const cantidadesArray = selectedPlatos.map(plato => cantidades[plato._id] || 1);
 
