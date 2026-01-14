@@ -2,12 +2,12 @@ import React, { useState } from "react";
 import {
   Text,
   SafeAreaView,
-  Image,
   View,
   TextInput,
   ScrollView,
   TouchableOpacity,
   Alert,
+  StyleSheet,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
@@ -16,29 +16,42 @@ import { LOGIN_AUTH_API } from "../../apiConfig";
 
 const Login = () => {
   const navigation = useNavigation();
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [nombre, setNombre] = useState("");
+  const [dni, setDni] = useState("");
 
   const handleLogin = async () => {
     try {
-      console.log('Intentando conectar con:', LOGIN_AUTH_API);
-      const response = await axios.post(LOGIN_AUTH_API, {
-        name: username.trim(),
-        DNI: password.trim(),
-      });
+      console.log('🔐 Intentando login con:', { nombre: nombre.trim(), DNI: dni.trim() });
+      console.log('📡 Conectando a:', LOGIN_AUTH_API);
+      
+      const response = await axios.post(
+        LOGIN_AUTH_API,
+        {
+          name: nombre.trim(),
+          DNI: dni.trim(),
+        },
+        { timeout: 5000 }
+      );
+      
       const mozo = response.data.mozo;
-      await AsyncStorage.setItem('user', JSON.stringify({
-        name: mozo.name, 
-        id: mozo._id,
-      }));
-      console.log(`_id del mozo almacenado: ${mozo._id}`);
-      navigation.replace("Navbar", { username: `${mozo.name}` });
+      console.log('✅ Login exitoso, mozo:', mozo);
+      
+      const userData = {
+        _id: mozo._id,
+        name: mozo.name
+      };
+      
+      await AsyncStorage.setItem('user', JSON.stringify(userData));
+      console.log('💾 Usuario guardado en AsyncStorage:', userData);
+      
+      Alert.alert("✅ Éxito", `Bienvenido ${mozo.name}`);
+      navigation.replace("Navbar", { username: mozo.name });
     } catch (error) {
-      console.error('Error de conexión:', error.message);
+      console.error('❌ Error de conexión:', error.message);
       if (error.code === 'ECONNREFUSED' || error.message.includes('Network Error')) {
         Alert.alert("Error de Conexión", "No se pudo conectar con el servidor. Verifica que:\n\n1. El backend esté corriendo\n2. Tu teléfono y computadora estén en la misma red WiFi\n3. La IP en apiConfig.js sea correcta");
       } else if (error.response?.status === 401) {
-        Alert.alert("Error", "Usuario o contraseña incorrectos.");
+        Alert.alert("Error", "DNI o Nombre incorrectos.");
       } else {
         Alert.alert("Error", error.response?.data?.message || "Error al conectar con el servidor.");
       }
@@ -46,72 +59,91 @@ const Login = () => {
   };
 
   return (
-    <SafeAreaView style={{ flexDirection: "column", gap: 30 }}>
-      <ScrollView>
-        <Text
-          style={{
-            marginTop: 70,
-            paddingHorizontal: 30,
-            textAlign: "center",
-            fontStyle: "italic",
-            fontWeight: "bold",
-            fontSize: 20,
-          }}
-        >
-          BIENVENIDOS A LA COMANDA VIRTUAL DE LAS GAMBUSINAS
-        </Text>
-        <View
-          style={{
-            marginTop: 50,
-            flex: 1,
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-        </View>
-        <View style={{ marginTop: 50, gap: 40 }}>
-          <Text
-            style={{ textAlign: "center", fontWeight: "bold", fontSize: 20 }}
-          >
-            Usuario:
-          </Text>
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <Text style={styles.title}>LOGIN</Text>
+        
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>DNI/Nombre:</Text>
           <TextInput
-            style={{ textAlign: "center", fontSize: 18 }}
-            placeholder="Usuario"
-            onChangeText={(text) => setUsername(text)}
-            value={username}
-          />
-          <Text
-            style={{ textAlign: "center", fontWeight: "bold", fontSize: 20 }}
-          >
-            Contraseña:
-          </Text>
-          <TextInput
-            style={{ textAlign: "center", fontSize: 18 }}
-            placeholder="Contraseña"
-            secureTextEntry={true}
-            onChangeText={(text) => setPassword(text)}
-            value={password}
+            style={styles.input}
+            placeholder="Juan Pérez"
+            onChangeText={(text) => setNombre(text)}
+            value={nombre}
+            autoCapitalize="words"
           />
         </View>
-        <View style={{ marginTop: 70, alignItems: "center", justifyContent: "center" }}>
-          <TouchableOpacity
-            style={{
-              borderRadius: 20,
-              backgroundColor: "orange",
-              width: 180,
-              height: 40,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            onPress={handleLogin}
-          >
-            <Text style={{ color: "black", fontSize: 25 }}>Ingresar</Text>
-          </TouchableOpacity>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>DNI:</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="12345678"
+            onChangeText={(text) => setDni(text)}
+            value={dni}
+            keyboardType="numeric"
+            maxLength={8}
+          />
         </View>
+
+        <TouchableOpacity
+          style={styles.button}
+          onPress={handleLogin}
+        >
+          <Text style={styles.buttonText}>INGRESAR</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: 30,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 50,
+    color: '#C41E3A',
+  },
+  inputContainer: {
+    marginBottom: 30,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#333',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 15,
+    fontSize: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  button: {
+    backgroundColor: '#C41E3A',
+    borderRadius: 8,
+    padding: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+});
 
 export default Login;

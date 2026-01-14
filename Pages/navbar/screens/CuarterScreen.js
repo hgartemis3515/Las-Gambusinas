@@ -4,41 +4,33 @@ import {
   Text,
   SafeAreaView,
   ScrollView,
-  Modal,
+  StyleSheet,
   TouchableOpacity,
-  FlatList,
-  Alert,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import axios from "axios";
 import { COMANDASEARCH_API_GET, SELECTABLE_API_GET } from "../../../apiConfig";
 import moment from "moment-timezone";
-import * as Print from 'expo-print';
-import * as FileSystem from 'expo-file-system';
-import { shareAsync } from 'expo-sharing';
 
 const CuarterScreen = () => {
   const [mesas, setMesas] = useState([]);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [selectedMesa, setSelectedMesa] = useState(null);
   const [comandas, setComandas] = useState([]);
-  const [comandasMesa, setComandasMesa] = useState([]);
 
   useEffect(() => {
-    const interval = setInterval(obtenerMesas, 2000);
+    obtenerMesas();
+    obtenerComandasHoy();
+    const interval = setInterval(() => {
+      obtenerMesas();
+      obtenerComandasHoy();
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (mesas.length) {
-      obtenerComandasHoy();
-    }
-  }, [mesas]);
-
   const obtenerMesas = useCallback(async () => {
     try {
-      const response = await axios.get(SELECTABLE_API_GET);
+      const response = await axios.get(SELECTABLE_API_GET, { timeout: 5000 });
       setMesas(response.data);
+      console.log("🪑 Mesas obtenidas:", response.data.length);
     } catch (error) {
       console.error("Error al obtener las mesas:", error.message);
     }
@@ -48,234 +40,219 @@ const CuarterScreen = () => {
     try {
       const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
       const response = await axios.get(
-        `${COMANDASEARCH_API_GET}/fecha/${currentDate}`
+        `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
+        { timeout: 5000 }
       );
       setComandas(response.data);
+      console.log("📋 Comandas obtenidas:", response.data.length);
     } catch (error) {
       console.error("Error al obtener las comandas de hoy:", error.message);
     }
   }, []);
 
-  const handleMesaClick = useCallback(
-    (numMesa) => {
-      setSelectedMesa(numMesa);
-      const comandasFiltradas = comandas.filter(
-        (comanda) => comanda.mesas.nummesa === numMesa
-      );
-      setComandasMesa(comandasFiltradas);
-      setModalVisible(true);
-    },
-    [comandas]
-  );
+  const getComandasPorMesa = (mesaNum) => {
+    return comandas.filter(
+      (comanda) => comanda.mesas?.nummesa === mesaNum && comanda.IsActive !== false
+    );
+  };
 
-  const renderComandaItem = ({ item }) => (
-    <TouchableOpacity
-      onPress={() => {
-        Alert.alert(
-          "¿Comanda cancelada?",
-          "",
-          [
-            {
-              text: "No",
-              onPress: () => console.log("Cancel Pressed"),
-              style: "cancel",
-            },
-            { text: "Sí", onPress: () => handleCancelComanda(item._id) },
-            { text: "Imprimir", onPress: () => handlePrintComanda(item) },
-          ],
-          { cancelable: false }
-        );
-      }}
-    >
-      <View
-        style={{
-          borderWidth: 4,
-          borderColor: "orange",
-          borderRadius: 14,
-          gap: 10,
-          marginBottom: 20,
-          padding: 2,
-        }}
-      >
-        <View style={{ flexDirection: "row", gap: 20 }}>
-          <Text style={{ fontSize: 15, paddingHorizontal: 4 }}>
-            Mozo: {item.mozos.name}
-          </Text>
-          <Text>Nro: {item.comandaNumber}</Text>
-        </View>
-        <FlatList
-          data={item.platos.map((plato, index) => ({
-            ...plato,
-            cantidad: item.cantidades[index],
-          }))}
-          renderItem={({ item }) => (
-            <Text style={{ fontSize: 15, paddingHorizontal: 4 }}>
-              Cantidad: {item.cantidad} - {item.plato.nombre}
-            </Text>
-          )}
-          keyExtractor={(item) => item._id}
-        />
-        <Text style={{ fontSize: 15, paddingHorizontal: 4 }}>
-          Observaciones: {item.observaciones}
-        </Text>
-        <Text style={{ fontSize: 15, paddingHorizontal: 4 }}>
-          Cuenta Total: {calcularTotal(item.platos, item.cantidades)}
+  const getEstadoMesa = (mesaNum) => {
+    const comandasMesa = getComandasPorMesa(mesaNum);
+    if (comandasMesa.length === 0) return "inactiva";
+    
+    const todasCompletadas = comandasMesa.every(
+      (c) => c.status?.toLowerCase() === "entregado" || c.status?.toLowerCase() === "completado"
+    );
+    
+    if (todasCompletadas && comandasMesa.length > 0) return "completada";
+    return "activa";
+  };
+
+  const mesasActivas = mesas.filter((mesa) => getEstadoMesa(mesa.nummesa) === "activa");
+  const mesasCompletadas = mesas.filter((mesa) => getEstadoMesa(mesa.nummesa) === "completada");
+  const mesasInactivas = mesas.filter((mesa) => getEstadoMesa(mesa.nummesa) === "inactiva");
+
+  const renderMesaActiva = (mesa) => {
+    const comandasMesa = getComandasPorMesa(mesa.nummesa);
+    const count = comandasMesa.length;
+    return (
+      <View key={mesa._id} style={styles.mesaItem}>
+        <Text style={styles.mesaText}>
+          Mesa {mesa.nummesa}: {count} comanda{count !== 1 ? "s" : ""} activa{count !== 1 ? "s" : ""}
         </Text>
       </View>
-    </TouchableOpacity>
-  );
-
-  const handleCancelComanda = async (comandaId) => {
-    try {
-      await axios.put(`${COMANDASEARCH_API_GET}/${comandaId}/estado`, {
-        nuevoEstado: false,
-      });
-      obtenerComandasHoy();
-    } catch (error) {
-      console.error("Error al cancelar la comanda:", error.message);
-    }
+    );
   };
 
-  const calcularTotal = (platos, cantidades) => {
-    let total = 0;
-    platos.forEach((plato, index) => {
-      total += plato.plato.precio * cantidades[index];
-    });
-    return total;
-  };
-
-  const handlePrintComanda = async (comanda) => {
-    const htmlContent = `
-      <html>
-        <body>
-          <h1>Comanda</h1>
-          <p>Fecha: ${moment().tz("America/Lima").format("DD/MM/YYYY HH:mm:ss")}</p>
-          <p>Mozo: ${comanda.mozos.name}</p>
-          <p>Nro: ${comanda.comandaNumber}</p>
-          <p>Mesa: ${comanda.mesas.nummesa}</p>
-          <h2>Platos</h2>
-          <ul>
-            ${comanda.platos.map((plato, index) => `
-              <li>${comanda.cantidades[index]} : ${plato.plato.nombre} - S/.${plato.plato.precio * comanda.cantidades[index]} </li>
-            `).join('')}
-          </ul>
-          <p>Observaciones: ${comanda.observaciones}</p>
-          <p>Cuenta Total: ${calcularTotal(comanda.platos, comanda.cantidades)}</p>
-        </body>
-      </html>
-    `;
-
-    try {
-      const { uri } = await Print.printToFileAsync({ html: htmlContent });
-      const newUri = `${FileSystem.documentDirectory}comanda.pdf`;
-      await FileSystem.moveAsync({
-        from: uri,
-        to: newUri,
-      });
-      await shareAsync(newUri, { UTI: '.pdf', mimeType: 'application/pdf' });
-      console.log("Comanda impresa exitosamente");
-    } catch (error) {
-      console.error("Error al imprimir la comanda:", error);
-    }
+  const renderMesaCompletada = (mesa) => {
+    return (
+      <View key={mesa._id} style={styles.mesaItem}>
+        <Text style={styles.mesaText}>
+          Mesa {mesa.nummesa}: ✅ Completada
+        </Text>
+      </View>
+    );
   };
 
   return (
-    <SafeAreaView>
-      <ScrollView>
-        <View
-          style={{
-            flexDirection: "row",
-            flexWrap: "wrap",
-            justifyContent: "center",
-          }}
-        >
-          {mesas.map((mesa) => {
-            const tieneComandasHoy = comandas.some(
-              (comanda) => comanda.mesas.nummesa === mesa.nummesa
-            );
-            const mesaStyle = {
-              width: 100,
-              height: 100,
-              justifyContent: "center",
-              alignItems: "center",
-              margin: 5,
-              borderRadius: 10,
-              backgroundColor: tieneComandasHoy ? "red" : "green",
-            };
-            return (
-              <TouchableOpacity
-                key={mesa._id}
-                onPress={() => handleMesaClick(mesa.nummesa)}
-              >
-                <View style={mesaStyle}>
-                  <Text
-                    style={{
-                      textAlign: "center",
-                      color: "black",
-                      fontWeight: "bold",
-                      fontSize: 16,
-                    }}
-                  >
-                    {mesa.nummesa}
-                  </Text>
-                  <MaterialCommunityIcons name="table-picnic" size={40} />
-                </View>
-              </TouchableOpacity>
-            );
-          })}
+    <SafeAreaView style={styles.container}>
+      <ScrollView style={styles.scrollView}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>
+            🪑 MESAS DEL TURNO ({mesas.length})
+          </Text>
         </View>
-      </ScrollView>
 
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View
-          style={{
-            flex: 1,
-            justifyContent: "center",
-            alignItems: "center",
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-          }}
-        >
-          <View
-            style={{
-              backgroundColor: "white",
-              padding: 20,
-              borderRadius: 10,
-              width: "80%",
-              maxHeight: "80%",
-            }}
-          >
-            <Text
-              style={{ fontSize: 18, marginBottom: 10, textAlign: "center" }}
-            >
-              Número de mesa: {selectedMesa}
-            </Text>
-            <FlatList
-              data={comandasMesa}
-              renderItem={renderComandaItem}
-              keyExtractor={(item) => item._id}
-            />
-            <TouchableOpacity onPress={() => setModalVisible(false)}>
-              <Text
-                style={{
-                  color: "blue",
-                  textAlign: "center",
-                  marginTop: 10,
-                  marginBottom: 10,
-                }}
-              >
-                Cerrar
+        {/* Mesas Activas */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            ACTIVAS ({mesasActivas.length + mesasCompletadas.length}):
+          </Text>
+          {mesasActivas.map(renderMesaActiva)}
+          {mesasCompletadas.map(renderMesaCompletada)}
+          {mesasActivas.length === 0 && mesasCompletadas.length === 0 && (
+            <Text style={styles.emptyText}>No hay mesas activas</Text>
+          )}
+        </View>
+
+        {/* Mesas Inactivas */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            INACTIVAS ({mesasInactivas.length}):
+          </Text>
+          <View style={styles.inactivasContainer}>
+            {mesasInactivas.map((mesa, index) => (
+              <Text key={mesa._id} style={styles.inactivaText}>
+                {mesa.nummesa}
+                {index < mesasInactivas.length - 1 ? "," : ""}
               </Text>
-            </TouchableOpacity>
+            ))}
+          </View>
+          {mesasInactivas.length === 0 && (
+            <Text style={styles.emptyText}>No hay mesas inactivas</Text>
+          )}
+        </View>
+
+        {/* Vista de Grid de Mesas */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Vista General:</Text>
+          <View style={styles.mesasGrid}>
+            {mesas.map((mesa) => {
+              const estado = getEstadoMesa(mesa.nummesa);
+              const comandasMesa = getComandasPorMesa(mesa.nummesa);
+              const count = comandasMesa.length;
+              
+              let backgroundColor = "#00C851"; // Verde para inactivas
+              if (estado === "activa") backgroundColor = "#FF9500"; // Naranja para activas
+              if (estado === "completada") backgroundColor = "#00C851"; // Verde para completadas
+              
+              return (
+                <TouchableOpacity
+                  key={mesa._id}
+                  style={[styles.mesaCard, { backgroundColor }]}
+                >
+                  <Text style={styles.mesaCardNumber}>{mesa.nummesa}</Text>
+                  <MaterialCommunityIcons name="table-picnic" size={30} color="#FFFFFF" />
+                  {count > 0 && (
+                    <Text style={styles.mesaCardCount}>{count}</Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
-      </Modal>
+      </ScrollView>
     </SafeAreaView>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#F8F9FA",
+  },
+  scrollView: {
+    flex: 1,
+  },
+  header: {
+    backgroundColor: "#C41E3A",
+    padding: 20,
+    alignItems: "center",
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+  },
+  section: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E0E0E0",
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 15,
+    color: "#333",
+  },
+  mesaItem: {
+    backgroundColor: "#FFFFFF",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: "#FF9500",
+  },
+  mesaText: {
+    fontSize: 16,
+    color: "#333",
+  },
+  emptyText: {
+    fontSize: 14,
+    color: "#999",
+    fontStyle: "italic",
+    textAlign: "center",
+    padding: 10,
+  },
+  inactivasContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    backgroundColor: "#FFFFFF",
+    padding: 15,
+    borderRadius: 8,
+  },
+  inactivaText: {
+    fontSize: 16,
+    color: "#666",
+    marginRight: 5,
+  },
+  mesasGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  mesaCard: {
+    width: "18%",
+    aspectRatio: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 10,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  mesaCardNumber: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+    marginBottom: 5,
+  },
+  mesaCardCount: {
+    fontSize: 12,
+    color: "#FFFFFF",
+    marginTop: 5,
+    fontWeight: "bold",
+  },
+});
 
 export default CuarterScreen;

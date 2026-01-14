@@ -3,319 +3,1014 @@ import {
   Text,
   SafeAreaView,
   View,
-  Button,
   Modal,
   StyleSheet,
   Alert,
   ScrollView,
+  TouchableOpacity,
+  TextInput,
+  FlatList,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Comandastyle from "../../../Components/aditionals/Comandastyle";
-import Selectable from "../../../Components/selects/selectable";
 import axios from "axios";
-import { COMANDA_API } from "../../../apiConfig";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { COMANDA_API, SELECTABLE_API_GET, DISHES_API } from "../../../apiConfig";
 
 const SecondScreen = () => {
-  const [cleanComanda, setCleanComanda] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
-  const [selectedTableInfo, setSelectedTableInfo] = useState(null);
+  const [selectedMesa, setSelectedMesa] = useState(null);
+  const [mesas, setMesas] = useState([]);
+  const [modalMesasVisible, setModalMesasVisible] = useState(false);
+  const [modalPlatosVisible, setModalPlatosVisible] = useState(false);
+  const [platos, setPlatos] = useState([]);
   const [selectedPlatos, setSelectedPlatos] = useState([]);
-  const [additionalDetails, setAdditionalDetails] = useState("");
-  const [modalVisible, setModalVisible] = useState(false);
-  const [cantidadesComanda, setCantidadesComanda] = useState([]);
+  const [cantidades, setCantidades] = useState({});
+  const [observaciones, setObservaciones] = useState("");
+  const [searchPlato, setSearchPlato] = useState("");
+  const [categoriaFiltro, setCategoriaFiltro] = useState(null);
+  const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null); // "platos-desayuno" o "carta-normal"
   const [isSendingComanda, setIsSendingComanda] = useState(false);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const user = await AsyncStorage.getItem("user");
-        if (user !== null) {
-          setUserInfo(JSON.parse(user));
-        }
-      } catch (error) {
-        console.error("Error fetching user info: ", error);
-      }
-
-      try {
-        const mesaSeleccionada = await AsyncStorage.getItem("mesaSeleccionada");
-        if (mesaSeleccionada !== null) {
-          const [id, nummesa] = mesaSeleccionada.split("-");
-          setSelectedTableInfo({ id, nummesa });
-        }
-      } catch (error) {
-        console.error("Error fetching selected table info: ", error);
-      }
-
-      try {
-        const storedDetails = await AsyncStorage.getItem("additionalDetails");
-        if (storedDetails !== null) {
-          setAdditionalDetails(storedDetails);
-        }
-      } catch (error) {
-        console.error("Error fetching additional details: ", error);
-      }
-
-      try {
-        const storedCantidades = await AsyncStorage.getItem("cantidadesComanda");
-        if (storedCantidades !== null) {
-          const cantidades = JSON.parse(storedCantidades);
-          setCantidadesComanda(cantidades);
-        }
-      } catch (error) {
-        console.error("Error al obtener las cantidades de la comanda:", error);
-      }
-    };
-
-    fetchData();
-
-    const intervalId = setInterval(fetchData, 1000);
-
-    return () => clearInterval(intervalId);
+    loadUserData();
+    loadMesaData();
+    loadPlatosData();
+    loadSelectedPlatos();
   }, []);
 
-  const handleSelectMesa = async (mesaId, mesaNum) => {
+  const loadUserData = async () => {
     try {
-      const mesaSeleccionada = `${mesaId}-${mesaNum}`;
-      await AsyncStorage.setItem("mesaSeleccionada", mesaSeleccionada);
-      setSelectedTableInfo({ id: mesaId, nummesa: mesaNum });
-      setModalVisible(false);
+      const user = await AsyncStorage.getItem("user");
+      if (user) {
+        const parsed = JSON.parse(user);
+        setUserInfo(parsed);
+        console.log("👤 Usuario cargado:", parsed);
+      }
     } catch (error) {
-      console.error("Error al seleccionar la mesa:", error.message);
+      console.error("Error cargando usuario:", error);
     }
+  };
+
+  const loadMesaData = async () => {
+    try {
+      const mesaData = await AsyncStorage.getItem("mesaSeleccionada");
+      if (mesaData) {
+        const parsed = JSON.parse(mesaData);
+        setSelectedMesa(parsed);
+        console.log("🪑 Mesa cargada:", parsed);
+      }
+    } catch (error) {
+      console.error("Error cargando mesa:", error);
+    }
+  };
+
+  const loadPlatosData = async () => {
+    try {
+      const response = await axios.get(DISHES_API, { timeout: 5000 });
+      setPlatos(response.data);
+      console.log("🍽️ Platos cargados:", response.data.length);
+    } catch (error) {
+      console.error("Error cargando platos:", error);
+      Alert.alert("Error", "No se pudieron cargar los platos");
+    }
+  };
+
+  const loadSelectedPlatos = async () => {
+    try {
+      const stored = await AsyncStorage.getItem("selectedPlates");
+      const storedCantidades = await AsyncStorage.getItem("cantidadesComanda");
+      const storedObs = await AsyncStorage.getItem("additionalDetails");
+      
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setSelectedPlatos(parsed);
+        console.log("📋 Platos seleccionados cargados:", parsed.length);
+      }
+      
+      if (storedCantidades) {
+        const parsed = JSON.parse(storedCantidades);
+        const cantidadesObj = {};
+        parsed.forEach((cant, index) => {
+          if (stored) {
+            const platos = JSON.parse(stored);
+            if (platos[index]) {
+              cantidadesObj[platos[index]._id] = cant;
+            }
+          }
+        });
+        setCantidades(cantidadesObj);
+      }
+      
+      if (storedObs) {
+        setObservaciones(storedObs);
+      }
+    } catch (error) {
+      console.error("Error cargando platos seleccionados:", error);
+    }
+  };
+
+  const fetchMesas = async () => {
+    try {
+      const response = await axios.get(SELECTABLE_API_GET, { timeout: 5000 });
+      setMesas(response.data);
+      console.log("🪑 Mesas obtenidas:", response.data.length);
+    } catch (error) {
+      console.error("Error obteniendo mesas:", error);
+      Alert.alert("Error", "No se pudieron cargar las mesas");
+    }
+  };
+
+  const handleSelectMesa = async (mesa) => {
+    try {
+      const mesaData = {
+        _id: mesa._id,
+        nummesa: mesa.nummesa
+      };
+      await AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesaData));
+      setSelectedMesa(mesaData);
+      setModalMesasVisible(false);
+      console.log("✅ Mesa seleccionada:", mesaData);
+      Alert.alert("✅", `Mesa ${mesa.nummesa} seleccionada`);
+    } catch (error) {
+      console.error("Error seleccionando mesa:", error);
+    }
+  };
+
+  const handleAddPlato = (plato) => {
+    const exists = selectedPlatos.find(p => p._id === plato._id);
+    if (exists) {
+      const newCant = (cantidades[plato._id] || 1) + 1;
+      setCantidades({ ...cantidades, [plato._id]: newCant });
+    } else {
+      setSelectedPlatos([...selectedPlatos, plato]);
+      setCantidades({ ...cantidades, [plato._id]: 1 });
+    }
+    console.log("➕ Plato agregado:", plato.nombre);
+  };
+
+  const handleRemovePlato = (platoId) => {
+    const newPlatos = selectedPlatos.filter(p => p._id !== platoId);
+    setSelectedPlatos(newPlatos);
+    const newCantidades = { ...cantidades };
+    delete newCantidades[platoId];
+    setCantidades(newCantidades);
+    console.log("➖ Plato removido");
+  };
+
+  const handleUpdateCantidad = (platoId, delta) => {
+    const current = cantidades[platoId] || 1;
+    const newCant = Math.max(1, current + delta);
+    setCantidades({ ...cantidades, [platoId]: newCant });
+  };
+
+  const calcularSubtotal = () => {
+    let total = 0;
+    selectedPlatos.forEach(plato => {
+      const cantidad = cantidades[plato._id] || 1;
+      total += plato.precio * cantidad;
+    });
+    return total.toFixed(2);
   };
 
   const handleEnviarComanda = async () => {
     try {
       setIsSendingComanda(true);
-      
-      console.log('🚀 Iniciando envío de comanda...');
-      console.log('📋 Datos disponibles:');
-      console.log('  - userInfo:', userInfo);
-      console.log('  - selectedTableInfo:', selectedTableInfo);
-      console.log('  - cantidadesComanda:', cantidadesComanda);
-      console.log('  - additionalDetails:', additionalDetails);
+      console.log("🚀 Iniciando envío de comanda...");
 
-      // Validar que el usuario esté logueado
-      if (!userInfo || !userInfo.id) {
-        Alert.alert("Error", "No hay usuario logueado. Por favor inicia sesión.");
+      // Validaciones
+      if (!userInfo || !userInfo._id) {
+        Alert.alert("Error", "No hay usuario logueado");
         setIsSendingComanda(false);
         return;
       }
 
-      // Validar que haya una mesa seleccionada
-      if (!selectedTableInfo || !selectedTableInfo.id) {
-        Alert.alert("Error", "Por favor selecciona una mesa antes de enviar la comanda.");
+      if (!selectedMesa || !selectedMesa._id) {
+        Alert.alert("Error", "Por favor selecciona una mesa");
         setIsSendingComanda(false);
         return;
       }
 
-      // Obtener platos seleccionados de AsyncStorage
-      const selectedPlatos_ = await AsyncStorage.getItem("selectedPlates");
-      if (!selectedPlatos_) {
-        Alert.alert("Error", "No hay platos seleccionados. Por favor agrega al menos un plato.");
+      if (selectedPlatos.length === 0) {
+        Alert.alert("Error", "Agrega al menos un plato");
         setIsSendingComanda(false);
         return;
       }
 
-      const platos = JSON.parse(selectedPlatos_);
-      console.log('🍽️ Platos seleccionados:', platos);
+      // Preparar datos
+      const platosData = selectedPlatos.map(plato => ({
+        plato: plato._id,
+        estado: "pendiente"
+      }));
 
-      if (!Array.isArray(platos) || platos.length === 0) {
-        Alert.alert("Error", "No hay platos seleccionados. Por favor agrega al menos un plato.");
-        setIsSendingComanda(false);
-        return;
-      }
+      const cantidadesArray = selectedPlatos.map(plato => cantidades[plato._id] || 1);
 
-      // Validar que las cantidades coincidan con los platos
-      const cantidades = cantidadesComanda || [];
-      if (cantidades.length !== platos.length) {
-        Alert.alert("Error", `La cantidad de platos (${platos.length}) no coincide con las cantidades (${cantidades.length}). Por favor verifica.`);
-        setIsSendingComanda(false);
-        return;
-      }
-
-      // Formatear platos con estado 'pendiente' y validar _id
-      const platosData = platos.map((plato, index) => {
-        if (!plato._id) {
-          throw new Error(`El plato en la posición ${index} no tiene _id válido`);
-        }
-        return {
-          plato: plato._id,
-          estado: 'pendiente'
-        };
-      });
-
-      // Convertir cantidades a números y validar
-      const cantidadesNumericas = cantidades.map((cant, index) => {
-        const num = parseInt(cant, 10);
-        if (isNaN(num) || num <= 0) {
-          throw new Error(`La cantidad en la posición ${index} no es válida: ${cant}`);
-        }
-        return num;
-      });
-
-      // Preparar el body para el backend
       const comandaData = {
-        mozos: userInfo.id,  // ObjectId del mozo
-        mesas: selectedTableInfo.id,  // ObjectId de la mesa
-        platos: platosData,  // Array con { plato: ObjectId, estado: 'pendiente' }
-        cantidades: cantidadesNumericas,  // Array de números
-        observaciones: additionalDetails || "",  // String (opcional)
-        status: "ingresante",  // Estado inicial de la comanda
-        IsActive: true  // Comanda activa
+        mozos: userInfo._id,
+        mesas: selectedMesa._id,
+        platos: platosData,
+        cantidades: cantidadesArray,
+        observaciones: observaciones || "",
+        status: "ingresante",
+        IsActive: true
       };
 
-      console.log('📤 Datos a enviar al backend:');
-      console.log(JSON.stringify(comandaData, null, 2));
+      console.log("📤 Enviando comanda:", JSON.stringify(comandaData, null, 2));
 
-      // Enviar al backend
-      const response = await axios.post(COMANDA_API, comandaData);
+      const response = await axios.post(COMANDA_API, comandaData, { timeout: 5000 });
       
-      console.log('✅ Respuesta del backend:', response.data);
-      console.log('✅ Comanda enviada exitosamente');
+      console.log("✅ Comanda enviada:", response.data);
+      
+      const comandaNumber = response.data.comanda?.comandaNumber || response.data.comandaNumber || "N/A";
+      Alert.alert("✅ Éxito", `Comanda #${comandaNumber} enviada a cocina ✓`);
 
-      // Limpiar formulario después de envío exitoso
-      await handleLimpiarComanda();
+      // Limpiar AsyncStorage
+      await AsyncStorage.removeItem("mesaSeleccionada");
+      await AsyncStorage.removeItem("selectedPlates");
+      await AsyncStorage.removeItem("selectedPlatesIds");
+      await AsyncStorage.removeItem("cantidadesComanda");
+      await AsyncStorage.removeItem("additionalDetails");
+      console.log("🧹 AsyncStorage limpiado");
       
-      Alert.alert("✅ Éxito", "Comanda enviada exitosamente. La cocina la recibirá en breve.");
+      setSelectedMesa(null);
+      setSelectedPlatos([]);
+      setCantidades({});
+      setObservaciones("");
       
+      console.log("🧹 Comanda limpiada");
     } catch (error) {
-      console.error("❌ Error al enviar la comanda:");
-      console.error("  - Error completo:", error);
-      console.error("  - Mensaje:", error.message);
-      console.error("  - Response:", error.response?.data);
-      console.error("  - Status:", error.response?.status);
-      
-      let errorMessage = "No se pudo enviar la comanda.";
-      
-      if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      Alert.alert("❌ Error", errorMessage);
+      console.error("❌ Error enviando comanda:", error);
+      Alert.alert("Error", error.response?.data?.message || "No se pudo enviar la comanda");
     } finally {
       setIsSendingComanda(false);
     }
   };
 
-  const handleLimpiarComanda = async () => {
+  const saveToAsyncStorage = async () => {
     try {
-      console.log('🧹 Limpiando comanda...');
-      await AsyncStorage.removeItem("mesaSeleccionada");
-      await AsyncStorage.removeItem("selectedPlates");
-      await AsyncStorage.removeItem("additionalDetails");
-      await AsyncStorage.removeItem("cantidadesComanda");
-      setSelectedTableInfo(null);
-      setSelectedPlatos([]);
-      setAdditionalDetails("");
-      setCantidadesComanda([]);
-      setCleanComanda(true);
-      console.log('✅ Comanda limpiada exitosamente');
+      // Guardar objetos completos para la UI
+      await AsyncStorage.setItem("selectedPlates", JSON.stringify(selectedPlatos));
+      // Guardar también solo los IDs según el modelo especificado
+      const selectedPlatesIds = selectedPlatos.map(p => p._id);
+      await AsyncStorage.setItem("selectedPlatesIds", JSON.stringify(selectedPlatesIds));
+      // Guardar cantidades
+      await AsyncStorage.setItem("cantidadesComanda", JSON.stringify(
+        selectedPlatos.map(p => cantidades[p._id] || 1)
+      ));
+      // Guardar observaciones
+      await AsyncStorage.setItem("additionalDetails", observaciones);
+      console.log("💾 Datos guardados en AsyncStorage");
     } catch (error) {
-      console.error("❌ Error al limpiar la comanda:", error);
-      Alert.alert("Error", "No se pudo limpiar la comanda");
+      console.error("Error guardando en AsyncStorage:", error);
     }
   };
 
-  const handleCantidadesChange = (cantidades) => {
-    setCantidadesComanda(cantidades);
+  useEffect(() => {
+    saveToAsyncStorage();
+  }, [selectedPlatos, cantidades, observaciones]);
+
+  useEffect(() => {
+    if (modalMesasVisible) {
+      fetchMesas();
+    }
+  }, [modalMesasVisible]);
+
+  // Filtrar categorías solo del tipo seleccionado
+  const categorias = tipoPlatoFiltro
+    ? [...new Set(platos.filter(p => p.tipo === tipoPlatoFiltro).map(p => p.categoria))].filter(Boolean)
+    : [];
+  
+  // Filtrar platos por tipo, búsqueda y categoría
+  const platosFiltrados = platos.filter(p => {
+    const matchTipo = !tipoPlatoFiltro || p.tipo === tipoPlatoFiltro;
+    const matchSearch = !searchPlato || p.nombre.toLowerCase().includes(searchPlato.toLowerCase());
+    const matchCategoria = !categoriaFiltro || p.categoria === categoriaFiltro;
+    return matchTipo && matchSearch && matchCategoria;
+  });
+
+  const getCategoriaIcon = (categoria) => {
+    if (categoria?.includes("Carnes") || categoria?.includes("CARNE")) return "🥩";
+    if (categoria?.includes("Pescado") || categoria?.includes("PESCADO")) return "🐟";
+    if (categoria?.includes("Entrada") || categoria?.includes("ENTRADA")) return "🥗";
+    if (categoria?.includes("Bebida") || categoria?.includes("JUGOS") || categoria?.includes("Gaseosa")) return "🥤";
+    return "🍽️";
   };
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <View style={{ flexDirection: "column", flex: 1 }}>
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              marginTop: 20,
-            }}
-          >
-            <Text style={{ fontWeight: "bold", fontSize: 18, marginLeft: 20 }}>
-              Mozo: {userInfo ? `${userInfo.name}` : "Nombre de usuario"}
-            </Text>
-          </View>
-          <View
-            style={{
-              flexDirection: "row",
-              marginLeft: 20,
-              marginTop: 30,
-              gap: 80,
-            }}
-          >
-            <Text style={{ fontWeight: "bold", fontSize: 18 }}>Mesa:</Text>
-            <Button
-              title={
-                selectedTableInfo
-                  ? `Mesa ${selectedTableInfo.nummesa}`
-                  : "Seleccionar Mesa"
-              }
-              onPress={() => setModalVisible(true)}
-            />
-          </View>
-          <View style={{ marginTop: 40 }}>
-            <Comandastyle onCantidadesChange={handleCantidadesChange} cleanComanda={cleanComanda} setCleanComanda={setCleanComanda} />
-          </View>
-          <View style={{ gap:20, marginTop: 32, maxWidth: "60%", justifyContent:"center", alignSelf: "center"  }}>
-            <Button 
-              title={isSendingComanda ? "Enviando..." : "Enviar comanda"} 
-              onPress={handleEnviarComanda} 
-              disabled={isSendingComanda} 
-            />
-            <Button 
-              title="Limpiar Comanda" 
-              onPress={handleLimpiarComanda}
-              disabled={isSendingComanda}
-            />
-          </View>
-
-          <Modal
-            animationType="slide"
-            transparent={true}
-            visible={modalVisible}
-            onRequestClose={() => {
-              setModalVisible(false);
-            }}
-          >
-            <View style={styles.modalBackground}>
-            <View style={styles.modalContainer}>
-              <Text style={{ fontSize: 20, marginBottom: 20 }}>
-                Seleccionar Mesa
-              </Text>
-              <ScrollView style={{ flex: 1 }} nestedScrollEnabled={true}>
-                <Selectable
-                  onSelectTable={(tableNumber) => {
-                    handleSelectMesa(tableNumber.id, tableNumber.nummesa);
-                    setModalVisible(false);
-                  }}
-                />
-              </ScrollView>
-              <Button title="Cerrar" onPress={() => setModalVisible(false)} />
-            </View>
-            </View>
-          </Modal>
+    <SafeAreaView style={styles.container}>
+      <ScrollView style={styles.scrollView}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>📋 CREAR PEDIDO</Text>
         </View>
+
+        {/* Selección de Mesa */}
+        <View style={styles.section}>
+          <View style={styles.mesaContainer}>
+            <Text style={styles.label}>Mesa:</Text>
+            <TouchableOpacity
+              style={styles.mesaButton}
+              onPress={() => {
+                fetchMesas();
+                setModalMesasVisible(true);
+              }}
+            >
+              <Text style={styles.mesaButtonText}>
+                {selectedMesa ? `Mesa ${selectedMesa.nummesa}` : "Seleccionar Mesa"}
+              </Text>
+              <MaterialCommunityIcons name="chevron-down" size={20} color="#C41E3A" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.selectButton}
+              onPress={() => {
+                fetchMesas();
+                setModalMesasVisible(true);
+              }}
+            >
+              <MaterialCommunityIcons name="clipboard-text" size={20} color="#FFFFFF" />
+              <Text style={styles.selectButtonText}> Seleccionar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Platos Seleccionados */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            PLATOS SELECCIONADOS ({selectedPlatos.length})
+          </Text>
+          {selectedPlatos.length === 0 ? (
+            <Text style={styles.emptyText}>No hay platos seleccionados</Text>
+          ) : (
+            selectedPlatos.map((plato) => {
+              const cantidad = cantidades[plato._id] || 1;
+              const subtotal = plato.precio * cantidad;
+              return (
+                <View key={plato._id} style={styles.platoItem}>
+                  <View style={styles.platoInfo}>
+                    <Text style={styles.platoNombre}>{plato.nombre}</Text>
+                    <Text style={styles.platoCantidad}>x{cantidad}</Text>
+                    <Text style={styles.platoPrecio}>S/. {subtotal.toFixed(2)}</Text>
+                  </View>
+                  <View style={styles.platoActions}>
+                    <TouchableOpacity
+                      style={styles.cantidadButton}
+                      onPress={() => handleUpdateCantidad(plato._id, -1)}
+                    >
+                      <Text style={styles.cantidadButtonText}>-</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.cantidadText}>{cantidad}</Text>
+                    <TouchableOpacity
+                      style={styles.cantidadButton}
+                      onPress={() => handleUpdateCantidad(plato._id, 1)}
+                    >
+                      <Text style={styles.cantidadButtonText}>+</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.removeButton}
+                      onPress={() => handleRemovePlato(plato._id)}
+                    >
+                      <MaterialCommunityIcons name="delete" size={20} color="#C41E3A" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </View>
+
+        {/* Subtotal y Observaciones */}
+        <View style={styles.section}>
+          <Text style={styles.subtotalText}>Subtotal: S/. {calcularSubtotal()}</Text>
+          <Text style={styles.label}>Observaciones:</Text>
+          <TextInput
+            style={styles.observacionesInput}
+            placeholder="Sin ají..."
+            value={observaciones}
+            onChangeText={setObservaciones}
+            multiline
+            numberOfLines={3}
+          />
+        </View>
+
+        {/* Total */}
+        <View style={styles.section}>
+          <Text style={styles.totalText}>TOTAL: S/. {calcularSubtotal()}</Text>
+        </View>
+
+        {/* Botones */}
+        <View style={styles.buttonsContainer}>
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => {
+              loadPlatosData();
+              setTipoPlatoFiltro(null); // Resetear tipo al abrir modal
+              setCategoriaFiltro(null); // Resetear categoría
+              setSearchPlato(""); // Resetear búsqueda
+              setModalPlatosVisible(true);
+            }}
+          >
+            <MaterialCommunityIcons name="magnify" size={20} color="#FFFFFF" />
+            <Text style={styles.addButtonText}> + Plato</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sendButton, isSendingComanda && styles.sendButtonDisabled]}
+            onPress={handleEnviarComanda}
+            disabled={isSendingComanda}
+          >
+            <MaterialCommunityIcons name="send" size={20} color="#FFFFFF" />
+            <Text style={styles.sendButtonText}> ENVIAR</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+
+      {/* Modal Mesas */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalMesasVisible}
+        onRequestClose={() => setModalMesasVisible(false)}
+      >
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>🪑 MESAS DISPONIBLES ({mesas.length})</Text>
+            <ScrollView style={styles.modalScrollView}>
+              <View style={styles.mesasGrid}>
+                {mesas.map((mesa) => (
+                  <TouchableOpacity
+                    key={mesa._id}
+                    style={[
+                      styles.mesaCard,
+                      selectedMesa?._id === mesa._id && styles.mesaCardSelected
+                    ]}
+                    onPress={() => handleSelectMesa(mesa)}
+                  >
+                    <Text style={styles.mesaCardText}>Mesa {mesa.nummesa}</Text>
+                    {selectedMesa?._id === mesa._id && (
+                      <MaterialCommunityIcons name="check-circle" size={24} color="#00C851" />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+            {selectedMesa && (
+              <TouchableOpacity
+                style={styles.confirmButton}
+                onPress={() => setModalMesasVisible(false)}
+              >
+                <Text style={styles.confirmButtonText}>
+                  ✅ SELECCIONAR Mesa {selectedMesa.nummesa}
+                </Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setModalMesasVisible(false)}
+            >
+              <Text style={styles.closeButtonText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Platos */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalPlatosVisible}
+        onRequestClose={() => {
+          setModalPlatosVisible(false);
+          setTipoPlatoFiltro(null);
+          setCategoriaFiltro(null);
+          setSearchPlato("");
+        }}
+      >
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>🍽️ MENÚ</Text>
+            
+            {/* Selector de Tipo de Plato (OBLIGATORIO) */}
+            {!tipoPlatoFiltro ? (
+              <View style={styles.tipoSelectorContainer}>
+                <Text style={styles.tipoSelectorTitle}>Selecciona el tipo de menú:</Text>
+                <View style={styles.tipoButtonsContainer}>
+                  <TouchableOpacity
+                    style={styles.tipoButton}
+                    onPress={() => {
+                      setTipoPlatoFiltro("platos-desayuno");
+                      console.log("🍳 Tipo seleccionado: Desayuno");
+                    }}
+                  >
+                    <MaterialCommunityIcons name="coffee" size={40} color="#FFFFFF" />
+                    <Text style={styles.tipoButtonText}>DESAYUNO</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.tipoButton}
+                    onPress={() => {
+                      setTipoPlatoFiltro("carta-normal");
+                      console.log("🍽️ Tipo seleccionado: Carta Normal");
+                    }}
+                  >
+                    <MaterialCommunityIcons name="silverware-fork-knife" size={40} color="#FFFFFF" />
+                    <Text style={styles.tipoButtonText}>CARTA NORMAL</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <>
+                {/* Botón para cambiar tipo */}
+                <TouchableOpacity
+                  style={styles.changeTipoButton}
+                  onPress={() => {
+                    setTipoPlatoFiltro(null);
+                    setCategoriaFiltro(null);
+                    setSearchPlato("");
+                  }}
+                >
+                  <MaterialCommunityIcons name="arrow-left" size={20} color="#FFFFFF" />
+                  <Text style={styles.changeTipoButtonText}>
+                    Cambiar tipo ({tipoPlatoFiltro === "platos-desayuno" ? "Desayuno" : "Carta Normal"})
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Búsqueda */}
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Buscar: arroz..."
+                  value={searchPlato}
+                  onChangeText={setSearchPlato}
+                />
+                
+                {/* Filtros de Categoría (solo se muestran después de seleccionar tipo) */}
+                <ScrollView horizontal style={styles.categoriasContainer}>
+                  <TouchableOpacity
+                    style={[styles.categoriaChip, !categoriaFiltro && styles.categoriaChipActive]}
+                    onPress={() => setCategoriaFiltro(null)}
+                  >
+                    <Text style={styles.categoriaChipText}>Todos</Text>
+                  </TouchableOpacity>
+                  {categorias.map((cat) => (
+                    <TouchableOpacity
+                      key={cat}
+                      style={[styles.categoriaChip, categoriaFiltro === cat && styles.categoriaChipActive]}
+                      onPress={() => setCategoriaFiltro(cat)}
+                    >
+                      <Text style={styles.categoriaChipText}>
+                        {getCategoriaIcon(cat)} {cat.split("(")[0].trim()}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                {/* Lista de Platos */}
+                <ScrollView style={styles.modalScrollView}>
+                  {platosFiltrados.length === 0 ? (
+                    <View style={styles.emptyPlatosContainer}>
+                      <Text style={styles.emptyPlatosText}>
+                        No hay platos disponibles para esta búsqueda
+                      </Text>
+                    </View>
+                  ) : (
+                    platosFiltrados.map((plato) => {
+                      const cantidad = cantidades[plato._id] || 0;
+                      return (
+                        <View key={plato._id} style={styles.platoModalItem}>
+                          <View style={styles.platoModalInfo}>
+                            <Text style={styles.platoModalNombre}>{plato.nombre}</Text>
+                            <Text style={styles.platoModalPrecio}>S/. {plato.precio.toFixed(2)}</Text>
+                          </View>
+                          <View style={styles.platoModalActions}>
+                            <TouchableOpacity
+                              style={styles.cantidadButton}
+                              onPress={() => {
+                                if (cantidad > 0) {
+                                  handleUpdateCantidad(plato._id, -1);
+                                }
+                              }}
+                            >
+                              <Text style={styles.cantidadButtonText}>-</Text>
+                            </TouchableOpacity>
+                            <Text style={styles.cantidadText}>{cantidad || 0}</Text>
+                            <TouchableOpacity
+                              style={styles.cantidadButton}
+                              onPress={() => handleUpdateCantidad(plato._id, 1)}
+                            >
+                              <Text style={styles.cantidadButtonText}>+</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.addPlatoButton}
+                              onPress={() => {
+                                handleAddPlato(plato);
+                                Alert.alert("✅", `${plato.nombre} agregado`);
+                              }}
+                            >
+                              <Text style={styles.addPlatoButtonText}>➕ AGREGAR</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </>
+            )}
+            
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => {
+                setModalPlatosVisible(false);
+                setTipoPlatoFiltro(null);
+                setCategoriaFiltro(null);
+                setSearchPlato("");
+              }}
+            >
+              <Text style={styles.closeButtonText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#F8F9FA",
+  },
+  scrollView: {
+    flex: 1,
+  },
+  header: {
+    backgroundColor: "#C41E3A",
+    padding: 20,
+    alignItems: "center",
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+  },
+  section: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E0E0E0",
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 15,
+    color: "#333",
+  },
+  mesaContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#333",
+  },
+  mesaButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FFFFFF",
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#C41E3A",
+  },
+  mesaButtonText: {
+    fontSize: 16,
+    color: "#333",
+  },
+  selectButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#C41E3A",
+    padding: 12,
+    borderRadius: 8,
+  },
+  selectButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+  },
+  platoItem: {
+    backgroundColor: "#FFFFFF",
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+  },
+  platoInfo: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  platoNombre: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  platoCantidad: {
+    fontSize: 16,
+    marginHorizontal: 10,
+  },
+  platoPrecio: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#C41E3A",
+  },
+  platoActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 10,
+  },
+  cantidadButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#C41E3A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cantidadButtonText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  cantidadText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    minWidth: 30,
+    textAlign: "center",
+  },
+  removeButton: {
+    padding: 5,
+  },
+  subtotalText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 15,
+  },
+  observacionesInput: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+    borderRadius: 8,
+    padding: 12,
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
+  totalText: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#C41E3A",
+    textAlign: "center",
+  },
+  buttonsContainer: {
+    flexDirection: "row",
+    padding: 20,
+    gap: 10,
+  },
+  addButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#00D4FF",
+    padding: 15,
+    borderRadius: 8,
+  },
+  addButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  sendButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#C41E3A",
+    padding: 15,
+    borderRadius: 8,
+  },
+  sendButtonDisabled: {
+    opacity: 0.5,
+  },
+  sendButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  emptyText: {
+    textAlign: "center",
+    color: "#999",
+    fontStyle: "italic",
+    padding: 20,
+  },
   modalBackground: {
     flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
   },
   modalContainer: {
-    backgroundColor: "white",
-    padding: 20,
+    backgroundColor: "#FFFFFF",
     borderRadius: 10,
-    width: "80%",
-    height: "60%",
-    justifyContent: "center",
+    width: "90%",
+    maxHeight: "80%",
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    marginBottom: 15,
+    textAlign: "center",
+  },
+  modalScrollView: {
+    maxHeight: 400,
+  },
+  mesasGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  mesaCard: {
+    width: "30%",
+    backgroundColor: "#F8F9FA",
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 10,
     alignItems: "center",
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  mesaCardSelected: {
+    borderColor: "#00C851",
+    backgroundColor: "#E8F5E9",
+  },
+  mesaCardText: {
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  confirmButton: {
+    backgroundColor: "#00C851",
+    padding: 15,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  confirmButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  closeButton: {
+    backgroundColor: "#C41E3A",
+    padding: 15,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  closeButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+  },
+  searchInput: {
+    backgroundColor: "#F8F9FA",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+  },
+  categoriasContainer: {
+    marginBottom: 15,
+  },
+  categoriaChip: {
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: "#F8F9FA",
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+  },
+  categoriaChipActive: {
+    backgroundColor: "#C41E3A",
+    borderColor: "#C41E3A",
+  },
+  categoriaChipText: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#333",
+  },
+  platoModalItem: {
+    backgroundColor: "#F8F9FA",
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+  },
+  platoModalInfo: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  platoModalNombre: {
+    fontSize: 16,
+    fontWeight: "bold",
+    flex: 1,
+  },
+  platoModalPrecio: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#C41E3A",
+  },
+  platoModalActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 10,
+  },
+  addPlatoButton: {
+    backgroundColor: "#00C851",
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  addPlatoButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+  },
+  tipoSelectorContainer: {
+    padding: 20,
+    alignItems: "center",
+  },
+  tipoSelectorTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 30,
+    color: "#333",
+    textAlign: "center",
+  },
+  tipoButtonsContainer: {
+    flexDirection: "row",
+    gap: 20,
+    width: "100%",
+    justifyContent: "space-around",
+  },
+  tipoButton: {
+    flex: 1,
+    backgroundColor: "#C41E3A",
+    padding: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 150,
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5,
+  },
+  tipoButtonText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "bold",
+    marginTop: 10,
+  },
+  changeTipoButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FF9500",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  changeTipoButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+    marginLeft: 8,
+  },
+  emptyPlatosContainer: {
+    padding: 40,
+    alignItems: "center",
+  },
+  emptyPlatosText: {
+    fontSize: 16,
+    color: "#999",
+    fontStyle: "italic",
+    textAlign: "center",
   },
 });
 
