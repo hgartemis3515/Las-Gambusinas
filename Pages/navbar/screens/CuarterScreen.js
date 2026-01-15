@@ -587,7 +587,12 @@ const CuarterScreen = () => {
               </TouchableOpacity>
             </View>
             
-            <ScrollView style={styles.modalScrollView}>
+            <ScrollView 
+              style={styles.modalScrollView}
+              contentContainerStyle={styles.modalScrollContent}
+              nestedScrollEnabled={true}
+              showsVerticalScrollIndicator={true}
+            >
               <View style={styles.editSection}>
                 <Text style={styles.editLabel}>Mesa: {comandaEditando?.mesaSeleccionada?.nummesa || "N/A"}</Text>
               </View>
@@ -692,37 +697,43 @@ const CuarterScreen = () => {
                         </TouchableOpacity>
                       ))}
                     </ScrollView>
-                    <ScrollView style={styles.platosListContainer}>
+                    <View style={styles.platosListContainer}>
                       {platosFiltrados.length === 0 ? (
                         <View style={styles.emptyPlatosContainer}>
                           <Text style={styles.emptyPlatosText}>No hay platos disponibles</Text>
                         </View>
                       ) : (
-                        platosFiltrados.map((plato) => {
-                          const cantidadEnComanda = comandaEditando?.platosEditados?.find(
-                            p => (p.plato === plato._id || p.plato?.toString() === plato._id?.toString())
-                          )?.cantidad || 0;
-                          
-                          return (
-                            <TouchableOpacity
-                              key={plato._id}
-                              style={styles.platoSelectItem}
-                              onPress={() => handleAgregarPlato(plato)}
-                            >
-                              <View style={styles.platoSelectInfo}>
-                                <Text style={styles.platoSelectNombre}>{plato.nombre}</Text>
-                                <Text style={styles.platoSelectPrecio}>S/. {plato.precio.toFixed(2)}</Text>
-                              </View>
-                              {cantidadEnComanda > 0 && (
-                                <View style={styles.cantidadBadge}>
-                                  <Text style={styles.cantidadBadgeText}>x{cantidadEnComanda}</Text>
+                        <ScrollView 
+                          style={styles.platosScrollView}
+                          nestedScrollEnabled={true}
+                          showsVerticalScrollIndicator={true}
+                        >
+                          {platosFiltrados.map((plato) => {
+                            const cantidadEnComanda = comandaEditando?.platosEditados?.find(
+                              p => (p.plato === plato._id || p.plato?.toString() === plato._id?.toString())
+                            )?.cantidad || 0;
+                            
+                            return (
+                              <TouchableOpacity
+                                key={plato._id}
+                                style={styles.platoSelectItem}
+                                onPress={() => handleAgregarPlato(plato)}
+                              >
+                                <View style={styles.platoSelectInfo}>
+                                  <Text style={styles.platoSelectNombre}>{plato.nombre}</Text>
+                                  <Text style={styles.platoSelectPrecio}>S/. {plato.precio.toFixed(2)}</Text>
                                 </View>
-                              )}
-                            </TouchableOpacity>
-                          );
-                        })
+                                {cantidadEnComanda > 0 && (
+                                  <View style={styles.cantidadBadge}>
+                                    <Text style={styles.cantidadBadgeText}>x{cantidadEnComanda}</Text>
+                                  </View>
+                                )}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
                       )}
-                    </ScrollView>
+                    </View>
                   </>
                 )}
               </View>
@@ -959,6 +970,7 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
     borderRadius: theme.borderRadius.lg,
     width: "90%",
     maxHeight: "90%",
+    minHeight: 400,
     padding: theme.spacing.lg,
     ...theme.shadows.large,
   },
@@ -976,6 +988,9 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
   },
   modalScrollView: {
     maxHeight: 500,
+  },
+  modalScrollContent: {
+    paddingBottom: theme.spacing.md,
   },
   editSection: {
     marginBottom: theme.spacing.md,
@@ -1109,8 +1124,11 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
     color: theme.colors.text.white,
   },
   platosListContainer: {
-    maxHeight: 200,
+    height: 250,
     marginBottom: theme.spacing.md,
+  },
+  platosScrollView: {
+    flex: 1,
   },
   platoSelectItem: {
     backgroundColor: theme.colors.background,
