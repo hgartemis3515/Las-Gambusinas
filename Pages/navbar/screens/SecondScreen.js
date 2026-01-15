@@ -266,7 +266,7 @@ const SecondScreen = () => {
       console.log("✅ Comanda enviada:", response.data);
       
       const comandaNumber = response.data.comanda?.comandaNumber || response.data.comandaNumber || "N/A";
-      Alert.alert("✅ Éxito", `Comanda #${comandaNumber} creada. La mesa ahora está en estado "esperando".`);
+      Alert.alert("✅ Éxito", `Comanda #${comandaNumber} creada. La mesa ahora está en estado "Pedido".`);
 
       // Limpiar AsyncStorage
       await AsyncStorage.removeItem("mesaSeleccionada");

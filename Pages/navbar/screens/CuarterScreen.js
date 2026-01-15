@@ -8,10 +8,12 @@ import {
   TouchableOpacity,
   Modal,
   Alert,
+  TextInput,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import axios from "axios";
-import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, DISHES_API, AREAS_API } from "../../../apiConfig";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, DISHES_API, AREAS_API, MESAS_API_UPDATE } from "../../../apiConfig";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
@@ -28,8 +30,13 @@ const CuarterScreen = () => {
   const [filtroEstado, setFiltroEstado] = useState("All"); // "All" o "Booked" (Reservado)
   const [areas, setAreas] = useState([]);
   const [filtroArea, setFiltroArea] = useState("All"); // "All" o ID del área
+  const [userInfo, setUserInfo] = useState(null);
+  const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
+  const [searchPlato, setSearchPlato] = useState("");
+  const [categoriaFiltro, setCategoriaFiltro] = useState(null);
 
   useEffect(() => {
+    loadUserData();
     obtenerMesas();
     obtenerComandasHoy();
     obtenerAreas();
@@ -39,6 +46,18 @@ const CuarterScreen = () => {
     }, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  const loadUserData = async () => {
+    try {
+      const user = await AsyncStorage.getItem("user");
+      if (user) {
+        const parsed = JSON.parse(user);
+        setUserInfo(parsed);
+      }
+    } catch (error) {
+      console.error("Error cargando usuario:", error);
+    }
+  };
 
   const obtenerMesas = useCallback(async () => {
     try {
@@ -88,9 +107,13 @@ const CuarterScreen = () => {
 
   // Obtener el estado de la mesa
   const getEstadoMesa = (mesa) => {
+    // Si la mesa tiene estado definido, usarlo (normalizar a formato con primera letra mayúscula)
     if (mesa.estado) {
-      return mesa.estado;
+      const estadoLower = mesa.estado.toLowerCase();
+      // Convertir a formato con primera letra mayúscula
+      return estadoLower.charAt(0).toUpperCase() + estadoLower.slice(1);
     }
+    // Fallback: determinar estado basado en comandas
     const comandasMesa = getComandasPorMesa(mesa.nummesa);
     if (comandasMesa.length === 0) return "Libre";
     
@@ -171,7 +194,7 @@ const CuarterScreen = () => {
   const handleSelectMesa = async (mesa) => {
     const estado = getEstadoMesa(mesa);
     
-    if (estado === "Pedido") {
+    if (estado === "Pedido" || estado?.toLowerCase() === "pedido") {
       // Obtener la comanda activa de esta mesa
       const comandasMesa = getComandasPorMesa(mesa.nummesa);
       const comandaActiva = comandasMesa.find(c => 
@@ -180,8 +203,42 @@ const CuarterScreen = () => {
       ) || comandasMesa[0];
 
       if (comandaActiva) {
-        await obtenerPlatos();
-        await handleEditarComanda(comandaActiva);
+        // Verificar que el mozo actual sea el que creó la comanda
+        const mozoComandaId = comandaActiva.mozos?._id || comandaActiva.mozos;
+        const mozoActualId = userInfo?._id;
+        
+        if (mozoComandaId && mozoActualId && mozoComandaId.toString() !== mozoActualId.toString()) {
+          Alert.alert(
+            "Acceso Denegado",
+            "Solo el mozo que creó esta comanda puede editarla o eliminarla.",
+            [{ text: "OK" }]
+          );
+          return;
+        }
+
+        // Mostrar opciones: Editar o Eliminar
+        Alert.alert(
+          `Comanda #${comandaActiva.comandaNumber || comandaActiva._id.slice(-4)}`,
+          "¿Qué deseas hacer?",
+          [
+            {
+              text: "Editar",
+              onPress: async () => {
+                await obtenerPlatos();
+                await handleEditarComanda(comandaActiva);
+              }
+            },
+            {
+              text: "Eliminar",
+              style: "destructive",
+              onPress: () => handleEliminarComanda(comandaActiva, mesa)
+            },
+            {
+              text: "Cancelar",
+              style: "cancel"
+            }
+          ]
+        );
       } else {
         Alert.alert("Info", "No hay comanda activa para editar en esta mesa");
       }
@@ -258,6 +315,9 @@ const CuarterScreen = () => {
       Alert.alert("✅", "Comanda actualizada exitosamente");
       setModalEditVisible(false);
       setComandaEditando(null);
+      setTipoPlatoFiltro(null);
+      setSearchPlato("");
+      setCategoriaFiltro(null);
       obtenerComandasHoy();
     } catch (error) {
       console.error("Error actualizando comanda:", error);
@@ -291,6 +351,104 @@ const CuarterScreen = () => {
     return comandaEditando.platosEditados.reduce((total, p) => {
       return total + (p.precio || 0) * (p.cantidad || 1);
     }, 0);
+  };
+
+  const handleAgregarPlato = (plato) => {
+    if (!comandaEditando) return;
+    
+    // Verificar si el plato ya existe en la comanda
+    const platoExistente = comandaEditando.platosEditados.find(
+      p => (p.plato === plato._id || p.plato?.toString() === plato._id?.toString())
+    );
+    
+    if (platoExistente) {
+      // Si ya existe, aumentar la cantidad
+      const index = comandaEditando.platosEditados.indexOf(platoExistente);
+      handleCambiarCantidad(index, 1);
+      Alert.alert("✅", `Cantidad de ${plato.nombre} aumentada`);
+    } else {
+      // Si no existe, agregarlo
+      const nuevoPlato = {
+        plato: plato._id,
+        platoId: plato.id || null,
+        estado: "en_espera",
+        cantidad: 1,
+        nombre: plato.nombre,
+        precio: plato.precio,
+      };
+
+      setComandaEditando({
+        ...comandaEditando,
+        platosEditados: [...comandaEditando.platosEditados, nuevoPlato],
+      });
+      Alert.alert("✅", `${plato.nombre} agregado`);
+    }
+  };
+
+  const categorias = tipoPlatoFiltro
+    ? [...new Set(platos.filter(p => p.tipo === tipoPlatoFiltro).map(p => p.categoria))].filter(Boolean)
+    : [];
+  
+  const platosFiltrados = platos.filter(p => {
+    const matchTipo = !tipoPlatoFiltro || p.tipo === tipoPlatoFiltro;
+    const matchSearch = !searchPlato || p.nombre.toLowerCase().includes(searchPlato.toLowerCase());
+    const matchCategoria = !categoriaFiltro || p.categoria === categoriaFiltro;
+    return matchTipo && matchSearch && matchCategoria;
+  });
+
+  const getCategoriaIcon = (categoria) => {
+    if (categoria?.includes("Carnes") || categoria?.includes("CARNE")) return "🥩";
+    if (categoria?.includes("Pescado") || categoria?.includes("PESCADO")) return "🐟";
+    if (categoria?.includes("Entrada") || categoria?.includes("ENTRADA")) return "🥗";
+    if (categoria?.includes("Bebida") || categoria?.includes("JUGOS") || categoria?.includes("Gaseosa")) return "🥤";
+    return "🍽️";
+  };
+
+  const handleEliminarComanda = async (comanda, mesa) => {
+    // Confirmación para eliminar
+    Alert.alert(
+      "⚠️ Confirmar Eliminación",
+      `¿Estás seguro de que deseas eliminar la comanda #${comanda.comandaNumber || comanda._id.slice(-4)} de la mesa ${mesa.nummesa}?\n\nEsta acción no se puede deshacer.`,
+      [
+        {
+          text: "Cancelar",
+          style: "cancel"
+        },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // Eliminar la comanda
+              await axios.delete(`${COMANDA_API}/${comanda._id}`, { timeout: 5000 });
+              
+              // Actualizar el estado de la mesa a "libre"
+              await axios.put(
+                `${MESAS_API_UPDATE}/${mesa._id}/estado`,
+                { estado: "libre" },
+                { timeout: 5000 }
+              );
+              
+              Alert.alert("✅", "Comanda eliminada exitosamente. La mesa ha sido liberada.");
+              
+              // Cerrar modal si está abierto
+              setModalEditVisible(false);
+              setComandaEditando(null);
+              
+              // Actualizar datos
+              obtenerComandasHoy();
+              obtenerMesas();
+            } catch (error) {
+              console.error("Error eliminando comanda:", error);
+              Alert.alert(
+                "Error",
+                error.response?.data?.message || "No se pudo eliminar la comanda"
+              );
+            }
+          }
+        }
+      ]
+    );
   };
 
   return (
@@ -407,6 +565,9 @@ const CuarterScreen = () => {
         onRequestClose={() => {
           setModalEditVisible(false);
           setComandaEditando(null);
+          setTipoPlatoFiltro(null);
+          setSearchPlato("");
+          setCategoriaFiltro(null);
         }}
       >
         <View style={styles.modalBackground}>
@@ -418,6 +579,9 @@ const CuarterScreen = () => {
               <TouchableOpacity onPress={() => {
                 setModalEditVisible(false);
                 setComandaEditando(null);
+                setTipoPlatoFiltro(null);
+                setSearchPlato("");
+                setCategoriaFiltro(null);
               }}>
                 <MaterialCommunityIcons name="close" size={24} color={theme.colors.text.primary} />
               </TouchableOpacity>
@@ -463,11 +627,122 @@ const CuarterScreen = () => {
                 ))}
               </View>
 
+              {/* Agregar Platos */}
+              <View style={styles.editSection}>
+                <TouchableOpacity
+                  style={styles.addPlatoButton}
+                  onPress={async () => {
+                    await obtenerPlatos();
+                    setTipoPlatoFiltro(null);
+                    setSearchPlato("");
+                    setCategoriaFiltro(null);
+                    // Mostrar selector de tipo
+                    Alert.alert(
+                      "Agregar Plato",
+                      "Selecciona el tipo de menú:",
+                      [
+                        { text: "Cancelar", style: "cancel" },
+                        {
+                          text: "Desayuno",
+                          onPress: () => setTipoPlatoFiltro("platos-desayuno"),
+                        },
+                        {
+                          text: "Carta Normal",
+                          onPress: () => setTipoPlatoFiltro("carta-normal"),
+                        },
+                      ]
+                    );
+                  }}
+                >
+                  <MaterialCommunityIcons name="plus-circle" size={20} color={theme.colors.text.white} />
+                  <Text style={styles.addPlatoButtonText}> Agregar Plato</Text>
+                </TouchableOpacity>
+
+                {tipoPlatoFiltro && (
+                  <>
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder="Buscar plato..."
+                      placeholderTextColor={theme.colors.text.light}
+                      value={searchPlato}
+                      onChangeText={setSearchPlato}
+                    />
+                    <ScrollView 
+                      horizontal 
+                      style={styles.categoriasContainer} 
+                      showsHorizontalScrollIndicator={false}
+                    >
+                      <TouchableOpacity
+                        style={[styles.categoriaChip, !categoriaFiltro && styles.categoriaChipActive]}
+                        onPress={() => setCategoriaFiltro(null)}
+                      >
+                        <Text style={[styles.categoriaChipText, !categoriaFiltro && styles.categoriaChipTextActive]}>
+                          Todos
+                        </Text>
+                      </TouchableOpacity>
+                      {categorias.map((cat) => (
+                        <TouchableOpacity
+                          key={cat}
+                          style={[styles.categoriaChip, categoriaFiltro === cat && styles.categoriaChipActive]}
+                          onPress={() => setCategoriaFiltro(cat)}
+                        >
+                          <Text style={[styles.categoriaChipText, categoriaFiltro === cat && styles.categoriaChipTextActive]}>
+                            {getCategoriaIcon(cat)} {cat.split("(")[0].trim()}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                    <ScrollView style={styles.platosListContainer}>
+                      {platosFiltrados.length === 0 ? (
+                        <View style={styles.emptyPlatosContainer}>
+                          <Text style={styles.emptyPlatosText}>No hay platos disponibles</Text>
+                        </View>
+                      ) : (
+                        platosFiltrados.map((plato) => {
+                          const cantidadEnComanda = comandaEditando?.platosEditados?.find(
+                            p => (p.plato === plato._id || p.plato?.toString() === plato._id?.toString())
+                          )?.cantidad || 0;
+                          
+                          return (
+                            <TouchableOpacity
+                              key={plato._id}
+                              style={styles.platoSelectItem}
+                              onPress={() => handleAgregarPlato(plato)}
+                            >
+                              <View style={styles.platoSelectInfo}>
+                                <Text style={styles.platoSelectNombre}>{plato.nombre}</Text>
+                                <Text style={styles.platoSelectPrecio}>S/. {plato.precio.toFixed(2)}</Text>
+                              </View>
+                              {cantidadEnComanda > 0 && (
+                                <View style={styles.cantidadBadge}>
+                                  <Text style={styles.cantidadBadgeText}>x{cantidadEnComanda}</Text>
+                                </View>
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })
+                      )}
+                    </ScrollView>
+                  </>
+                )}
+              </View>
+
               <View style={styles.editSection}>
                 <Text style={styles.editLabel}>Observaciones:</Text>
-                <Text style={styles.observacionesText}>
-                  {comandaEditando?.observacionesEditadas || "Sin observaciones"}
-                </Text>
+                <TextInput
+                  style={styles.observacionesInput}
+                  placeholder="Sin observaciones..."
+                  placeholderTextColor={theme.colors.text.light}
+                  value={comandaEditando?.observacionesEditadas || ""}
+                  onChangeText={(text) =>
+                    setComandaEditando({
+                      ...comandaEditando,
+                      observacionesEditadas: text,
+                    })
+                  }
+                  multiline
+                  numberOfLines={3}
+                />
               </View>
 
               <View style={styles.editSection}>
@@ -483,10 +758,23 @@ const CuarterScreen = () => {
                 <Text style={styles.saveButtonText}>💾 Guardar Cambios</Text>
               </TouchableOpacity>
               <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={() => {
+                  if (comandaEditando?.mesaSeleccionada) {
+                    handleEliminarComanda(comandaEditando, comandaEditando.mesaSeleccionada);
+                  }
+                }}
+              >
+                <Text style={styles.deleteButtonText}>🗑️ Eliminar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={styles.cancelButton}
                 onPress={() => {
                   setModalEditVisible(false);
                   setComandaEditando(null);
+                  setTipoPlatoFiltro(null);
+                  setSearchPlato("");
+                  setCategoriaFiltro(null);
                 }}
               >
                 <Text style={styles.cancelButtonText}>Cancelar</Text>
@@ -754,19 +1042,136 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
     color: theme.colors.text.secondary,
     fontStyle: "italic",
   },
+  observacionesInput: {
+    backgroundColor: theme.colors.background,
+    borderWidth: 2,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    minHeight: 80,
+    textAlignVertical: "top",
+    fontSize: 14,
+    color: theme.colors.text.primary,
+  },
   totalText: {
     fontSize: 20,
     fontWeight: "700",
     color: theme.colors.primary,
     textAlign: "center",
   },
+  addPlatoButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.secondary,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  addPlatoButtonText: {
+    color: theme.colors.text.white,
+    fontWeight: "700",
+    fontSize: 16,
+  },
+  searchInput: {
+    backgroundColor: theme.colors.background,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.md,
+    borderWidth: 2,
+    borderColor: theme.colors.border,
+    fontSize: 14,
+    color: theme.colors.text.primary,
+  },
+  categoriasContainer: {
+    marginBottom: theme.spacing.md,
+  },
+  categoriaChip: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: 20,
+    backgroundColor: theme.colors.background,
+    marginRight: theme.spacing.sm,
+    borderWidth: 2,
+    borderColor: theme.colors.border,
+  },
+  categoriaChipActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  categoriaChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: theme.colors.text.primary,
+  },
+  categoriaChipTextActive: {
+    color: theme.colors.text.white,
+  },
+  platosListContainer: {
+    maxHeight: 200,
+    marginBottom: theme.spacing.md,
+  },
+  platoSelectItem: {
+    backgroundColor: theme.colors.background,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  platoSelectInfo: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  platoSelectNombre: {
+    fontSize: 14,
+    fontWeight: "600",
+    flex: 1,
+    color: theme.colors.text.primary,
+  },
+  platoSelectPrecio: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: theme.colors.primary,
+    marginLeft: theme.spacing.sm,
+  },
+  cantidadBadge: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: 12,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 4,
+    marginLeft: theme.spacing.sm,
+  },
+  cantidadBadgeText: {
+    color: theme.colors.text.white,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  emptyPlatosContainer: {
+    padding: theme.spacing.xl,
+    alignItems: "center",
+  },
+  emptyPlatosText: {
+    fontSize: 16,
+    color: theme.colors.text.light,
+    fontStyle: "italic",
+    textAlign: "center",
+  },
   modalButtons: {
     flexDirection: "row",
-    gap: theme.spacing.md,
+    gap: theme.spacing.sm,
     marginTop: theme.spacing.md,
+    flexWrap: "wrap",
   },
   saveButton: {
     flex: 1,
+    minWidth: "30%",
     backgroundColor: theme.colors.secondary,
     padding: theme.spacing.md,
     borderRadius: theme.borderRadius.md,
@@ -775,10 +1180,24 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
   saveButtonText: {
     color: theme.colors.text.white,
     fontWeight: "700",
-    fontSize: 16,
+    fontSize: 14,
+  },
+  deleteButton: {
+    flex: 1,
+    minWidth: "30%",
+    backgroundColor: "#DC3545",
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    alignItems: "center",
+  },
+  deleteButtonText: {
+    color: theme.colors.text.white,
+    fontWeight: "700",
+    fontSize: 14,
   },
   cancelButton: {
     flex: 1,
+    minWidth: "30%",
     backgroundColor: theme.colors.primary,
     padding: theme.spacing.md,
     borderRadius: theme.borderRadius.md,
@@ -787,7 +1206,7 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
   cancelButtonText: {
     color: theme.colors.text.white,
     fontWeight: "700",
-    fontSize: 16,
+    fontSize: 14,
   },
 });
 

@@ -250,11 +250,9 @@ const OrdenesScreen = () => {
       
       const comandaNumber = response.data.comanda?.comandaNumber || response.data.comandaNumber || "N/A";
       
-      // El backend actualiza automáticamente la mesa a "esperando" al crear la comanda
-      // El mozo puede actualizar a "pedido" solo si la mesa está en "esperando"
-      // Esto se hace en una acción separada, no automáticamente
+      // El backend actualiza automáticamente la mesa a "pedido" al crear la comanda
       
-      Alert.alert("✅ Éxito", `Comanda #${comandaNumber} creada. La mesa ahora está en estado "esperando".`);
+      Alert.alert("✅ Éxito", `Comanda #${comandaNumber} creada. La mesa ahora está en estado "Pedido".`);
 
       await AsyncStorage.removeItem("mesaSeleccionada");
       await AsyncStorage.removeItem("selectedPlates");
