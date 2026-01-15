@@ -1,27 +1,65 @@
 import React from "react";
 import { createMaterialBottomTabNavigator } from '@react-navigation/material-bottom-tabs';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import SecondScreen from "./screens/SecondScreen";
-import ThirdScreen from "./screens/ThridScreen";
+import { useTheme } from "../../context/ThemeContext";
+import { themeLight } from "../../constants/theme";
+import CasaScreen from "./screens/CasaScreen";
+import OrdenesScreen from "./screens/OrdenesScreen";
 import CuarterScreen from "./screens/CuarterScreen";
-
+import MasScreen from "./screens/MasScreen";
 
 const Tab = createMaterialBottomTabNavigator();
 
 const Navbar = () => {
+  const themeContext = useTheme();
+  const theme = themeContext?.theme || themeLight;
+  
   return (
-      <Tab.Navigator>
-        <Tab.Screen name="Second" component={SecondScreen} options={{ tabBarLabel: 'Pedido', tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="notebook-edit" color={color} size={28} style={{marginTop: -2}} />
-          ),
-        }} />
-        <Tab.Screen name="Third" component={ThirdScreen} options={{ tabBarLabel: 'Buscar', tabBarIcon: ({ color }) => (
-          <MaterialCommunityIcons name="clipboard-text-search" color={color} size={28} style={{marginTop: -2}}/>
-        ),}} />
-        <Tab.Screen name="Cuarter" component={CuarterScreen} options={{ tabBarLabel: 'Mesas', tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="table-picnic" color={color} size={28} style={{marginTop: -2}} />
-          ),
-        }} />
+      <Tab.Navigator
+        activeColor={theme.colors.primary}
+        inactiveColor={theme.colors.text.light}
+        barStyle={{ backgroundColor: theme.colors.surface }}
+      >
+        <Tab.Screen 
+          name="Casa" 
+          component={CasaScreen} 
+          options={{ 
+            tabBarLabel: 'Casa', 
+            tabBarIcon: ({ color }) => (
+              <MaterialCommunityIcons name="home" color={color} size={26} />
+            ),
+          }} 
+        />
+        <Tab.Screen 
+          name="Ordenes" 
+          component={OrdenesScreen} 
+          options={{ 
+            tabBarLabel: 'Ordenes', 
+            tabBarIcon: ({ color }) => (
+              <MaterialCommunityIcons name="notebook-edit" color={color} size={26} />
+            ),
+          }} 
+        />
+        <Tab.Screen 
+          name="Mesas" 
+          component={CuarterScreen} 
+          options={{ 
+            tabBarLabel: 'Mesas', 
+            tabBarIcon: ({ color }) => (
+              <MaterialCommunityIcons name="table-picnic" color={color} size={26} />
+            ),
+          }} 
+        />
+        <Tab.Screen 
+          name="Mas" 
+          component={MasScreen} 
+          options={{ 
+            tabBarLabel: 'Más', 
+            tabBarIcon: ({ color }) => (
+              <MaterialCommunityIcons name="dots-horizontal" color={color} size={26} />
+            ),
+          }} 
+        />
       </Tab.Navigator>
   );
 };

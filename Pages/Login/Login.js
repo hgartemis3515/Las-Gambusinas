@@ -12,10 +12,24 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LOGIN_AUTH_API } from "../../apiConfig";
+import { useTheme } from "../../context/ThemeContext";
+import { themeLight } from "../../constants/theme";
 
 const Login = () => {
   const navigation = useNavigation();
+  let themeContext;
+  try {
+    themeContext = useTheme();
+  } catch (error) {
+    console.error('Error obteniendo tema:', error);
+    themeContext = { theme: themeLight, isDarkMode: false, toggleTheme: () => {} };
+  }
+  
+  // Asegurar que siempre tenemos un tema válido
+  const theme = themeContext?.theme || themeLight;
+  const styles = LoginStyles(theme);
   const [nombre, setNombre] = useState("");
   const [dni, setDni] = useState("");
 
@@ -61,88 +75,138 @@ const Login = () => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>LOGIN</Text>
-        
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>DNI/Nombre:</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Juan Pérez"
-            onChangeText={(text) => setNombre(text)}
-            value={nombre}
-            autoCapitalize="words"
-          />
-        </View>
+        <View style={styles.loginCard}>
+          <View style={styles.logoContainer}>
+            <MaterialCommunityIcons name="silverware-fork-knife" size={64} color={theme.colors.primary} />
+          </View>
+          <Text style={styles.title}>Las Gambusinas</Text>
+          <Text style={styles.subtitle}>Sistema de Gestión</Text>
+          
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Nombre</Text>
+            <View style={styles.inputWrapper}>
+              <MaterialCommunityIcons name="account" size={20} color={theme.colors.text.secondary} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Juan Pérez"
+                placeholderTextColor={theme.colors.text.light}
+                onChangeText={(text) => setNombre(text)}
+                value={nombre}
+                autoCapitalize="words"
+              />
+            </View>
+          </View>
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>DNI:</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="12345678"
-            onChangeText={(text) => setDni(text)}
-            value={dni}
-            keyboardType="numeric"
-            maxLength={8}
-          />
-        </View>
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>DNI</Text>
+            <View style={styles.inputWrapper}>
+              <MaterialCommunityIcons name="card-account-details" size={20} color={theme.colors.text.secondary} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="12345678"
+                placeholderTextColor={theme.colors.text.light}
+                onChangeText={(text) => setDni(text)}
+                value={dni}
+                keyboardType="numeric"
+                maxLength={8}
+              />
+            </View>
+          </View>
 
-        <TouchableOpacity
-          style={styles.button}
-          onPress={handleLogin}
-        >
-          <Text style={styles.buttonText}>INGRESAR</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={handleLogin}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons name="login" size={24} color={theme.colors.text.white} />
+            <Text style={styles.buttonText}>INGRESAR</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
+const LoginStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: theme.colors.background,
   },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    padding: 30,
+    padding: theme.spacing.lg,
+  },
+  loginCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.xl,
+    padding: theme.spacing.xl,
+    ...theme.shadows.large,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: theme.spacing.md,
   },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
+    fontSize: 36,
+    fontWeight: '700',
     textAlign: 'center',
-    marginBottom: 50,
-    color: '#C41E3A',
+    marginBottom: theme.spacing.sm,
+    color: theme.colors.primary,
+    letterSpacing: 0.5,
+  },
+  subtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: theme.spacing.xl,
+    color: theme.colors.text.secondary,
   },
   inputContainer: {
-    marginBottom: 30,
+    marginBottom: theme.spacing.lg,
   },
   label: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    color: '#333',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: theme.spacing.sm,
+    color: theme.colors.text.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surface,
+  },
+  inputIcon: {
+    marginLeft: theme.spacing.md,
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 15,
+    flex: 1,
+    padding: theme.spacing.md,
     fontSize: 16,
-    backgroundColor: '#FFFFFF',
+    color: theme.colors.text.primary,
   },
   button: {
-    backgroundColor: '#C41E3A',
-    borderRadius: 8,
-    padding: 18,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md + 2,
+    marginTop: theme.spacing.md,
+    gap: theme.spacing.sm,
+    ...theme.shadows.medium,
   },
   buttonText: {
-    color: '#FFFFFF',
+    color: theme.colors.text.white,
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
+    letterSpacing: 1,
   },
 });
 
