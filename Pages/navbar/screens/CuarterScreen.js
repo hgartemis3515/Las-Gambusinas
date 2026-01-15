@@ -514,7 +514,7 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
   headerTitle: {
     fontSize: 24,
     fontWeight: "700",
-    color: theme.colors.text.white,
+    color: theme.colors.text.primary,
     marginBottom: theme.spacing.md,
   },
   filtersContainer: {
@@ -607,7 +607,7 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
   mesaCardTitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: theme.colors.text.white,
+    color: theme.colors.text.primary,
   },
   mesaCardArea: {
     fontSize: 12,
@@ -658,7 +658,7 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
   mesaCardValue: {
     fontSize: 14,
     fontWeight: "600",
-    color: theme.colors.text.white,
+    color: theme.colors.text.primary,
   },
   modalBackground: {
     flex: 1,
