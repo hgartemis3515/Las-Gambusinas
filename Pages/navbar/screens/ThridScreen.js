@@ -14,7 +14,7 @@ import {
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { COMANDASEARCH_API_GET, COMANDA_API_SEARCH_BY_DATE, COMANDA_API, SELECTABLE_API_GET, DISHES_API } from "../../../apiConfig";
+import { COMANDASEARCH_API_GET, COMANDA_API_SEARCH_BY_DATE, COMANDA_API, SELECTABLE_API_GET, DISHES_API, AREAS_API } from "../../../apiConfig";
 import moment from "moment-timezone";
 
 const ThirdScreen = () => {
@@ -29,13 +29,25 @@ const ThirdScreen = () => {
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [modalMesasVisible, setModalMesasVisible] = useState(false);
+  const [areas, setAreas] = useState([]);
+  const [filtroAreaMesa, setFiltroAreaMesa] = useState("All"); // Filtro para el modal de mesas
 
   useEffect(() => {
     loadUserData();
     fetchComandas();
+    obtenerAreas();
     const interval = setInterval(fetchComandas, 3000);
     return () => clearInterval(interval);
   }, [fecha]);
+
+  const obtenerAreas = async () => {
+    try {
+      const response = await axios.get(AREAS_API, { timeout: 5000 });
+      setAreas(response.data.filter(area => area.isActive !== false));
+    } catch (error) {
+      console.error("Error al obtener las áreas:", error.message);
+    }
+  };
 
   const loadUserData = async () => {
     try {
@@ -630,29 +642,73 @@ const ThirdScreen = () => {
         <View style={styles.modalBackground}>
           <View style={styles.mesasModalContainer}>
             <Text style={styles.modalTitle}>🪑 Seleccionar Mesa</Text>
-            <ScrollView style={styles.mesasGridScroll}>
-              <View style={styles.mesasGrid}>
-                {mesas.map((mesa) => (
+            
+            {/* Filtro por Área en Modal */}
+            <View style={styles.modalAreaFilterContainer}>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                style={styles.modalAreaFilterScroll}
+                contentContainerStyle={styles.modalAreaFilterContent}
+              >
+                <TouchableOpacity
+                  style={[styles.modalAreaFilterButton, filtroAreaMesa === "All" && styles.modalAreaFilterButtonActive]}
+                  onPress={() => setFiltroAreaMesa("All")}
+                >
+                  <Text style={[styles.modalAreaFilterButtonText, filtroAreaMesa === "All" && styles.modalAreaFilterButtonTextActive]}>
+                    Todas
+                  </Text>
+                </TouchableOpacity>
+                {areas.map((area) => (
                   <TouchableOpacity
-                    key={mesa._id}
-                    style={[
-                      styles.mesaCard,
-                      comandaEditando?.mesaSeleccionada?._id === mesa._id && styles.mesaCardSelected
-                    ]}
-                    onPress={() => {
-                      setComandaEditando({
-                        ...comandaEditando,
-                        mesaSeleccionada: mesa,
-                      });
-                      setModalMesasVisible(false);
-                    }}
+                    key={area._id}
+                    style={[styles.modalAreaFilterButton, filtroAreaMesa === area._id && styles.modalAreaFilterButtonActive]}
+                    onPress={() => setFiltroAreaMesa(area._id)}
                   >
-                    <Text style={styles.mesaCardText}>Mesa {mesa.nummesa}</Text>
-                    {comandaEditando?.mesaSeleccionada?._id === mesa._id && (
-                      <MaterialCommunityIcons name="check-circle" size={24} color="#00C851" />
-                    )}
+                    <Text style={[styles.modalAreaFilterButtonText, filtroAreaMesa === area._id && styles.modalAreaFilterButtonTextActive]}>
+                      {area.nombre}
+                    </Text>
                   </TouchableOpacity>
                 ))}
+              </ScrollView>
+            </View>
+
+            <ScrollView style={styles.mesasGridScroll}>
+              <View style={styles.mesasGrid}>
+                {mesas
+                  .filter(mesa => {
+                    if (filtroAreaMesa === "All") return true;
+                    const mesaAreaId = mesa.area?._id || mesa.area;
+                    return mesaAreaId === filtroAreaMesa;
+                  })
+                  .map((mesa) => {
+                    const mesaArea = typeof mesa.area === 'object' 
+                      ? mesa.area.nombre 
+                      : areas.find(a => a._id === mesa.area)?.nombre || 'Sin área';
+                    
+                    return (
+                      <TouchableOpacity
+                        key={mesa._id}
+                        style={[
+                          styles.mesaCard,
+                          comandaEditando?.mesaSeleccionada?._id === mesa._id && styles.mesaCardSelected
+                        ]}
+                        onPress={() => {
+                          setComandaEditando({
+                            ...comandaEditando,
+                            mesaSeleccionada: mesa,
+                          });
+                          setModalMesasVisible(false);
+                        }}
+                      >
+                        <Text style={styles.mesaCardText}>Mesa {mesa.nummesa}</Text>
+                        <Text style={styles.mesaCardAreaText}>{mesaArea}</Text>
+                        {comandaEditando?.mesaSeleccionada?._id === mesa._id && (
+                          <MaterialCommunityIcons name="check-circle" size={24} color="#00C851" />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
               </View>
             </ScrollView>
             <TouchableOpacity
@@ -1013,6 +1069,47 @@ const styles = StyleSheet.create({
   mesaCardText: {
     fontSize: 16,
     fontWeight: "bold",
+  },
+  mesaCardAreaText: {
+    fontSize: 11,
+    color: "#666",
+    marginTop: 4,
+  },
+  modalAreaFilterContainer: {
+    marginBottom: 15,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E0E0E0",
+  },
+  modalAreaFilterScroll: {
+    maxHeight: 50,
+  },
+  modalAreaFilterContent: {
+    flexDirection: "row",
+    gap: 10,
+    paddingRight: 20,
+  },
+  modalAreaFilterButton: {
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: "#F5F5F5",
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+    minWidth: 70,
+  },
+  modalAreaFilterButtonActive: {
+    backgroundColor: "#C41E3A",
+    borderColor: "#C41E3A",
+  },
+  modalAreaFilterButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+    textAlign: "center",
+  },
+  modalAreaFilterButtonTextActive: {
+    color: "#FFFFFF",
   },
   closeButton: {
     backgroundColor: "#C41E3A",

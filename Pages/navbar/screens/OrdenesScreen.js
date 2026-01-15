@@ -13,7 +13,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE } from "../../../apiConfig";
+import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API } from "../../../apiConfig";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
 
@@ -34,13 +34,25 @@ const OrdenesScreen = () => {
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   const [isSendingComanda, setIsSendingComanda] = useState(false);
+  const [areas, setAreas] = useState([]);
+  const [filtroAreaMesa, setFiltroAreaMesa] = useState("All"); // Filtro para el modal de mesas
 
   useEffect(() => {
     loadUserData();
     loadMesaData();
     loadPlatosData();
     loadSelectedPlatos();
+    obtenerAreas();
   }, []);
+
+  const obtenerAreas = async () => {
+    try {
+      const response = await axios.get(AREAS_API, { timeout: 5000 });
+      setAreas(response.data.filter(area => area.isActive !== false));
+    } catch (error) {
+      console.error("Error al obtener las áreas:", error.message);
+    }
+  };
 
   const loadUserData = async () => {
     try {
@@ -190,6 +202,32 @@ const OrdenesScreen = () => {
         return;
       }
 
+      // Validar estado de la mesa antes de crear la comanda
+      const estadoMesa = (selectedMesa.estado || 'libre').toLowerCase();
+      if (estadoMesa !== 'libre') {
+        if (estadoMesa === 'reservado') {
+          Alert.alert(
+            "Mesa Reservada",
+            "Esta mesa está reservada. Solo un administrador puede liberarla.",
+            [{ text: "OK" }]
+          );
+        } else if (['esperando', 'pedido', 'preparado', 'pagado'].includes(estadoMesa)) {
+          Alert.alert(
+            "Mesa Ocupada",
+            "Esta mesa ya tiene una comanda activa. No se puede crear una nueva comanda.",
+            [{ text: "OK" }]
+          );
+        } else {
+          Alert.alert(
+            "Mesa No Disponible",
+            `La mesa está en estado "${estadoMesa}". Solo se pueden crear comandas en mesas libres.`,
+            [{ text: "OK" }]
+          );
+        }
+        setIsSendingComanda(false);
+        return;
+      }
+
       const platosData = selectedPlatos.map(plato => ({
         plato: plato._id,
         platoId: plato.id || null,
@@ -212,20 +250,11 @@ const OrdenesScreen = () => {
       
       const comandaNumber = response.data.comanda?.comandaNumber || response.data.comandaNumber || "N/A";
       
-      // Actualizar estado de la mesa a "Pedido"
-      try {
-        await axios.put(
-          `${MESAS_API_UPDATE}/${selectedMesa._id}`,
-          { estado: "Pedido" },
-          { timeout: 5000 }
-        );
-        console.log("✅ Estado de mesa actualizado a 'Pedido'");
-      } catch (error) {
-        console.error("⚠️ Error actualizando estado de mesa:", error);
-        // No bloqueamos el flujo si falla la actualización del estado
-      }
+      // El backend actualiza automáticamente la mesa a "esperando" al crear la comanda
+      // El mozo puede actualizar a "pedido" solo si la mesa está en "esperando"
+      // Esto se hace en una acción separada, no automáticamente
       
-      Alert.alert("✅ Éxito", `Comanda #${comandaNumber} enviada a cocina ✓`);
+      Alert.alert("✅ Éxito", `Comanda #${comandaNumber} creada. La mesa ahora está en estado "esperando".`);
 
       await AsyncStorage.removeItem("mesaSeleccionada");
       await AsyncStorage.removeItem("selectedPlates");
@@ -239,7 +268,27 @@ const OrdenesScreen = () => {
       setObservaciones("");
     } catch (error) {
       console.error("❌ Error enviando comanda:", error);
-      Alert.alert("Error", error.response?.data?.message || "No se pudo enviar la comanda");
+      
+      // Manejar errores HTTP 409 (Conflict) - Mesa ocupada
+      if (error.response?.status === 409) {
+        Alert.alert(
+          "Mesa Ocupada",
+          error.response?.data?.message || "La mesa está ocupada con una comanda existente.",
+          [{ text: "OK" }]
+        );
+      } else if (error.response?.status === 400) {
+        Alert.alert(
+          "Error de Validación",
+          error.response?.data?.message || "Los datos proporcionados no son válidos.",
+          [{ text: "OK" }]
+        );
+      } else {
+        Alert.alert(
+          "Error",
+          error.response?.data?.message || "No se pudo crear la comanda. Por favor, intenta nuevamente.",
+          [{ text: "OK" }]
+        );
+      }
     } finally {
       setIsSendingComanda(false);
     }
@@ -464,38 +513,79 @@ const OrdenesScreen = () => {
                 <MaterialCommunityIcons name="close" size={24} color={theme.colors.text.primary} />
               </TouchableOpacity>
             </View>
+            
+            {/* Filtro por Área en Modal */}
+            <View style={styles.modalAreaFilterContainer}>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                style={styles.modalAreaFilterScroll}
+                contentContainerStyle={styles.modalAreaFilterContent}
+              >
+                <TouchableOpacity
+                  style={[styles.modalAreaFilterButton, filtroAreaMesa === "All" && styles.modalAreaFilterButtonActive]}
+                  onPress={() => setFiltroAreaMesa("All")}
+                >
+                  <Text style={[styles.modalAreaFilterButtonText, filtroAreaMesa === "All" && styles.modalAreaFilterButtonTextActive]}>
+                    Todas
+                  </Text>
+                </TouchableOpacity>
+                {areas.map((area) => (
+                  <TouchableOpacity
+                    key={area._id}
+                    style={[styles.modalAreaFilterButton, filtroAreaMesa === area._id && styles.modalAreaFilterButtonActive]}
+                    onPress={() => setFiltroAreaMesa(area._id)}
+                  >
+                    <Text style={[styles.modalAreaFilterButtonText, filtroAreaMesa === area._id && styles.modalAreaFilterButtonTextActive]}>
+                      {area.nombre}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
             <ScrollView style={styles.modalScrollView}>
               <View style={styles.mesasGrid}>
-                {mesas.map((mesa) => {
-                  const estado = getMesaEstado(mesa);
-                  const estadoColor = getEstadoColor(estado);
-                  const isSelected = selectedMesa?._id === mesa._id;
-                  
-                  return (
-                    <TouchableOpacity
-                      key={mesa._id}
-                      style={[
-                        styles.mesaCardModal,
-                        { backgroundColor: estadoColor },
-                        isSelected && styles.mesaCardSelected
-                      ]}
-                      onPress={() => handleSelectMesa(mesa)}
-                    >
-                      <MaterialCommunityIcons 
-                        name="table-picnic" 
-                        size={32} 
-                        color={theme.colors.text.white} 
-                      />
-                      <Text style={styles.mesaCardTextModal}>
-                        {mesa.nummesa}
-                      </Text>
-                      <Text style={styles.mesaCardEstadoModal}>{estado}</Text>
-                      {isSelected && (
-                        <MaterialCommunityIcons name="check-circle" size={24} color={theme.colors.text.white} />
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
+                {mesas
+                  .filter(mesa => {
+                    if (filtroAreaMesa === "All") return true;
+                    const mesaAreaId = mesa.area?._id || mesa.area;
+                    return mesaAreaId === filtroAreaMesa;
+                  })
+                  .map((mesa) => {
+                    const estado = getMesaEstado(mesa);
+                    const estadoColor = getEstadoColor(estado);
+                    const isSelected = selectedMesa?._id === mesa._id;
+                    const mesaArea = typeof mesa.area === 'object' 
+                      ? mesa.area.nombre 
+                      : areas.find(a => a._id === mesa.area)?.nombre || 'Sin área';
+                    
+                    return (
+                      <TouchableOpacity
+                        key={mesa._id}
+                        style={[
+                          styles.mesaCardModal,
+                          { backgroundColor: estadoColor },
+                          isSelected && styles.mesaCardSelected
+                        ]}
+                        onPress={() => handleSelectMesa(mesa)}
+                      >
+                        <MaterialCommunityIcons 
+                          name="table-picnic" 
+                          size={32} 
+                          color={theme.colors.text.white} 
+                        />
+                        <Text style={styles.mesaCardTextModal}>
+                          {mesa.nummesa}
+                        </Text>
+                        <Text style={styles.mesaCardAreaModal}>{mesaArea}</Text>
+                        <Text style={styles.mesaCardEstadoModal}>{estado}</Text>
+                        {isSelected && (
+                          <MaterialCommunityIcons name="check-circle" size={24} color={theme.colors.text.white} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
               </View>
             </ScrollView>
           </View>
@@ -957,6 +1047,49 @@ const OrdenesScreenStyles = (theme) => StyleSheet.create({
     color: theme.colors.text.white,
     marginTop: theme.spacing.xs,
     opacity: 0.9,
+  },
+  mesaCardAreaModal: {
+    fontSize: 9,
+    fontWeight: "500",
+    color: theme.colors.text.white,
+    marginTop: 2,
+    opacity: 0.8,
+  },
+  modalAreaFilterContainer: {
+    marginBottom: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  modalAreaFilterScroll: {
+    maxHeight: 50,
+  },
+  modalAreaFilterContent: {
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+    paddingRight: theme.spacing.lg,
+  },
+  modalAreaFilterButton: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    minWidth: 70,
+  },
+  modalAreaFilterButtonActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  modalAreaFilterButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: theme.colors.text.secondary,
+    textAlign: "center",
+  },
+  modalAreaFilterButtonTextActive: {
+    color: theme.colors.text.white,
   },
   searchInput: {
     backgroundColor: theme.colors.background,

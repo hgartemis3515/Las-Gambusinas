@@ -14,7 +14,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { COMANDA_API, SELECTABLE_API_GET, DISHES_API } from "../../../apiConfig";
+import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API } from "../../../apiConfig";
 
 const SecondScreen = () => {
   const [userInfo, setUserInfo] = useState(null);
@@ -30,13 +30,25 @@ const SecondScreen = () => {
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null); // "platos-desayuno" o "carta-normal"
   const [isSendingComanda, setIsSendingComanda] = useState(false);
+  const [areas, setAreas] = useState([]);
+  const [filtroAreaMesa, setFiltroAreaMesa] = useState("All"); // Filtro para el modal de mesas
 
   useEffect(() => {
     loadUserData();
     loadMesaData();
     loadPlatosData();
     loadSelectedPlatos();
+    obtenerAreas();
   }, []);
+
+  const obtenerAreas = async () => {
+    try {
+      const response = await axios.get(AREAS_API, { timeout: 5000 });
+      setAreas(response.data.filter(area => area.isActive !== false));
+    } catch (error) {
+      console.error("Error al obtener las áreas:", error.message);
+    }
+  };
 
   const loadUserData = async () => {
     try {
@@ -196,6 +208,32 @@ const SecondScreen = () => {
         return;
       }
 
+      // Validar estado de la mesa antes de crear la comanda
+      const estadoMesa = (selectedMesa.estado || 'libre').toLowerCase();
+      if (estadoMesa !== 'libre') {
+        if (estadoMesa === 'reservado') {
+          Alert.alert(
+            "Mesa Reservada",
+            "Esta mesa está reservada. Solo un administrador puede liberarla.",
+            [{ text: "OK" }]
+          );
+        } else if (['esperando', 'pedido', 'preparado', 'pagado'].includes(estadoMesa)) {
+          Alert.alert(
+            "Mesa Ocupada",
+            "Esta mesa ya tiene una comanda activa. No se puede crear una nueva comanda.",
+            [{ text: "OK" }]
+          );
+        } else {
+          Alert.alert(
+            "Mesa No Disponible",
+            `La mesa está en estado "${estadoMesa}". Solo se pueden crear comandas en mesas libres.`,
+            [{ text: "OK" }]
+          );
+        }
+        setIsSendingComanda(false);
+        return;
+      }
+
       // Preparar datos - incluir tanto _id como id numérico
       const platosData = selectedPlatos.map(plato => ({
         plato: plato._id,
@@ -228,7 +266,7 @@ const SecondScreen = () => {
       console.log("✅ Comanda enviada:", response.data);
       
       const comandaNumber = response.data.comanda?.comandaNumber || response.data.comandaNumber || "N/A";
-      Alert.alert("✅ Éxito", `Comanda #${comandaNumber} enviada a cocina ✓`);
+      Alert.alert("✅ Éxito", `Comanda #${comandaNumber} creada. La mesa ahora está en estado "esperando".`);
 
       // Limpiar AsyncStorage
       await AsyncStorage.removeItem("mesaSeleccionada");
@@ -246,7 +284,27 @@ const SecondScreen = () => {
       console.log("🧹 Comanda limpiada");
     } catch (error) {
       console.error("❌ Error enviando comanda:", error);
-      Alert.alert("Error", error.response?.data?.message || "No se pudo enviar la comanda");
+      
+      // Manejar errores HTTP 409 (Conflict) - Mesa ocupada
+      if (error.response?.status === 409) {
+        Alert.alert(
+          "Mesa Ocupada",
+          error.response?.data?.message || "La mesa está ocupada con una comanda existente.",
+          [{ text: "OK" }]
+        );
+      } else if (error.response?.status === 400) {
+        Alert.alert(
+          "Error de Validación",
+          error.response?.data?.message || "Los datos proporcionados no son válidos.",
+          [{ text: "OK" }]
+        );
+      } else {
+        Alert.alert(
+          "Error",
+          error.response?.data?.message || "No se pudo crear la comanda. Por favor, intenta nuevamente.",
+          [{ text: "OK" }]
+        );
+      }
     } finally {
       setIsSendingComanda(false);
     }
@@ -437,24 +495,68 @@ const SecondScreen = () => {
       >
         <View style={styles.modalBackground}>
           <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>🪑 MESAS DISPONIBLES ({mesas.length})</Text>
-            <ScrollView style={styles.modalScrollView}>
-              <View style={styles.mesasGrid}>
-                {mesas.map((mesa) => (
+            <Text style={styles.modalTitle}>🪑 MESAS DISPONIBLES</Text>
+            
+            {/* Filtro por Área en Modal */}
+            <View style={styles.modalAreaFilterContainer}>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                style={styles.modalAreaFilterScroll}
+                contentContainerStyle={styles.modalAreaFilterContent}
+              >
+                <TouchableOpacity
+                  style={[styles.modalAreaFilterButton, filtroAreaMesa === "All" && styles.modalAreaFilterButtonActive]}
+                  onPress={() => setFiltroAreaMesa("All")}
+                >
+                  <Text style={[styles.modalAreaFilterButtonText, filtroAreaMesa === "All" && styles.modalAreaFilterButtonTextActive]}>
+                    Todas
+                  </Text>
+                </TouchableOpacity>
+                {areas.map((area) => (
                   <TouchableOpacity
-                    key={mesa._id}
-                    style={[
-                      styles.mesaCard,
-                      selectedMesa?._id === mesa._id && styles.mesaCardSelected
-                    ]}
-                    onPress={() => handleSelectMesa(mesa)}
+                    key={area._id}
+                    style={[styles.modalAreaFilterButton, filtroAreaMesa === area._id && styles.modalAreaFilterButtonActive]}
+                    onPress={() => setFiltroAreaMesa(area._id)}
                   >
-                    <Text style={styles.mesaCardText}>Mesa {mesa.nummesa}</Text>
-                    {selectedMesa?._id === mesa._id && (
-                      <MaterialCommunityIcons name="check-circle" size={24} color="#00C851" />
-                    )}
+                    <Text style={[styles.modalAreaFilterButtonText, filtroAreaMesa === area._id && styles.modalAreaFilterButtonTextActive]}>
+                      {area.nombre}
+                    </Text>
                   </TouchableOpacity>
                 ))}
+              </ScrollView>
+            </View>
+
+            <ScrollView style={styles.modalScrollView}>
+              <View style={styles.mesasGrid}>
+                {mesas
+                  .filter(mesa => {
+                    if (filtroAreaMesa === "All") return true;
+                    const mesaAreaId = mesa.area?._id || mesa.area;
+                    return mesaAreaId === filtroAreaMesa;
+                  })
+                  .map((mesa) => {
+                    const mesaArea = typeof mesa.area === 'object' 
+                      ? mesa.area.nombre 
+                      : areas.find(a => a._id === mesa.area)?.nombre || 'Sin área';
+                    
+                    return (
+                      <TouchableOpacity
+                        key={mesa._id}
+                        style={[
+                          styles.mesaCard,
+                          selectedMesa?._id === mesa._id && styles.mesaCardSelected
+                        ]}
+                        onPress={() => handleSelectMesa(mesa)}
+                      >
+                        <Text style={styles.mesaCardText}>Mesa {mesa.nummesa}</Text>
+                        <Text style={styles.mesaCardAreaText}>{mesaArea}</Text>
+                        {selectedMesa?._id === mesa._id && (
+                          <MaterialCommunityIcons name="check-circle" size={24} color="#00C851" />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
               </View>
             </ScrollView>
             {selectedMesa && (
@@ -864,6 +966,11 @@ const styles = StyleSheet.create({
   mesaCardText: {
     fontSize: 16,
     fontWeight: "bold",
+  },
+  mesaCardAreaText: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 4,
   },
   confirmButton: {
     backgroundColor: "#00C851",

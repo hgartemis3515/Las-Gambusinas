@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import axios from "axios";
-import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, DISHES_API } from "../../../apiConfig";
+import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, DISHES_API, AREAS_API } from "../../../apiConfig";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
@@ -26,10 +26,13 @@ const CuarterScreen = () => {
   const [comandaEditando, setComandaEditando] = useState(null);
   const [platos, setPlatos] = useState([]);
   const [filtroEstado, setFiltroEstado] = useState("All"); // "All" o "Booked" (Reservado)
+  const [areas, setAreas] = useState([]);
+  const [filtroArea, setFiltroArea] = useState("All"); // "All" o ID del área
 
   useEffect(() => {
     obtenerMesas();
     obtenerComandasHoy();
+    obtenerAreas();
     const interval = setInterval(() => {
       obtenerMesas();
       obtenerComandasHoy();
@@ -67,6 +70,15 @@ const CuarterScreen = () => {
       console.error("Error cargando platos:", error);
     }
   };
+
+  const obtenerAreas = useCallback(async () => {
+    try {
+      const response = await axios.get(AREAS_API, { timeout: 5000 });
+      setAreas(response.data.filter(area => area.isActive !== false));
+    } catch (error) {
+      console.error("Error al obtener las áreas:", error.message);
+    }
+  }, []);
 
   const getComandasPorMesa = (mesaNum) => {
     return comandas.filter(
@@ -142,10 +154,18 @@ const CuarterScreen = () => {
     }
   };
 
-  // Filtrar mesas según el filtro
-  const mesasFiltradas = filtroEstado === "All" 
-    ? mesas 
-    : mesas.filter(mesa => getEstadoMesa(mesa) === "Reservado");
+  // Filtrar mesas según el filtro de estado y área
+  const mesasFiltradas = mesas.filter(mesa => {
+    // Filtro por estado
+    const pasaFiltroEstado = filtroEstado === "All" || getEstadoMesa(mesa) === "Reservado";
+    
+    // Filtro por área
+    const pasaFiltroArea = filtroArea === "All" || 
+      (mesa.area?._id || mesa.area) === filtroArea ||
+      (typeof mesa.area === 'object' && mesa.area._id === filtroArea);
+    
+    return pasaFiltroEstado && pasaFiltroArea;
+  });
 
   // Manejar selección de mesa
   const handleSelectMesa = async (mesa) => {
@@ -295,6 +315,37 @@ const CuarterScreen = () => {
             </Text>
           </TouchableOpacity>
         </View>
+        
+        {/* Filtro por Área */}
+        <View style={styles.areaFilterContainer}>
+          <Text style={styles.areaFilterLabel}>Áreas:</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.areaFilterScroll}
+            contentContainerStyle={styles.areaFilterContent}
+          >
+            <TouchableOpacity
+              style={[styles.areaFilterButton, filtroArea === "All" && styles.areaFilterButtonActive]}
+              onPress={() => setFiltroArea("All")}
+            >
+              <Text style={[styles.areaFilterButtonText, filtroArea === "All" && styles.areaFilterButtonTextActive]}>
+                Todas
+              </Text>
+            </TouchableOpacity>
+            {areas.map((area) => (
+              <TouchableOpacity
+                key={area._id}
+                style={[styles.areaFilterButton, filtroArea === area._id && styles.areaFilterButtonActive]}
+                onPress={() => setFiltroArea(area._id)}
+              >
+                <Text style={[styles.areaFilterButtonText, filtroArea === area._id && styles.areaFilterButtonTextActive]}>
+                  {area.nombre}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
@@ -315,6 +366,11 @@ const CuarterScreen = () => {
               >
                 <View style={styles.mesaCardHeader}>
                   <Text style={styles.mesaCardTitle}>Mesa → {mesa.nummesa}</Text>
+                  {mesa.area && (
+                    <Text style={styles.mesaCardArea}>
+                      {typeof mesa.area === 'object' ? mesa.area.nombre : areas.find(a => a._id === mesa.area)?.nombre || 'Sin área'}
+                    </Text>
+                  )}
                 </View>
                 
                 <View style={[styles.estadoBadge, { backgroundColor: estadoColor }]}>
@@ -464,6 +520,46 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
   filtersContainer: {
     flexDirection: "row",
     gap: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+  },
+  areaFilterContainer: {
+    marginTop: theme.spacing.sm,
+  },
+  areaFilterLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: theme.colors.text.secondary,
+    marginBottom: theme.spacing.xs,
+  },
+  areaFilterScroll: {
+    maxHeight: 50,
+  },
+  areaFilterContent: {
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+    paddingRight: theme.spacing.md,
+  },
+  areaFilterButton: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    minWidth: 80,
+  },
+  areaFilterButtonActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  areaFilterButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: theme.colors.text.secondary,
+    textAlign: "center",
+  },
+  areaFilterButtonTextActive: {
+    color: theme.colors.text.white,
   },
   filterButton: {
     paddingHorizontal: theme.spacing.lg,
@@ -512,6 +608,12 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: theme.colors.text.white,
+  },
+  mesaCardArea: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: theme.colors.text.secondary,
+    marginTop: theme.spacing.xs,
   },
   estadoBadge: {
     alignSelf: "flex-start",

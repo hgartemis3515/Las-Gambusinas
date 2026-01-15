@@ -11,3 +11,4 @@ export const COMANDASEARCH_API_GET = 'http://192.168.18.11:3000/api/comanda';
 export const SELECTABLE_API_GET = 'http://192.168.18.11:3000/api/mesas';
 export const MESAS_API_UPDATE = 'http://192.168.18.11:3000/api/mesas';
 export const COMANDA_API_SEARCH_BY_DATE ='http://192.168.18.11:3000/api/comanda/fecha';
+export const AREAS_API = 'http://192.168.18.11:3000/api/areas';
