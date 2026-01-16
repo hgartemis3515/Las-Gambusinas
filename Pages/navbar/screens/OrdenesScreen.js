@@ -48,10 +48,11 @@ const OrdenesScreen = () => {
     obtenerAreas();
   }, []);
 
-  // Recargar mesa cuando se enfoca la pantalla (por si viene desde InicioScreen con mesa seleccionada)
+  // Recargar mesa y usuario cuando se enfoca la pantalla (por si viene desde InicioScreen con mesa seleccionada)
   useFocusEffect(
     useCallback(() => {
       loadMesaData();
+      loadUserData(); // Recargar usuario para asegurar que esté actualizado
     }, [])
   );
 
@@ -69,7 +70,14 @@ const OrdenesScreen = () => {
       const user = await AsyncStorage.getItem("user");
       if (user) {
         const parsed = JSON.parse(user);
+        console.log("👤 Usuario cargado desde AsyncStorage:", {
+          _id: parsed._id,
+          name: parsed.name,
+          datosCompletos: parsed
+        });
         setUserInfo(parsed);
+      } else {
+        console.warn("⚠️ No se encontró usuario en AsyncStorage");
       }
     } catch (error) {
       console.error("Error cargando usuario:", error);
@@ -215,8 +223,19 @@ const OrdenesScreen = () => {
       // Validar estado de la mesa antes de crear la comanda
       const estadoMesa = (selectedMesa.estado || 'libre').toLowerCase();
       
-      // Si la mesa está en "preparado", verificar que sea el mismo mozo
-      if (estadoMesa === 'preparado') {
+      // Si la mesa NO está libre, verificar que sea el mismo mozo que creó la comanda
+      if (estadoMesa !== 'libre') {
+        if (estadoMesa === 'reservado') {
+          Alert.alert(
+            "Mesa Reservada",
+            "Esta mesa está reservada. Solo un administrador puede liberarla.",
+            [{ text: "OK" }]
+          );
+          setIsSendingComanda(false);
+          return;
+        }
+        
+        // Para otros estados (pedido, preparado, pagado, esperando), verificar que sea el mismo mozo
         try {
           // Obtener comandas de la mesa para verificar el mozo
           const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
@@ -238,13 +257,22 @@ const OrdenesScreen = () => {
             if (mozoComandaId && mozoActualId && mozoComandaId.toString() !== mozoActualId.toString()) {
               Alert.alert(
                 "Acceso Denegado",
-                "Solo el mozo que creó la comanda original puede agregar más comandas a esta mesa.",
+                `Solo el mozo que creó la comanda original puede agregar más comandas a esta mesa cuando está en estado '${estadoMesa}'.`,
                 [{ text: "OK" }]
               );
               setIsSendingComanda(false);
               return;
             }
             // Si es el mismo mozo, permitir crear nueva comanda
+          } else {
+            // Si no hay comandas activas pero la mesa no está libre, puede ser un estado especial
+            Alert.alert(
+              "Mesa No Disponible",
+              `La mesa está en estado "${estadoMesa}". Solo se pueden crear comandas en mesas libres o cuando eres el mozo que creó la comanda original.`,
+              [{ text: "OK" }]
+            );
+            setIsSendingComanda(false);
+            return;
           }
         } catch (error) {
           console.error("Error verificando comandas de la mesa:", error);
@@ -252,28 +280,6 @@ const OrdenesScreen = () => {
           setIsSendingComanda(false);
           return;
         }
-      } else if (estadoMesa !== 'libre') {
-        if (estadoMesa === 'reservado') {
-          Alert.alert(
-            "Mesa Reservada",
-            "Esta mesa está reservada. Solo un administrador puede liberarla.",
-            [{ text: "OK" }]
-          );
-        } else if (['esperando', 'pedido', 'pagado'].includes(estadoMesa)) {
-          Alert.alert(
-            "Mesa Ocupada",
-            "Esta mesa ya tiene una comanda activa. No se puede crear una nueva comanda.",
-            [{ text: "OK" }]
-          );
-        } else {
-          Alert.alert(
-            "Mesa No Disponible",
-            `La mesa está en estado "${estadoMesa}". Solo se pueden crear comandas en mesas libres o preparadas (mismo mozo).`,
-            [{ text: "OK" }]
-          );
-        }
-        setIsSendingComanda(false);
-        return;
       }
 
       const platosData = selectedPlatos.map(plato => ({
@@ -284,6 +290,19 @@ const OrdenesScreen = () => {
 
       const cantidadesArray = selectedPlatos.map(plato => cantidades[plato._id] || 1);
 
+      // Verificar y loggear el userInfo antes de crear la comanda
+      console.log("👤 UserInfo antes de crear comanda:", {
+        _id: userInfo._id,
+        name: userInfo.name,
+        userInfoCompleto: userInfo
+      });
+      
+      if (!userInfo._id) {
+        Alert.alert("Error", "No se pudo obtener el ID del usuario. Por favor, cierra sesión y vuelve a iniciar.");
+        setIsSendingComanda(false);
+        return;
+      }
+
       const comandaData = {
         mozos: userInfo._id,
         mesas: selectedMesa._id,
@@ -293,6 +312,13 @@ const OrdenesScreen = () => {
         status: "en_espera",
         IsActive: true
       };
+
+      console.log("📤 Datos de comanda a enviar:", {
+        mozos: comandaData.mozos,
+        mesas: comandaData.mesas,
+        numMesa: selectedMesa.nummesa,
+        platosCount: comandaData.platos.length
+      });
 
       const response = await axios.post(COMANDA_API, comandaData, { timeout: 5000 });
       

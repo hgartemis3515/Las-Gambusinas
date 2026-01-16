@@ -50,6 +50,9 @@ const Login = () => {
       const mozo = response.data.mozo;
       console.log('✅ Login exitoso, mozo:', mozo);
       
+      // Limpiar datos antiguos del usuario antes de guardar el nuevo
+      await AsyncStorage.removeItem('user');
+      
       const userData = {
         _id: mozo._id,
         name: mozo.name
@@ -57,6 +60,8 @@ const Login = () => {
       
       await AsyncStorage.setItem('user', JSON.stringify(userData));
       console.log('💾 Usuario guardado en AsyncStorage:', userData);
+      console.log('🔍 Verificación - ID del mozo guardado:', userData._id);
+      console.log('🔍 Verificación - Nombre del mozo guardado:', userData.name);
       
       Alert.alert("✅ Éxito", `Bienvenido ${mozo.name}`);
       navigation.replace("Navbar", { username: mozo.name });

@@ -293,7 +293,26 @@ const InicioScreen = () => {
       const mismoMozo = mozoComandaId && mozoActualId && mozoComandaId.toString() === mozoActualId.toString();
 
       if (comandaPreparada) {
+        // Si no es el mismo mozo, mostrar mensaje de acceso denegado
+        if (!mismoMozo) {
+          Alert.alert(
+            "Acceso Denegado",
+            "Solo el mozo que creó esta comanda puede realizar acciones en esta mesa cuando está en estado 'Preparado'.",
+            [{ text: "OK" }]
+          );
+          return;
+        }
+
+        // Si es el mismo mozo, mostrar opciones de Pagar y Nueva Comanda
         const opciones = [
+          {
+            text: "Nueva Comanda",
+            onPress: () => {
+              // Guardar la mesa seleccionada para crear nueva comanda
+              AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesa));
+              navigation.navigate("Ordenes");
+            }
+          },
           {
             text: "Pagar",
             onPress: async () => {
@@ -323,25 +342,12 @@ const InicioScreen = () => {
                 Alert.alert("Error", "No se pudo preparar el pago");
               }
             }
+          },
+          {
+            text: "Cancelar",
+            style: "cancel"
           }
         ];
-
-        // Solo permitir agregar nueva comanda si es el mismo mozo
-        if (mismoMozo) {
-          opciones.unshift({
-            text: "Nueva Comanda",
-            onPress: () => {
-              // Guardar la mesa seleccionada para crear nueva comanda
-              AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesa));
-              navigation.navigate("Ordenes");
-            }
-          });
-        }
-
-        opciones.push({
-          text: "Cancelar",
-          style: "cancel"
-        });
 
         Alert.alert(
           `Mesa ${mesa.nummesa} - Preparado`,
@@ -356,6 +362,24 @@ const InicioScreen = () => {
       const comandasPagadas = todasComandasMesa.filter(c => 
         c.status?.toLowerCase() === "pagado" || c.status?.toLowerCase() === "completado"
       );
+      
+      // Validar que sea el mismo mozo que creó la comanda
+      if (comandasPagadas.length > 0) {
+        const primeraComanda = comandasPagadas[0];
+        const mozoComandaId = primeraComanda?.mozos?._id || primeraComanda?.mozos;
+        const mozoActualId = userInfo?._id;
+        const mismoMozo = mozoComandaId && mozoActualId && mozoComandaId.toString() === mozoActualId.toString();
+        
+        // Si no es el mismo mozo, mostrar mensaje de acceso denegado
+        if (!mismoMozo) {
+          Alert.alert(
+            "Acceso Denegado",
+            "Solo el mozo que creó esta comanda puede realizar acciones en esta mesa cuando está en estado 'Pagado'.",
+            [{ text: "OK" }]
+          );
+          return;
+        }
+      }
       
       // Filtrar comandas por cliente: si hay comandas con cliente, solo mostrar las del mismo cliente
       let comandasParaBoucher = comandasPagadas;
@@ -404,6 +428,27 @@ const InicioScreen = () => {
         ]
       );
     } else {
+      // Otros estados (Esperando, Reservado, etc.) - validar que sea el mismo mozo
+      const comandasMesa = getComandasPorMesa(mesa.nummesa);
+      
+      if (comandasMesa.length > 0) {
+        const primeraComanda = comandasMesa[0];
+        const mozoComandaId = primeraComanda?.mozos?._id || primeraComanda?.mozos;
+        const mozoActualId = userInfo?._id;
+        const mismoMozo = mozoComandaId && mozoActualId && mozoComandaId.toString() === mozoActualId.toString();
+        
+        // Si no es el mismo mozo, mostrar mensaje de acceso denegado
+        if (!mismoMozo) {
+          Alert.alert(
+            "Acceso Denegado",
+            `Solo el mozo que creó esta comanda puede realizar acciones en esta mesa cuando está en estado '${estado}'.`,
+            [{ text: "OK" }]
+          );
+          return;
+        }
+      }
+      
+      // Si es el mismo mozo o no hay comandas, mostrar información
       Alert.alert(
         `Mesa ${mesa.nummesa}`,
         `Estado: ${estado}\nMozo: ${getMozoMesa(mesa)}`,

@@ -445,23 +445,48 @@ const PagosScreen = () => {
           console.warn("⚠️ Error al asociar cliente a comanda (continuando):", error);
         }
 
-        // Marcar comanda como pagada
-        await axios.put(
-          `${COMANDA_API}/${comanda._id}/status`,
-          { nuevoStatus: "pagado" },
-          { timeout: 5000 }
-        );
-        console.log(`✅ Comanda ${comanda.comandaNumber || comanda._id.slice(-4)} marcada como pagada con cliente`);
+        // Marcar comanda como pagada solo si no está ya pagada
+        if (comanda.status?.toLowerCase() !== "pagado") {
+          try {
+            await axios.put(
+              `${COMANDA_API}/${comanda._id}/status`,
+              { nuevoStatus: "pagado" },
+              { timeout: 5000 }
+            );
+            console.log(`✅ Comanda ${comanda.comandaNumber || comanda._id.slice(-4)} marcada como pagada con cliente`);
+          } catch (comandaError) {
+            // Si la comanda ya está pagada, no es un error crítico
+            if (comandaError.response?.status === 400) {
+              console.log(`ℹ️ Comanda ${comanda.comandaNumber || comanda._id.slice(-4)} ya está pagada, continuando...`);
+            } else {
+              throw comandaError; // Re-lanzar si es otro tipo de error
+            }
+          }
+        } else {
+          console.log(`ℹ️ Comanda ${comanda.comandaNumber || comanda._id.slice(-4)} ya está pagada, omitiendo actualización`);
+        }
       }
 
-      // Actualizar mesa a "pagado"
-      await axios.put(
-        `${MESAS_API_UPDATE}/${mesa._id}/estado`,
-        { estado: "pagado" },
-        { timeout: 5000 }
-      );
-      
-      console.log("✅ Mesa actualizada a 'pagado'");
+      // Actualizar mesa a "pagado" solo si no está ya en "pagado"
+      if (mesa.estado?.toLowerCase() !== "pagado") {
+        try {
+          await axios.put(
+            `${MESAS_API_UPDATE}/${mesa._id}/estado`,
+            { estado: "pagado" },
+            { timeout: 5000 }
+          );
+          console.log("✅ Mesa actualizada a 'pagado'");
+        } catch (mesaError) {
+          // Si la mesa ya está en "pagado", no es un error crítico
+          if (mesaError.response?.status === 400 && mesaError.response?.data?.message?.includes('Transición no permitida')) {
+            console.log("ℹ️ Mesa ya está en estado 'pagado', continuando...");
+          } else {
+            throw mesaError; // Re-lanzar si es otro tipo de error
+          }
+        }
+      } else {
+        console.log("ℹ️ Mesa ya está en estado 'pagado', omitiendo actualización");
+      }
 
       // Preparar datos del boucher
       const platosBoucher = [];
@@ -535,6 +560,29 @@ const PagosScreen = () => {
       navigation.navigate("Inicio");
     } catch (error) {
       console.error("Error procesando pago:", error);
+      
+      // Si el error es 400 y el mensaje indica que ya está pagado, mostrar mensaje más amigable
+      if (error.response?.status === 400) {
+        const errorMessage = error.response?.data?.message || error.message || "";
+        if (errorMessage.includes('Transición no permitida') || errorMessage.includes('ya está')) {
+          // El proceso probablemente se completó, solo mostrar advertencia
+          console.warn("⚠️ Algunas operaciones ya estaban completadas, pero el pago se procesó");
+          Alert.alert(
+            "⚠️ Advertencia", 
+            "El pago se procesó, pero algunas operaciones ya estaban completadas. Verifica que todo esté correcto."
+          );
+          // Continuar con el flujo normal
+          await AsyncStorage.removeItem("comandasPago");
+          await AsyncStorage.removeItem("comandaPago");
+          await AsyncStorage.removeItem("mesaPago");
+          setComandas([]);
+          setMesa(null);
+          setClienteSeleccionado(null);
+          navigation.navigate("Inicio");
+          return;
+        }
+      }
+      
       Alert.alert("Error", error.response?.data?.message || "No se pudo procesar el pago");
     }
   };
