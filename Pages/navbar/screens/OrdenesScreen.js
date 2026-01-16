@@ -16,11 +16,13 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API } from "../../../apiConfig";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
+import { useOrientation } from "../../../hooks/useOrientation";
 
 const OrdenesScreen = () => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
-  const styles = OrdenesScreenStyles(theme);
+  const orientation = useOrientation();
+  const styles = OrdenesScreenStyles(theme, orientation);
   const [userInfo, setUserInfo] = useState(null);
   const [selectedMesa, setSelectedMesa] = useState(null);
   const [mesas, setMesas] = useState([]);
@@ -363,9 +365,9 @@ const OrdenesScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={orientation.isLandscape ? styles.scrollViewContentLandscape : null}>
         <View style={styles.header}>
-          <MaterialCommunityIcons name="notebook-edit" size={32} color={theme.colors.text.white} />
+          <MaterialCommunityIcons name="notebook-edit" size={orientation.isLandscape ? 28 : 32} color={theme.colors.text.white} />
           <Text style={styles.headerTitle}>NUEVA ORDEN</Text>
         </View>
 
@@ -394,7 +396,7 @@ const OrdenesScreen = () => {
         </View>
 
         {/* Platos Seleccionados */}
-        <View style={styles.section}>
+        <View style={[styles.section, orientation.isLandscape && styles.sectionLandscape]}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>
               Platos Seleccionados
@@ -448,25 +450,46 @@ const OrdenesScreen = () => {
           )}
         </View>
 
-        {/* Observaciones */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Observaciones</Text>
-          <TextInput
-            style={styles.observacionesInput}
-            placeholder="Ej: Sin ají, sin cebolla..."
-            placeholderTextColor={theme.colors.text.light}
-            value={observaciones}
-            onChangeText={setObservaciones}
-            multiline
-            numberOfLines={3}
-          />
-        </View>
-
-        {/* Total */}
-        <View style={styles.totalSection}>
-          <Text style={styles.totalLabel}>TOTAL</Text>
-          <Text style={styles.totalText}>S/. {calcularSubtotal()}</Text>
-        </View>
+        {/* Observaciones y Total - Layout adaptado para horizontal */}
+        {orientation.isLandscape ? (
+          <View style={styles.horizontalLayout}>
+            <View style={[styles.section, styles.sectionLandscape, { flex: 1 }]}>
+              <Text style={styles.sectionLabel}>Observaciones</Text>
+              <TextInput
+                style={styles.observacionesInput}
+                placeholder="Ej: Sin ají, sin cebolla..."
+                placeholderTextColor={theme.colors.text.light}
+                value={observaciones}
+                onChangeText={setObservaciones}
+                multiline
+                numberOfLines={3}
+              />
+            </View>
+            <View style={[styles.totalSection, styles.totalSectionLandscape]}>
+              <Text style={styles.totalLabel}>TOTAL</Text>
+              <Text style={styles.totalText}>S/. {calcularSubtotal()}</Text>
+            </View>
+          </View>
+        ) : (
+          <>
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>Observaciones</Text>
+              <TextInput
+                style={styles.observacionesInput}
+                placeholder="Ej: Sin ají, sin cebolla..."
+                placeholderTextColor={theme.colors.text.light}
+                value={observaciones}
+                onChangeText={setObservaciones}
+                multiline
+                numberOfLines={3}
+              />
+            </View>
+            <View style={styles.totalSection}>
+              <Text style={styles.totalLabel}>TOTAL</Text>
+              <Text style={styles.totalText}>S/. {calcularSubtotal()}</Text>
+            </View>
+          </>
+        )}
 
         {/* Botones */}
         <View style={styles.buttonsContainer}>
@@ -738,7 +761,7 @@ const OrdenesScreen = () => {
   );
 };
 
-const OrdenesScreenStyles = (theme) => StyleSheet.create({
+const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
@@ -746,9 +769,12 @@ const OrdenesScreenStyles = (theme) => StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  scrollViewContentLandscape: {
+    paddingBottom: theme.spacing.xl,
+  },
   header: {
     backgroundColor: theme.colors.primary,
-    paddingVertical: theme.spacing.lg,
+    paddingVertical: orientation.isLandscape ? theme.spacing.md : theme.spacing.lg,
     paddingHorizontal: theme.spacing.lg,
     flexDirection: "row",
     alignItems: "center",
@@ -765,9 +791,19 @@ const OrdenesScreenStyles = (theme) => StyleSheet.create({
     letterSpacing: 0.5,
   },
   section: {
-    padding: theme.spacing.lg,
+    padding: orientation.isLandscape ? theme.spacing.md : theme.spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
+  },
+  sectionLandscape: {
+    borderBottomWidth: 0,
+    marginBottom: theme.spacing.sm,
+  },
+  horizontalLayout: {
+    flexDirection: "row",
+    padding: theme.spacing.lg,
+    gap: theme.spacing.md,
+    alignItems: "flex-start",
   },
   sectionHeader: {
     flexDirection: "row",
@@ -926,14 +962,21 @@ const OrdenesScreenStyles = (theme) => StyleSheet.create({
   },
   totalSection: {
     backgroundColor: theme.colors.primary,
-    padding: theme.spacing.lg,
+    padding: orientation.isLandscape ? theme.spacing.md : theme.spacing.lg,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginHorizontal: theme.spacing.lg,
-    marginVertical: theme.spacing.md,
+    marginHorizontal: orientation.isLandscape ? 0 : theme.spacing.lg,
+    marginVertical: orientation.isLandscape ? 0 : theme.spacing.md,
     borderRadius: theme.borderRadius.lg,
     ...theme.shadows.medium,
+  },
+  totalSectionLandscape: {
+    flex: 1,
+    flexDirection: "column",
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: 100,
   },
   totalLabel: {
     fontSize: 18,
@@ -1018,14 +1061,14 @@ const OrdenesScreenStyles = (theme) => StyleSheet.create({
     gap: theme.spacing.md,
   },
   mesaCardModal: {
-    width: "30%",
+    width: orientation.isLandscape ? "18%" : "30%",
     padding: theme.spacing.md,
     borderRadius: theme.borderRadius.md,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 3,
     borderColor: theme.colors.surface,
-    minHeight: 100,
+    minHeight: orientation.isLandscape ? 90 : 100,
     ...theme.shadows.medium,
   },
   mesaCardSelected: {

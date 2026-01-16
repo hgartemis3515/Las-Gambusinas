@@ -15,11 +15,13 @@ import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
 import { COMANDASEARCH_API_GET, SELECTABLE_API_GET } from "../../../apiConfig";
 import moment from "moment-timezone";
+import { useOrientation } from "../../../hooks/useOrientation";
 
 const CasaScreen = () => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
-  const styles = CasaScreenStyles(theme);
+  const orientation = useOrientation();
+  const styles = CasaScreenStyles(theme, orientation);
   const [userInfo, setUserInfo] = useState(null);
   const [comandas, setComandas] = useState([]);
   const [mesas, setMesas] = useState([]);
@@ -137,12 +139,11 @@ const CasaScreen = () => {
           </View>
         </View>
 
-
         {/* Quick Actions */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Acciones Rápidas</Text>
           
-          <View style={styles.quickActionsGrid}>
+          <View style={orientation.isLandscape ? styles.quickActionsHorizontal : styles.quickActionsGrid}>
             <TouchableOpacity style={styles.quickActionCard}>
               <MaterialCommunityIcons name="plus-circle" size={40} color={theme.colors.primary} />
               <Text style={styles.quickActionText}>Nueva Orden</Text>
@@ -198,7 +199,7 @@ const CasaScreen = () => {
   );
 };
 
-const CasaScreenStyles = (theme) => StyleSheet.create({
+const CasaScreenStyles = (theme, orientation) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
@@ -208,7 +209,7 @@ const CasaScreenStyles = (theme) => StyleSheet.create({
   },
   header: {
     backgroundColor: theme.colors.primary,
-    paddingVertical: theme.spacing.xl,
+    paddingVertical: orientation.isLandscape ? theme.spacing.md : theme.spacing.xl,
     paddingHorizontal: theme.spacing.lg,
     flexDirection: "row",
     justifyContent: "space-between",
@@ -234,9 +235,10 @@ const CasaScreenStyles = (theme) => StyleSheet.create({
     padding: theme.spacing.sm,
   },
   statsContainer: {
-    flexDirection: "row",
+    flexDirection: orientation.isLandscape ? "row" : "row",
     padding: theme.spacing.lg,
     gap: theme.spacing.md,
+    flexWrap: orientation.isLandscape ? "wrap" : "nowrap",
   },
   statCard: {
     flex: 1,
@@ -266,7 +268,7 @@ const CasaScreenStyles = (theme) => StyleSheet.create({
     fontWeight: "600",
   },
   section: {
-    padding: theme.spacing.lg,
+    padding: orientation.isLandscape ? theme.spacing.md : theme.spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
@@ -312,14 +314,20 @@ const CasaScreenStyles = (theme) => StyleSheet.create({
     flexWrap: "wrap",
     gap: theme.spacing.md,
   },
+  quickActionsHorizontal: {
+    flexDirection: "row",
+    padding: theme.spacing.lg,
+    gap: theme.spacing.md,
+    justifyContent: "space-around",
+  },
   quickActionCard: {
-    width: "30%",
+    width: orientation.isLandscape ? "30%" : "30%",
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.md,
     padding: theme.spacing.md,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 100,
+    minHeight: orientation.isLandscape ? 120 : 100,
     ...theme.shadows.small,
   },
   quickActionText: {
@@ -343,7 +351,7 @@ const CasaScreenStyles = (theme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: theme.colors.surface,
-    padding: theme.spacing.md,
+    padding: orientation.isLandscape ? theme.spacing.sm : theme.spacing.md,
     borderRadius: theme.borderRadius.md,
     marginBottom: theme.spacing.sm,
     ...theme.shadows.small,
