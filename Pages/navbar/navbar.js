@@ -3,8 +3,9 @@ import { createMaterialBottomTabNavigator } from '@react-navigation/material-bot
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from "../../context/ThemeContext";
 import { themeLight } from "../../constants/theme";
-import CasaScreen from "./screens/CasaScreen";
+import InicioScreen from "./screens/InicioScreen";
 import OrdenesScreen from "./screens/OrdenesScreen";
+import PagosScreen from "./screens/PagosScreen";
 import CuarterScreen from "./screens/CuarterScreen";
 import MasScreen from "./screens/MasScreen";
 
@@ -16,17 +17,18 @@ const Navbar = () => {
   
   return (
       <Tab.Navigator
+        initialRouteName="Inicio"
         activeColor={theme.colors.primary}
         inactiveColor={theme.colors.text.light}
         barStyle={{ backgroundColor: theme.colors.surface }}
       >
         <Tab.Screen 
-          name="Casa" 
-          component={CasaScreen} 
+          name="Inicio" 
+          component={InicioScreen} 
           options={{ 
-            tabBarLabel: 'Casa', 
+            tabBarLabel: 'Inicio', 
             tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="home" color={color} size={26} />
+              <MaterialCommunityIcons name="table-picnic" color={color} size={26} />
             ),
           }} 
         />
@@ -41,12 +43,22 @@ const Navbar = () => {
           }} 
         />
         <Tab.Screen 
+          name="Pagos" 
+          component={PagosScreen} 
+          options={{ 
+            tabBarLabel: 'Pagos', 
+            tabBarIcon: ({ color }) => (
+              <MaterialCommunityIcons name="cash-multiple" color={color} size={26} />
+            ),
+          }} 
+        />
+        <Tab.Screen 
           name="Mesas" 
           component={CuarterScreen} 
           options={{ 
             tabBarLabel: 'Mesas', 
             tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="table-picnic" color={color} size={26} />
+              <MaterialCommunityIcons name="table-multiple" color={color} size={26} />
             ),
           }} 
         />

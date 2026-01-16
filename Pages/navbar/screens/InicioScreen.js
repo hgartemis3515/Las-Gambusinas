@@ -9,43 +9,95 @@ import {
   Modal,
   Alert,
   TextInput,
+  Dimensions,
+  useWindowDimensions,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, DISHES_API, AREAS_API, MESAS_API_UPDATE } from "../../../apiConfig";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
+import logger from "../../../utils/logger";
 
-const CuarterScreen = () => {
+const InicioScreen = () => {
+  const navigation = useNavigation();
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
-  const styles = CuarterScreenStyles(theme);
+  const { width, height } = useWindowDimensions();
   const [mesas, setMesas] = useState([]);
   const [comandas, setComandas] = useState([]);
   const [modalEditVisible, setModalEditVisible] = useState(false);
   const [comandaEditando, setComandaEditando] = useState(null);
   const [platos, setPlatos] = useState([]);
-  const [filtroEstado, setFiltroEstado] = useState("All"); // "All" o "Booked" (Reservado)
   const [areas, setAreas] = useState([]);
-  const [filtroArea, setFiltroArea] = useState("All"); // "All" o ID del área
   const [userInfo, setUserInfo] = useState(null);
+  const [horaActual, setHoraActual] = useState(moment().tz("America/Lima"));
+  const [adaptMobile, setAdaptMobile] = useState(false);
+  const [seccionActiva, setSeccionActiva] = useState(null);
+  const [mesaSeleccionada, setMesaSeleccionada] = useState(null);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
 
+  // Detectar si es móvil
+  const isMobile = width < 400 || adaptMobile;
+  const mesaSize = isMobile ? 70 : 100;
+  const canvasWidth = isMobile ? "95%" : "90%";
+  const barraWidth = isMobile ? "20%" : "25%";
+  const fontSize = isMobile ? 14 : 16;
+
+  const styles = InicioScreenStyles(theme, isMobile, mesaSize, canvasWidth, barraWidth, fontSize);
+
+  // Cargar configuración de adaptación móvil
   useEffect(() => {
+    loadConfig();
     loadUserData();
-    obtenerMesas();
-    obtenerComandasHoy();
     obtenerAreas();
-    const interval = setInterval(() => {
+  }, []);
+
+  // Polling solo cuando la pantalla está enfocada
+  useFocusEffect(
+    useCallback(() => {
       obtenerMesas();
       obtenerComandasHoy();
-    }, 3000);
+      const interval = setInterval(() => {
+        obtenerMesas();
+        obtenerComandasHoy();
+      }, 3000);
+      return () => clearInterval(interval);
+    }, [])
+  );
+
+  // Actualizar hora cada segundo
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setHoraActual(moment().tz("America/Lima"));
+    }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  const loadConfig = async () => {
+    try {
+      const config = await AsyncStorage.getItem("adaptMobile");
+      if (config !== null) {
+        setAdaptMobile(JSON.parse(config));
+      }
+    } catch (error) {
+      console.error("Error cargando configuración:", error);
+    }
+  };
+
+  const saveConfig = async (value) => {
+    try {
+      await AsyncStorage.setItem("adaptMobile", JSON.stringify(value));
+      setAdaptMobile(value);
+    } catch (error) {
+      console.error("Error guardando configuración:", error);
+    }
+  };
 
   const loadUserData = async () => {
     try {
@@ -105,15 +157,11 @@ const CuarterScreen = () => {
     );
   };
 
-  // Obtener el estado de la mesa
   const getEstadoMesa = (mesa) => {
-    // Si la mesa tiene estado definido, usarlo (normalizar a formato con primera letra mayúscula)
     if (mesa.estado) {
       const estadoLower = mesa.estado.toLowerCase();
-      // Convertir a formato con primera letra mayúscula
       return estadoLower.charAt(0).toUpperCase() + estadoLower.slice(1);
     }
-    // Fallback: determinar estado basado en comandas
     const comandasMesa = getComandasPorMesa(mesa.nummesa);
     if (comandasMesa.length === 0) return "Libre";
     
@@ -133,7 +181,6 @@ const CuarterScreen = () => {
     return "Pedido";
   };
 
-  // Obtener el mozo de la mesa (del último comanda activa)
   const getMozoMesa = (mesa) => {
     const comandasMesa = getComandasPorMesa(mesa.nummesa);
     if (comandasMesa.length > 0) {
@@ -143,67 +190,34 @@ const CuarterScreen = () => {
     return "N/A";
   };
 
-  // Función para obtener el color según el estado
   const getEstadoColor = (estado) => {
     const estadoLower = estado?.toLowerCase() || "libre";
     switch (estadoLower) {
       case "libre":
-        return theme.colors.mesaEstado.libre;
+        return theme.colors.mesaEstado.libre || "#9E9E9E"; // Gris
       case "esperando":
-        return theme.colors.mesaEstado.esperando;
+        return theme.colors.mesaEstado.esperando || "#FFC107"; // Amarillo
       case "pedido":
-        return theme.colors.mesaEstado.pedido;
+        return theme.colors.mesaEstado.pedido || "#2196F3"; // Azul
       case "preparado":
-        return theme.colors.mesaEstado.preparado;
+        return theme.colors.mesaEstado.preparado || "#FFC107"; // Amarillo
       case "pagando":
-        return theme.colors.mesaEstado.pagando;
+        return theme.colors.mesaEstado.pagando || "#00C851"; // Verde
       case "reservado":
-        return theme.colors.mesaEstado.reservado;
+        return theme.colors.mesaEstado.reservado || "#9C27B0"; // Morado
       default:
-        return theme.colors.mesaEstado.libre;
+        return theme.colors.mesaEstado.libre || "#9E9E9E";
     }
   };
 
-  // Obtener el texto del badge según el estado
-  const getEstadoBadgeText = (estado) => {
-    const estadoLower = estado?.toLowerCase() || "libre";
-    switch (estadoLower) {
-      case "libre":
-        return "Available";
-      case "esperando":
-        return "Waiting";
-      case "pedido":
-        return "Ordered";
-      case "preparado":
-        return "Ready";
-      case "pagando":
-        return "Paying";
-      case "reservado":
-        return "Booked";
-      default:
-        return "Available";
-    }
-  };
-
-  // Filtrar mesas según el filtro de estado y área
-  const mesasFiltradas = mesas.filter(mesa => {
-    // Filtro por estado
-    const pasaFiltroEstado = filtroEstado === "All" || getEstadoMesa(mesa) === "Reservado";
-    
-    // Filtro por área
-    const pasaFiltroArea = filtroArea === "All" || 
-      (mesa.area?._id || mesa.area) === filtroArea ||
-      (typeof mesa.area === 'object' && mesa.area._id === filtroArea);
-    
-    return pasaFiltroEstado && pasaFiltroArea;
-  });
-
-  // Manejar selección de mesa
   const handleSelectMesa = async (mesa) => {
     const estado = getEstadoMesa(mesa);
+    setMesaSeleccionada(mesa);
     
-    if (estado === "Pedido" || estado?.toLowerCase() === "pedido") {
-      // Obtener la comanda activa de esta mesa
+    if (estado === "Libre") {
+      // Navegar a nueva orden
+      navigation.navigate("Ordenes");
+    } else if (estado === "Pedido" || estado?.toLowerCase() === "pedido") {
       const comandasMesa = getComandasPorMesa(mesa.nummesa);
       const comandaActiva = comandasMesa.find(c => 
         c.status?.toLowerCase() !== "pagado" && 
@@ -211,22 +225,20 @@ const CuarterScreen = () => {
       ) || comandasMesa[0];
 
       if (comandaActiva) {
-        // Verificar que el mozo actual sea el que creó la comanda
         const mozoComandaId = comandaActiva.mozos?._id || comandaActiva.mozos;
         const mozoActualId = userInfo?._id;
         
         if (mozoComandaId && mozoActualId && mozoComandaId.toString() !== mozoActualId.toString()) {
           Alert.alert(
             "Acceso Denegado",
-            "Solo el mozo que creó esta comanda puede editarla o eliminarla.",
+            "Solo el mozo que creó esta comanda puede editarla.",
             [{ text: "OK" }]
           );
           return;
         }
 
-        // Mostrar opciones: Editar o Eliminar
         Alert.alert(
-          `Comanda #${comandaActiva.comandaNumber || comandaActiva._id.slice(-4)}`,
+          `Mesa ${mesa.nummesa}`,
           "¿Qué deseas hacer?",
           [
             {
@@ -247,8 +259,59 @@ const CuarterScreen = () => {
             }
           ]
         );
-      } else {
-        Alert.alert("Info", "No hay comanda activa para editar en esta mesa");
+      }
+    } else if (estado === "Preparado" || estado?.toLowerCase() === "preparado") {
+      const comandasMesa = getComandasPorMesa(mesa.nummesa);
+      const comandaPreparada = comandasMesa.find(c => 
+        c.status?.toLowerCase() === "recoger"
+      );
+      
+      // Obtener el mozo de la primera comanda para validar
+      const primeraComanda = comandasMesa[0];
+      const mozoComandaId = primeraComanda?.mozos?._id || primeraComanda?.mozos;
+      const mozoActualId = userInfo?._id;
+      const mismoMozo = mozoComandaId && mozoActualId && mozoComandaId.toString() === mozoActualId.toString();
+
+      if (comandaPreparada) {
+        const opciones = [
+          {
+            text: "Pagar",
+            onPress: async () => {
+              try {
+                // Guardar todas las comandas de la mesa para el pago
+                await AsyncStorage.setItem("comandasPago", JSON.stringify(comandasMesa));
+                await AsyncStorage.setItem("mesaPago", JSON.stringify(mesa));
+                navigation.navigate("Pagos");
+              } catch (error) {
+                console.error("Error guardando datos para pago:", error);
+                Alert.alert("Error", "No se pudo preparar el pago");
+              }
+            }
+          }
+        ];
+
+        // Solo permitir agregar nueva comanda si es el mismo mozo
+        if (mismoMozo) {
+          opciones.unshift({
+            text: "Nueva Comanda",
+            onPress: () => {
+              // Guardar la mesa seleccionada para crear nueva comanda
+              AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesa));
+              navigation.navigate("Ordenes");
+            }
+          });
+        }
+
+        opciones.push({
+          text: "Cancelar",
+          style: "cancel"
+        });
+
+        Alert.alert(
+          `Mesa ${mesa.nummesa} - Preparado`,
+          "El pedido está listo. ¿Qué deseas hacer?",
+          opciones
+        );
       }
     } else {
       Alert.alert(
@@ -275,7 +338,7 @@ const CuarterScreen = () => {
       return {
         plato: platoId,
         platoId: platoData?.id || p.platoId || null,
-        estado: p.estado || "pendiente",
+        estado: p.estado || "en_espera",
         cantidad: comanda.cantidades?.[index] || 1,
         nombre: platoData?.nombre || "Plato desconocido",
         precio: platoData?.precio || 0,
@@ -305,7 +368,7 @@ const CuarterScreen = () => {
         return {
           plato: p.plato,
           platoId: platoCompleto?.id || p.platoId || null,
-          estado: p.estado || "pendiente"
+          estado: p.estado || "en_espera"
         };
       });
 
@@ -327,6 +390,7 @@ const CuarterScreen = () => {
       setSearchPlato("");
       setCategoriaFiltro(null);
       obtenerComandasHoy();
+      obtenerMesas();
     } catch (error) {
       console.error("Error actualizando comanda:", error);
       Alert.alert("Error", error.response?.data?.message || "No se pudo actualizar la comanda");
@@ -416,7 +480,7 @@ const CuarterScreen = () => {
     // Confirmación para eliminar
     Alert.alert(
       "⚠️ Confirmar Eliminación",
-      `¿Estás seguro de que deseas eliminar la comanda #${comanda.comandaNumber || comanda._id.slice(-4)} de la mesa ${mesa.nummesa}?\n\nEsta acción no se puede deshacer.`,
+      `¿Estás seguro de que deseas eliminar la comanda #${comanda.comandaNumber || comanda._id?.slice(-4) || 'N/A'} de la mesa ${mesa?.nummesa || 'N/A'}?\n\nEsta acción no se puede deshacer.`,
       [
         {
           text: "Cancelar",
@@ -427,31 +491,172 @@ const CuarterScreen = () => {
           style: "destructive",
           onPress: async () => {
             try {
-              // Eliminar la comanda
-              await axios.delete(`${COMANDA_API}/${comanda._id}`, { timeout: 5000 });
+              // Validar que tenemos el ID de la comanda
+              if (!comanda) {
+                Alert.alert("Error", "No se pudo obtener la comanda");
+                await logger.error(new Error("Comanda no disponible"), {
+                  action: 'eliminar_comanda',
+                  comanda: comanda,
+                  mesa: mesa
+                });
+                return;
+              }
+
+              // Extraer el ID de forma segura (igual que en CuarterScreen)
+              let comandaId = comanda._id;
+              
+              // Si _id es un objeto (puede pasar con populate), extraer el string
+              if (comandaId && typeof comandaId === 'object') {
+                comandaId = comandaId.toString();
+              }
+              
+              if (!comandaId) {
+                Alert.alert("Error", "No se pudo obtener el ID de la comanda");
+                await logger.error(new Error("ID de comanda no disponible"), {
+                  action: 'eliminar_comanda',
+                  comanda: JSON.stringify(comanda),
+                  mesa: mesa
+                });
+                return;
+              }
+              
+              console.log("🗑️ Eliminando comanda:");
+              console.log("  - ID:", comandaId);
+              console.log("  - Tipo:", typeof comandaId);
+              console.log("  - URL:", `${COMANDA_API}/${comandaId}`);
+              console.log("  - Comanda completa:", JSON.stringify(comanda, null, 2));
+              
+              // Eliminar la comanda (igual que en CuarterScreen que funciona)
+              const deleteResponse = await axios.delete(`${COMANDA_API}/${comandaId}`, { timeout: 5000 });
+              console.log("✅ Respuesta del servidor:", deleteResponse.data);
               
               // Actualizar el estado de la mesa a "libre"
-              await axios.put(
-                `${MESAS_API_UPDATE}/${mesa._id}/estado`,
-                { estado: "libre" },
-                { timeout: 5000 }
+              // Primero actualizar las comandas para verificar si hay más activas
+              await obtenerComandasHoy();
+              
+              // Verificar si hay más comandas activas en la mesa
+              const comandasMesaRestantes = getComandasPorMesa(mesa.nummesa);
+              const hayComandasActivas = comandasMesaRestantes.some(c => 
+                c._id !== comandaId && 
+                c.IsActive !== false && 
+                c.status?.toLowerCase() !== "pagado" && 
+                c.status?.toLowerCase() !== "completado"
               );
+              
+              // Solo actualizar la mesa a "libre" si no hay más comandas activas
+              if (!hayComandasActivas && mesa) {
+                try {
+                  // Extraer el ID de la mesa de forma segura (igual que en CuarterScreen)
+                  let mesaId = mesa._id;
+                  
+                  // Si _id es un objeto (puede pasar con populate), extraer el string
+                  if (mesaId && typeof mesaId === 'object') {
+                    mesaId = mesaId.toString();
+                  }
+                  
+                  if (!mesaId) {
+                    console.warn("⚠️ No se pudo obtener el ID de la mesa para actualizar");
+                    await logger.warn("ID de mesa no disponible al eliminar comanda", {
+                      mesa: JSON.stringify(mesa),
+                      comandaId: comandaId
+                    });
+                  } else {
+                    console.log("🔄 Actualizando mesa a 'libre':");
+                    console.log("  - Mesa ID:", mesaId);
+                    console.log("  - Tipo:", typeof mesaId);
+                    console.log("  - URL:", `${MESAS_API_UPDATE}/${mesaId}/estado`);
+                    console.log("  - Estado actual de la mesa:", mesa.estado);
+                    
+                    const mesaResponse = await axios.put(
+                      `${MESAS_API_UPDATE}/${mesaId}/estado`,
+                      { estado: "libre" },
+                      { timeout: 5000 }
+                    );
+                    console.log("✅ Mesa liberada:", mesa.nummesa);
+                    console.log("✅ Respuesta del servidor:", mesaResponse.data);
+                  }
+                } catch (mesaError) {
+                  console.error("⚠️ Error actualizando mesa (pero comanda eliminada):", mesaError);
+                  await logger.error(mesaError, {
+                    action: 'actualizar_mesa_despues_eliminar_comanda',
+                    mesaId: mesa?._id,
+                    mesaNum: mesa?.nummesa,
+                    comandaId: comandaId,
+                    estadoMesa: mesa?.estado,
+                    url: `${MESAS_API_UPDATE}/${mesa?._id}/estado`,
+                    errorResponse: mesaError.response?.data,
+                    timestamp: moment().tz("America/Lima").format("YYYY-MM-DD HH:mm:ss"),
+                  });
+                  
+                  // Mostrar alerta específica para el error de mesa
+                  const errorMsg = mesaError.response?.data?.error || mesaError.response?.data?.message || mesaError.message;
+                  Alert.alert(
+                    "⚠️ Advertencia",
+                    `La comanda fue eliminada exitosamente, pero no se pudo actualizar el estado de la mesa a "libre".\n\nError: ${errorMsg}\n\nPuedes actualizar la mesa manualmente.`
+                  );
+                }
+              } else if (hayComandasActivas) {
+                console.log("ℹ️ No se actualiza la mesa porque aún tiene comandas activas");
+              } else {
+                console.warn("⚠️ No se proporcionó información de la mesa");
+              }
               
               Alert.alert("✅", "Comanda eliminada exitosamente. La mesa ha sido liberada.");
               
               // Cerrar modal si está abierto
               setModalEditVisible(false);
               setComandaEditando(null);
+              setTipoPlatoFiltro(null);
+              setSearchPlato("");
+              setCategoriaFiltro(null);
               
               // Actualizar datos
               obtenerComandasHoy();
               obtenerMesas();
             } catch (error) {
-              console.error("Error eliminando comanda:", error);
-              Alert.alert(
-                "Error",
-                error.response?.data?.message || "No se pudo eliminar la comanda"
-              );
+              // Guardar error en log
+              await logger.error(error, {
+                action: 'eliminar_comanda',
+                comandaId: comanda?._id,
+                comandaNumber: comanda?.comandaNumber,
+                mesaId: mesa?._id,
+                mesaNum: mesa?.nummesa,
+                url: `${COMANDA_API}/${comanda?._id}`,
+                timestamp: moment().tz("America/Lima").format("YYYY-MM-DD HH:mm:ss"),
+              });
+              
+              console.error("❌ Error eliminando comanda:", error);
+              console.error("Error completo:", {
+                message: error.message,
+                response: error.response?.data,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                comandaId: comanda?._id,
+                comanda: comanda
+              });
+              
+              let errorMessage = "No se pudo eliminar la comanda";
+              
+              if (error.response) {
+                const status = error.response.status;
+                const data = error.response.data;
+                
+                if (status === 400) {
+                  errorMessage = data?.message || `Solicitud inválida (400). ID: ${comanda?._id}`;
+                } else if (status === 404) {
+                  errorMessage = "Comanda no encontrada";
+                } else if (status === 500) {
+                  errorMessage = "Error del servidor al eliminar la comanda";
+                } else {
+                  errorMessage = data?.message || `Error ${status}: No se pudo eliminar la comanda`;
+                }
+              } else if (error.request) {
+                errorMessage = "No se recibió respuesta del servidor. Verifica tu conexión.";
+              } else {
+                errorMessage = error.message || "Error desconocido al eliminar la comanda";
+              }
+              
+              Alert.alert("Error", errorMessage);
             }
           }
         }
@@ -459,111 +664,255 @@ const CuarterScreen = () => {
     );
   };
 
+  // Obtener mesas por área/sección
+  const getMesasPorArea = (areaId) => {
+    if (areaId === "All") return mesas;
+    return mesas.filter(mesa => {
+      const mesaAreaId = mesa.area?._id || mesa.area;
+      return mesaAreaId === areaId;
+    });
+  };
+
+  // Obtener todas las áreas únicas de las mesas
+  const areasConMesas = areas.filter(area => 
+    mesas.some(mesa => {
+      const mesaAreaId = mesa.area?._id || mesa.area;
+      return mesaAreaId === area._id;
+    })
+  );
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Mesas</Text>
-        <View style={styles.filtersContainer}>
+        <TouchableOpacity style={styles.profileButton}>
+          <MaterialCommunityIcons name="account-circle" size={32} color={theme.colors.text.white} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>LAS GAMBUSINAS</Text>
+        <Text style={styles.headerTime}>{horaActual.format("HH:mm:ss")}</Text>
+      </View>
+
+      {/* Barra de Tabs de Áreas */}
+      <View style={styles.tabsContainer}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabsContent}
+        >
           <TouchableOpacity
-            style={[styles.filterButton, filtroEstado === "All" && styles.filterButtonActive]}
-            onPress={() => setFiltroEstado("All")}
+            style={[
+              styles.tabButton,
+              seccionActiva === null && styles.tabButtonActive
+            ]}
+            onPress={() => setSeccionActiva(null)}
           >
-            <Text style={[styles.filterButtonText, filtroEstado === "All" && styles.filterButtonTextActive]}>
-              Todas
+            <Text style={[
+              styles.tabButtonText,
+              seccionActiva === null && styles.tabButtonTextActive
+            ]}>
+              Default
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterButton, filtroEstado === "Booked" && styles.filterButtonActive]}
-            onPress={() => setFiltroEstado("Booked")}
-          >
-            <Text style={[styles.filterButtonText, filtroEstado === "Booked" && styles.filterButtonTextActive]}>
-              Reservadas
-            </Text>
-          </TouchableOpacity>
-        </View>
-        
-        {/* Filtro por Área */}
-        <View style={styles.areaFilterContainer}>
-          <Text style={styles.areaFilterLabel}>Áreas:</Text>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            style={styles.areaFilterScroll}
-            contentContainerStyle={styles.areaFilterContent}
-          >
+          {areasConMesas.map((area) => (
             <TouchableOpacity
-              style={[styles.areaFilterButton, filtroArea === "All" && styles.areaFilterButtonActive]}
-              onPress={() => setFiltroArea("All")}
+              key={area._id}
+              style={[
+                styles.tabButton,
+                seccionActiva === area._id && styles.tabButtonActive
+              ]}
+              onPress={() => setSeccionActiva(seccionActiva === area._id ? null : area._id)}
             >
-              <Text style={[styles.areaFilterButtonText, filtroArea === "All" && styles.areaFilterButtonTextActive]}>
-                Todas
+              <Text style={[
+                styles.tabButtonText,
+                seccionActiva === area._id && styles.tabButtonTextActive
+              ]}>
+                {seccionActiva === area._id ? "☆ " : ""}{area.nombre.toUpperCase()}
               </Text>
             </TouchableOpacity>
-            {areas.map((area) => (
-              <TouchableOpacity
-                key={area._id}
-                style={[styles.areaFilterButton, filtroArea === area._id && styles.areaFilterButtonActive]}
-                onPress={() => setFiltroArea(area._id)}
-              >
-                <Text style={[styles.areaFilterButtonText, filtroArea === area._id && styles.areaFilterButtonTextActive]}>
-                  {area.nombre}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* Contenido Principal */}
+      <View style={styles.mainContent}>
+        {/* Canvas de Mesas */}
+        <View style={[styles.canvas, { width: canvasWidth }]}>
+          <ScrollView 
+            style={styles.canvasScroll}
+            contentContainerStyle={styles.canvasContent}
+          >
+            {seccionActiva ? (
+              getMesasPorArea(seccionActiva).map((mesa) => {
+                const estado = getEstadoMesa(mesa);
+                const estadoColor = getEstadoColor(estado);
+                const mozo = getMozoMesa(mesa);
+                const isSelected = mesaSeleccionada?._id === mesa._id;
+
+                return (
+                  <TouchableOpacity
+                    key={mesa._id}
+                    style={[
+                      styles.mesaCard,
+                      {
+                        width: mesaSize,
+                        height: mesaSize,
+                        backgroundColor: estadoColor,
+                        borderWidth: isSelected ? 3 : 0,
+                        borderColor: isSelected ? "#FFFFFF" : "transparent",
+                      }
+                    ]}
+                    onPress={() => handleSelectMesa(mesa)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.mesaNumber}>M{mesa.nummesa}</Text>
+                    <Text style={styles.mesaMozo}>{mozo !== "N/A" ? mozo.split(' ')[0] : ""}</Text>
+                    <MaterialCommunityIcons 
+                      name="circle" 
+                      size={8} 
+                      color={theme.colors.text.white} 
+                      style={styles.mesaIcon}
+                    />
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              mesas.map((mesa) => {
+                const estado = getEstadoMesa(mesa);
+                const estadoColor = getEstadoColor(estado);
+                const mozo = getMozoMesa(mesa);
+                const isSelected = mesaSeleccionada?._id === mesa._id;
+
+                return (
+                  <TouchableOpacity
+                    key={mesa._id}
+                    style={[
+                      styles.mesaCard,
+                      {
+                        width: mesaSize,
+                        height: mesaSize,
+                        backgroundColor: estadoColor,
+                        borderWidth: isSelected ? 3 : 0,
+                        borderColor: isSelected ? "#FFFFFF" : "transparent",
+                      }
+                    ]}
+                    onPress={() => handleSelectMesa(mesa)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.mesaNumber}>M{mesa.nummesa}</Text>
+                    <Text style={styles.mesaMozo}>{mozo !== "N/A" ? mozo.split(' ')[0] : ""}</Text>
+                    <MaterialCommunityIcons 
+                      name="circle" 
+                      size={8} 
+                      color={theme.colors.text.white} 
+                      style={styles.mesaIcon}
+                    />
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </ScrollView>
+        </View>
+
+        {/* Barra Vertical Derecha */}
+        <View style={[styles.barraDerecha, { width: barraWidth }]}>
+          <ScrollView style={styles.barraScroll} showsVerticalScrollIndicator={false}>
+            {/* Funciones */}
+            <TouchableOpacity
+              style={styles.barraItem}
+              onPress={() => navigation.navigate("Ordenes")}
+            >
+              <Text style={styles.barraItemText}>➕ NUEVA ORDEN</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.barraItem}
+              onPress={() => {
+                const comandasAbiertas = comandas.filter(c => 
+                  c.status?.toLowerCase() !== "pagado" && 
+                  c.status?.toLowerCase() !== "completado"
+                );
+                Alert.alert("Cerrar Cuenta", `${comandasAbiertas.length} comandas abiertas`);
+              }}
+            >
+              <Text style={styles.barraItemText}>💰 Cerrar Cuenta</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.barraItem}
+              onPress={() => {
+                obtenerMesas();
+                obtenerComandasHoy();
+                Alert.alert("Recargar", "Datos actualizados");
+              }}
+            >
+              <Text style={styles.barraItemText}>🔄 Recargar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.barraItem}
+              onPress={() => {
+                Alert.alert("Pedidos", "Ver pedidos pendientes");
+              }}
+            >
+              <Text style={styles.barraItemText}>🛵 Pedidos</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.barraItem}
+              onPress={() => {
+                Alert.alert("Juntar Mesas", "Selecciona las mesas a juntar");
+              }}
+            >
+              <Text style={styles.barraItemText}>🔗 Juntar Mesas</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.barraItem}
+              onPress={() => {
+                Alert.alert("Reservar", "Crear una reserva");
+              }}
+            >
+              <Text style={styles.barraItemText}>📅 Reservar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.barraItem}
+              onPress={() => {
+                Alert.alert("Agregar Mesa", "Agregar una nueva mesa");
+              }}
+            >
+              <Text style={styles.barraItemText}>➕ Agregar Mesa</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.barraItem}
+              onPress={() => {
+                Alert.alert("Separar Mesas", "Separar mesas juntas");
+              }}
+            >
+              <Text style={styles.barraItemText}>✂️ Separar Mesas</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.barraItem}
+              onPress={() => {
+                Alert.alert("Quitar Mesa", "Eliminar una mesa");
+              }}
+            >
+              <Text style={styles.barraItemText}>➖ Quitar Mesa</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.barraItem}
+              onPress={() => {
+                Alert.alert("Nombre", "Editar nombre");
+              }}
+            >
+              <Text style={styles.barraItemText}>✏️ Nombre</Text>
+            </TouchableOpacity>
           </ScrollView>
         </View>
       </View>
-
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.mesasGrid}>
-          {mesasFiltradas.map((mesa) => {
-            const estado = getEstadoMesa(mesa);
-            const estadoColor = getEstadoColor(estado);
-            const mozo = getMozoMesa(mesa);
-            const comandasMesa = getComandasPorMesa(mesa.nummesa);
-            const tieneComanda = comandasMesa.length > 0;
-
-            return (
-              <TouchableOpacity
-                key={mesa._id}
-                style={styles.mesaCard}
-                onPress={() => handleSelectMesa(mesa)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.mesaCardHeader}>
-                  <Text style={styles.mesaCardTitle}>Mesa → {mesa.nummesa}</Text>
-                  {mesa.area && (
-                    <Text style={styles.mesaCardArea}>
-                      {typeof mesa.area === 'object' ? mesa.area.nombre : areas.find(a => a._id === mesa.area)?.nombre || 'Sin área'}
-                    </Text>
-                  )}
-                </View>
-                
-                <View style={[styles.estadoBadge, { backgroundColor: estadoColor }]}>
-                  <Text style={styles.estadoBadgeText}>{getEstadoBadgeText(estado)}</Text>
-                </View>
-
-                <View style={styles.mesaCardContent}>
-                  <View style={[styles.ocupacionCircle, tieneComanda && styles.ocupacionCircleOcupada]}>
-                    {tieneComanda ? (
-                      <Text style={styles.ocupacionText}>
-                        {mozo.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
-                      </Text>
-                    ) : (
-                      <Text style={styles.ocupacionText}>N/A</Text>
-                    )}
-                  </View>
-                  
-                  <View style={styles.mesaCardInfo}>
-                    <Text style={styles.mesaCardLabel}>Mozo:</Text>
-                    <Text style={styles.mesaCardValue}>{mozo}</Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </ScrollView>
 
       {/* Modal de Edición de Comanda */}
       <Modal
@@ -777,16 +1126,6 @@ const CuarterScreen = () => {
                 <Text style={styles.saveButtonText}>💾 Guardar Cambios</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={() => {
-                  if (comandaEditando?.mesaSeleccionada) {
-                    handleEliminarComanda(comandaEditando, comandaEditando.mesaSeleccionada);
-                  }
-                }}
-              >
-                <Text style={styles.deleteButtonText}>🗑️ Eliminar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
                 style={styles.cancelButton}
                 onPress={() => {
                   setModalEditVisible(false);
@@ -806,166 +1145,133 @@ const CuarterScreen = () => {
   );
 };
 
-const CuarterScreenStyles = (theme) => StyleSheet.create({
+const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, fontSize) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
   },
   header: {
-    backgroundColor: theme.colors.background,
-    paddingVertical: theme.spacing.lg,
+    backgroundColor: theme.colors.primary,
+    paddingVertical: theme.spacing.md,
     paddingHorizontal: theme.spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    ...theme.shadows.medium,
+  },
+  profileButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: "700",
-    color: theme.colors.text.primary,
-    marginBottom: theme.spacing.md,
+    color: theme.colors.text.white,
+    letterSpacing: 1,
   },
-  filtersContainer: {
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    marginBottom: theme.spacing.sm,
-  },
-  areaFilterContainer: {
-    marginTop: theme.spacing.sm,
-  },
-  areaFilterLabel: {
-    fontSize: 14,
+  headerTime: {
+    fontSize: 18,
     fontWeight: "600",
-    color: theme.colors.text.secondary,
-    marginBottom: theme.spacing.xs,
-  },
-  areaFilterScroll: {
-    maxHeight: 50,
-  },
-  areaFilterContent: {
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    paddingRight: theme.spacing.md,
-  },
-  areaFilterButton: {
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.borderRadius.md,
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    minWidth: 80,
-  },
-  areaFilterButtonActive: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  areaFilterButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: theme.colors.text.secondary,
-    textAlign: "center",
-  },
-  areaFilterButtonTextActive: {
     color: theme.colors.text.white,
   },
-  filterButton: {
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.borderRadius.md,
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+  mainContent: {
+    flex: 1,
+    flexDirection: "row",
   },
-  filterButtonActive: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
+  canvas: {
+    flex: 1,
+    backgroundColor: "#F5F5F5",
   },
-  filterButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: theme.colors.text.secondary,
-  },
-  filterButtonTextActive: {
-    color: theme.colors.text.white,
-  },
-  scrollView: {
+  canvasScroll: {
     flex: 1,
   },
-  scrollContent: {
+  canvasContent: {
     padding: theme.spacing.md,
-  },
-  mesasGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "space-between",
     gap: theme.spacing.md,
   },
   mesaCard: {
-    width: "47%",
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.lg,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.md,
-    ...theme.shadows.medium,
-  },
-  mesaCardHeader: {
-    marginBottom: theme.spacing.sm,
-  },
-  mesaCardTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: theme.colors.text.primary,
-  },
-  mesaCardArea: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: theme.colors.text.secondary,
-    marginTop: theme.spacing.xs,
-  },
-  estadoBadge: {
-    alignSelf: "flex-start",
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginBottom: theme.spacing.md,
-  },
-  estadoBadgeText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: theme.colors.text.white,
-  },
-  mesaCardContent: {
-    alignItems: "center",
-  },
-  ocupacionCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: theme.colors.border,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: theme.spacing.sm,
+    ...theme.shadows.medium,
   },
-  ocupacionCircleOcupada: {
-    backgroundColor: theme.colors.primary,
-  },
-  ocupacionText: {
-    fontSize: 18,
+  mesaNumber: {
+    fontSize: 28,
     fontWeight: "700",
     color: theme.colors.text.white,
+    marginBottom: 4,
   },
-  mesaCardInfo: {
-    alignItems: "center",
+  mesaMozo: {
+    fontSize: 10,
+    color: theme.colors.text.white,
+    opacity: 0.9,
+    marginBottom: 4,
   },
-  mesaCardLabel: {
-    fontSize: 12,
-    color: theme.colors.text.secondary,
-    marginBottom: theme.spacing.xs,
+  mesaIcon: {
+    marginTop: 4,
   },
-  mesaCardValue: {
-    fontSize: 14,
+  tabsContainer: {
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    ...theme.shadows.small,
+  },
+  tabsContent: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    gap: theme.spacing.sm,
+  },
+  tabButton: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginRight: theme.spacing.sm,
+  },
+  tabButtonActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  tabButtonText: {
+    fontSize: fontSize,
     fontWeight: "600",
+    color: theme.colors.text.secondary,
+  },
+  tabButtonTextActive: {
+    color: theme.colors.text.white,
+    fontWeight: "700",
+  },
+  barraDerecha: {
+    backgroundColor: theme.colors.surface,
+    ...theme.shadows.medium,
+    borderLeftWidth: 1,
+    borderLeftColor: theme.colors.border,
+  },
+  barraScroll: {
+    flex: 1,
+  },
+  barraItem: {
+    padding: theme.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  barraItemText: {
+    fontSize: fontSize,
     color: theme.colors.text.primary,
+    fontWeight: "500",
+  },
+  barraItemSalir: {
+    marginTop: "auto",
+  },
+  barraItemTextSalir: {
+    color: theme.colors.primary,
+    fontWeight: "700",
   },
   modalBackground: {
     flex: 1,
@@ -1059,11 +1365,6 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
   },
   removeButton: {
     padding: theme.spacing.xs,
-  },
-  observacionesText: {
-    fontSize: 14,
-    color: theme.colors.text.secondary,
-    fontStyle: "italic",
   },
   observacionesInput: {
     backgroundColor: theme.colors.background,
@@ -1193,11 +1494,9 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
     flexDirection: "row",
     gap: theme.spacing.sm,
     marginTop: theme.spacing.md,
-    flexWrap: "wrap",
   },
   saveButton: {
     flex: 1,
-    minWidth: "30%",
     backgroundColor: theme.colors.secondary,
     padding: theme.spacing.md,
     borderRadius: theme.borderRadius.md,
@@ -1208,22 +1507,8 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
     fontWeight: "700",
     fontSize: 14,
   },
-  deleteButton: {
-    flex: 1,
-    minWidth: "30%",
-    backgroundColor: "#DC3545",
-    padding: theme.spacing.md,
-    borderRadius: theme.borderRadius.md,
-    alignItems: "center",
-  },
-  deleteButtonText: {
-    color: theme.colors.text.white,
-    fontWeight: "700",
-    fontSize: 14,
-  },
   cancelButton: {
     flex: 1,
-    minWidth: "30%",
     backgroundColor: theme.colors.primary,
     padding: theme.spacing.md,
     borderRadius: theme.borderRadius.md,
@@ -1236,4 +1521,5 @@ const CuarterScreenStyles = (theme) => StyleSheet.create({
   },
 });
 
-export default CuarterScreen;
+export default InicioScreen;
+

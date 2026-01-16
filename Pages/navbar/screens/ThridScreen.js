@@ -301,7 +301,7 @@ const ThirdScreen = () => {
 
   const getStatusIcon = (status) => {
     switch (status?.toLowerCase()) {
-      case "entregado":
+      case "pagado":
       case "completado":
         return "✅";
       case "preparando":
@@ -317,7 +317,7 @@ const ThirdScreen = () => {
 
   const getStatusColor = (status) => {
     switch (status?.toLowerCase()) {
-      case "entregado":
+      case "pagado":
       case "completado":
         return "#00C851";
       case "preparando":

@@ -7,7 +7,7 @@ const baseTheme = {
   // Estados de mesas
   mesaEstado: {
     libre: '#9E9E9E',        // Gris - Libre
-    esperando: '#C41E3A',    // Rojo - Esperando
+    esperando: '#FFC107',    // Amarillo - Esperando
     pedido: '#2196F3',       // Azul - Pedido
     preparado: '#FFC107',    // Amarillo - Preparado
     pagando: '#00C851',      // Verde - Pagando
