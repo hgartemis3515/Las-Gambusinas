@@ -899,14 +899,14 @@ const InicioScreen = () => {
                 return (
                   <TouchableOpacity
                     key={mesa._id}
-                    style={[
+                      style={[
                       styles.mesaCard,
                       {
                         width: mesaSize,
                         height: mesaSize,
                         backgroundColor: estadoColor,
                         borderWidth: isSelected ? 3 : 0,
-                        borderColor: isSelected ? "#FFFFFF" : "transparent",
+                        borderColor: isSelected ? theme.colors.secondary : "transparent",
                       }
                     ]}
                     onPress={() => handleSelectMesa(mesa)}
@@ -933,14 +933,14 @@ const InicioScreen = () => {
                 return (
                   <TouchableOpacity
                     key={mesa._id}
-                    style={[
+                      style={[
                       styles.mesaCard,
                       {
                         width: mesaSize,
                         height: mesaSize,
                         backgroundColor: estadoColor,
                         borderWidth: isSelected ? 3 : 0,
-                        borderColor: isSelected ? "#FFFFFF" : "transparent",
+                        borderColor: isSelected ? theme.colors.secondary : "transparent",
                       }
                     ]}
                     onPress={() => handleSelectMesa(mesa)}
@@ -1344,7 +1344,7 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
   },
   canvas: {
     flex: 1,
-    backgroundColor: "#F5F5F5",
+    backgroundColor: theme.colors.background,
   },
   canvasScroll: {
     flex: 1,
