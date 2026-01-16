@@ -235,8 +235,8 @@ const InicioScreen = () => {
     setMesaSeleccionada(mesa);
     
     if (estado === "Libre") {
-      // Navegar a nueva orden
-      navigation.navigate("Ordenes");
+      // Solo seleccionar la mesa, no navegar automáticamente
+      // El usuario puede usar la barra derecha para navegar
     } else if (estado === "Pedido" || estado?.toLowerCase() === "pedido") {
       const comandasMesa = getComandasPorMesa(mesa.nummesa);
       const comandaActiva = comandasMesa.find(c => 
@@ -967,7 +967,21 @@ const InicioScreen = () => {
             {/* Funciones */}
             <TouchableOpacity
               style={styles.barraItem}
-              onPress={() => navigation.navigate("Ordenes")}
+              onPress={async () => {
+                // Si hay una mesa seleccionada, guardarla y navegar
+                if (mesaSeleccionada) {
+                  try {
+                    await AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesaSeleccionada));
+                    navigation.navigate("Ordenes");
+                  } catch (error) {
+                    console.error("Error guardando mesa seleccionada:", error);
+                    navigation.navigate("Ordenes");
+                  }
+                } else {
+                  // Si no hay mesa seleccionada, navegar normalmente
+                  navigation.navigate("Ordenes");
+                }
+              }}
             >
               <Text style={styles.barraItemText}>➕ NUEVA ORDEN</Text>
             </TouchableOpacity>

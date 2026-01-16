@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Text,
   SafeAreaView,
@@ -17,6 +17,7 @@ import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_AP
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
 import { useOrientation } from "../../../hooks/useOrientation";
+import { useFocusEffect } from "@react-navigation/native";
 import moment from "moment-timezone";
 
 const OrdenesScreen = () => {
@@ -42,11 +43,17 @@ const OrdenesScreen = () => {
 
   useEffect(() => {
     loadUserData();
-    loadMesaData();
     loadPlatosData();
     loadSelectedPlatos();
     obtenerAreas();
   }, []);
+
+  // Recargar mesa cuando se enfoca la pantalla (por si viene desde InicioScreen con mesa seleccionada)
+  useFocusEffect(
+    useCallback(() => {
+      loadMesaData();
+    }, [])
+  );
 
   const obtenerAreas = async () => {
     try {
