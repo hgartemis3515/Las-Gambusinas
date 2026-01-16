@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRoute, useNavigation } from "@react-navigation/native";
+import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { FileSystem } from "expo-file-system";
@@ -19,7 +19,7 @@ import axios from "axios";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
-import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET } from "../../../apiConfig";
+import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET, BOUCHER_API } from "../../../apiConfig";
 
 const PagosScreen = () => {
   const navigation = useNavigation();
@@ -37,28 +37,53 @@ const PagosScreen = () => {
     loadPagoData();
   }, []);
 
+  // Recargar datos cuando se enfoca la pantalla
+  useFocusEffect(
+    React.useCallback(() => {
+      loadPagoData();
+    }, [])
+  );
+
   const loadPagoData = async () => {
     try {
+      console.log("📋 Cargando datos de pago...");
+      
       // Intentar cargar comandas múltiples primero (nuevo formato)
       const comandasData = await AsyncStorage.getItem("comandasPago");
       const mesaData = await AsyncStorage.getItem("mesaPago");
       
+      console.log("📦 Datos encontrados:", {
+        comandasPago: comandasData ? "Sí" : "No",
+        mesaPago: mesaData ? "Sí" : "No"
+      });
+      
       if (comandasData) {
         const comandasArray = JSON.parse(comandasData);
+        console.log("✅ Comandas cargadas:", comandasArray.length);
+        console.log("📋 Comandas:", JSON.stringify(comandasArray, null, 2));
         setComandas(comandasArray);
       } else {
         // Fallback al formato antiguo (una sola comanda)
         const comandaData = await AsyncStorage.getItem("comandaPago");
         if (comandaData) {
-          setComandas([JSON.parse(comandaData)]);
+          const comanda = JSON.parse(comandaData);
+          console.log("✅ Comanda única cargada (formato antiguo)");
+          setComandas([comanda]);
+        } else {
+          console.warn("⚠️ No se encontraron comandas en AsyncStorage");
         }
       }
       
       if (mesaData) {
-        setMesa(JSON.parse(mesaData));
+        const mesa = JSON.parse(mesaData);
+        console.log("✅ Mesa cargada:", mesa.nummesa);
+        setMesa(mesa);
+      } else {
+        console.warn("⚠️ No se encontró mesa en AsyncStorage");
       }
     } catch (error) {
-      console.error("Error cargando datos de pago:", error);
+      console.error("❌ Error cargando datos de pago:", error);
+      Alert.alert("Error", "No se pudieron cargar los datos de pago");
     } finally {
       setLoading(false);
     }
@@ -326,6 +351,30 @@ const PagosScreen = () => {
       return;
     }
 
+    // Verificar si la mesa ya está en estado "pagado"
+    const mesaYaPagada = mesa.estado?.toLowerCase() === "pagado";
+    
+    if (mesaYaPagada) {
+      // Si ya está pagada, solo generar el boucher
+      Alert.alert(
+        "Mesa ya Pagada",
+        "Esta mesa ya ha sido pagada. Solo puedes generar el boucher.",
+        [
+          {
+            text: "Generar Boucher",
+            onPress: async () => {
+              await generarPDF();
+            }
+          },
+          {
+            text: "Cancelar",
+            style: "cancel"
+          }
+        ]
+      );
+      return;
+    }
+
     const comandasNums = comandas.map(c => `#${c.comandaNumber || c._id.slice(-6)}`).join(', ');
     Alert.alert(
       "Confirmar Pago",
@@ -346,14 +395,65 @@ const PagosScreen = () => {
                   { nuevoStatus: "pagado" },
                   { timeout: 5000 }
                 );
+                console.log(`✅ Comanda ${comanda.comandaNumber || comanda._id.slice(-4)} marcada como pagada`);
               }
 
-              // Actualizar mesa a libre
+              // Actualizar mesa a "pagado" (no a "libre" todavía)
               await axios.put(
                 `${MESAS_API_UPDATE}/${mesa._id}/estado`,
-                { estado: "libre" },
+                { estado: "pagado" },
                 { timeout: 5000 }
               );
+              
+              console.log("✅ Mesa actualizada a 'pagado'");
+
+              // Preparar datos del boucher
+              const platosBoucher = [];
+              comandas.forEach((comanda) => {
+                if (comanda.platos && Array.isArray(comanda.platos)) {
+                  comanda.platos.forEach((platoItem, index) => {
+                    const plato = platoItem.plato || platoItem;
+                    const cantidad = comanda.cantidades?.[index] || 1;
+                    const precio = plato.precio || 0;
+                    const subtotal = precio * cantidad;
+                    
+                    platosBoucher.push({
+                      plato: plato._id || plato,
+                      platoId: plato.id || null,
+                      nombre: plato.nombre || "Plato",
+                      precio: precio,
+                      cantidad: cantidad,
+                      subtotal: subtotal,
+                      comandaNumber: comanda.comandaNumber || null
+                    });
+                  });
+                }
+              });
+
+              const boucherData = {
+                mesa: mesa._id,
+                numMesa: mesa.nummesa,
+                mozo: comandas[0]?.mozos?._id || comandas[0]?.mozos,
+                nombreMozo: comandas[0]?.mozos?.name || "N/A",
+                comandas: comandas.map(c => c._id),
+                comandasNumbers: comandas.map(c => c.comandaNumber).filter(n => n != null),
+                platos: platosBoucher,
+                subtotal: total,
+                igv: total * 0.18,
+                total: total * 1.18,
+                observaciones: comandas.map(c => c.observaciones).filter(o => o).join("; ") || "",
+                fechaPago: new Date(),
+                fechaPagoString: moment().tz("America/Lima").format("DD/MM/YYYY HH:mm:ss")
+              };
+
+              // Guardar boucher en el backend
+              try {
+                const boucherResponse = await axios.post(BOUCHER_API, boucherData, { timeout: 5000 });
+                console.log("✅ Boucher guardado:", boucherResponse.data.boucherNumber || boucherResponse.data._id);
+              } catch (boucherError) {
+                console.error("⚠️ Error guardando boucher (pero pago procesado):", boucherError);
+                // No bloquear el proceso si falla guardar el boucher
+              }
 
               // Limpiar AsyncStorage
               await AsyncStorage.removeItem("comandasPago");
@@ -363,7 +463,7 @@ const PagosScreen = () => {
               // Generar PDF
               await generarPDF();
 
-              Alert.alert("✅", "Pago procesado y mesa liberada");
+              Alert.alert("✅", "Pago procesado y voucher generado.\n\nLa mesa ahora está en estado 'Pagado'. Puedes liberarla desde la pantalla de Inicio.");
               setComandas([]);
               setMesa(null);
               navigation.navigate("Inicio");
@@ -391,12 +491,34 @@ const PagosScreen = () => {
   if (!comandas || comandas.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.navigate("Inicio")}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.text.white} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>PAGO</Text>
+          <View style={{ width: 24 }} />
+        </View>
         <View style={styles.emptyContainer}>
           <MaterialCommunityIcons name="receipt" size={64} color={theme.colors.text.light} />
           <Text style={styles.emptyText}>No hay comandas seleccionadas</Text>
-          <Text style={styles.emptySubtext}>Selecciona una mesa en estado "Preparado" y elige "Pagar"</Text>
+          <Text style={styles.emptySubtext}>
+            Selecciona una mesa en estado "Preparado" y elige "Pagar"
+          </Text>
+          <Text style={[styles.emptySubtext, { marginTop: 10, fontSize: 12, color: theme.colors.text.light }]}>
+            {loading ? "Cargando datos..." : "No se encontraron datos en AsyncStorage"}
+          </Text>
           <TouchableOpacity
-            style={styles.backButton}
+            style={[styles.backButton, { marginTop: 20 }]}
+            onPress={async () => {
+              setLoading(true);
+              await loadPagoData();
+            }}
+          >
+            <MaterialCommunityIcons name="refresh" size={20} color={theme.colors.text.white} />
+            <Text style={styles.backButtonText}>Recargar Datos</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.backButton, { marginTop: 10, backgroundColor: theme.colors.primary }]}
             onPress={() => navigation.navigate("Inicio")}
           >
             <Text style={styles.backButtonText}>Ir a Inicio</Text>
@@ -512,14 +634,17 @@ const PagosScreen = () => {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.button, styles.buttonPrimary]}
-          onPress={handlePagar}
-          disabled={isGenerating}
-        >
-          <MaterialCommunityIcons name="cash-multiple" size={24} color={theme.colors.text.white} />
-          <Text style={styles.buttonText}>Pagar</Text>
-        </TouchableOpacity>
+        {/* Solo mostrar botón "Pagar" si la mesa no está ya pagada */}
+        {mesa?.estado?.toLowerCase() !== "pagado" && (
+          <TouchableOpacity
+            style={[styles.button, styles.buttonPrimary]}
+            onPress={handlePagar}
+            disabled={isGenerating}
+          >
+            <MaterialCommunityIcons name="cash-multiple" size={24} color={theme.colors.text.white} />
+            <Text style={styles.buttonText}>Pagar</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </SafeAreaView>
   );

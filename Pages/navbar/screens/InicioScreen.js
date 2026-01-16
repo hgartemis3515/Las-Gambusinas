@@ -151,17 +151,34 @@ const InicioScreen = () => {
     }
   }, []);
 
+  // Obtener todas las comandas de la mesa (incluyendo pagadas) - para mostrar mozo
+  const getTodasComandasPorMesa = (mesaNum) => {
+    return comandas.filter(
+      (comanda) => 
+        comanda.mesas?.nummesa === mesaNum && 
+        comanda.IsActive !== false
+    );
+  };
+
+  // Obtener solo comandas activas (no pagadas) - para operaciones
   const getComandasPorMesa = (mesaNum) => {
     return comandas.filter(
-      (comanda) => comanda.mesas?.nummesa === mesaNum && comanda.IsActive !== false
+      (comanda) => 
+        comanda.mesas?.nummesa === mesaNum && 
+        comanda.IsActive !== false &&
+        comanda.status?.toLowerCase() !== "pagado" &&
+        comanda.status?.toLowerCase() !== "completado"
     );
   };
 
   const getEstadoMesa = (mesa) => {
+    // Si la mesa tiene estado definido, usarlo (prioridad al estado de la mesa)
     if (mesa.estado) {
       const estadoLower = mesa.estado.toLowerCase();
       return estadoLower.charAt(0).toUpperCase() + estadoLower.slice(1);
     }
+    
+    // Si no tiene estado, determinarlo por las comandas activas
     const comandasMesa = getComandasPorMesa(mesa.nummesa);
     if (comandasMesa.length === 0) return "Libre";
     
@@ -172,19 +189,20 @@ const InicioScreen = () => {
     
     if (hayPreparadas) return "Preparado";
     
-    // Verificar si todas están pagadas
-    const todasPagadas = comandasMesa.every(
-      (c) => c.status?.toLowerCase() === "pagado" || c.status?.toLowerCase() === "completado"
-    );
-    
-    if (todasPagadas && comandasMesa.length > 0) return "Pagando";
     return "Pedido";
   };
 
   const getMozoMesa = (mesa) => {
-    const comandasMesa = getComandasPorMesa(mesa.nummesa);
-    if (comandasMesa.length > 0) {
-      const ultimaComanda = comandasMesa[comandasMesa.length - 1];
+    // Si la mesa está libre, no mostrar mozo
+    if (mesa.estado?.toLowerCase() === "libre") {
+      return "N/A";
+    }
+    
+    // Para otros estados (incluyendo "Pagado"), mostrar el mozo de TODAS las comandas (incluyendo pagadas)
+    const todasComandasMesa = getTodasComandasPorMesa(mesa.nummesa);
+    if (todasComandasMesa.length > 0) {
+      // Obtener la última comanda (puede estar pagada o no)
+      const ultimaComanda = todasComandasMesa[todasComandasMesa.length - 1];
       return ultimaComanda.mozos?.name || "N/A";
     }
     return "N/A";
@@ -201,6 +219,8 @@ const InicioScreen = () => {
         return theme.colors.mesaEstado.pedido || "#2196F3"; // Azul
       case "preparado":
         return theme.colors.mesaEstado.preparado || "#FFC107"; // Amarillo
+      case "pagado":
+        return theme.colors.mesaEstado.pagado || "#4CAF50"; // Verde
       case "pagando":
         return theme.colors.mesaEstado.pagando || "#00C851"; // Verde
       case "reservado":
@@ -278,12 +298,28 @@ const InicioScreen = () => {
             text: "Pagar",
             onPress: async () => {
               try {
+                console.log("💾 Guardando datos para pago...");
+                console.log("📋 Comandas a guardar:", comandasMesa.length);
+                console.log("🪑 Mesa a guardar:", mesa.nummesa);
+                
                 // Guardar todas las comandas de la mesa para el pago
                 await AsyncStorage.setItem("comandasPago", JSON.stringify(comandasMesa));
                 await AsyncStorage.setItem("mesaPago", JSON.stringify(mesa));
-                navigation.navigate("Pagos");
+                
+                // Verificar que se guardaron correctamente
+                const comandasVerificadas = await AsyncStorage.getItem("comandasPago");
+                const mesaVerificada = await AsyncStorage.getItem("mesaPago");
+                
+                if (comandasVerificadas && mesaVerificada) {
+                  console.log("✅ Datos guardados correctamente");
+                  console.log("📋 Comandas guardadas:", JSON.parse(comandasVerificadas).length);
+                  navigation.navigate("Pagos");
+                } else {
+                  console.error("❌ Error: Los datos no se guardaron correctamente");
+                  Alert.alert("Error", "No se pudieron guardar los datos para el pago");
+                }
               } catch (error) {
-                console.error("Error guardando datos para pago:", error);
+                console.error("❌ Error guardando datos para pago:", error);
                 Alert.alert("Error", "No se pudo preparar el pago");
               }
             }
@@ -313,6 +349,42 @@ const InicioScreen = () => {
           opciones
         );
       }
+    } else if (estado === "Pagado" || estado?.toLowerCase() === "pagado") {
+      // Mesa en estado Pagado - mostrar opciones de Imprimir Boucher y Liberar
+      const todasComandasMesa = getTodasComandasPorMesa(mesa.nummesa);
+      // Obtener todas las comandas pagadas de la mesa
+      const comandasPagadas = todasComandasMesa.filter(c => 
+        c.status?.toLowerCase() === "pagado" || c.status?.toLowerCase() === "completado"
+      );
+      
+      Alert.alert(
+        `Mesa ${mesa.nummesa} - Pagado`,
+        "La mesa ha sido pagada. ¿Qué deseas hacer?",
+        [
+          {
+            text: "📄 Imprimir Boucher",
+            onPress: async () => {
+              try {
+                // Guardar comandas y mesa para generar el boucher
+                await AsyncStorage.setItem("comandasPago", JSON.stringify(comandasPagadas));
+                await AsyncStorage.setItem("mesaPago", JSON.stringify(mesa));
+                navigation.navigate("Pagos");
+              } catch (error) {
+                console.error("Error guardando datos para boucher:", error);
+                Alert.alert("Error", "No se pudo preparar el boucher");
+              }
+            }
+          },
+          {
+            text: "🔄 Liberar",
+            onPress: () => handleLiberarMesa(mesa)
+          },
+          {
+            text: "Cancelar",
+            style: "cancel"
+          }
+        ]
+      );
     } else {
       Alert.alert(
         `Mesa ${mesa.nummesa}`,
@@ -474,6 +546,64 @@ const InicioScreen = () => {
     if (categoria?.includes("Entrada") || categoria?.includes("ENTRADA")) return "🥗";
     if (categoria?.includes("Bebida") || categoria?.includes("JUGOS") || categoria?.includes("Gaseosa")) return "🥤";
     return "🍽️";
+  };
+
+  const handleLiberarMesa = async (mesa) => {
+    Alert.alert(
+      "🔄 Liberar Mesa",
+      `¿Estás seguro de que deseas liberar la mesa ${mesa.nummesa}?\n\nLa mesa volverá a estado "Libre" y estará disponible para otros mozos.`,
+      [
+        {
+          text: "Cancelar",
+          style: "cancel"
+        },
+        {
+          text: "Liberar",
+          onPress: async () => {
+            try {
+              if (!mesa || !mesa._id) {
+                Alert.alert("Error", "No se pudo obtener la información de la mesa");
+                return;
+              }
+
+              // Extraer el ID de la mesa de forma segura
+              let mesaId = mesa._id;
+              if (mesaId && typeof mesaId === 'object') {
+                mesaId = mesaId.toString();
+              }
+
+              console.log("🔄 Liberando mesa:", mesaId);
+              
+              // Actualizar mesa a "libre"
+              await axios.put(
+                `${MESAS_API_UPDATE}/${mesaId}/estado`,
+                { estado: "libre" },
+                { timeout: 5000 }
+              );
+              
+              console.log("✅ Mesa liberada:", mesa.nummesa);
+              
+              Alert.alert("✅", `Mesa ${mesa.nummesa} liberada exitosamente.\n\nLa mesa está ahora disponible para otros mozos.`);
+              
+              // Actualizar datos
+              obtenerComandasHoy();
+              obtenerMesas();
+            } catch (error) {
+              console.error("❌ Error liberando mesa:", error);
+              await logger.error(error, {
+                action: 'liberar_mesa',
+                mesaId: mesa?._id,
+                mesaNum: mesa?.nummesa,
+                timestamp: moment().tz("America/Lima").format("YYYY-MM-DD HH:mm:ss"),
+              });
+              
+              const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message;
+              Alert.alert("Error", `No se pudo liberar la mesa.\n\n${errorMsg}`);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleEliminarComanda = async (comanda, mesa) => {
