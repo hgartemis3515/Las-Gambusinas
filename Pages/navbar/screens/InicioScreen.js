@@ -357,16 +357,34 @@ const InicioScreen = () => {
         c.status?.toLowerCase() === "pagado" || c.status?.toLowerCase() === "completado"
       );
       
+      // Filtrar comandas por cliente: si hay comandas con cliente, solo mostrar las del mismo cliente
+      let comandasParaBoucher = comandasPagadas;
+      if (comandasPagadas.length > 0) {
+        // Obtener el cliente de la primera comanda pagada que tenga cliente
+        const primeraComandaConCliente = comandasPagadas.find(c => c.cliente?._id || c.cliente);
+        if (primeraComandaConCliente) {
+          const clienteId = primeraComandaConCliente.cliente?._id || primeraComandaConCliente.cliente;
+          if (clienteId) {
+            // Filtrar solo las comandas del mismo cliente
+            comandasParaBoucher = comandasPagadas.filter(c => {
+              const comandaClienteId = c.cliente?._id || c.cliente;
+              return comandaClienteId && comandaClienteId.toString() === clienteId.toString();
+            });
+            console.log(`🔍 Filtrando comandas por cliente: ${comandasParaBoucher.length} de ${comandasPagadas.length} comandas pertenecen al mismo cliente`);
+          }
+        }
+      }
+      
       Alert.alert(
         `Mesa ${mesa.nummesa} - Pagado`,
-        "La mesa ha sido pagada. ¿Qué deseas hacer?",
+        `La mesa ha sido pagada.${comandasParaBoucher.length !== comandasPagadas.length ? `\n\nSe mostrarán ${comandasParaBoucher.length} comanda(s) del cliente.` : ''}\n\n¿Qué deseas hacer?`,
         [
           {
             text: "📄 Imprimir Boucher",
             onPress: async () => {
               try {
-                // Guardar comandas y mesa para generar el boucher
-                await AsyncStorage.setItem("comandasPago", JSON.stringify(comandasPagadas));
+                // Guardar solo las comandas del mismo cliente para generar el boucher
+                await AsyncStorage.setItem("comandasPago", JSON.stringify(comandasParaBoucher));
                 await AsyncStorage.setItem("mesaPago", JSON.stringify(mesa));
                 navigation.navigate("Pagos");
               } catch (error) {

@@ -19,7 +19,8 @@ import axios from "axios";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
-import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET, BOUCHER_API } from "../../../apiConfig";
+import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET, BOUCHER_API, CLIENTES_API } from "../../../apiConfig";
+import ModalClientes from "../../../Components/ModalClientes";
 
 const PagosScreen = () => {
   const navigation = useNavigation();
@@ -32,6 +33,8 @@ const PagosScreen = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [modalClienteVisible, setModalClienteVisible] = useState(false);
+  const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
 
   useEffect(() => {
     loadPagoData();
@@ -60,8 +63,32 @@ const PagosScreen = () => {
       if (comandasData) {
         const comandasArray = JSON.parse(comandasData);
         console.log("✅ Comandas cargadas:", comandasArray.length);
-        console.log("📋 Comandas:", JSON.stringify(comandasArray, null, 2));
-        setComandas(comandasArray);
+        
+        // Filtrar comandas por cliente: asegurar que todas pertenezcan al mismo cliente
+        if (comandasArray.length > 0) {
+          const primeraComanda = comandasArray[0];
+          const clienteId = primeraComanda.cliente?._id || primeraComanda.cliente;
+          
+          if (clienteId) {
+            // Filtrar solo las comandas del mismo cliente
+            const comandasFiltradas = comandasArray.filter(c => {
+              const comandaClienteId = c.cliente?._id || c.cliente;
+              return comandaClienteId && comandaClienteId.toString() === clienteId.toString();
+            });
+            
+            if (comandasFiltradas.length !== comandasArray.length) {
+              console.log(`⚠️ Filtrando comandas: ${comandasFiltradas.length} de ${comandasArray.length} pertenecen al mismo cliente`);
+            }
+            
+            setComandas(comandasFiltradas);
+          } else {
+            // Si no hay cliente, usar todas las comandas (caso legacy)
+            console.log("⚠️ Comandas sin cliente asignado (caso legacy)");
+            setComandas(comandasArray);
+          }
+        } else {
+          setComandas(comandasArray);
+        }
       } else {
         // Fallback al formato antiguo (una sola comanda)
         const comandaData = await AsyncStorage.getItem("comandaPago");
@@ -242,6 +269,12 @@ const PagosScreen = () => {
               <span><strong>Fecha Pago:</strong></span>
               <span>${fechaActual}</span>
             </div>
+            ${clienteSeleccionado ? `
+            <div class="info-row">
+              <span><strong>Cliente:</strong></span>
+              <span>${clienteSeleccionado.nombre || 'N/A'}</span>
+            </div>
+            ` : ''}
           </div>
 
           <table>
@@ -375,106 +408,142 @@ const PagosScreen = () => {
       return;
     }
 
-    const comandasNums = comandas.map(c => `#${c.comandaNumber || c._id.slice(-6)}`).join(', ');
-    Alert.alert(
-      "Confirmar Pago",
-      `¿Confirmar el pago de las comandas ${comandasNums}?\n\nTotal: S/. ${(total * 1.18).toFixed(2)}`,
-      [
-        {
-          text: "Cancelar",
-          style: "cancel"
-        },
-        {
-          text: "Pagar y Generar Boucher",
-          onPress: async () => {
-            try {
-              // Marcar todas las comandas como pagadas
-              for (const comanda of comandas) {
-                await axios.put(
-                  `${COMANDA_API}/${comanda._id}/status`,
-                  { nuevoStatus: "pagado" },
-                  { timeout: 5000 }
-                );
-                console.log(`✅ Comanda ${comanda.comandaNumber || comanda._id.slice(-4)} marcada como pagada`);
-              }
+    // Abrir modal de cliente antes de procesar el pago
+    setModalClienteVisible(true);
+  };
 
-              // Actualizar mesa a "pagado" (no a "libre" todavía)
-              await axios.put(
-                `${MESAS_API_UPDATE}/${mesa._id}/estado`,
-                { estado: "pagado" },
-                { timeout: 5000 }
-              );
-              
-              console.log("✅ Mesa actualizada a 'pagado'");
+  const procesarPagoConCliente = async (cliente) => {
+    try {
+      console.log("💳 Procesando pago con cliente:", cliente.nombre || cliente._id);
 
-              // Preparar datos del boucher
-              const platosBoucher = [];
-              comandas.forEach((comanda) => {
-                if (comanda.platos && Array.isArray(comanda.platos)) {
-                  comanda.platos.forEach((platoItem, index) => {
-                    const plato = platoItem.plato || platoItem;
-                    const cantidad = comanda.cantidades?.[index] || 1;
-                    const precio = plato.precio || 0;
-                    const subtotal = precio * cantidad;
-                    
-                    platosBoucher.push({
-                      plato: plato._id || plato,
-                      platoId: plato.id || null,
-                      nombre: plato.nombre || "Plato",
-                      precio: precio,
-                      cantidad: cantidad,
-                      subtotal: subtotal,
-                      comandaNumber: comanda.comandaNumber || null
-                    });
-                  });
-                }
-              });
+      // Asociar cliente a todas las comandas y actualizar totales
+      for (const comanda of comandas) {
+        // Actualizar comanda con cliente
+        await axios.put(
+          `${COMANDA_API}/${comanda._id}`,
+          { cliente: cliente._id },
+          { timeout: 5000 }
+        );
 
-              const boucherData = {
-                mesa: mesa._id,
-                numMesa: mesa.nummesa,
-                mozo: comandas[0]?.mozos?._id || comandas[0]?.mozos,
-                nombreMozo: comandas[0]?.mozos?.name || "N/A",
-                comandas: comandas.map(c => c._id),
-                comandasNumbers: comandas.map(c => c.comandaNumber).filter(n => n != null),
-                platos: platosBoucher,
-                subtotal: total,
-                igv: total * 0.18,
-                total: total * 1.18,
-                observaciones: comandas.map(c => c.observaciones).filter(o => o).join("; ") || "",
-                fechaPago: new Date(),
-                fechaPagoString: moment().tz("America/Lima").format("DD/MM/YYYY HH:mm:ss")
-              };
+        // Asociar cliente a comanda y actualizar totales
+        const totalComanda = comanda.platos?.reduce((sum, platoItem, index) => {
+          const plato = platoItem.plato || platoItem;
+          const cantidad = comanda.cantidades?.[index] || 1;
+          const precio = plato.precio || 0;
+          return sum + (precio * cantidad);
+        }, 0) || 0;
 
-              // Guardar boucher en el backend
-              try {
-                const boucherResponse = await axios.post(BOUCHER_API, boucherData, { timeout: 5000 });
-                console.log("✅ Boucher guardado:", boucherResponse.data.boucherNumber || boucherResponse.data._id);
-              } catch (boucherError) {
-                console.error("⚠️ Error guardando boucher (pero pago procesado):", boucherError);
-                // No bloquear el proceso si falla guardar el boucher
-              }
-
-              // Limpiar AsyncStorage
-              await AsyncStorage.removeItem("comandasPago");
-              await AsyncStorage.removeItem("comandaPago");
-              await AsyncStorage.removeItem("mesaPago");
-
-              // Generar PDF
-              await generarPDF();
-
-              Alert.alert("✅", "Pago procesado y voucher generado.\n\nLa mesa ahora está en estado 'Pagado'. Puedes liberarla desde la pantalla de Inicio.");
-              setComandas([]);
-              setMesa(null);
-              navigation.navigate("Inicio");
-            } catch (error) {
-              console.error("Error procesando pago:", error);
-              Alert.alert("Error", "No se pudo procesar el pago");
-            }
-          }
+        // Asociar cliente a comanda y actualizar totales del cliente
+        try {
+          const baseUrl = CLIENTES_API.replace('/clientes', '');
+          await axios.post(
+            `${baseUrl}/comandas/${comanda._id}/cliente`,
+            { clienteId: cliente._id, totalComanda: totalComanda },
+            { timeout: 5000 }
+          );
+        } catch (error) {
+          console.warn("⚠️ Error al asociar cliente a comanda (continuando):", error);
         }
-      ]
-    );
+
+        // Marcar comanda como pagada
+        await axios.put(
+          `${COMANDA_API}/${comanda._id}/status`,
+          { nuevoStatus: "pagado" },
+          { timeout: 5000 }
+        );
+        console.log(`✅ Comanda ${comanda.comandaNumber || comanda._id.slice(-4)} marcada como pagada con cliente`);
+      }
+
+      // Actualizar mesa a "pagado"
+      await axios.put(
+        `${MESAS_API_UPDATE}/${mesa._id}/estado`,
+        { estado: "pagado" },
+        { timeout: 5000 }
+      );
+      
+      console.log("✅ Mesa actualizada a 'pagado'");
+
+      // Preparar datos del boucher
+      const platosBoucher = [];
+      comandas.forEach((comanda) => {
+        if (comanda.platos && Array.isArray(comanda.platos)) {
+          comanda.platos.forEach((platoItem, index) => {
+            const plato = platoItem.plato || platoItem;
+            const cantidad = comanda.cantidades?.[index] || 1;
+            const precio = plato.precio || 0;
+            const subtotal = precio * cantidad;
+            
+            platosBoucher.push({
+              plato: plato._id || plato,
+              platoId: plato.id || null,
+              nombre: plato.nombre || "Plato",
+              precio: precio,
+              cantidad: cantidad,
+              subtotal: subtotal,
+              comandaNumber: comanda.comandaNumber || null
+            });
+          });
+        }
+      });
+
+      const boucherData = {
+        mesa: mesa._id,
+        numMesa: mesa.nummesa,
+        mozo: comandas[0]?.mozos?._id || comandas[0]?.mozos,
+        nombreMozo: comandas[0]?.mozos?.name || "N/A",
+        cliente: cliente._id, // Asociar cliente al boucher
+        comandas: comandas.map(c => c._id),
+        comandasNumbers: comandas.map(c => c.comandaNumber).filter(n => n != null),
+        platos: platosBoucher,
+        subtotal: total,
+        igv: total * 0.18,
+        total: total * 1.18,
+        observaciones: comandas.map(c => c.observaciones).filter(o => o).join("; ") || "",
+        fechaPago: new Date(),
+        fechaPagoString: moment().tz("America/Lima").format("DD/MM/YYYY HH:mm:ss"),
+        usadoEnComanda: comandas[0]?._id || null,
+        fechaUso: new Date()
+      };
+
+      // Guardar boucher en el backend
+      // Nota: La asociación del boucher al cliente se hace automáticamente en el backend
+      // cuando se crea el boucher (ver boucher.repository.js)
+      try {
+        const boucherResponse = await axios.post(BOUCHER_API, boucherData, { timeout: 5000 });
+        console.log("✅ Boucher guardado:", boucherResponse.data.boucherNumber || boucherResponse.data._id);
+        console.log("✅ Boucher asociado automáticamente al cliente en el backend");
+      } catch (boucherError) {
+        console.error("⚠️ Error guardando boucher (pero pago procesado):", boucherError);
+        // No bloquear el proceso si falla guardar el boucher
+      }
+
+      // Limpiar AsyncStorage
+      await AsyncStorage.removeItem("comandasPago");
+      await AsyncStorage.removeItem("comandaPago");
+      await AsyncStorage.removeItem("mesaPago");
+
+      // Generar PDF
+      await generarPDF();
+
+      Alert.alert(
+        "✅", 
+        `Pago procesado y voucher generado.\n\nCliente: ${cliente.nombre}\nLa mesa ahora está en estado 'Pagado'. Puedes liberarla desde la pantalla de Inicio.`
+      );
+      setComandas([]);
+      setMesa(null);
+      setClienteSeleccionado(null);
+      navigation.navigate("Inicio");
+    } catch (error) {
+      console.error("Error procesando pago:", error);
+      Alert.alert("Error", error.response?.data?.message || "No se pudo procesar el pago");
+    }
+  };
+
+  const handleClienteSeleccionado = (cliente) => {
+    setClienteSeleccionado(cliente);
+    setModalClienteVisible(false);
+    // Procesar el pago con el cliente seleccionado
+    procesarPagoConCliente(cliente);
   };
 
   if (loading) {
@@ -646,6 +715,13 @@ const PagosScreen = () => {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Modal de Clientes */}
+      <ModalClientes
+        visible={modalClienteVisible}
+        onClose={() => setModalClienteVisible(false)}
+        onClienteSeleccionado={handleClienteSeleccionado}
+      />
     </SafeAreaView>
   );
 };
