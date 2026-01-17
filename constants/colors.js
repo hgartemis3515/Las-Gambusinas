@@ -1,6 +1,7 @@
 /**
  * Sistema de Colores Las Gambusinas
  * Paleta oficial para iconos, botones y UI
+ * Dark Theme Premium - Rojo/Negro
  */
 export const colors = {
   primary: '#C41E3A',      // Rojo Gambusinas
@@ -13,6 +14,14 @@ export const colors = {
   white: '#FFFFFF',        // Texto blanco
   gray: '#AAAAAA',         // Texto gris
   lightGray: '#CCCCCC',    // Texto gris claro
+  // Dark Theme Premium
+  bgPrimary: '#121212',    // Fondo principal oscuro
+  bgSecondary: '#1E1E1E',  // Fondo secundario
+  surfaceElevated: '#2A2A2A',      // Superficie elevada
+  textPrimary: '#FFFFFF',   // Texto principal blanco
+  textSecondary: '#B0B0B0', // Texto secundario gris
+  // Glassmorphism
+  glassBg: 'rgba(26,26,26,0.8)', // Fondo glassmorphism
 };
 
 /**

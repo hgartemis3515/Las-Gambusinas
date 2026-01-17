@@ -1,8 +1,8 @@
-import React from "react";
-import { createMaterialBottomTabNavigator } from '@react-navigation/material-bottom-tabs';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useTheme } from "../../context/ThemeContext";
-import { themeLight, bottomNavText } from "../../constants/theme";
+import React, { useState, useEffect } from "react";
+import { View } from "react-native";
+import { createMaterialBottomTabNavigator } from "@react-navigation/material-bottom-tabs";
+import { useNavigationState } from "@react-navigation/native";
+import BottomNavBar from "../../Components/BottomNavBar";
 import InicioScreen from "./screens/InicioScreen";
 import OrdenesScreen from "./screens/OrdenesScreen";
 import PagosScreen from "./screens/PagosScreen";
@@ -11,75 +11,46 @@ import MasScreen from "./screens/MasScreen";
 const Tab = createMaterialBottomTabNavigator();
 
 const Navbar = () => {
-  const themeContext = useTheme();
-  const theme = themeContext?.theme || themeLight;
-  
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Obtener el estado del tab navigator desde el navigation state global
+  const navigationState = useNavigationState((state) => {
+    // Buscar el estado del tab navigator dentro del stack
+    const navbarRoute = state?.routes?.find((r) => r.name === "Navbar");
+    return navbarRoute?.state || null;
+  });
+
+  // Actualizar el índice cuando cambie el estado
+  useEffect(() => {
+    if (navigationState?.index !== undefined) {
+      setCurrentIndex(navigationState.index);
+    }
+  }, [navigationState]);
+
   return (
-      <Tab.Navigator
-        initialRouteName="Inicio"
-        activeColor="#FFFFFF"
-        inactiveColor="#AAAAAA"
-        barStyle={{ 
-          backgroundColor: theme.colors.surface,
-          paddingBottom: 4,
-        }}
-        labeled={true}
-        screenOptions={{
-          tabBarLabelStyle: {
-            ...bottomNavText,
-            color: '#FFFFFF',
-            fontSize: 12,
-            fontWeight: '500',
-            marginTop: 0,
-            paddingBottom: 4,
-            includeFontPadding: false,
-          },
-          tabBarIconStyle: {
-            marginBottom: 0,
-          },
-        }}
-      >
-        <Tab.Screen 
-          name="Inicio" 
-          component={InicioScreen} 
-          options={{ 
-            tabBarLabel: 'Inicio', 
-            tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="table-picnic" color={color} size={26} />
-            ),
-          }} 
-        />
-        <Tab.Screen 
-          name="Ordenes" 
-          component={OrdenesScreen} 
-          options={{ 
-            tabBarLabel: 'Ordenes', 
-            tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="notebook-edit" color={color} size={26} />
-            ),
-          }} 
-        />
-        <Tab.Screen 
-          name="Pagos" 
-          component={PagosScreen} 
-          options={{ 
-            tabBarLabel: 'Pagos', 
-            tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="cash-multiple" color={color} size={26} />
-            ),
-          }} 
-        />
-        <Tab.Screen 
-          name="Mas" 
-          component={MasScreen} 
-          options={{ 
-            tabBarLabel: 'Más', 
-            tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="dots-horizontal" color={color} size={26} />
-            ),
-          }} 
-        />
-      </Tab.Navigator>
+    <View style={{ flex: 1 }}>
+      {/* Screens encima */}
+      <View style={{ flex: 1 }}>
+        <Tab.Navigator
+          initialRouteName="Inicio"
+          barStyle={{ display: "none", height: 0, opacity: 0 }} // Ocultar bar nativo completamente
+          labeled={false}
+          activeColor="#C41E3A"
+          inactiveColor="#AAAAAA"
+          screenOptions={{
+            headerShown: false,
+          }}
+        >
+          <Tab.Screen name="Inicio" component={InicioScreen} />
+          <Tab.Screen name="Ordenes" component={OrdenesScreen} />
+          <Tab.Screen name="Pagos" component={PagosScreen} />
+          <Tab.Screen name="Mas" component={MasScreen} />
+        </Tab.Navigator>
+      </View>
+      
+      {/* Custom Bottom NavBar - zIndex: 1 detrás del contenido */}
+      <BottomNavBar activeIndex={currentIndex} />
+    </View>
   );
 };
 
