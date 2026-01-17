@@ -172,6 +172,9 @@ const InicioScreen = () => {
   const [comandas, setComandas] = useState([]);
   const [modalEditVisible, setModalEditVisible] = useState(false);
   const [comandaEditando, setComandaEditando] = useState(null);
+  const [modalOpcionesMesaVisible, setModalOpcionesMesaVisible] = useState(false);
+  const [mesaOpciones, setMesaOpciones] = useState(null);
+  const [comandasOpciones, setComandasOpciones] = useState([]);
   const [platos, setPlatos] = useState([]);
   const [areas, setAreas] = useState([]);
   const [userInfo, setUserInfo] = useState(null);
@@ -484,57 +487,10 @@ const InicioScreen = () => {
           return;
         }
 
-        // Si es el mismo mozo, mostrar opciones de Pagar y Nueva Comanda
-        const opciones = [
-          {
-            text: "Nueva Comanda",
-            onPress: () => {
-              // Guardar la mesa seleccionada para crear nueva comanda
-              AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesa));
-              navigation.navigate("Ordenes");
-            }
-          },
-          {
-            text: "Pagar",
-            onPress: async () => {
-              try {
-                console.log("💾 Guardando datos para pago...");
-                console.log("📋 Comandas a guardar:", comandasMesa.length);
-                console.log("🪑 Mesa a guardar:", mesa.nummesa);
-                
-                // Guardar todas las comandas de la mesa para el pago
-                await AsyncStorage.setItem("comandasPago", JSON.stringify(comandasMesa));
-                await AsyncStorage.setItem("mesaPago", JSON.stringify(mesa));
-                
-                // Verificar que se guardaron correctamente
-                const comandasVerificadas = await AsyncStorage.getItem("comandasPago");
-                const mesaVerificada = await AsyncStorage.getItem("mesaPago");
-                
-                if (comandasVerificadas && mesaVerificada) {
-                  console.log("✅ Datos guardados correctamente");
-                  console.log("📋 Comandas guardadas:", JSON.parse(comandasVerificadas).length);
-                  navigation.navigate("Pagos");
-                } else {
-                  console.error("❌ Error: Los datos no se guardaron correctamente");
-                  Alert.alert("Error", "No se pudieron guardar los datos para el pago");
-                }
-              } catch (error) {
-                console.error("❌ Error guardando datos para pago:", error);
-                Alert.alert("Error", "No se pudo preparar el pago");
-              }
-            }
-          },
-          {
-            text: "Cancelar",
-            style: "cancel"
-          }
-        ];
-
-        Alert.alert(
-          `Mesa ${mesa.nummesa} - Preparado`,
-          "El pedido está listo. ¿Qué deseas hacer?",
-          opciones
-        );
+        // Si es el mismo mozo, mostrar opciones en Modal personalizado para que todas sean visibles
+        setMesaOpciones(mesa);
+        setComandasOpciones(comandasMesa);
+        setModalOpcionesMesaVisible(true);
       }
     } else if (estado === "Pagado" || estado?.toLowerCase() === "pagado") {
       // Mesa en estado Pagado - mostrar opciones de Imprimir Boucher y Liberar
@@ -843,6 +799,95 @@ const InicioScreen = () => {
               
               const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message;
               Alert.alert("Error", `No se pudo liberar la mesa.\n\n${errorMsg}`);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleEliminarTodasComandasMesa = async (mesa, comandasMesa) => {
+    // Confirmación para eliminar todas las comandas de la mesa
+    Alert.alert(
+      "⚠️ Confirmar Eliminación",
+      `¿Estás seguro de que deseas eliminar todas las comandas de la mesa ${mesa?.nummesa || 'N/A'}?\n\nEsta acción eliminará ${comandasMesa.length} comanda(s) y la mesa quedará libre para que otro mozo pueda servir.\n\nEsta acción no se puede deshacer.`,
+      [
+        {
+          text: "Cancelar",
+          style: "cancel"
+        },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              console.log(`🗑️ Eliminando todas las comandas de la mesa ${mesa.nummesa}...`);
+              console.log(`📋 Comandas a eliminar: ${comandasMesa.length}`);
+              
+              // Eliminar todas las comandas de la mesa
+              const eliminaciones = comandasMesa.map(async (comanda) => {
+                try {
+                  let comandaId = comanda._id;
+                  
+                  // Si _id es un objeto (puede pasar con populate), extraer el string
+                  if (comandaId && typeof comandaId === 'object') {
+                    comandaId = comandaId.toString();
+                  }
+                  
+                  if (comandaId) {
+                    console.log(`  - Eliminando comanda #${comanda.comandaNumber || comandaId.slice(-4)}`);
+                    await axios.delete(`${COMANDA_API}/${comandaId}`, { timeout: 5000 });
+                    return { success: true, comandaId };
+                  } else {
+                    console.warn(`  - ⚠️ No se pudo obtener ID de comanda:`, comanda);
+                    return { success: false, comandaId: null };
+                  }
+                } catch (error) {
+                  console.error(`  - ❌ Error eliminando comanda:`, error.message);
+                  return { success: false, error: error.message };
+                }
+              });
+              
+              const resultados = await Promise.all(eliminaciones);
+              const exitosas = resultados.filter(r => r.success).length;
+              const fallidas = resultados.filter(r => !r.success).length;
+              
+              console.log(`✅ Eliminación completada: ${exitosas} exitosas, ${fallidas} fallidas`);
+              
+              // Actualizar comandas y mesas desde el servidor
+              await obtenerComandasHoy();
+              await obtenerMesas();
+              
+              if (fallidas === 0) {
+                Alert.alert(
+                  "✅ Éxito",
+                  `Todas las comandas de la mesa ${mesa.nummesa} han sido eliminadas.\n\nLa mesa ahora está libre y disponible para otro mozo.`
+                );
+              } else if (exitosas > 0) {
+                Alert.alert(
+                  "⚠️ Parcial",
+                  `Se eliminaron ${exitosas} de ${comandasMesa.length} comandas.\n\n${fallidas} comanda(s) no se pudieron eliminar.`
+                );
+              } else {
+                Alert.alert(
+                  "❌ Error",
+                  "No se pudieron eliminar las comandas. Por favor, intenta nuevamente."
+                );
+              }
+            } catch (error) {
+              console.error("❌ Error eliminando comandas de la mesa:", error);
+              await logger.error(error, {
+                action: 'eliminar_todas_comandas_mesa',
+                mesaId: mesa?._id,
+                mesaNum: mesa?.nummesa,
+                comandasCount: comandasMesa.length,
+                timestamp: moment().tz("America/Lima").format("YYYY-MM-DD HH:mm:ss"),
+              });
+              
+              Alert.alert(
+                "Error",
+                error.response?.data?.message || "No se pudieron eliminar las comandas. Por favor, intenta nuevamente."
+              );
             }
           }
         }
@@ -1511,6 +1556,100 @@ const InicioScreen = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Modal de Opciones de Mesa (Preparado) */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalOpcionesMesaVisible}
+        onRequestClose={() => setModalOpcionesMesaVisible(false)}
+      >
+        <View style={styles.modalBackground}>
+          <View style={styles.modalOpcionesContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                Mesa {mesaOpciones?.nummesa || 'N/A'} - Preparado
+              </Text>
+              <TouchableOpacity onPress={() => setModalOpcionesMesaVisible(false)}>
+                <MaterialCommunityIcons name="close" size={24} color={theme.colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            
+            <Text style={styles.modalOpcionesMessage}>
+              El pedido está listo. ¿Qué deseas hacer?
+            </Text>
+
+            <View style={styles.modalOpcionesButtons}>
+              <TouchableOpacity
+                style={[styles.modalOpcionesButton, styles.modalOpcionesButtonPrimary]}
+                onPress={async () => {
+                  setModalOpcionesMesaVisible(false);
+                  // Guardar la mesa seleccionada para crear nueva comanda
+                  await AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesaOpciones));
+                  navigation.navigate("Ordenes");
+                }}
+              >
+                <MaterialCommunityIcons name="plus-circle" size={24} color={theme.colors.text.white} />
+                <Text style={styles.modalOpcionesButtonText}>Nueva Comanda</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalOpcionesButton, styles.modalOpcionesButtonPrimary]}
+                onPress={async () => {
+                  setModalOpcionesMesaVisible(false);
+                  try {
+                    console.log("💾 Guardando datos para pago...");
+                    console.log("📋 Comandas a guardar:", comandasOpciones.length);
+                    console.log("🪑 Mesa a guardar:", mesaOpciones.nummesa);
+                    
+                    // Guardar todas las comandas de la mesa para el pago
+                    await AsyncStorage.setItem("comandasPago", JSON.stringify(comandasOpciones));
+                    await AsyncStorage.setItem("mesaPago", JSON.stringify(mesaOpciones));
+                    
+                    // Verificar que se guardaron correctamente
+                    const comandasVerificadas = await AsyncStorage.getItem("comandasPago");
+                    const mesaVerificada = await AsyncStorage.getItem("mesaPago");
+                    
+                    if (comandasVerificadas && mesaVerificada) {
+                      console.log("✅ Datos guardados correctamente");
+                      console.log("📋 Comandas guardadas:", JSON.parse(comandasVerificadas).length);
+                      navigation.navigate("Pagos");
+                    } else {
+                      console.error("❌ Error: Los datos no se guardaron correctamente");
+                      Alert.alert("Error", "No se pudieron guardar los datos para el pago");
+                    }
+                  } catch (error) {
+                    console.error("❌ Error guardando datos para pago:", error);
+                    Alert.alert("Error", "No se pudo preparar el pago");
+                  }
+                }}
+              >
+                <MaterialCommunityIcons name="cash" size={24} color={theme.colors.text.white} />
+                <Text style={styles.modalOpcionesButtonText}>Pagar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalOpcionesButton, styles.modalOpcionesButtonDanger]}
+                onPress={() => {
+                  setModalOpcionesMesaVisible(false);
+                  handleEliminarTodasComandasMesa(mesaOpciones, comandasOpciones);
+                }}
+              >
+                <MaterialCommunityIcons name="delete" size={24} color={theme.colors.text.white} />
+                <Text style={styles.modalOpcionesButtonText}>Eliminar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalOpcionesButton, styles.modalOpcionesButtonCancel]}
+                onPress={() => setModalOpcionesMesaVisible(false)}
+              >
+                <MaterialCommunityIcons name="close-circle" size={24} color={theme.colors.text.primary} />
+                <Text style={[styles.modalOpcionesButtonText, styles.modalOpcionesButtonTextCancel]}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -1888,6 +2027,51 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
     color: theme.colors.text.white,
     fontWeight: "700",
     fontSize: 14,
+  },
+  modalOpcionesContainer: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    width: "85%",
+    maxWidth: 400,
+    padding: theme.spacing.lg,
+    ...theme.shadows.large,
+  },
+  modalOpcionesMessage: {
+    fontSize: 16,
+    color: theme.colors.text.secondary,
+    marginBottom: theme.spacing.lg,
+    textAlign: "center",
+  },
+  modalOpcionesButtons: {
+    gap: theme.spacing.md,
+  },
+  modalOpcionesButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    gap: theme.spacing.sm,
+    ...theme.shadows.small,
+  },
+  modalOpcionesButtonPrimary: {
+    backgroundColor: theme.colors.primary,
+  },
+  modalOpcionesButtonDanger: {
+    backgroundColor: theme.colors.error || "#DC3545",
+  },
+  modalOpcionesButtonCancel: {
+    backgroundColor: theme.colors.background,
+    borderWidth: 2,
+    borderColor: theme.colors.border,
+  },
+  modalOpcionesButtonText: {
+    color: theme.colors.text.white,
+    fontWeight: "700",
+    fontSize: 16,
+  },
+  modalOpcionesButtonTextCancel: {
+    color: theme.colors.text.primary,
   },
 });
 
