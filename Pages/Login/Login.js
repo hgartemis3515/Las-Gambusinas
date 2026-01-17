@@ -83,6 +83,190 @@ const FloatingParticle = ({ delay = 0, screenHeight, screenWidth }) => {
   );
 };
 
+// Componente de Bienvenida Elegante
+const SuccessWelcomeModal = ({ visible, userName, onClose }) => {
+  const scale = useSharedValue(0);
+  const opacity = useSharedValue(0);
+  const checkScale = useSharedValue(0);
+  const checkRotation = useSharedValue(-45);
+  const progressWidth = useSharedValue(0);
+
+  useEffect(() => {
+    if (visible) {
+      // Animación de entrada
+      opacity.value = withTiming(1, { duration: 300 });
+      scale.value = withSpring(1, { damping: 12, stiffness: 100 });
+      
+      // Animación del check con delay
+      setTimeout(() => {
+        checkScale.value = withSpring(1, { damping: 10, stiffness: 150 });
+        checkRotation.value = withSpring(0, { damping: 10, stiffness: 150 });
+      }, 200);
+
+      // Animación del progreso
+      progressWidth.value = withTiming(100, { duration: 2000 });
+    } else {
+      opacity.value = 0;
+      scale.value = 0;
+      checkScale.value = 0;
+      checkRotation.value = -45;
+      progressWidth.value = 0;
+    }
+  }, [visible]);
+
+  const containerStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+
+  const checkStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: checkScale.value },
+      { rotate: `${checkRotation.value}deg` }
+    ],
+  }));
+
+  const progressStyle = useAnimatedStyle(() => ({
+    width: `${progressWidth.value}%`,
+  }));
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View
+      style={[
+        {
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.7)",
+          justifyContent: "center",
+          alignItems: "center",
+          zIndex: 1000,
+        },
+        containerStyle,
+      ]}
+    >
+      <MotiView
+        from={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{
+          type: "spring",
+          damping: 15,
+          stiffness: 200,
+        }}
+        style={{
+          backgroundColor: "rgba(26, 26, 26, 0.95)",
+          borderRadius: 24,
+          padding: 32,
+          alignItems: "center",
+          justifyContent: "center",
+          width: "85%",
+          maxWidth: 400,
+          borderWidth: 2,
+          borderColor: colors.primary,
+          shadowColor: colors.primary,
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.6,
+          shadowRadius: 20,
+          elevation: 20,
+        }}
+      >
+        {/* Icono de check animado */}
+        <Animated.View style={checkStyle}>
+          <View
+            style={{
+              width: 80,
+              height: 80,
+              borderRadius: 40,
+              backgroundColor: colors.success,
+              justifyContent: "center",
+              alignItems: "center",
+              marginBottom: 24,
+              shadowColor: colors.success,
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.5,
+              shadowRadius: 12,
+              elevation: 12,
+            }}
+          >
+            <MaterialCommunityIcons
+              name="check"
+              size={48}
+              color="#FFFFFF"
+            />
+          </View>
+        </Animated.View>
+
+        {/* Título */}
+        <Text
+          style={{
+            fontSize: 24,
+            fontWeight: "900",
+            color: colors.textPrimary,
+            marginBottom: 12,
+            textAlign: "center",
+            letterSpacing: 1,
+          }}
+        >
+          ¡Bienvenido!
+        </Text>
+
+        {/* Nombre del usuario */}
+        <Text
+          style={{
+            fontSize: 20,
+            fontWeight: "700",
+            color: colors.primary,
+            marginBottom: 8,
+            textAlign: "center",
+          }}
+        >
+          {userName}
+        </Text>
+
+        {/* Mensaje */}
+        <Text
+          style={{
+            fontSize: 16,
+            fontWeight: "500",
+            color: colors.textSecondary,
+            textAlign: "center",
+            lineHeight: 22,
+          }}
+        >
+          Sesión iniciada correctamente
+        </Text>
+
+        {/* Indicador de progreso animado */}
+        <View
+          style={{
+            marginTop: 24,
+            width: "100%",
+            height: 4,
+            backgroundColor: "rgba(255, 255, 255, 0.1)",
+            borderRadius: 2,
+            overflow: "hidden",
+          }}
+        >
+          <Animated.View
+            style={[
+              {
+                height: "100%",
+                backgroundColor: colors.primary,
+                borderRadius: 2,
+              },
+              progressStyle,
+            ]}
+          />
+        </View>
+      </MotiView>
+    </Animated.View>
+  );
+};
+
 // Input con animaciones
 const AnimatedInput = ({ label, icon, placeholder, value, onChangeText, error, delay = 0, screenWidth, isLandscape = false, ...props }) => {
   const [isFocused, setIsFocused] = useState(false);
@@ -203,6 +387,8 @@ const Login = () => {
   const [dni, setDni] = useState("");
   const [error, setError] = useState({ nombre: false, dni: false });
   const [loading, setLoading] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [welcomeUserName, setWelcomeUserName] = useState("");
   const buttonScale = useSharedValue(1);
   const titlePulse = useSharedValue(1);
 
@@ -259,12 +445,17 @@ const Login = () => {
         withTiming(1, { duration: 200 })
       );
 
-      Alert.alert("✅ Éxito", `Bienvenido ${mozo.name}`);
+      // Mostrar modal de bienvenida elegante
+      setWelcomeUserName(mozo.name);
+      setShowWelcome(true);
       
-      // Pequeño delay para que se vea la animación antes de navegar
+      // Auto-cierre y navegación después de 2 segundos
       setTimeout(() => {
-        navigation.replace("Navbar", { username: mozo.name });
-      }, 300);
+        setShowWelcome(false);
+        setTimeout(() => {
+          navigation.replace("Navbar", { username: mozo.name });
+        }, 300);
+      }, 2000);
     } catch (error) {
       console.error("❌ Error de conexión:", error.message);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -511,6 +702,13 @@ const Login = () => {
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
+      
+      {/* Modal de Bienvenida Elegante */}
+      <SuccessWelcomeModal
+        visible={showWelcome}
+        userName={welcomeUserName}
+        onClose={() => setShowWelcome(false)}
+      />
     </LinearGradient>
   );
 };
