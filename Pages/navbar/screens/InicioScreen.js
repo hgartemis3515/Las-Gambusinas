@@ -60,24 +60,27 @@ const MesaAnimada = React.memo(({
   useEffect(() => {
     const estadoLower = estado?.toLowerCase() || "libre";
     
+    // Resetear animaciones anteriores
+    translateX.value = withTiming(0, { duration: 200 });
+    
     if (estadoLower === "libre") {
-      // Pulse infinito para mesas libres
+      // Pulse infinito permanente para mesas libres
       pulseScale.value = withRepeat(
         withTiming(1.02, { duration: 1500 }),
         -1,
         true
       );
     } else if (estadoLower === "pedido") {
-      // Shake para mesas con pedido
-      translateX.value = withRepeat(
+      // Pulse sutil para mesas con pedido (sin movimiento horizontal)
+      pulseScale.value = withRepeat(
         withSequence(
-          withTiming(5, { duration: 100 }),
-          withTiming(-5, { duration: 100 }),
-          withTiming(0, { duration: 100 })
+          withTiming(1.03, { duration: 1200 }),
+          withTiming(1, { duration: 1200 })
         ),
         -1,
         true
       );
+      translateX.value = 0; // Sin movimiento horizontal
     } else if (estadoLower === "preparado") {
       // Bounce continuo para preparado
       pulseScale.value = withRepeat(
@@ -88,6 +91,11 @@ const MesaAnimada = React.memo(({
         -1,
         true
       );
+      translateX.value = 0; // Sin movimiento horizontal
+    } else {
+      // Para otros estados, sin animación
+      pulseScale.value = 1;
+      translateX.value = 0;
     }
   }, [estado]);
 

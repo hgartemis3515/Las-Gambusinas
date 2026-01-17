@@ -25,10 +25,12 @@ import Animated, {
   withTiming,
   withRepeat,
   interpolate,
+  FadeIn,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { LOGIN_AUTH_API } from "../../apiConfig";
 import { colors } from "../../constants/colors";
+import { useOrientation } from "../../hooks/useOrientation";
 
 // Componente de partículas flotantes
 const FloatingParticle = ({ delay = 0, screenHeight, screenWidth }) => {
@@ -82,7 +84,7 @@ const FloatingParticle = ({ delay = 0, screenHeight, screenWidth }) => {
 };
 
 // Input con animaciones
-const AnimatedInput = ({ label, icon, placeholder, value, onChangeText, error, delay = 0, screenWidth, ...props }) => {
+const AnimatedInput = ({ label, icon, placeholder, value, onChangeText, error, delay = 0, screenWidth, isLandscape = false, ...props }) => {
   const [isFocused, setIsFocused] = useState(false);
   const shakeX = useSharedValue(0);
   const glowOpacity = useSharedValue(0);
@@ -123,7 +125,12 @@ const AnimatedInput = ({ label, icon, placeholder, value, onChangeText, error, d
         damping: 15,
         delay: delay,
       }}
-      style={{ marginBottom: 24, width: screenWidth * 0.85, alignSelf: "center" }}
+      style={{ 
+        marginBottom: isLandscape ? 20 : 28, 
+        width: isLandscape ? "100%" : screenWidth * 0.88, 
+        maxWidth: 340, 
+        alignSelf: "center" 
+      }}
     >
       <Text
         style={{
@@ -142,6 +149,9 @@ const AnimatedInput = ({ label, icon, placeholder, value, onChangeText, error, d
           style={{
             flexDirection: "row",
             alignItems: "center",
+            height: isLandscape 
+              ? (screenWidth < 390 ? 48 : 52) 
+              : (screenWidth < 390 ? 52 : 56),
             borderWidth: 2,
             borderColor: isFocused ? colors.primary : error ? colors.danger : "rgba(255,255,255,0.2)",
             borderRadius: 16,
@@ -151,17 +161,20 @@ const AnimatedInput = ({ label, icon, placeholder, value, onChangeText, error, d
         >
           <MaterialCommunityIcons
             name={icon}
-            size={24}
+            size={isLandscape ? 20 : 22}
             color={isFocused ? colors.primary : colors.textSecondary}
             style={{ marginRight: 12 }}
           />
           <TextInput
             style={{
               flex: 1,
-              paddingVertical: 18,
-              fontSize: 16,
+              height: isLandscape 
+                ? (screenWidth < 390 ? 48 : 52) 
+                : (screenWidth < 390 ? 52 : 56),
+              fontSize: isLandscape ? 15 : 16,
               color: colors.textPrimary,
               fontWeight: "600",
+              textAlignVertical: "center",
             }}
             placeholder={placeholder}
             placeholderTextColor="rgba(255,255,255,0.5)"
@@ -183,12 +196,15 @@ const AnimatedInput = ({ label, icon, placeholder, value, onChangeText, error, d
 const Login = () => {
   const navigation = useNavigation();
   const { width, height } = useWindowDimensions();
+  const { isLandscape, isTablet: isTabletOrientation } = useOrientation();
   const isTablet = width > 500;
+  const isSmallScreen = width < 390;
   const [nombre, setNombre] = useState("");
   const [dni, setDni] = useState("");
   const [error, setError] = useState({ nombre: false, dni: false });
   const [loading, setLoading] = useState(false);
   const buttonScale = useSharedValue(1);
+  const titlePulse = useSharedValue(1);
 
   const handleLogin = async () => {
     // Validación
@@ -276,10 +292,26 @@ const Login = () => {
     transform: [{ scale: buttonScale.value }],
   }));
 
+  // Animación pulse infinito para marco POS
+  useEffect(() => {
+    titlePulse.value = withRepeat(
+      withSequence(
+        withTiming(1.02, { duration: 2000 }),
+        withTiming(1, { duration: 2000 })
+      ),
+      -1,
+      true
+    );
+  }, []);
+
   // Generar partículas (reducido para mejor rendimiento)
   const particles = Array.from({ length: 8 }, (_, i) => (
     <FloatingParticle key={`particle-${i}`} delay={i * 200} screenHeight={height} screenWidth={width} />
   ));
+
+  const titlePulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: titlePulse.value }],
+  }));
 
   return (
     <LinearGradient
@@ -298,55 +330,77 @@ const Login = () => {
               flex: 1,
               justifyContent: "center",
               alignItems: "center",
-              paddingVertical: height * 0.1,
+              paddingVertical: isLandscape ? height * 0.05 : height * 0.1,
+              flexDirection: isLandscape ? "row" : "column",
+              paddingHorizontal: isLandscape ? 40 : 0,
             }}
           >
             {/* Partículas flotantes */}
             {particles}
 
-            {/* Logo con animación hero */}
+            {/* Título POS - Hero Center con Marco Premium */}
             <MotiView
-              from={{ scale: 1.2, opacity: 0, translateY: -50 }}
-              animate={{ scale: 1, opacity: 1, translateY: 0 }}
+              from={{ opacity: 0, scale: 1.05 }}
+              animate={{ opacity: 1, scale: 1 }}
               transition={{
                 type: "spring",
-                damping: 12,
-                stiffness: 100,
+                damping: 15,
+                delay: 200,
               }}
               style={{
-                marginBottom: isTablet ? 60 : 40,
+                marginTop: isLandscape ? 0 : 140,
+                marginBottom: isLandscape ? 0 : 32,
+                marginRight: isLandscape ? 40 : 0,
                 alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              <View
-                style={{
-                  width: isTablet ? 240 : 200,
-                  height: isTablet ? 240 : 200,
-                  borderRadius: 30,
-                  backgroundColor: "rgba(255,255,255,0.1)",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  borderWidth: 2,
-                  borderColor: "rgba(196,30,58,0.3)",
-                }}
-              >
-                <Text
+              <Animated.View style={titlePulseStyle}>
+                <View
                   style={{
-                    fontSize: isTablet ? 48 : 36,
-                    fontWeight: "900",
-                    color: colors.textPrimary,
-                    textAlign: "center",
-                    letterSpacing: 2,
+                    width: isLandscape ? 100 : 120,
+                    height: isLandscape ? 50 : 60,
+                    borderRadius: 16,
+                    borderWidth: 3,
+                    borderColor: colors.primary,
+                    backgroundColor: "transparent",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    shadowColor: "#FFFFFF",
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 8,
+                    elevation: 8,
                   }}
                 >
-                  Las Gambusinas
-                </Text>
-              </View>
+                  <Text
+                    style={{
+                      fontSize: isLandscape 
+                        ? (isSmallScreen ? 32 : 36) 
+                        : (isSmallScreen ? 38 : 42),
+                      fontWeight: "900",
+                      fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+                      color: "#FFFFFF",
+                      textAlign: "center",
+                      letterSpacing: 2,
+                      textShadowColor: "#000000",
+                      textShadowOffset: { width: 0, height: 2 },
+                      textShadowRadius: 4,
+                      shadowColor: "#C41E3A",
+                      shadowOffset: { width: 0, height: 0 },
+                      shadowOpacity: 0.8,
+                      shadowRadius: 12,
+                    }}
+                  >
+                    POS
+                  </Text>
+                </View>
+              </Animated.View>
             </MotiView>
 
             {/* Card flotante con inputs */}
             <MotiView
-              from={{ opacity: 0, translateY: 50 }}
+              from={{ opacity: 0, translateY: isLandscape ? 0 : 50 }}
               animate={{ opacity: 1, translateY: 0 }}
               transition={{
                 type: "spring",
@@ -356,9 +410,10 @@ const Login = () => {
               style={{
                 backgroundColor: "rgba(26,26,26,0.6)",
                 borderRadius: 32,
-                padding: isTablet ? 40 : 32,
-                width: width * 0.9,
-                maxWidth: 500,
+                padding: isLandscape ? 28 : (isTablet ? 40 : 32),
+                width: isLandscape ? Math.min(width * 0.45, 400) : width * 0.9,
+                maxWidth: isLandscape ? 400 : 360,
+                alignSelf: "center",
                 borderWidth: 1,
                 borderColor: "rgba(196,30,58,0.2)",
                 shadowColor: "#000",
@@ -369,7 +424,7 @@ const Login = () => {
               }}
             >
               <AnimatedInput
-                label="👤 Nombre Mozo"
+                label="Nombre Mozo"
                 icon="account"
                 placeholder="Juan Pérez"
                 value={nombre}
@@ -380,11 +435,12 @@ const Login = () => {
                 error={error.nombre}
                 delay={400}
                 screenWidth={width}
+                isLandscape={isLandscape}
                 autoCapitalize="words"
               />
 
               <AnimatedInput
-                label="🆔 DNI"
+                label="DNI"
                 icon="card-account-details"
                 placeholder="12345678"
                 value={dni}
@@ -395,6 +451,7 @@ const Login = () => {
                 error={error.dni}
                 delay={600}
                 screenWidth={width}
+                isLandscape={isLandscape}
                 keyboardType="numeric"
                 maxLength={8}
               />
@@ -414,12 +471,12 @@ const Login = () => {
                     style={{
                       backgroundColor: colors.primary,
                       borderRadius: 16,
-                      paddingVertical: 20,
+                      height: isLandscape ? 52 : 60,
                       paddingHorizontal: 32,
                       alignItems: "center",
                       justifyContent: "center",
                       flexDirection: "row",
-                      marginTop: 8,
+                      marginTop: isLandscape ? 16 : 24,
                       shadowColor: colors.primary,
                       shadowOffset: { width: 0, height: 8 },
                       shadowOpacity: 0.5,
