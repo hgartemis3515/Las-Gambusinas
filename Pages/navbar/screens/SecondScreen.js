@@ -14,7 +14,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API } from "../../../apiConfig";
+import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API, COMANDASEARCH_API_GET } from "../../../apiConfig";
+import moment from "moment-timezone";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -254,6 +255,8 @@ const SecondScreen = () => {
 
       // Validar estado de la mesa antes de crear la comanda
       const estadoMesa = (selectedMesa.estado || 'libre').toLowerCase();
+      
+      // Si la mesa NO está libre, verificar que sea el mismo mozo que creó la comanda (para estado "preparado")
       if (estadoMesa !== 'libre') {
         if (estadoMesa === 'reservado') {
           Alert.alert(
@@ -261,21 +264,67 @@ const SecondScreen = () => {
             "Esta mesa está reservada. Solo un administrador puede liberarla.",
             [{ text: "OK" }]
           );
-        } else if (['esperando', 'pedido', 'preparado', 'pagado'].includes(estadoMesa)) {
+          setIsSendingComanda(false);
+          return;
+        }
+        
+        // Para estado "preparado", verificar que sea el mismo mozo
+        if (estadoMesa === 'preparado') {
+          try {
+            // Obtener comandas de la mesa para verificar el mozo
+            const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
+            const response = await axios.get(
+              `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
+              { timeout: 5000 }
+            );
+            const comandasMesa = response.data.filter(
+              (c) => c.mesas?.nummesa === selectedMesa.nummesa && 
+                     c.status?.toLowerCase() !== "pagado" && 
+                     c.status?.toLowerCase() !== "completado"
+            );
+            
+            if (comandasMesa.length > 0) {
+              const primeraComanda = comandasMesa[0];
+              const mozoComandaId = primeraComanda.mozos?._id || primeraComanda.mozos;
+              const mozoActualId = userInfo._id;
+              
+              if (mozoComandaId && mozoActualId && mozoComandaId.toString() !== mozoActualId.toString()) {
+                Alert.alert(
+                  "Acceso Denegado",
+                  "Solo el mozo que creó la comanda original puede agregar más comandas a esta mesa cuando está en estado 'preparado'.",
+                  [{ text: "OK" }]
+                );
+                setIsSendingComanda(false);
+                return;
+              }
+              // Si es el mismo mozo, permitir crear nueva comanda
+              console.log(`✅ Creando nueva comanda en mesa ${selectedMesa.nummesa} (estado: preparado) - Mismo mozo`);
+            } else {
+              // Si no hay comandas activas pero la mesa está en "preparado", permitir crear comanda
+              console.log(`✅ Creando nueva comanda en mesa ${selectedMesa.nummesa} (estado: preparado) - Sin comandas activas`);
+            }
+          } catch (error) {
+            console.error("Error verificando comandas de la mesa:", error);
+            // Continuar con la creación, el backend validará
+          }
+        } else if (['esperando', 'pedido', 'pagado'].includes(estadoMesa)) {
+          // Para otros estados ocupados, rechazar
           Alert.alert(
             "Mesa Ocupada",
             "Esta mesa ya tiene una comanda activa. No se puede crear una nueva comanda.",
             [{ text: "OK" }]
           );
+          setIsSendingComanda(false);
+          return;
         } else {
           Alert.alert(
             "Mesa No Disponible",
-            `La mesa está en estado "${estadoMesa}". Solo se pueden crear comandas en mesas libres.`,
+            `La mesa está en estado "${estadoMesa}". Solo se pueden crear comandas en mesas libres o cuando eres el mozo que creó la comanda original.`,
             [{ text: "OK" }]
           );
+          setIsSendingComanda(false);
+          return;
         }
-        setIsSendingComanda(false);
-        return;
       }
 
       // Preparar datos - incluir tanto _id como id numérico
@@ -310,7 +359,13 @@ const SecondScreen = () => {
       console.log("✅ Comanda enviada:", response.data);
       
       const comandaNumber = response.data.comanda?.comandaNumber || response.data.comandaNumber || "N/A";
-      Alert.alert("✅ Éxito", `Comanda #${comandaNumber} creada. La mesa ahora está en estado "Pedido".`);
+      // El backend actualiza automáticamente la mesa a "pedido" al crear la comanda
+      // Si la mesa estaba en "preparado", ahora está en "pedido" con la nueva comanda
+      const mensaje = estadoMesa === 'preparado' 
+        ? `Comanda #${comandaNumber} creada. La mesa pasó de "Preparado" a "Pedido" con la nueva comanda.`
+        : `Comanda #${comandaNumber} creada. La mesa ahora está en estado "Pedido".`;
+      
+      Alert.alert("✅ Éxito", mensaje);
 
       // Limpiar AsyncStorage
       await AsyncStorage.removeItem("mesaSeleccionada");
@@ -334,6 +389,13 @@ const SecondScreen = () => {
         Alert.alert(
           "Mesa Ocupada",
           error.response?.data?.message || "La mesa está ocupada con una comanda existente.",
+          [{ text: "OK" }]
+        );
+      } else if (error.response?.status === 403) {
+        // Forbidden - No es el mismo mozo
+        Alert.alert(
+          "Acceso Denegado",
+          error.response?.data?.message || "Solo el mozo que creó la comanda original puede agregar más comandas a esta mesa.",
           [{ text: "OK" }]
         );
       } else if (error.response?.status === 400) {

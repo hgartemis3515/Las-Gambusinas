@@ -264,15 +264,26 @@ const OrdenesScreen = () => {
               return;
             }
             // Si es el mismo mozo, permitir crear nueva comanda
+            // Si la mesa está en "preparado", se creará la nueva comanda y la mesa pasará a "pedido"
+            if (estadoMesa === 'preparado') {
+              console.log(`✅ Creando nueva comanda en mesa ${selectedMesa.nummesa} (estado: preparado) - Mismo mozo`);
+            }
           } else {
-            // Si no hay comandas activas pero la mesa no está libre, puede ser un estado especial
-            Alert.alert(
-              "Mesa No Disponible",
-              `La mesa está en estado "${estadoMesa}". Solo se pueden crear comandas en mesas libres o cuando eres el mozo que creó la comanda original.`,
-              [{ text: "OK" }]
-            );
-            setIsSendingComanda(false);
-            return;
+            // Si no hay comandas activas pero la mesa está en "preparado", permitir crear comanda
+            // (puede ser un estado inconsistente o la comanda ya fue pagada)
+            if (estadoMesa === 'preparado') {
+              console.log(`✅ Creando nueva comanda en mesa ${selectedMesa.nummesa} (estado: preparado) - Sin comandas activas`);
+              // Permitir continuar con la creación de la comanda
+            } else {
+              // Para otros estados sin comandas activas, rechazar
+              Alert.alert(
+                "Mesa No Disponible",
+                `La mesa está en estado "${estadoMesa}". Solo se pueden crear comandas en mesas libres o cuando eres el mozo que creó la comanda original.`,
+                [{ text: "OK" }]
+              );
+              setIsSendingComanda(false);
+              return;
+            }
           }
         } catch (error) {
           console.error("Error verificando comandas de la mesa:", error);
@@ -325,8 +336,12 @@ const OrdenesScreen = () => {
       const comandaNumber = response.data.comanda?.comandaNumber || response.data.comandaNumber || "N/A";
       
       // El backend actualiza automáticamente la mesa a "pedido" al crear la comanda
+      // Si la mesa estaba en "preparado", ahora está en "pedido" con la nueva comanda
+      const mensaje = estadoMesa === 'preparado' 
+        ? `Comanda #${comandaNumber} creada. La mesa pasó de "Preparado" a "Pedido" con la nueva comanda.`
+        : `Comanda #${comandaNumber} creada. La mesa ahora está en estado "Pedido".`;
       
-      Alert.alert("✅ Éxito", `Comanda #${comandaNumber} creada. La mesa ahora está en estado "Pedido".`);
+      Alert.alert("✅ Éxito", mensaje);
 
       await AsyncStorage.removeItem("mesaSeleccionada");
       await AsyncStorage.removeItem("selectedPlates");
