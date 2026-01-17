@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Text,
-  SafeAreaView,
   View,
   Modal,
   StyleSheet,
@@ -10,6 +9,7 @@ import {
   TouchableOpacity,
   TextInput,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -436,7 +436,7 @@ const OrdenesScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView style={styles.scrollView} contentContainerStyle={orientation.isLandscape ? styles.scrollViewContentLandscape : null}>
         <View style={styles.header}>
           <MaterialCommunityIcons name="notebook-edit" size={orientation.isLandscape ? 28 : 32} color={theme.colors.text.white} />

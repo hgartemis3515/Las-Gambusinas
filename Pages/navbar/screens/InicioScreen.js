@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -12,6 +11,7 @@ import {
   Dimensions,
   useWindowDimensions,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import axios from "axios";
@@ -21,6 +21,139 @@ import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
 import logger from "../../../utils/logger";
+// Animaciones Premium 60fps
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withRepeat,
+  withTiming,
+  withSequence,
+  withTranslateX,
+  runOnJS,
+  SlideInRight,
+  FadeIn,
+} from 'react-native-reanimated';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import { MotiPressable } from 'moti';
+import * as Haptics from 'expo-haptics';
+import { slideInRightDelay, springConfig } from "../../../constants/animations";
+
+// Componente Mesa Animada Premium 60fps
+const MesaAnimada = React.memo(({ 
+  mesa, 
+  estado, 
+  estadoColor, 
+  mozo, 
+  isSelected, 
+  mesaSize, 
+  theme, 
+  styles,
+  onPress,
+  index 
+}) => {
+  const scale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const pulseScale = useSharedValue(1);
+  
+  // Animación según estado
+  useEffect(() => {
+    const estadoLower = estado?.toLowerCase() || "libre";
+    
+    if (estadoLower === "libre") {
+      // Pulse infinito para mesas libres
+      pulseScale.value = withRepeat(
+        withTiming(1.02, { duration: 1500 }),
+        -1,
+        true
+      );
+    } else if (estadoLower === "pedido") {
+      // Shake para mesas con pedido
+      translateX.value = withRepeat(
+        withSequence(
+          withTiming(5, { duration: 100 }),
+          withTiming(-5, { duration: 100 }),
+          withTiming(0, { duration: 100 })
+        ),
+        -1,
+        true
+      );
+    } else if (estadoLower === "preparado") {
+      // Bounce continuo para preparado
+      pulseScale.value = withRepeat(
+        withSequence(
+          withTiming(1.05, { duration: 800 }),
+          withTiming(1, { duration: 800 })
+        ),
+        -1,
+        true
+      );
+    }
+  }, [estado]);
+
+  // Función helper para haptic seguro
+  const triggerHaptic = () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (e) {
+      // Silenciar errores de haptic
+    }
+  };
+
+  // Gesture para tap con haptic
+  const tapGesture = Gesture.Tap()
+    .onBegin(() => {
+      scale.value = withSpring(1.05, springConfig);
+      runOnJS(triggerHaptic)();
+    })
+    .onEnd(() => {
+      scale.value = withSpring(1, springConfig, () => {
+        runOnJS(onPress)(mesa);
+      });
+    })
+    .onFinalize(() => {
+      scale.value = withSpring(1, springConfig);
+    });
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: scale.value * pulseScale.value },
+      { translateX: translateX.value },
+    ],
+  }));
+
+  const borderAnimatedStyle = useAnimatedStyle(() => ({
+    borderWidth: isSelected ? 3 : 1,
+  }));
+
+  return (
+    <GestureDetector gesture={tapGesture}>
+      <Animated.View
+        entering={slideInRightDelay(index)}
+        style={[
+          styles.mesaCard,
+          {
+            width: mesaSize,
+            height: mesaSize,
+            backgroundColor: estadoColor,
+            borderColor: isSelected ? theme.colors.secondary : "transparent",
+          },
+          animatedStyle,
+          borderAnimatedStyle,
+        ]}
+      >
+        <Text style={styles.mesaNumber}>M{mesa.nummesa}</Text>
+        <Text style={styles.mesaMozo}>{mozo !== "N/A" ? mozo.split(' ')[0] : ""}</Text>
+        <MaterialCommunityIcons 
+          name="circle" 
+          size={8} 
+          color={theme.colors.text.white} 
+          style={styles.mesaIcon}
+        />
+      </Animated.View>
+    </GestureDetector>
+  );
+});
 
 const InicioScreen = () => {
   const navigation = useNavigation();
@@ -919,7 +1052,7 @@ const InicioScreen = () => {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.profileButton}>
@@ -979,71 +1112,49 @@ const InicioScreen = () => {
             contentContainerStyle={styles.canvasContent}
           >
             {seccionActiva ? (
-              getMesasPorArea(seccionActiva).map((mesa) => {
+              getMesasPorArea(seccionActiva).map((mesa, index) => {
                 const estado = getEstadoMesa(mesa);
                 const estadoColor = getEstadoColor(estado);
                 const mozo = getMozoMesa(mesa);
                 const isSelected = mesaSeleccionada?._id === mesa._id;
 
                 return (
-                  <TouchableOpacity
+                  <MesaAnimada
                     key={mesa._id}
-                      style={[
-                      styles.mesaCard,
-                      {
-                        width: mesaSize,
-                        height: mesaSize,
-                        backgroundColor: estadoColor,
-                        borderWidth: isSelected ? 3 : 0,
-                        borderColor: isSelected ? theme.colors.secondary : "transparent",
-                      }
-                    ]}
-                    onPress={() => handleSelectMesa(mesa)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.mesaNumber}>M{mesa.nummesa}</Text>
-                    <Text style={styles.mesaMozo}>{mozo !== "N/A" ? mozo.split(' ')[0] : ""}</Text>
-                    <MaterialCommunityIcons 
-                      name="circle" 
-                      size={8} 
-                      color={theme.colors.text.white} 
-                      style={styles.mesaIcon}
-                    />
-                  </TouchableOpacity>
+                    mesa={mesa}
+                    estado={estado}
+                    estadoColor={estadoColor}
+                    mozo={mozo}
+                    isSelected={isSelected}
+                    mesaSize={mesaSize}
+                    theme={theme}
+                    styles={styles}
+                    onPress={handleSelectMesa}
+                    index={index}
+                  />
                 );
               })
             ) : (
-              mesas.map((mesa) => {
+              mesas.map((mesa, index) => {
                 const estado = getEstadoMesa(mesa);
                 const estadoColor = getEstadoColor(estado);
                 const mozo = getMozoMesa(mesa);
                 const isSelected = mesaSeleccionada?._id === mesa._id;
 
                 return (
-                  <TouchableOpacity
+                  <MesaAnimada
                     key={mesa._id}
-                      style={[
-                      styles.mesaCard,
-                      {
-                        width: mesaSize,
-                        height: mesaSize,
-                        backgroundColor: estadoColor,
-                        borderWidth: isSelected ? 3 : 0,
-                        borderColor: isSelected ? theme.colors.secondary : "transparent",
-                      }
-                    ]}
-                    onPress={() => handleSelectMesa(mesa)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.mesaNumber}>M{mesa.nummesa}</Text>
-                    <Text style={styles.mesaMozo}>{mozo !== "N/A" ? mozo.split(' ')[0] : ""}</Text>
-                    <MaterialCommunityIcons 
-                      name="circle" 
-                      size={8} 
-                      color={theme.colors.text.white} 
-                      style={styles.mesaIcon}
-                    />
-                  </TouchableOpacity>
+                    mesa={mesa}
+                    estado={estado}
+                    estadoColor={estadoColor}
+                    mozo={mozo}
+                    isSelected={isSelected}
+                    mesaSize={mesaSize}
+                    theme={theme}
+                    styles={styles}
+                    onPress={handleSelectMesa}
+                    index={index}
+                  />
                 );
               })
             )}

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
   View,
-  SafeAreaView,
   Text,
   FlatList,
   TouchableOpacity,
@@ -11,6 +10,7 @@ import {
   ScrollView,
   TextInput,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -421,7 +421,7 @@ const ThirdScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>📋 MIS COMANDAS</Text>
         <Text style={styles.headerSubtitle}>Hoy ▼</Text>

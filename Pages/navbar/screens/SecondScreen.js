@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Text,
-  SafeAreaView,
   View,
   Modal,
   StyleSheet,
@@ -11,10 +10,29 @@ import {
   TextInput,
   FlatList,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API } from "../../../apiConfig";
+// Animaciones Premium 60fps
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useDerivedValue,
+  withTiming,
+  withSpring,
+  withSequence,
+  withRepeat,
+  SlideInUp,
+  FadeInDown,
+  FadeOut,
+  Easing,
+  runOnJS,
+} from 'react-native-reanimated';
+import { MotiPressable, MotiView } from 'moti';
+import * as Haptics from 'expo-haptics';
+import { slideInUpCart, fadeInDownPlato, springConfig, moneyEasing } from "../../../constants/animations";
 
 const SecondScreen = () => {
   const [userInfo, setUserInfo] = useState(null);
@@ -183,6 +201,32 @@ const SecondScreen = () => {
     });
     return total.toFixed(2);
   };
+
+  // Contador animado para el total
+  const totalAnim = useSharedValue(0);
+  const totalCalculado = useMemo(() => {
+    let total = 0;
+    selectedPlatos.forEach(plato => {
+      const cantidad = cantidades[plato._id] || 1;
+      total += plato.precio * cantidad;
+    });
+    return total;
+  }, [selectedPlatos, cantidades]);
+
+  useEffect(() => {
+    totalAnim.value = withTiming(totalCalculado, {
+      duration: 800,
+      easing: Easing.inOut(Easing.ease),
+    });
+  }, [totalCalculado]);
+
+  const animatedTotalStyle = useAnimatedStyle(() => ({
+    opacity: totalAnim.value > 0 ? 1 : 0.5,
+  }));
+
+  const formattedTotal = useDerivedValue(() => {
+    return totalAnim.value.toFixed(2);
+  });
 
   const handleEnviarComanda = async () => {
     try {
@@ -361,7 +405,7 @@ const SecondScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView style={styles.scrollView}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>📋 CREAR PEDIDO</Text>
@@ -396,50 +440,78 @@ const SecondScreen = () => {
           </View>
         </View>
 
-        {/* Platos Seleccionados */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            PLATOS SELECCIONADOS ({selectedPlatos.length})
-          </Text>
-          {selectedPlatos.length === 0 ? (
-            <Text style={styles.emptyText}>No hay platos seleccionados</Text>
-          ) : (
-            selectedPlatos.map((plato) => {
+        {/* Platos Seleccionados - Carrito Animado */}
+        {selectedPlatos.length > 0 && (
+          <MotiView
+            from={{ translateY: 500, opacity: 0 }}
+            animate={{ translateY: 0, opacity: 1 }}
+            transition={{ type: 'spring', mass: 0.8, damping: 15 }}
+            style={styles.section}
+          >
+            <Text style={styles.sectionTitle}>
+              PLATOS SELECCIONADOS ({selectedPlatos.length})
+            </Text>
+            {selectedPlatos.map((plato, index) => {
               const cantidad = cantidades[plato._id] || 1;
               const subtotal = plato.precio * cantidad;
               return (
-                <View key={plato._id} style={styles.platoItem}>
+                <Animated.View
+                  key={plato._id}
+                  entering={fadeInDownPlato(index)}
+                  style={styles.platoItem}
+                >
                   <View style={styles.platoInfo}>
                     <Text style={styles.platoNombre}>{plato.nombre}</Text>
                     <Text style={styles.platoCantidad}>x{cantidad}</Text>
                     <Text style={styles.platoPrecio}>S/. {subtotal.toFixed(2)}</Text>
                   </View>
                   <View style={styles.platoActions}>
-                    <TouchableOpacity
-                      style={styles.cantidadButton}
-                      onPress={() => handleUpdateCantidad(plato._id, -1)}
+                    <MotiPressable
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        handleUpdateCantidad(plato._id, -1);
+                      }}
+                      whilePress={{ scale: 0.92 }}
+                      from={{ scale: 1 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: 'spring' }}
                     >
-                      <Text style={styles.cantidadButtonText}>-</Text>
-                    </TouchableOpacity>
+                      <View style={styles.cantidadButton}>
+                        <Text style={styles.cantidadButtonText}>-</Text>
+                      </View>
+                    </MotiPressable>
                     <Text style={styles.cantidadText}>{cantidad}</Text>
-                    <TouchableOpacity
-                      style={styles.cantidadButton}
-                      onPress={() => handleUpdateCantidad(plato._id, 1)}
+                    <MotiPressable
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        handleUpdateCantidad(plato._id, 1);
+                      }}
+                      whilePress={{ scale: 0.92 }}
+                      from={{ scale: 1 }}
+                      animate={{ scale: 1.02 }}
+                      transition={{ type: 'spring' }}
                     >
-                      <Text style={styles.cantidadButtonText}>+</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.removeButton}
-                      onPress={() => handleRemovePlato(plato._id)}
+                      <View style={styles.cantidadButton}>
+                        <Text style={styles.cantidadButtonText}>+</Text>
+                      </View>
+                    </MotiPressable>
+                    <MotiPressable
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        handleRemovePlato(plato._id);
+                      }}
+                      whilePress={{ scale: 0.9 }}
                     >
-                      <MaterialCommunityIcons name="delete" size={20} color="#C41E3A" />
-                    </TouchableOpacity>
+                      <View style={styles.removeButton}>
+                        <MaterialCommunityIcons name="delete" size={20} color="#C41E3A" />
+                      </View>
+                    </MotiPressable>
                   </View>
-                </View>
+                </Animated.View>
               );
-            })
-          )}
-        </View>
+            })}
+          </MotiView>
+        )}
 
         {/* Subtotal y Observaciones */}
         <View style={styles.section}>
@@ -455,34 +527,47 @@ const SecondScreen = () => {
           />
         </View>
 
-        {/* Total */}
-        <View style={styles.section}>
-          <Text style={styles.totalText}>TOTAL: S/. {calcularSubtotal()}</Text>
-        </View>
+        {/* Total Animado */}
+        <Animated.View style={[styles.section, animatedTotalStyle]}>
+          <Text style={styles.totalText}>
+            TOTAL: S/. {total.toFixed(2)}
+          </Text>
+        </Animated.View>
 
-        {/* Botones */}
+        {/* Botones con MotiPressable */}
         <View style={styles.buttonsContainer}>
-          <TouchableOpacity
-            style={styles.addButton}
+          <MotiPressable
             onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               loadPlatosData();
-              setTipoPlatoFiltro(null); // Resetear tipo al abrir modal
-              setCategoriaFiltro(null); // Resetear categoría
-              setSearchPlato(""); // Resetear búsqueda
+              setTipoPlatoFiltro(null);
+              setCategoriaFiltro(null);
+              setSearchPlato("");
               setModalPlatosVisible(true);
             }}
+            whilePress={{ scale: 0.93, opacity: 0.8 }}
+            transition={{ type: 'spring' }}
           >
-            <MaterialCommunityIcons name="magnify" size={20} color="#FFFFFF" />
-            <Text style={styles.addButtonText}> + Plato</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.sendButton, isSendingComanda && styles.sendButtonDisabled]}
-            onPress={handleEnviarComanda}
+            <View style={styles.addButton}>
+              <MaterialCommunityIcons name="magnify" size={20} color="#FFFFFF" />
+              <Text style={styles.addButtonText}> + Plato</Text>
+            </View>
+          </MotiPressable>
+          <MotiPressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              handleEnviarComanda();
+            }}
             disabled={isSendingComanda}
+            whilePress={{ scale: 0.93 }}
+            animate={isSendingComanda ? { scale: 0.95, opacity: 0.6 } : { scale: 1, opacity: 1 }}
+            transition={{ type: 'spring' }}
           >
-            <MaterialCommunityIcons name="send" size={20} color="#FFFFFF" />
-            <Text style={styles.sendButtonText}> ENVIAR</Text>
-          </TouchableOpacity>
+            <View style={[styles.sendButton, isSendingComanda && styles.sendButtonDisabled]}>
+              <MaterialCommunityIcons name="send" size={20} color="#FFFFFF" />
+              <Text style={styles.sendButtonText}> ENVIAR</Text>
+            </View>
+          </MotiPressable>
         </View>
       </ScrollView>
 

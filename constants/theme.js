@@ -87,6 +87,45 @@ export const themeDark = {
   },
 };
 
+// Estilos de texto forzados para iconos y botones
+export const textIconos = {
+  color: '#FFFFFF',
+  fontSize: 14,
+  fontWeight: '600',
+  lineHeight: 18,
+  textAlign: 'center',
+  textShadowColor: 'rgba(0,0,0,0.3)',
+  textShadowOffset: {width: 0, height: 1},
+  textShadowRadius: 2,
+  includeFontPadding: false,
+};
+
+export const iconoRojo = {
+  color: '#FF4444',
+  fontSize: 16,
+  fontWeight: 'bold',
+};
+
+export const iconoVerde = {
+  color: '#00C851',
+  fontSize: 14,
+  fontWeight: '600',
+};
+
+export const iconoCeleste = {
+  color: '#2196F3',
+  fontSize: 14,
+  fontWeight: '600',
+};
+
+export const bottomNavText = {
+  color: '#FFFFFF',
+  fontSize: 12,
+  fontWeight: '500',
+  marginTop: 2,
+  includeFontPadding: false,
+};
+
 // Exportar tema por defecto (claro) para compatibilidad
 export const theme = themeLight;
 

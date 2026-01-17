@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
   Text,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   Alert,
   ActivityIndicator,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import * as Print from "expo-print";
@@ -18,15 +18,29 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
-import { themeLight } from "../../../constants/theme";
+import { themeLight, textIconos } from "../../../constants/theme";
+import { colors } from "../../../constants/colors";
 import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET, BOUCHER_API, CLIENTES_API } from "../../../apiConfig";
 import ModalClientes from "../../../Components/ModalClientes";
+import IconoBoton from "../../../Components/IconoBoton";
+import { useWindowDimensions } from "react-native";
+// Animaciones Premium 60fps
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+  runOnJS,
+} from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
 const PagosScreen = () => {
   const navigation = useNavigation();
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const styles = PagosScreenStyles(theme);
+  const { width } = useWindowDimensions();
+  const escala = width < 390 ? 0.9 : 1;
   
   const [comandas, setComandas] = useState([]);
   const [mesa, setMesa] = useState(null);
@@ -141,6 +155,34 @@ const PagosScreen = () => {
     });
     setTotal(totalCalculado);
   };
+
+  // Contador animado para el total
+  const totalAnim = useSharedValue(0);
+  const totalCalculado = useMemo(() => {
+    if (!comandas || comandas.length === 0) return 0;
+    let total = 0;
+    comandas.forEach((comanda) => {
+      if (comanda.platos) {
+        comanda.platos.forEach((platoItem, index) => {
+          const cantidad = comanda.cantidades?.[index] || 1;
+          const precio = platoItem.plato?.precio || platoItem.precio || 0;
+          total += precio * cantidad;
+        });
+      }
+    });
+    return total;
+  }, [comandas]);
+
+  useEffect(() => {
+    totalAnim.value = withTiming(totalCalculado, {
+      duration: 800,
+      easing: Easing.inOut(Easing.ease),
+    });
+  }, [totalCalculado]);
+
+  const animatedTotalStyle = useAnimatedStyle(() => ({
+    opacity: totalAnim.value > 0 ? 1 : 0.5,
+  }));
 
   const generarHTMLBoucher = () => {
     const fechaActual = moment().tz("America/Lima").format("DD/MM/YYYY HH:mm:ss");
@@ -596,7 +638,7 @@ const PagosScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['bottom']}>
         <View style={styles.emptyContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={styles.emptyText}>Cargando...</Text>
@@ -607,7 +649,7 @@ const PagosScreen = () => {
 
   if (!comandas || comandas.length === 0) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['bottom']}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.navigate("Inicio")}>
             <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.text.white} />
@@ -646,7 +688,7 @@ const PagosScreen = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.navigate("Inicio")}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.text.white} />
@@ -719,47 +761,71 @@ const PagosScreen = () => {
           </View>
         )}
 
-        <View style={styles.totalCard}>
+        <Animated.View style={[styles.totalCard, animatedTotalStyle]}>
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Subtotal:</Text>
-            <Text style={styles.totalValue}>S/. {total.toFixed(2)}</Text>
+            <Text style={styles.totalValue}>
+              S/. {total.toFixed(2)}
+            </Text>
           </View>
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>IGV (18%):</Text>
-            <Text style={styles.totalValue}>S/. {(total * 0.18).toFixed(2)}</Text>
+            <Text style={styles.totalValue}>
+              S/. {(total * 0.18).toFixed(2)}
+            </Text>
           </View>
           <View style={[styles.totalRow, styles.totalRowFinal]}>
             <Text style={styles.totalLabelFinal}>TOTAL:</Text>
-            <Text style={styles.totalValueFinal}>S/. {(total * 1.18).toFixed(2)}</Text>
+            <Text style={styles.totalValueFinal}>
+              S/. {(total * 1.18).toFixed(2)}
+            </Text>
           </View>
-        </View>
+        </Animated.View>
       </ScrollView>
 
-      <View style={styles.buttonsContainer}>
+      <View style={[styles.buttonsContainer, { paddingHorizontal: 20 * escala, gap: 16 * escala }]}>
         <TouchableOpacity
-          style={[styles.button, styles.buttonSecondary]}
-          onPress={generarPDF}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            generarPDF();
+          }}
           disabled={isGenerating}
+          activeOpacity={0.8}
+          style={{ flex: 1 }}
         >
-          {isGenerating ? (
-            <ActivityIndicator color={theme.colors.text.white} />
-          ) : (
-            <>
-              <MaterialCommunityIcons name="file-pdf-box" size={24} color={theme.colors.text.white} />
-              <Text style={styles.buttonText}>Generar Boucher</Text>
-            </>
-          )}
+          <View style={[styles.buttonNew, { minHeight: 60 * escala, backgroundColor: colors.info }]}>
+            {isGenerating ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 * escala }}>
+                <MaterialCommunityIcons name="file-pdf-box" size={28 * escala} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontSize: 16 * escala, fontWeight: '700', includeFontPadding: false, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 2 }} numberOfLines={1}>
+                  Generar Boucher
+                </Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
 
         {/* Solo mostrar botón "Pagar" si la mesa no está ya pagada */}
         {mesa?.estado?.toLowerCase() !== "pagado" && (
           <TouchableOpacity
-            style={[styles.button, styles.buttonPrimary]}
-            onPress={handlePagar}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              handlePagar();
+            }}
             disabled={isGenerating}
+            activeOpacity={0.8}
+            style={{ flex: 1 }}
           >
-            <MaterialCommunityIcons name="cash-multiple" size={24} color={theme.colors.text.white} />
-            <Text style={styles.buttonText}>Pagar</Text>
+            <View style={[styles.buttonNew, { minHeight: 60 * escala, backgroundColor: colors.success }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 * escala }}>
+                <MaterialCommunityIcons name="cash-multiple" size={28 * escala} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontSize: 16 * escala, fontWeight: '700', includeFontPadding: false, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 2 }} numberOfLines={1}>
+                  Confirmar Pago
+                </Text>
+              </View>
+            </View>
           </TouchableOpacity>
         )}
       </View>
@@ -786,6 +852,7 @@ const PagosScreenStyles = (theme) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    paddingTop: theme.spacing.md,
     ...theme.shadows.medium,
   },
   headerTitle: {
@@ -956,20 +1023,32 @@ const PagosScreenStyles = (theme) => StyleSheet.create({
   },
   buttonsContainer: {
     flexDirection: "row",
-    padding: theme.spacing.lg,
-    gap: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
     backgroundColor: theme.colors.surface,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
+    justifyContent: 'space-around',
+  },
+  buttonNew: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    ...theme.shadows.medium,
   },
   button: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    padding: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.sm,
     borderRadius: theme.borderRadius.md,
-    gap: theme.spacing.sm,
+    overflow: 'visible',
+    minHeight: 52,
+    marginHorizontal: theme.spacing.xs,
     ...theme.shadows.medium,
   },
   buttonPrimary: {
@@ -979,9 +1058,15 @@ const PagosScreenStyles = (theme) => StyleSheet.create({
     backgroundColor: theme.colors.accent,
   },
   buttonText: {
-    color: theme.colors.text.white,
+    color: "#FFFFFF",
     fontWeight: "700",
     fontSize: 16,
+    marginLeft: 8,
+    flexShrink: 0,
+    includeFontPadding: false,
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: {width: 0, height: 1},
+    textShadowRadius: 2,
   },
 });
 

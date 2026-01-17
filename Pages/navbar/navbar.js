@@ -2,7 +2,7 @@ import React from "react";
 import { createMaterialBottomTabNavigator } from '@react-navigation/material-bottom-tabs';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from "../../context/ThemeContext";
-import { themeLight } from "../../constants/theme";
+import { themeLight, bottomNavText } from "../../constants/theme";
 import InicioScreen from "./screens/InicioScreen";
 import OrdenesScreen from "./screens/OrdenesScreen";
 import PagosScreen from "./screens/PagosScreen";
@@ -17,9 +17,27 @@ const Navbar = () => {
   return (
       <Tab.Navigator
         initialRouteName="Inicio"
-        activeColor={theme.colors.primary}
-        inactiveColor={theme.colors.text.light}
-        barStyle={{ backgroundColor: theme.colors.surface }}
+        activeColor="#FFFFFF"
+        inactiveColor="#AAAAAA"
+        barStyle={{ 
+          backgroundColor: theme.colors.surface,
+          paddingBottom: 4,
+        }}
+        labeled={true}
+        screenOptions={{
+          tabBarLabelStyle: {
+            ...bottomNavText,
+            color: '#FFFFFF',
+            fontSize: 12,
+            fontWeight: '500',
+            marginTop: 0,
+            paddingBottom: 4,
+            includeFontPadding: false,
+          },
+          tabBarIconStyle: {
+            marginBottom: 0,
+          },
+        }}
       >
         <Tab.Screen 
           name="Inicio" 

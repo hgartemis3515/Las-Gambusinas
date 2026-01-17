@@ -13,8 +13,11 @@ import {
   Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useWindowDimensions } from "react-native";
 import axios from "axios";
 import { useTheme } from "../context/ThemeContext";
+import { colors } from "../constants/colors";
+import * as Haptics from 'expo-haptics';
 
 const CLIENTES_API = "http://192.168.18.11:3000/api/clientes";
 
@@ -22,6 +25,8 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || {};
   const styles = modalStyles(theme);
+  const { width } = useWindowDimensions();
+  const escala = width < 390 ? 0.88 : 1;
 
   const [dni, setDni] = useState("");
   const [nombre, setNombre] = useState("");
@@ -97,7 +102,7 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Información del Cliente</Text>
               <TouchableOpacity onPress={handleCancelar} style={styles.closeButton}>
-                <MaterialCommunityIcons name="close" size={24} color={theme.colors?.text?.dark || "#333"} />
+                <MaterialCommunityIcons name="close" size={24} color="#333333" />
               </TouchableOpacity>
             </View>
 
@@ -108,10 +113,6 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
               showsVerticalScrollIndicator={true}
             >
               <View style={styles.modalBody}>
-                <Text style={styles.modalSubtitle}>
-                  Puede registrar datos del cliente o continuar como invitado
-                </Text>
-
                 {/* Checkbox para Invitado */}
                 <TouchableOpacity
                   style={styles.checkboxContainer}
@@ -134,7 +135,7 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
 
                 {/* Formulario opcional */}
                 <View style={styles.formContainer}>
-                  <Text style={styles.formTitle}>O registrar datos del cliente:</Text>
+                  <Text style={styles.formTitle}>Registrar datos del cliente:</Text>
 
                   <View style={styles.inputContainer}>
                     <MaterialCommunityIcons
@@ -144,7 +145,7 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
                       style={styles.inputIcon}
                     />
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, { color: "#333333", fontSize: 16 }]}
                       placeholder="DNI (opcional)"
                       value={dni}
                       onChangeText={(text) => {
@@ -152,7 +153,7 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
                         if (text) setEsInvitado(false);
                       }}
                       keyboardType="numeric"
-                      placeholderTextColor={theme.colors?.text?.light || "#999"}
+                      placeholderTextColor="#999999"
                       returnKeyType="next"
                       blurOnSubmit={false}
                     />
@@ -166,14 +167,14 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
                       style={styles.inputIcon}
                     />
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, { color: "#333333", fontSize: 16 }]}
                       placeholder="Nombre (opcional)"
                       value={nombre}
                       onChangeText={(text) => {
                         setNombre(text);
                         if (text) setEsInvitado(false);
                       }}
-                      placeholderTextColor={theme.colors?.text?.light || "#999"}
+                      placeholderTextColor="#999999"
                       returnKeyType="next"
                       blurOnSubmit={false}
                       autoCapitalize="words"
@@ -184,11 +185,11 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
                     <MaterialCommunityIcons
                       name="phone"
                       size={20}
-                      color={theme.colors?.primary || "#667eea"}
+                      color={colors.danger}
                       style={styles.inputIcon}
                     />
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, { color: "#333333", fontSize: 16 }]}
                       placeholder="Teléfono (opcional)"
                       value={telefono}
                       onChangeText={(text) => {
@@ -196,7 +197,7 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
                         if (text) setEsInvitado(false);
                       }}
                       keyboardType="phone-pad"
-                      placeholderTextColor={theme.colors?.text?.light || "#999"}
+                      placeholderTextColor="#999999"
                       returnKeyType="done"
                       blurOnSubmit={true}
                     />
@@ -205,28 +206,47 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
               </View>
             </ScrollView>
 
-            <View style={styles.modalFooter}>
+            <View style={[styles.modalFooter, { flexDirection: 'row', gap: 12 * escala, justifyContent: 'space-evenly' }]}>
               <TouchableOpacity
-                style={[styles.button, styles.buttonCancel]}
-                onPress={handleCancelar}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  handleCancelar();
+                }}
                 disabled={loading}
+                activeOpacity={0.8}
+                style={{ flex: 1 }}
               >
-                <Text style={styles.buttonCancelText}>Cancelar</Text>
+                <View style={[styles.buttonNew, { minHeight: 52 * escala, backgroundColor: theme.colors?.background?.light || "#f5f5f5" }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 * escala }}>
+                    <MaterialCommunityIcons name="close-circle" size={24 * escala} color="#333333" />
+                    <Text style={{ color: '#333333', fontSize: 16 * escala, fontWeight: '700', includeFontPadding: false }} numberOfLines={1}>
+                      Cancelar
+                    </Text>
+                  </View>
+                </View>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.button, styles.buttonContinue, loading && styles.buttonDisabled]}
-                onPress={handleContinuar}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  handleContinuar();
+                }}
                 disabled={loading}
+                activeOpacity={0.8}
+                style={{ flex: 1 }}
               >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <MaterialCommunityIcons name="check-circle" size={20} color="#fff" />
-                    <Text style={styles.buttonContinueText}>Continuar</Text>
-                  </>
-                )}
+                <View style={[styles.buttonNew, { minHeight: 52 * escala, backgroundColor: colors.success }, loading && styles.buttonDisabled]}>
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 * escala }}>
+                      <MaterialCommunityIcons name="check-circle" size={24 * escala} color="#FFFFFF" />
+                      <Text style={{ color: '#FFFFFF', fontSize: 16 * escala, fontWeight: '700', includeFontPadding: false, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 2 }} numberOfLines={1}>
+                        Continuar
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </TouchableOpacity>
             </View>
           </View>
@@ -247,10 +267,10 @@ const modalStyles = (theme) => StyleSheet.create({
   modalOverlayContent: {
     width: "100%",
     maxWidth: 500,
-    maxHeight: "90%",
+    maxHeight: "95%",
   },
   modalContent: {
-    backgroundColor: theme.colors?.background?.white || "#fff",
+    backgroundColor: "#FFFFFF",
     borderRadius: 15,
     width: "100%",
     shadowColor: "#000",
@@ -265,24 +285,26 @@ const modalStyles = (theme) => StyleSheet.create({
     alignItems: "center",
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors?.border || "#e0e0e0",
+    borderBottomColor: "#E0E0E0",
+    backgroundColor: "#FFFFFF",
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: theme.colors?.text?.dark || "#333",
+    color: "#333333",
   },
   closeButton: {
     padding: 5,
   },
   modalScrollView: {
-    maxHeight: 400,
+    maxHeight: 500,
   },
   modalScrollContent: {
     paddingBottom: 10,
   },
   modalBody: {
     padding: 20,
+    backgroundColor: "#FFFFFF",
   },
   modalSubtitle: {
     fontSize: 14,
@@ -295,7 +317,7 @@ const modalStyles = (theme) => StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
     padding: 15,
-    backgroundColor: theme.colors?.background?.light || "#f5f5f5",
+    backgroundColor: "#F5F5F5",
     borderRadius: 10,
   },
   checkbox: {
@@ -313,7 +335,7 @@ const modalStyles = (theme) => StyleSheet.create({
   },
   checkboxLabel: {
     fontSize: 14,
-    color: theme.colors?.text?.dark || "#333",
+    color: "#333333",
     flex: 1,
   },
   formContainer: {
@@ -322,7 +344,7 @@ const modalStyles = (theme) => StyleSheet.create({
   formTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: theme.colors?.text?.dark || "#333",
+    color: "#333333",
     marginBottom: 15,
   },
   inputContainer: {
@@ -330,10 +352,10 @@ const modalStyles = (theme) => StyleSheet.create({
     alignItems: "center",
     marginBottom: 15,
     borderWidth: 1,
-    borderColor: theme.colors?.border || "#ddd",
+    borderColor: "#DDDDDD",
     borderRadius: 8,
     paddingHorizontal: 15,
-    backgroundColor: theme.colors?.background?.white || "#fff",
+    backgroundColor: "#FFFFFF",
   },
   inputIcon: {
     marginRight: 10,
@@ -342,40 +364,68 @@ const modalStyles = (theme) => StyleSheet.create({
     flex: 1,
     height: 50,
     fontSize: 16,
-    color: theme.colors?.text?.dark || "#333",
+    color: "#333333",
   },
   modalFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
     padding: 20,
     borderTopWidth: 1,
-    borderTopColor: theme.colors?.border || "#e0e0e0",
-    gap: 10,
+    borderTopColor: "#E0E0E0",
+    backgroundColor: "#FFFFFF",
   },
   button: {
     flex: 1,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    padding: 15,
+    paddingVertical: 15,
+    paddingHorizontal: 15,
     borderRadius: 8,
-    gap: 8,
+    overflow: 'visible',
+    minHeight: 48,
+    marginHorizontal: 5,
   },
   buttonCancel: {
     backgroundColor: theme.colors?.background?.light || "#f5f5f5",
   },
   buttonCancelText: {
-    color: theme.colors?.text?.dark || "#333",
+    color: "#333333",
     fontSize: 16,
     fontWeight: "600",
+    flexShrink: 0,
+    includeFontPadding: false,
+    textShadowColor: 'rgba(0,0,0,0.1)',
+    textShadowOffset: {width: 0, height: 1},
+    textShadowRadius: 1,
   },
   buttonContinue: {
     backgroundColor: theme.colors?.primary || "#667eea",
   },
   buttonContinueText: {
-    color: "#fff",
+    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "600",
+    marginLeft: 8,
+    flexShrink: 0,
+    includeFontPadding: false,
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: {width: 0, height: 1},
+    textShadowRadius: 2,
+  },
+  buttonNew: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 15,
+    paddingHorizontal: 15,
+    borderRadius: 12,
+    overflow: 'visible',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
   },
   buttonDisabled: {
     opacity: 0.6,

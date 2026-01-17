@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, SafeAreaView, FlatList, TouchableOpacity, Alert } from "react-native";
+import { View, Text, FlatList, TouchableOpacity, Alert } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { COMANDASEARCH_API_GET } from "../../apiConfig";
