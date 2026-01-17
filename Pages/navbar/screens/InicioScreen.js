@@ -735,7 +735,7 @@ const InicioScreen = () => {
                 return;
               }
 
-              // Extraer el ID de forma segura (igual que en CuarterScreen)
+              // Extraer el ID de forma segura
               let comandaId = comanda._id;
               
               // Si _id es un objeto (puede pasar con populate), extraer el string

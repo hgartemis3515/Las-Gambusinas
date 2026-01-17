@@ -6,7 +6,6 @@ import { themeLight } from "../../constants/theme";
 import InicioScreen from "./screens/InicioScreen";
 import OrdenesScreen from "./screens/OrdenesScreen";
 import PagosScreen from "./screens/PagosScreen";
-import CuarterScreen from "./screens/CuarterScreen";
 import MasScreen from "./screens/MasScreen";
 
 const Tab = createMaterialBottomTabNavigator();
@@ -49,16 +48,6 @@ const Navbar = () => {
             tabBarLabel: 'Pagos', 
             tabBarIcon: ({ color }) => (
               <MaterialCommunityIcons name="cash-multiple" color={color} size={26} />
-            ),
-          }} 
-        />
-        <Tab.Screen 
-          name="Mesas" 
-          component={CuarterScreen} 
-          options={{ 
-            tabBarLabel: 'Mesas', 
-            tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="table-multiple" color={color} size={26} />
             ),
           }} 
         />
