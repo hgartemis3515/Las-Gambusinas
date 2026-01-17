@@ -101,7 +101,11 @@ const CuarterScreen = () => {
 
   const getComandasPorMesa = (mesaNum) => {
     return comandas.filter(
-      (comanda) => comanda.mesas?.nummesa === mesaNum && comanda.IsActive !== false
+      (comanda) => 
+        comanda.mesas?.nummesa === mesaNum && 
+        comanda.IsActive !== false &&
+        comanda.status?.toLowerCase() !== "pagado" &&
+        comanda.status?.toLowerCase() !== "completado"
     );
   };
 
@@ -133,13 +137,58 @@ const CuarterScreen = () => {
     return "Pedido";
   };
 
-  // Obtener el mozo de la mesa (del último comanda activa)
+  // Obtener el mozo de la mesa (del comanda activa más reciente)
   const getMozoMesa = (mesa) => {
+    // Si la mesa está libre, no mostrar mozo
+    if (mesa.estado?.toLowerCase() === "libre") {
+      return "N/A";
+    }
+    
+    // Obtener solo comandas activas (no pagadas) de esta mesa
     const comandasMesa = getComandasPorMesa(mesa.nummesa);
     if (comandasMesa.length > 0) {
-      const ultimaComanda = comandasMesa[comandasMesa.length - 1];
-      return ultimaComanda.mozos?.name || "N/A";
+      // Ordenar comandas por fecha de creación descendente (más reciente primero)
+      // Usar createdAt si está disponible, sino usar comandaNumber como fallback
+      const comandasOrdenadas = [...comandasMesa].sort((a, b) => {
+        // Priorizar createdAt si está disponible
+        if (a.createdAt && b.createdAt) {
+          const fechaA = new Date(a.createdAt).getTime();
+          const fechaB = new Date(b.createdAt).getTime();
+          return fechaB - fechaA; // Descendente (más reciente primero)
+        }
+        // Fallback: usar comandaNumber
+        const numA = a.comandaNumber || 0;
+        const numB = b.comandaNumber || 0;
+        return numB - numA; // Descendente (mayor número = más reciente)
+      });
+      
+      // Tomar la comanda activa más reciente
+      const comandaMasReciente = comandasOrdenadas[0];
+      if (comandaMasReciente?.mozos?.name) {
+        return comandaMasReciente.mozos.name;
+      }
     }
+    
+    // Si no hay comandas activas, buscar en todas las comandas (incluyendo pagadas)
+    // Solo como fallback para casos donde la mesa tiene estado pero no comandas activas
+    const todasComandasMesa = comandas.filter(
+      (comanda) => comanda.mesas?.nummesa === mesa.nummesa && comanda.IsActive !== false
+    );
+    if (todasComandasMesa.length > 0) {
+      const comandasOrdenadas = [...todasComandasMesa].sort((a, b) => {
+        if (a.createdAt && b.createdAt) {
+          const fechaA = new Date(a.createdAt).getTime();
+          const fechaB = new Date(b.createdAt).getTime();
+          return fechaB - fechaA;
+        }
+        const numA = a.comandaNumber || 0;
+        const numB = b.comandaNumber || 0;
+        return numB - numA;
+      });
+      const comandaMasReciente = comandasOrdenadas[0];
+      return comandaMasReciente.mozos?.name || "N/A";
+    }
+    
     return "N/A";
   };
 
@@ -429,23 +478,81 @@ const CuarterScreen = () => {
             try {
               // Eliminar la comanda
               await axios.delete(`${COMANDA_API}/${comanda._id}`, { timeout: 5000 });
+              console.log("✅ Comanda eliminada");
               
-              // Actualizar el estado de la mesa a "libre"
-              await axios.put(
-                `${MESAS_API_UPDATE}/${mesa._id}/estado`,
-                { estado: "libre" },
-                { timeout: 5000 }
-              );
+              // Actualizar comandas localmente (remover la eliminada del estado)
+              const comandaId = comanda._id?.toString ? comanda._id.toString() : comanda._id;
+              let comandasActualizadas = comandas.filter(c => {
+                const cId = c._id?.toString ? c._id.toString() : c._id;
+                return cId !== comandaId;
+              });
               
-              Alert.alert("✅", "Comanda eliminada exitosamente. La mesa ha sido liberada.");
+              // Actualizar el estado inmediatamente
+              setComandas(comandasActualizadas);
+              
+              // Verificar si hay más comandas activas en la mesa (usando estado local actualizado)
+              const comandasMesaRestantes = comandasActualizadas.filter(c => {
+                return c.mesas?.nummesa === mesa.nummesa &&
+                       c.IsActive !== false && 
+                       c.status?.toLowerCase() !== "pagado" && 
+                       c.status?.toLowerCase() !== "completado";
+              });
+              
+              const hayComandasActivas = comandasMesaRestantes.length > 0;
+              
+              // Solo actualizar la mesa a "libre" si no hay más comandas activas
+              if (!hayComandasActivas && mesa) {
+                try {
+                  // Actualizar la mesa - el backend retorna todaslasmesas en la respuesta
+                  const mesaResponse = await axios.put(
+                    `${MESAS_API_UPDATE}/${mesa._id}/estado`,
+                    { estado: "libre" },
+                    { timeout: 5000 }
+                  );
+                  
+                  // Usar los datos que vienen del backend en lugar de hacer otra petición
+                  if (mesaResponse.data?.todaslasmesas) {
+                    setMesas(mesaResponse.data.todaslasmesas);
+                    console.log("✅ Mesas actualizadas desde respuesta del servidor");
+                  }
+                  
+                  console.log("✅ Mesa liberada:", mesa.nummesa);
+                } catch (mesaError) {
+                  // Solo registrar error si no es un error de que la mesa ya está en el estado correcto
+                  const errorStatus = mesaError.response?.status;
+                  const errorMessage = mesaError.response?.data?.error || mesaError.response?.data?.message || mesaError.message;
+                  
+                  const esErrorNoCritico = errorStatus === 400 && (
+                    errorMessage?.toLowerCase().includes('ya está') ||
+                    errorMessage?.toLowerCase().includes('already') ||
+                    errorMessage?.toLowerCase().includes('estado actual')
+                  );
+                  
+                  if (!esErrorNoCritico) {
+                    console.error("⚠️ Error actualizando mesa (pero comanda eliminada):", mesaError);
+                  } else {
+                    console.log("ℹ️ La mesa ya está en el estado correcto");
+                  }
+                }
+              } else if (hayComandasActivas) {
+                console.log("ℹ️ No se actualiza la mesa porque aún tiene comandas activas");
+              }
+              
+              Alert.alert("✅", "Comanda eliminada exitosamente.");
               
               // Cerrar modal si está abierto
               setModalEditVisible(false);
               setComandaEditando(null);
               
-              // Actualizar datos
-              obtenerComandasHoy();
-              obtenerMesas();
+              // Actualizar comandas desde el servidor (con debounce para evitar múltiples peticiones)
+              setTimeout(async () => {
+                try {
+                  await obtenerComandasHoy();
+                } catch (error) {
+                  // Silenciar errores de red durante actualizaciones rápidas
+                  console.log("ℹ️ Actualización de comandas diferida debido a operaciones en curso");
+                }
+              }, 300);
             } catch (error) {
               console.error("Error eliminando comanda:", error);
               Alert.alert(

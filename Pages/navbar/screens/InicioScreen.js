@@ -198,13 +198,53 @@ const InicioScreen = () => {
       return "N/A";
     }
     
-    // Para otros estados (incluyendo "Pagado"), mostrar el mozo de TODAS las comandas (incluyendo pagadas)
+    // PRIORIDAD: Primero buscar comandas activas (no pagadas)
+    const comandasActivas = getComandasPorMesa(mesa.nummesa);
+    if (comandasActivas.length > 0) {
+      // Ordenar comandas activas por fecha de creación descendente (más reciente primero)
+      const comandasOrdenadas = [...comandasActivas].sort((a, b) => {
+        // Priorizar createdAt si está disponible
+        if (a.createdAt && b.createdAt) {
+          const fechaA = new Date(a.createdAt).getTime();
+          const fechaB = new Date(b.createdAt).getTime();
+          return fechaB - fechaA; // Descendente (más reciente primero)
+        }
+        // Fallback: usar comandaNumber
+        const numA = a.comandaNumber || 0;
+        const numB = b.comandaNumber || 0;
+        return numB - numA; // Descendente (mayor número = más reciente)
+      });
+      
+      // Tomar la comanda activa más reciente
+      const comandaMasReciente = comandasOrdenadas[0];
+      if (comandaMasReciente?.mozos?.name) {
+        return comandaMasReciente.mozos.name;
+      }
+    }
+    
+    // Si no hay comandas activas, buscar en todas las comandas (incluyendo pagadas)
+    // Esto es solo para casos donde la mesa tiene estado pero no comandas activas
     const todasComandasMesa = getTodasComandasPorMesa(mesa.nummesa);
     if (todasComandasMesa.length > 0) {
-      // Obtener la última comanda (puede estar pagada o no)
-      const ultimaComanda = todasComandasMesa[todasComandasMesa.length - 1];
-      return ultimaComanda.mozos?.name || "N/A";
+      // Ordenar comandas por fecha de creación descendente (más reciente primero)
+      const comandasOrdenadas = [...todasComandasMesa].sort((a, b) => {
+        // Priorizar createdAt si está disponible
+        if (a.createdAt && b.createdAt) {
+          const fechaA = new Date(a.createdAt).getTime();
+          const fechaB = new Date(b.createdAt).getTime();
+          return fechaB - fechaA; // Descendente (más reciente primero)
+        }
+        // Fallback: usar comandaNumber
+        const numA = a.comandaNumber || 0;
+        const numB = b.comandaNumber || 0;
+        return numB - numA; // Descendente (mayor número = más reciente)
+      });
+      
+      // Tomar la comanda más reciente
+      const comandaMasReciente = comandasOrdenadas[0];
+      return comandaMasReciente.mozos?.name || "N/A";
     }
+    
     return "N/A";
   };
 
@@ -719,82 +759,79 @@ const InicioScreen = () => {
               console.log("  - URL:", `${COMANDA_API}/${comandaId}`);
               console.log("  - Comanda completa:", JSON.stringify(comanda, null, 2));
               
-              // Eliminar la comanda (igual que en CuarterScreen que funciona)
+              // Eliminar la comanda
               const deleteResponse = await axios.delete(`${COMANDA_API}/${comandaId}`, { timeout: 5000 });
-              console.log("✅ Respuesta del servidor:", deleteResponse.data);
+              console.log("✅ Comanda eliminada");
               
-              // Actualizar el estado de la mesa a "libre"
-              // Primero actualizar las comandas para verificar si hay más activas
-              await obtenerComandasHoy();
+              // Actualizar comandas localmente (remover la eliminada del estado)
+              let comandasActualizadas = comandas.filter(c => {
+                const cId = c._id?.toString ? c._id.toString() : c._id;
+                const comandaIdStr = comandaId?.toString ? comandaId.toString() : comandaId;
+                return cId !== comandaIdStr;
+              });
               
-              // Verificar si hay más comandas activas en la mesa
-              const comandasMesaRestantes = getComandasPorMesa(mesa.nummesa);
-              const hayComandasActivas = comandasMesaRestantes.some(c => 
-                c._id !== comandaId && 
-                c.IsActive !== false && 
-                c.status?.toLowerCase() !== "pagado" && 
-                c.status?.toLowerCase() !== "completado"
-              );
+              // Actualizar el estado inmediatamente
+              setComandas(comandasActualizadas);
+              
+              // Verificar si hay más comandas activas en la mesa (usando estado local actualizado)
+              const comandasMesaRestantes = comandasActualizadas.filter(c => {
+                return c.mesas?.nummesa === mesa.nummesa &&
+                       c.IsActive !== false && 
+                       c.status?.toLowerCase() !== "pagado" && 
+                       c.status?.toLowerCase() !== "completado";
+              });
+              
+              const hayComandasActivas = comandasMesaRestantes.length > 0;
               
               // Solo actualizar la mesa a "libre" si no hay más comandas activas
               if (!hayComandasActivas && mesa) {
                 try {
-                  // Extraer el ID de la mesa de forma segura (igual que en CuarterScreen)
                   let mesaId = mesa._id;
-                  
-                  // Si _id es un objeto (puede pasar con populate), extraer el string
                   if (mesaId && typeof mesaId === 'object') {
                     mesaId = mesaId.toString();
                   }
                   
                   if (!mesaId) {
                     console.warn("⚠️ No se pudo obtener el ID de la mesa para actualizar");
-                    await logger.warn("ID de mesa no disponible al eliminar comanda", {
-                      mesa: JSON.stringify(mesa),
-                      comandaId: comandaId
-                    });
                   } else {
-                    console.log("🔄 Actualizando mesa a 'libre':");
-                    console.log("  - Mesa ID:", mesaId);
-                    console.log("  - Tipo:", typeof mesaId);
-                    console.log("  - URL:", `${MESAS_API_UPDATE}/${mesaId}/estado`);
-                    console.log("  - Estado actual de la mesa:", mesa.estado);
-                    
+                    // Actualizar la mesa - el backend retorna todaslasmesas en la respuesta
                     const mesaResponse = await axios.put(
                       `${MESAS_API_UPDATE}/${mesaId}/estado`,
                       { estado: "libre" },
                       { timeout: 5000 }
                     );
+                    
+                    // Usar los datos que vienen del backend en lugar de hacer otra petición
+                    if (mesaResponse.data?.todaslasmesas) {
+                      setMesas(mesaResponse.data.todaslasmesas);
+                      console.log("✅ Mesas actualizadas desde respuesta del servidor");
+                    }
+                    
                     console.log("✅ Mesa liberada:", mesa.nummesa);
-                    console.log("✅ Respuesta del servidor:", mesaResponse.data);
                   }
                 } catch (mesaError) {
-                  console.error("⚠️ Error actualizando mesa (pero comanda eliminada):", mesaError);
-                  await logger.error(mesaError, {
-                    action: 'actualizar_mesa_despues_eliminar_comanda',
-                    mesaId: mesa?._id,
-                    mesaNum: mesa?.nummesa,
-                    comandaId: comandaId,
-                    estadoMesa: mesa?.estado,
-                    url: `${MESAS_API_UPDATE}/${mesa?._id}/estado`,
-                    errorResponse: mesaError.response?.data,
-                    timestamp: moment().tz("America/Lima").format("YYYY-MM-DD HH:mm:ss"),
-                  });
+                  // Solo registrar error si no es un error de que la mesa ya está en el estado correcto
+                  const errorStatus = mesaError.response?.status;
+                  const errorMessage = mesaError.response?.data?.error || mesaError.response?.data?.message || mesaError.message;
                   
-                  // Mostrar alerta específica para el error de mesa
-                  const errorMsg = mesaError.response?.data?.error || mesaError.response?.data?.message || mesaError.message;
-                  Alert.alert(
-                    "⚠️ Advertencia",
-                    `La comanda fue eliminada exitosamente, pero no se pudo actualizar el estado de la mesa a "libre".\n\nError: ${errorMsg}\n\nPuedes actualizar la mesa manualmente.`
+                  const esErrorNoCritico = errorStatus === 400 && (
+                    errorMessage?.toLowerCase().includes('ya está') ||
+                    errorMessage?.toLowerCase().includes('already') ||
+                    errorMessage?.toLowerCase().includes('estado actual')
                   );
+                  
+                  if (!esErrorNoCritico) {
+                    console.error("⚠️ Error actualizando mesa (pero comanda eliminada):", mesaError);
+                    // No mostrar alerta para no interrumpir el flujo cuando se eliminan múltiples comandas
+                  } else {
+                    console.log("ℹ️ La mesa ya está en el estado correcto");
+                  }
                 }
               } else if (hayComandasActivas) {
                 console.log("ℹ️ No se actualiza la mesa porque aún tiene comandas activas");
-              } else {
-                console.warn("⚠️ No se proporcionó información de la mesa");
               }
               
-              Alert.alert("✅", "Comanda eliminada exitosamente. La mesa ha sido liberada.");
+              Alert.alert("✅", "Comanda eliminada exitosamente.");
               
               // Cerrar modal si está abierto
               setModalEditVisible(false);
@@ -803,9 +840,16 @@ const InicioScreen = () => {
               setSearchPlato("");
               setCategoriaFiltro(null);
               
-              // Actualizar datos
-              obtenerComandasHoy();
-              obtenerMesas();
+              // Actualizar comandas desde el servidor (con debounce para evitar múltiples peticiones)
+              // Solo si no hay más eliminaciones en proceso
+              setTimeout(async () => {
+                try {
+                  await obtenerComandasHoy();
+                } catch (error) {
+                  // Silenciar errores de red durante actualizaciones rápidas
+                  console.log("ℹ️ Actualización de comandas diferida debido a operaciones en curso");
+                }
+              }, 300);
             } catch (error) {
               // Guardar error en log
               await logger.error(error, {

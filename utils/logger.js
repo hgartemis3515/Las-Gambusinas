@@ -1,4 +1,5 @@
-import * as FileSystem from 'expo-file-system';
+// Usar la API legacy para compatibilidad
+import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import moment from 'moment-timezone';
 
