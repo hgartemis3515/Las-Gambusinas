@@ -8,6 +8,9 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import axios from "axios";
@@ -85,129 +88,149 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
       onRequestClose={handleCancelar}
     >
       <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Información del Cliente</Text>
-            <TouchableOpacity onPress={handleCancelar} style={styles.closeButton}>
-              <MaterialCommunityIcons name="close" size={24} color={theme.colors?.text?.dark || "#333"} />
-            </TouchableOpacity>
-          </View>
+        <KeyboardAvoidingView
+          style={styles.modalOverlayContent}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Información del Cliente</Text>
+              <TouchableOpacity onPress={handleCancelar} style={styles.closeButton}>
+                <MaterialCommunityIcons name="close" size={24} color={theme.colors?.text?.dark || "#333"} />
+              </TouchableOpacity>
+            </View>
 
-          <View style={styles.modalBody}>
-            <Text style={styles.modalSubtitle}>
-              Puede registrar datos del cliente o continuar como invitado
-            </Text>
-
-            {/* Checkbox para Invitado */}
-            <TouchableOpacity
-              style={styles.checkboxContainer}
-              onPress={() => {
-                setEsInvitado(true);
-                setDni("");
-                setNombre("");
-                setTelefono("");
-              }}
+            <ScrollView
+              style={styles.modalScrollView}
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
             >
-              <View style={[styles.checkbox, esInvitado && styles.checkboxChecked]}>
-                {esInvitado && (
-                  <MaterialCommunityIcons name="check" size={16} color="#fff" />
+              <View style={styles.modalBody}>
+                <Text style={styles.modalSubtitle}>
+                  Puede registrar datos del cliente o continuar como invitado
+                </Text>
+
+                {/* Checkbox para Invitado */}
+                <TouchableOpacity
+                  style={styles.checkboxContainer}
+                  onPress={() => {
+                    setEsInvitado(true);
+                    setDni("");
+                    setNombre("");
+                    setTelefono("");
+                  }}
+                >
+                  <View style={[styles.checkbox, esInvitado && styles.checkboxChecked]}>
+                    {esInvitado && (
+                      <MaterialCommunityIcons name="check" size={16} color="#fff" />
+                    )}
+                  </View>
+                  <Text style={styles.checkboxLabel}>
+                    Continuar como Invitado (se generará automáticamente)
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Formulario opcional */}
+                <View style={styles.formContainer}>
+                  <Text style={styles.formTitle}>O registrar datos del cliente:</Text>
+
+                  <View style={styles.inputContainer}>
+                    <MaterialCommunityIcons
+                      name="card-account-details"
+                      size={20}
+                      color={theme.colors?.primary || "#667eea"}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="DNI (opcional)"
+                      value={dni}
+                      onChangeText={(text) => {
+                        setDni(text);
+                        if (text) setEsInvitado(false);
+                      }}
+                      keyboardType="numeric"
+                      placeholderTextColor={theme.colors?.text?.light || "#999"}
+                      returnKeyType="next"
+                      blurOnSubmit={false}
+                    />
+                  </View>
+
+                  <View style={styles.inputContainer}>
+                    <MaterialCommunityIcons
+                      name="account"
+                      size={20}
+                      color={theme.colors?.primary || "#667eea"}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Nombre (opcional)"
+                      value={nombre}
+                      onChangeText={(text) => {
+                        setNombre(text);
+                        if (text) setEsInvitado(false);
+                      }}
+                      placeholderTextColor={theme.colors?.text?.light || "#999"}
+                      returnKeyType="next"
+                      blurOnSubmit={false}
+                      autoCapitalize="words"
+                    />
+                  </View>
+
+                  <View style={styles.inputContainer}>
+                    <MaterialCommunityIcons
+                      name="phone"
+                      size={20}
+                      color={theme.colors?.primary || "#667eea"}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Teléfono (opcional)"
+                      value={telefono}
+                      onChangeText={(text) => {
+                        setTelefono(text);
+                        if (text) setEsInvitado(false);
+                      }}
+                      keyboardType="phone-pad"
+                      placeholderTextColor={theme.colors?.text?.light || "#999"}
+                      returnKeyType="done"
+                      blurOnSubmit={true}
+                    />
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.button, styles.buttonCancel]}
+                onPress={handleCancelar}
+                disabled={loading}
+              >
+                <Text style={styles.buttonCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.button, styles.buttonContinue, loading && styles.buttonDisabled]}
+                onPress={handleContinuar}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons name="check-circle" size={20} color="#fff" />
+                    <Text style={styles.buttonContinueText}>Continuar</Text>
+                  </>
                 )}
-              </View>
-              <Text style={styles.checkboxLabel}>
-                Continuar como Invitado (se generará automáticamente)
-              </Text>
-            </TouchableOpacity>
-
-            {/* Formulario opcional */}
-            <View style={styles.formContainer}>
-              <Text style={styles.formTitle}>O registrar datos del cliente:</Text>
-
-              <View style={styles.inputContainer}>
-                <MaterialCommunityIcons
-                  name="card-account-details"
-                  size={20}
-                  color={theme.colors?.primary || "#667eea"}
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="DNI (opcional)"
-                  value={dni}
-                  onChangeText={(text) => {
-                    setDni(text);
-                    if (text) setEsInvitado(false);
-                  }}
-                  keyboardType="numeric"
-                  placeholderTextColor={theme.colors?.text?.light || "#999"}
-                />
-              </View>
-
-              <View style={styles.inputContainer}>
-                <MaterialCommunityIcons
-                  name="account"
-                  size={20}
-                  color={theme.colors?.primary || "#667eea"}
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Nombre (opcional)"
-                  value={nombre}
-                  onChangeText={(text) => {
-                    setNombre(text);
-                    if (text) setEsInvitado(false);
-                  }}
-                  placeholderTextColor={theme.colors?.text?.light || "#999"}
-                />
-              </View>
-
-              <View style={styles.inputContainer}>
-                <MaterialCommunityIcons
-                  name="phone"
-                  size={20}
-                  color={theme.colors?.primary || "#667eea"}
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Teléfono (opcional)"
-                  value={telefono}
-                  onChangeText={(text) => {
-                    setTelefono(text);
-                    if (text) setEsInvitado(false);
-                  }}
-                  keyboardType="phone-pad"
-                  placeholderTextColor={theme.colors?.text?.light || "#999"}
-                />
-              </View>
+              </TouchableOpacity>
             </View>
           </View>
-
-          <View style={styles.modalFooter}>
-            <TouchableOpacity
-              style={[styles.button, styles.buttonCancel]}
-              onPress={handleCancelar}
-              disabled={loading}
-            >
-              <Text style={styles.buttonCancelText}>Cancelar</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.button, styles.buttonContinue, loading && styles.buttonDisabled]}
-              onPress={handleContinuar}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <MaterialCommunityIcons name="check-circle" size={20} color="#fff" />
-                  <Text style={styles.buttonContinueText}>Continuar</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -221,12 +244,15 @@ const modalStyles = (theme) => StyleSheet.create({
     alignItems: "center",
     padding: 20,
   },
+  modalOverlayContent: {
+    width: "100%",
+    maxWidth: 500,
+    maxHeight: "90%",
+  },
   modalContent: {
     backgroundColor: theme.colors?.background?.white || "#fff",
     borderRadius: 15,
     width: "100%",
-    maxWidth: 500,
-    maxHeight: "90%",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
@@ -249,9 +275,14 @@ const modalStyles = (theme) => StyleSheet.create({
   closeButton: {
     padding: 5,
   },
+  modalScrollView: {
+    maxHeight: 400,
+  },
+  modalScrollContent: {
+    paddingBottom: 10,
+  },
   modalBody: {
     padding: 20,
-    maxHeight: "70%",
   },
   modalSubtitle: {
     fontSize: 14,
