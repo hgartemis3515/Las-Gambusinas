@@ -10,6 +10,7 @@ import {
   TextInput,
   Dimensions,
   useWindowDimensions,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -33,6 +34,7 @@ import Animated, {
   runOnJS,
   SlideInRight,
   FadeIn,
+  Easing,
 } from 'react-native-reanimated';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MotiPressable } from 'moti';
@@ -185,6 +187,8 @@ const InicioScreen = () => {
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
+  const [eliminandoUltimaComanda, setEliminandoUltimaComanda] = useState(false);
+  const [mensajeCargaEliminacion, setMensajeCargaEliminacion] = useState("");
 
   // Detectar si es móvil
   const isMobile = width < 400 || adaptMobile;
@@ -895,6 +899,288 @@ const InicioScreen = () => {
     );
   };
 
+  // Componente de Overlay para carga de eliminación
+  const OverlayEliminacion = ({ mensaje }) => {
+    const rotateAnim = useSharedValue(0);
+    const pulseAnim = useSharedValue(1);
+    const fadeAnim = useSharedValue(0);
+
+    useEffect(() => {
+      // Fade in inicial
+      fadeAnim.value = withTiming(1, {
+        duration: 300,
+        easing: Easing.out(Easing.ease),
+      });
+
+      // Rotación continua
+      rotateAnim.value = 0;
+      rotateAnim.value = withRepeat(
+        withTiming(360, {
+          duration: 2000,
+          easing: Easing.linear,
+        }),
+        -1,
+        false
+      );
+
+      // Pulso continuo
+      pulseAnim.value = 1;
+      pulseAnim.value = withRepeat(
+        withTiming(1.2, {
+          duration: 1000,
+          easing: Easing.inOut(Easing.ease),
+        }),
+        -1,
+        true
+      );
+
+      return () => {
+        rotateAnim.value = 0;
+        pulseAnim.value = 1;
+        fadeAnim.value = 0;
+      };
+    }, []);
+
+    const rotateStyle = useAnimatedStyle(() => {
+      const rotation = rotateAnim.value % 360;
+      return {
+        transform: [{ rotate: `${rotation}deg` }],
+      };
+    });
+
+    const pulseStyle = useAnimatedStyle(() => ({
+      transform: [{ scale: pulseAnim.value }],
+    }));
+
+    const fadeStyle = useAnimatedStyle(() => ({
+      opacity: fadeAnim.value,
+    }));
+
+    return (
+      <Animated.View style={[{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 9999,
+      }, fadeStyle]}>
+        <View style={{
+          backgroundColor: theme.colors?.surface || '#FFFFFF',
+          borderRadius: 20,
+          padding: 40,
+          alignItems: 'center',
+          justifyContent: 'center',
+          minWidth: 280,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 8,
+          elevation: 10,
+        }}>
+          <Animated.View style={[pulseStyle, { marginBottom: 20 }]}>
+            <Animated.View style={rotateStyle}>
+              <MaterialCommunityIcons 
+                name="delete-outline" 
+                size={80} 
+                color={theme.colors?.primary || "#C41E3A"} 
+              />
+            </Animated.View>
+          </Animated.View>
+          <ActivityIndicator 
+            size="large" 
+            color={theme.colors?.primary || "#C41E3A"} 
+            style={{ marginBottom: 16 }}
+          />
+          <Text style={{
+            fontSize: 18,
+            fontWeight: '700',
+            color: theme.colors?.text?.primary || '#333333',
+            textAlign: 'center',
+            marginBottom: 8,
+          }}>{mensaje}</Text>
+          <Text style={{
+            fontSize: 14,
+            color: theme.colors?.text?.secondary || '#666666',
+            textAlign: 'center',
+          }}>Por favor espera...</Text>
+        </View>
+      </Animated.View>
+    );
+  };
+
+  // Función para eliminar la última comanda de una mesa
+  const handleEliminarUltimaComanda = async (mesa, comandasMesa) => {
+    if (!comandasMesa || comandasMesa.length === 0) {
+      Alert.alert("Error", "No hay comandas para eliminar");
+      return;
+    }
+
+    // Encontrar la última comanda (la más reciente)
+    // Ordenar por createdAt (más reciente primero) o por comandaNumber (más alto primero)
+    const comandasOrdenadas = [...comandasMesa].sort((a, b) => {
+      // Priorizar createdAt si está disponible
+      if (a.createdAt && b.createdAt) {
+        const fechaA = new Date(a.createdAt).getTime();
+        const fechaB = new Date(b.createdAt).getTime();
+        return fechaB - fechaA; // Más reciente primero
+      }
+      // Fallback: usar comandaNumber
+      const numA = a.comandaNumber || 0;
+      const numB = b.comandaNumber || 0;
+      return numB - numA; // Más alto primero
+    });
+
+    const ultimaComanda = comandasOrdenadas[0];
+
+    if (!ultimaComanda) {
+      Alert.alert("Error", "No se pudo encontrar la última comanda");
+      return;
+    }
+
+    // Confirmación para eliminar
+    Alert.alert(
+      "⚠️ Eliminar Última Comanda",
+      `¿Estás seguro de que deseas eliminar la última comanda #${ultimaComanda.comandaNumber || ultimaComanda._id?.slice(-4) || 'N/A'} de la mesa ${mesa?.nummesa || 'N/A'}?\n\nEsta acción no se puede deshacer.`,
+      [
+        {
+          text: "Cancelar",
+          style: "cancel"
+        },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // Extraer el ID de forma segura
+              let comandaId = ultimaComanda._id;
+              
+              // Si _id es un objeto (puede pasar con populate), extraer el string
+              if (comandaId && typeof comandaId === 'object') {
+                comandaId = comandaId.toString();
+              }
+              
+              if (!comandaId) {
+                Alert.alert("Error", "No se pudo obtener el ID de la comanda");
+                return;
+              }
+              
+              // Activar pantalla de carga
+              setEliminandoUltimaComanda(true);
+              setMensajeCargaEliminacion("Eliminando última comanda...");
+              
+              console.log("🗑️ Eliminando última comanda:");
+              console.log("  - ID:", comandaId);
+              console.log("  - Comanda #:", ultimaComanda.comandaNumber);
+              console.log("  - Mesa:", mesa.nummesa);
+              
+              // Eliminar la comanda
+              setMensajeCargaEliminacion("Eliminando comanda del servidor...");
+              await axios.delete(`${COMANDA_API}/${comandaId}`, { timeout: 10000 });
+              console.log("✅ Última comanda eliminada del servidor");
+              
+              // Verificar que la comanda se eliminó correctamente
+              setMensajeCargaEliminacion("Verificando eliminación...");
+              
+              // Esperar un momento para que el servidor procese
+              await new Promise(resolve => setTimeout(resolve, 800));
+              
+              // Actualizar comandas desde el servidor para verificar
+              setMensajeCargaEliminacion("Actualizando comandas...");
+              await obtenerComandasHoy();
+              await obtenerMesas();
+              
+              // Verificar que la comanda ya no existe - hacer petición directa al servidor
+              setMensajeCargaEliminacion("Verificando eliminación en servidor...");
+              const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
+              const comandasActualizadas = await axios.get(
+                `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
+                { timeout: 10000 }
+              );
+              
+              const comandaEliminadaExiste = comandasActualizadas.data.some(c => {
+                const cId = c._id?.toString ? c._id.toString() : c._id;
+                const comandaIdStr = comandaId?.toString ? comandaId.toString() : comandaId;
+                return cId === comandaIdStr;
+              });
+              
+              if (comandaEliminadaExiste) {
+                // La comanda aún existe, intentar nuevamente
+                setMensajeCargaEliminacion("Reintentando eliminación...");
+                await axios.delete(`${COMANDA_API}/${comandaId}`, { timeout: 10000 });
+                await new Promise(resolve => setTimeout(resolve, 800));
+                await obtenerComandasHoy();
+                await obtenerMesas();
+              }
+              
+              setMensajeCargaEliminacion("Verificando comandas restantes...");
+              
+              // Obtener comandas actualizadas para verificar las restantes
+              const comandasActualizadasFinal = await axios.get(
+                `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
+                { timeout: 10000 }
+              );
+              
+              // Verificar las comandas restantes de la mesa
+              const comandasRestantes = comandasActualizadasFinal.data.filter(c => {
+                return c.mesas?.nummesa === mesa.nummesa &&
+                       c.IsActive !== false && 
+                       c.status?.toLowerCase() !== "pagado" && 
+                       c.status?.toLowerCase() !== "completado";
+              });
+              
+              console.log(`✅ Verificación completada. Comandas restantes en mesa ${mesa.nummesa}: ${comandasRestantes.length}`);
+              
+              // Cerrar pantalla de carga
+              setEliminandoUltimaComanda(false);
+              setMensajeCargaEliminacion("");
+              
+              // Cerrar modal
+              setModalOpcionesMesaVisible(false);
+              
+              Alert.alert(
+                "✅", 
+                `Última comanda eliminada exitosamente.\n\nComandas restantes en la mesa: ${comandasRestantes.length}`
+              );
+            } catch (error) {
+              console.error("❌ Error eliminando última comanda:", error);
+              
+              // Cerrar pantalla de carga
+              setEliminandoUltimaComanda(false);
+              setMensajeCargaEliminacion("");
+              
+              let errorMessage = "No se pudo eliminar la comanda";
+              
+              if (error.response) {
+                const status = error.response.status;
+                const data = error.response.data;
+                
+                if (status === 400) {
+                  errorMessage = data?.message || `Solicitud inválida (400)`;
+                } else if (status === 404) {
+                  errorMessage = "Comanda no encontrada";
+                } else if (status === 500) {
+                  errorMessage = "Error del servidor al eliminar la comanda";
+                } else {
+                  errorMessage = data?.message || `Error ${status}: No se pudo eliminar la comanda`;
+                }
+              } else if (error.request) {
+                errorMessage = "No se recibió respuesta del servidor. Verifica tu conexión.";
+              } else {
+                errorMessage = error.message || "Error desconocido al eliminar la comanda";
+              }
+              
+              Alert.alert("Error", errorMessage);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const handleEliminarComanda = async (comanda, mesa) => {
     // Confirmación para eliminar
     Alert.alert(
@@ -960,6 +1246,7 @@ const InicioScreen = () => {
               setComandas(comandasActualizadas);
               
               // Verificar si hay más comandas activas en la mesa (usando estado local actualizado)
+              // IMPORTANTE: Incluir comandas en estado "entregado" que aún no están pagadas
               const comandasMesaRestantes = comandasActualizadas.filter(c => {
                 return c.mesas?.nummesa === mesa.nummesa &&
                        c.IsActive !== false && 
@@ -969,52 +1256,14 @@ const InicioScreen = () => {
               
               const hayComandasActivas = comandasMesaRestantes.length > 0;
               
-              // Solo actualizar la mesa a "libre" si no hay más comandas activas
-              if (!hayComandasActivas && mesa) {
-                try {
-                  let mesaId = mesa._id;
-                  if (mesaId && typeof mesaId === 'object') {
-                    mesaId = mesaId.toString();
-                  }
-                  
-                  if (!mesaId) {
-                    console.warn("⚠️ No se pudo obtener el ID de la mesa para actualizar");
-                  } else {
-                    // Actualizar la mesa - el backend retorna todaslasmesas en la respuesta
-                    const mesaResponse = await axios.put(
-                      `${MESAS_API_UPDATE}/${mesaId}/estado`,
-                      { estado: "libre" },
-                      { timeout: 5000 }
-                    );
-                    
-                    // Usar los datos que vienen del backend en lugar de hacer otra petición
-                    if (mesaResponse.data?.todaslasmesas) {
-                      setMesas(mesaResponse.data.todaslasmesas);
-                      console.log("✅ Mesas actualizadas desde respuesta del servidor");
-                    }
-                    
-                    console.log("✅ Mesa liberada:", mesa.nummesa);
-                  }
-                } catch (mesaError) {
-                  // Solo registrar error si no es un error de que la mesa ya está en el estado correcto
-                  const errorStatus = mesaError.response?.status;
-                  const errorMessage = mesaError.response?.data?.error || mesaError.response?.data?.message || mesaError.message;
-                  
-                  const esErrorNoCritico = errorStatus === 400 && (
-                    errorMessage?.toLowerCase().includes('ya está') ||
-                    errorMessage?.toLowerCase().includes('already') ||
-                    errorMessage?.toLowerCase().includes('estado actual')
-                  );
-                  
-                  if (!esErrorNoCritico) {
-                    console.error("⚠️ Error actualizando mesa (pero comanda eliminada):", mesaError);
-                    // No mostrar alerta para no interrumpir el flujo cuando se eliminan múltiples comandas
-                  } else {
-                    console.log("ℹ️ La mesa ya está en el estado correcto");
-                  }
-                }
-              } else if (hayComandasActivas) {
-                console.log("ℹ️ No se actualiza la mesa porque aún tiene comandas activas");
+              // El backend ya maneja la actualización del estado de la mesa automáticamente
+              // cuando se elimina una comanda, considerando todas las comandas activas
+              // (incluyendo las que están en estado "entregado" pero no pagadas)
+              // Por lo tanto, no necesitamos actualizar manualmente la mesa aquí
+              if (hayComandasActivas) {
+                console.log(`ℹ️ Mesa ${mesa.nummesa} aún tiene ${comandasMesaRestantes.length} comanda(s) activa(s) - El backend manejará el estado de la mesa`);
+              } else {
+                console.log(`ℹ️ No hay comandas activas en la mesa ${mesa.nummesa} - El backend actualizará la mesa a "libre"`);
               }
               
               Alert.alert("✅", "Comanda eliminada exitosamente.");
@@ -1632,24 +1881,32 @@ const InicioScreen = () => {
                 style={[styles.modalOpcionesButton, styles.modalOpcionesButtonDanger]}
                 onPress={() => {
                   setModalOpcionesMesaVisible(false);
+                  handleEliminarUltimaComanda(mesaOpciones, comandasOpciones);
+                }}
+              >
+                <MaterialCommunityIcons name="delete-outline" size={24} color={theme.colors.text.white} />
+                <Text style={styles.modalOpcionesButtonText}>Eliminar la Última Comanda</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalOpcionesButton, styles.modalOpcionesButtonDanger]}
+                onPress={() => {
+                  setModalOpcionesMesaVisible(false);
                   handleEliminarTodasComandasMesa(mesaOpciones, comandasOpciones);
                 }}
               >
                 <MaterialCommunityIcons name="delete" size={24} color={theme.colors.text.white} />
-                <Text style={styles.modalOpcionesButtonText}>Eliminar</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalOpcionesButton, styles.modalOpcionesButtonCancel]}
-                onPress={() => setModalOpcionesMesaVisible(false)}
-              >
-                <MaterialCommunityIcons name="close-circle" size={24} color={theme.colors.text.primary} />
-                <Text style={[styles.modalOpcionesButtonText, styles.modalOpcionesButtonTextCancel]}>Cancelar</Text>
+                <Text style={styles.modalOpcionesButtonText}>Eliminar Todas las Comandas</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
+
+      {/* Overlay de Carga para Eliminación de Última Comanda */}
+      {eliminandoUltimaComanda && (
+        <OverlayEliminacion mensaje={mensajeCargaEliminacion} />
+      )}
     </SafeAreaView>
   );
 };
