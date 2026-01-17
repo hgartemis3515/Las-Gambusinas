@@ -20,7 +20,7 @@ import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight, textIconos } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
-import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET, BOUCHER_API, CLIENTES_API } from "../../../apiConfig";
+import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET, BOUCHER_API, CLIENTES_API, SELECTABLE_API_GET } from "../../../apiConfig";
 import ModalClientes from "../../../Components/ModalClientes";
 import IconoBoton from "../../../Components/IconoBoton";
 import { useWindowDimensions } from "react-native";
@@ -29,10 +29,136 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withRepeat,
   Easing,
   runOnJS,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+
+// Componente de Overlay de Carga Animado
+const AnimatedOverlay = ({ mensaje }) => {
+  const themeContext = useTheme();
+  const theme = themeContext?.theme || themeLight;
+  const rotateAnim = useSharedValue(0);
+  const pulseAnim = useSharedValue(1);
+  const fadeAnim = useSharedValue(0);
+
+  useEffect(() => {
+    // Fade in inicial
+    fadeAnim.value = withTiming(1, {
+      duration: 300,
+      easing: Easing.out(Easing.ease),
+    });
+
+    // Rotación continua usando withRepeat
+    // Iniciar desde 0 y rotar hasta 360, luego repetir desde 0
+    rotateAnim.value = 0;
+    rotateAnim.value = withRepeat(
+      withTiming(360, {
+        duration: 2000,
+        easing: Easing.linear,
+      }),
+      -1, // Repetir infinitamente
+      false // No revertir, volver a empezar desde 0
+    );
+
+    // Pulso continuo usando withRepeat
+    pulseAnim.value = 1;
+    pulseAnim.value = withRepeat(
+      withTiming(1.2, {
+        duration: 1000,
+        easing: Easing.inOut(Easing.ease),
+      }),
+      -1, // Repetir infinitamente
+      true // Revertir (hace el efecto de pulso: 1 -> 1.2 -> 1 -> 1.2...)
+    );
+
+    // Cleanup: resetear valores cuando el componente se desmonte
+    return () => {
+      rotateAnim.value = 0;
+      pulseAnim.value = 1;
+      fadeAnim.value = 0;
+    };
+  }, []);
+
+  const rotateStyle = useAnimatedStyle(() => {
+    // Asegurar que el valor esté en el rango 0-360
+    const rotation = rotateAnim.value % 360;
+    return {
+      transform: [{ rotate: `${rotation}deg` }],
+    };
+  });
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseAnim.value }],
+  }));
+
+  const fadeStyle = useAnimatedStyle(() => ({
+    opacity: fadeAnim.value,
+  }));
+
+  const overlayStyles = {
+    overlayContainer: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.85)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 9999,
+    },
+    overlayContent: {
+      backgroundColor: theme.colors?.surface || '#FFFFFF',
+      borderRadius: 20,
+      padding: 40,
+      alignItems: 'center',
+      justifyContent: 'center',
+      minWidth: 280,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 10,
+    },
+    overlayText: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: theme.colors?.text?.primary || '#333333',
+      textAlign: 'center',
+      marginBottom: 8,
+    },
+    overlaySubtext: {
+      fontSize: 14,
+      color: theme.colors?.text?.secondary || '#666666',
+      textAlign: 'center',
+    },
+  };
+
+  return (
+    <Animated.View style={[overlayStyles.overlayContainer, fadeStyle]}>
+      <View style={overlayStyles.overlayContent}>
+        <Animated.View style={[pulseStyle, { marginBottom: 20 }]}>
+          <Animated.View style={rotateStyle}>
+            <MaterialCommunityIcons 
+              name="cash-multiple" 
+              size={80} 
+              color={theme.colors?.primary || "#C41E3A"} 
+            />
+          </Animated.View>
+        </Animated.View>
+        <ActivityIndicator 
+          size="large" 
+          color={theme.colors?.primary || "#C41E3A"} 
+          style={{ marginBottom: 16 }}
+        />
+        <Text style={overlayStyles.overlayText}>{mensaje}</Text>
+        <Text style={overlayStyles.overlaySubtext}>Por favor espera...</Text>
+      </View>
+    </Animated.View>
+  );
+};
 
 const PagosScreen = () => {
   const navigation = useNavigation();
@@ -49,6 +175,8 @@ const PagosScreen = () => {
   const [loading, setLoading] = useState(true);
   const [modalClienteVisible, setModalClienteVisible] = useState(false);
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
+  const [procesandoPago, setProcesandoPago] = useState(false);
+  const [mensajeCarga, setMensajeCarga] = useState("Procesando pago...");
 
   useEffect(() => {
     loadPagoData();
@@ -454,7 +582,35 @@ const PagosScreen = () => {
     setModalClienteVisible(true);
   };
 
+  // Función para verificar el estado de la mesa
+  const verificarEstadoMesa = async (mesaId) => {
+    try {
+      // Intentar obtener la mesa individual primero
+      try {
+        const response = await axios.get(`${SELECTABLE_API_GET}/${mesaId}`, { timeout: 5000 });
+        if (response.data?.estado) {
+          return response.data.estado.toLowerCase() === "pagado";
+        }
+      } catch (individualError) {
+        // Si falla, obtener todas las mesas y filtrar
+        console.log("ℹ️ Intentando método alternativo para verificar estado de mesa");
+      }
+      
+      // Método alternativo: obtener todas las mesas y filtrar
+      const response = await axios.get(SELECTABLE_API_GET, { timeout: 5000 });
+      const mesa = response.data.find(m => m._id === mesaId || m._id?.toString() === mesaId?.toString());
+      return mesa?.estado?.toLowerCase() === "pagado";
+    } catch (error) {
+      console.warn("⚠️ Error al verificar estado de mesa:", error);
+      return false;
+    }
+  };
+
   const procesarPagoConCliente = async (cliente) => {
+    // Activar overlay de carga
+    setProcesandoPago(true);
+    setMensajeCarga("Procesando pago...");
+    
     try {
       console.log("💳 Procesando pago con cliente:", cliente.nombre || cliente._id);
 
@@ -510,6 +666,7 @@ const PagosScreen = () => {
       }
 
       // Actualizar mesa a "pagado" solo si no está ya en "pagado"
+      setMensajeCarga("Actualizando estado de la mesa...");
       if (mesa.estado?.toLowerCase() !== "pagado") {
         try {
           await axios.put(
@@ -528,6 +685,28 @@ const PagosScreen = () => {
         }
       } else {
         console.log("ℹ️ Mesa ya está en estado 'pagado', omitiendo actualización");
+      }
+
+      // Verificar periódicamente que la mesa esté en estado "Pagado"
+      setMensajeCarga("Verificando confirmación del pago...");
+      let intentos = 0;
+      const maxIntentos = 10; // Máximo 10 intentos (5 segundos)
+      let mesaConfirmada = false;
+
+      while (intentos < maxIntentos && !mesaConfirmada) {
+        await new Promise(resolve => setTimeout(resolve, 500)); // Esperar 500ms entre intentos
+        mesaConfirmada = await verificarEstadoMesa(mesa._id);
+        intentos++;
+        
+        if (!mesaConfirmada) {
+          setMensajeCarga(`Verificando confirmación del pago... (${intentos}/${maxIntentos})`);
+        }
+      }
+
+      if (!mesaConfirmada) {
+        console.warn("⚠️ No se pudo confirmar el estado 'pagado' de la mesa después de varios intentos");
+      } else {
+        console.log("✅ Mesa confirmada en estado 'pagado'");
       }
 
       // Preparar datos del boucher
@@ -590,7 +769,12 @@ const PagosScreen = () => {
       await AsyncStorage.removeItem("mesaPago");
 
       // Generar PDF
+      setMensajeCarga("Generando voucher...");
       await generarPDF();
+
+      // Cerrar overlay de carga
+      setProcesandoPago(false);
+      setMensajeCarga("Procesando pago...");
 
       Alert.alert(
         "✅", 
@@ -602,6 +786,10 @@ const PagosScreen = () => {
       navigation.navigate("Inicio");
     } catch (error) {
       console.error("Error procesando pago:", error);
+      
+      // Cerrar overlay de carga en caso de error
+      setProcesandoPago(false);
+      setMensajeCarga("Procesando pago...");
       
       // Si el error es 400 y el mensaje indica que ya está pagado, mostrar mensaje más amigable
       if (error.response?.status === 400) {
@@ -632,8 +820,28 @@ const PagosScreen = () => {
   const handleClienteSeleccionado = (cliente) => {
     setClienteSeleccionado(cliente);
     setModalClienteVisible(false);
-    // Procesar el pago con el cliente seleccionado
-    procesarPagoConCliente(cliente);
+    
+    // Mostrar confirmación antes de procesar el pago
+    Alert.alert(
+      "Confirmar Pago",
+      `¿Deseas continuar con el pago para el cliente ${cliente.nombre || "Invitado"}?\n\nTotal: S/. ${(total * 1.18).toFixed(2)}`,
+      [
+        {
+          text: "NO",
+          style: "cancel",
+          onPress: () => {
+            setClienteSeleccionado(null);
+          }
+        },
+        {
+          text: "SÍ",
+          onPress: () => {
+            // Procesar el pago con el cliente seleccionado
+            procesarPagoConCliente(cliente);
+          }
+        }
+      ]
+    );
   };
 
   if (loading) {
@@ -836,6 +1044,11 @@ const PagosScreen = () => {
         onClose={() => setModalClienteVisible(false)}
         onClienteSeleccionado={handleClienteSeleccionado}
       />
+
+      {/* Overlay de Carga Animado */}
+      {procesandoPago && (
+        <AnimatedOverlay mensaje={mensajeCarga} />
+      )}
     </SafeAreaView>
   );
 };
