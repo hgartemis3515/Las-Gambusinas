@@ -1052,7 +1052,7 @@ const InicioScreen = () => {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.profileButton}>

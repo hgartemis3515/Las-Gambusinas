@@ -638,7 +638,7 @@ const PagosScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container} edges={['bottom']}>
+      <SafeAreaView style={styles.container} edges={[]}>
         <View style={styles.emptyContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={styles.emptyText}>Cargando...</Text>
@@ -649,7 +649,7 @@ const PagosScreen = () => {
 
   if (!comandas || comandas.length === 0) {
     return (
-      <SafeAreaView style={styles.container} edges={['bottom']}>
+      <SafeAreaView style={styles.container} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.navigate("Inicio")}>
             <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.text.white} />
@@ -688,7 +688,7 @@ const PagosScreen = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.navigate("Inicio")}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.text.white} />

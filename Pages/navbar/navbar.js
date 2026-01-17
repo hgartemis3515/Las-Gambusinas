@@ -7,11 +7,16 @@ import InicioScreen from "./screens/InicioScreen";
 import OrdenesScreen from "./screens/OrdenesScreen";
 import PagosScreen from "./screens/PagosScreen";
 import MasScreen from "./screens/MasScreen";
+import { useTheme } from "../../context/ThemeContext";
 
 const Tab = createMaterialBottomTabNavigator();
 
 const Navbar = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const { isDarkMode } = useTheme();
+  
+  // Color rojo según dark mode (igual que en BottomNavBar)
+  const navBgColor = isDarkMode ? "#A11228" : "#C41E3A";
 
   // Obtener el estado del tab navigator desde el navigation state global
   const navigationState = useNavigationState((state) => {
@@ -33,12 +38,28 @@ const Navbar = () => {
       <View style={{ flex: 1 }}>
         <Tab.Navigator
           initialRouteName="Inicio"
-          barStyle={{ display: "none", height: 0, opacity: 0 }} // Ocultar bar nativo completamente
+          barStyle={{ 
+            display: "none", 
+            height: 0, 
+            width: 0,
+            opacity: 0,
+            position: 'absolute',
+            elevation: 0,
+            shadowOpacity: 0,
+          }}
           labeled={false}
           activeColor="#C41E3A"
           inactiveColor="#AAAAAA"
           screenOptions={{
             headerShown: false,
+            tabBarStyle: {
+              display: 'none',
+              height: 0,
+              opacity: 0,
+              position: 'absolute',
+              elevation: 0,
+              shadowOpacity: 0,
+            },
           }}
         >
           <Tab.Screen name="Inicio" component={InicioScreen} />
@@ -48,8 +69,11 @@ const Navbar = () => {
         </Tab.Navigator>
       </View>
       
-      {/* Custom Bottom NavBar - zIndex: 1 detrás del contenido */}
-      <BottomNavBar activeIndex={currentIndex} />
+      {/* Contenedor con fondo rojo para evitar espacios negros */}
+      <View style={{ backgroundColor: navBgColor }}>
+        {/* Custom Bottom NavBar - zIndex: 1 detrás del contenido */}
+        <BottomNavBar activeIndex={currentIndex} />
+      </View>
     </View>
   );
 };

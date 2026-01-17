@@ -421,7 +421,7 @@ const ThirdScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>📋 MIS COMANDAS</Text>
         <Text style={styles.headerSubtitle}>Hoy ▼</Text>

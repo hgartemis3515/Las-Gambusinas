@@ -39,6 +39,7 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
     try {
       let clienteData = null;
 
+      // Si está marcado como invitado o no hay ningún dato, crear invitado
       if (esInvitado || (!dni && !nombre && !telefono)) {
         // Crear cliente invitado automáticamente
         console.log("🆕 Creando cliente invitado automático...");
@@ -48,9 +49,24 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
       } else {
         // Crear cliente registrado con los datos proporcionados
         const datosCliente = {};
-        if (dni) datosCliente.dni = dni;
-        if (nombre) datosCliente.nombre = nombre;
-        if (telefono) datosCliente.telefono = telefono;
+        
+        // Lógica: Si solo hay DNI, nombre = "Invitado" y sin teléfono
+        if (dni && !nombre && !telefono) {
+          datosCliente.dni = dni.trim();
+          datosCliente.nombre = "Invitado";
+          // No se asigna teléfono
+        }
+        // Si solo hay Nombre, no hay DNI ni teléfono
+        else if (nombre && !dni && !telefono) {
+          datosCliente.nombre = nombre.trim();
+          // No se asigna DNI ni teléfono
+        }
+        // Si hay cualquier combinación de campos, usar los que estén llenos
+        else {
+          if (dni && dni.trim()) datosCliente.dni = dni.trim();
+          if (nombre && nombre.trim()) datosCliente.nombre = nombre.trim();
+          if (telefono && telefono.trim()) datosCliente.telefono = telefono.trim();
+        }
 
         console.log("📝 Creando cliente registrado con datos:", datosCliente);
         const response = await axios.post(CLIENTES_API, datosCliente, { timeout: 5000 });
@@ -137,28 +153,7 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
                 <View style={styles.formContainer}>
                   <Text style={styles.formTitle}>Registrar datos del cliente:</Text>
 
-                  <View style={styles.inputContainer}>
-                    <MaterialCommunityIcons
-                      name="card-account-details"
-                      size={20}
-                      color={theme.colors?.primary || "#667eea"}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={[styles.input, { color: "#333333", fontSize: 16 }]}
-                      placeholder="DNI (opcional)"
-                      value={dni}
-                      onChangeText={(text) => {
-                        setDni(text);
-                        if (text) setEsInvitado(false);
-                      }}
-                      keyboardType="numeric"
-                      placeholderTextColor="#999999"
-                      returnKeyType="next"
-                      blurOnSubmit={false}
-                    />
-                  </View>
-
+                  {/* Nombre primero */}
                   <View style={styles.inputContainer}>
                     <MaterialCommunityIcons
                       name="account"
@@ -181,6 +176,30 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
                     />
                   </View>
 
+                  {/* DNI segundo */}
+                  <View style={styles.inputContainer}>
+                    <MaterialCommunityIcons
+                      name="card-account-details"
+                      size={20}
+                      color={theme.colors?.primary || "#667eea"}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={[styles.input, { color: "#333333", fontSize: 16 }]}
+                      placeholder="DNI (opcional)"
+                      value={dni}
+                      onChangeText={(text) => {
+                        setDni(text);
+                        if (text) setEsInvitado(false);
+                      }}
+                      keyboardType="numeric"
+                      placeholderTextColor="#999999"
+                      returnKeyType="next"
+                      blurOnSubmit={false}
+                    />
+                  </View>
+
+                  {/* Teléfono tercero */}
                   <View style={styles.inputContainer}>
                     <MaterialCommunityIcons
                       name="phone"

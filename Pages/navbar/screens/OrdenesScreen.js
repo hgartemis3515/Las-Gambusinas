@@ -436,7 +436,7 @@ const OrdenesScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       <ScrollView style={styles.scrollView} contentContainerStyle={orientation.isLandscape ? styles.scrollViewContentLandscape : null}>
         <View style={styles.header}>
           <MaterialCommunityIcons name="notebook-edit" size={orientation.isLandscape ? 28 : 32} color={theme.colors.text.white} />
@@ -842,7 +842,7 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     flex: 1,
   },
   scrollViewContentLandscape: {
-    paddingBottom: theme.spacing.xl,
+    paddingBottom: 0,
   },
   header: {
     backgroundColor: theme.colors.primary,

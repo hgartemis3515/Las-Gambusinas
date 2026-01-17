@@ -82,6 +82,7 @@ const styles = StyleSheet.create({
     position: "relative", // NO absolute - integrado en layout
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    overflow: "hidden", // Asegura que las curvas se rellenen correctamente
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.4,

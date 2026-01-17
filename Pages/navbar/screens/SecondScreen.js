@@ -405,8 +405,8 @@ const SecondScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
-      <ScrollView style={styles.scrollView}>
+    <SafeAreaView style={styles.container} edges={[]}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 0 }}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>📋 CREAR PEDIDO</Text>
         </View>

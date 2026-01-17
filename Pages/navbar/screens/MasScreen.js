@@ -92,7 +92,7 @@ const MasScreen = () => {
   ];
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       <ScrollView style={styles.scrollView}>
         {/* Header */}
         <View style={styles.header}>
