@@ -8,6 +8,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -17,10 +18,135 @@ import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_AP
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
 import { useOrientation } from "../../../hooks/useOrientation";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import moment from "moment-timezone";
+// Animaciones Premium 60fps
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withRepeat,
+  Easing,
+} from 'react-native-reanimated';
+
+// Componente de Overlay de Carga Animado
+const AnimatedOverlay = ({ mensaje }) => {
+  const themeContext = useTheme();
+  const theme = themeContext?.theme || themeLight;
+  const rotateAnim = useSharedValue(0);
+  const pulseAnim = useSharedValue(1);
+  const fadeAnim = useSharedValue(0);
+
+  useEffect(() => {
+    // Fade in inicial
+    fadeAnim.value = withTiming(1, {
+      duration: 300,
+      easing: Easing.out(Easing.ease),
+    });
+
+    // Rotación continua usando withRepeat
+    rotateAnim.value = 0;
+    rotateAnim.value = withRepeat(
+      withTiming(360, {
+        duration: 2000,
+        easing: Easing.linear,
+      }),
+      -1, // Repetir infinitamente
+      false // No revertir, volver a empezar desde 0
+    );
+
+    // Pulso continuo usando withRepeat
+    pulseAnim.value = 1;
+    pulseAnim.value = withRepeat(
+      withTiming(1.2, {
+        duration: 1000,
+        easing: Easing.inOut(Easing.ease),
+      }),
+      -1, // Repetir infinitamente
+      true // Revertir (hace el efecto de pulso: 1 -> 1.2 -> 1 -> 1.2...)
+    );
+
+    // Cleanup: resetear valores cuando el componente se desmonte
+    return () => {
+      rotateAnim.value = 0;
+      pulseAnim.value = 1;
+      fadeAnim.value = 0;
+    };
+  }, []);
+
+  const rotateStyle = useAnimatedStyle(() => {
+    const rotation = rotateAnim.value % 360;
+    return {
+      transform: [{ rotate: `${rotation}deg` }],
+    };
+  });
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseAnim.value }],
+  }));
+
+  const fadeStyle = useAnimatedStyle(() => ({
+    opacity: fadeAnim.value,
+  }));
+
+  return (
+    <Animated.View style={[{
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.85)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 9999,
+    }, fadeStyle]}>
+      <View style={{
+        backgroundColor: theme.colors?.surface || '#FFFFFF',
+        borderRadius: 20,
+        padding: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 280,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 10,
+      }}>
+        <Animated.View style={[pulseStyle, { marginBottom: 20 }]}>
+          <Animated.View style={rotateStyle}>
+            <MaterialCommunityIcons 
+              name="food" 
+              size={80} 
+              color={theme.colors?.primary || "#C41E3A"} 
+            />
+          </Animated.View>
+        </Animated.View>
+        <ActivityIndicator 
+          size="large" 
+          color={theme.colors?.primary || "#C41E3A"} 
+          style={{ marginBottom: 16 }}
+        />
+        <Text style={{
+          fontSize: 18,
+          fontWeight: '700',
+          color: theme.colors?.text?.primary || '#333333',
+          textAlign: 'center',
+          marginBottom: 8,
+        }}>{mensaje}</Text>
+        <Text style={{
+          fontSize: 14,
+          color: theme.colors?.text?.secondary || '#666666',
+          textAlign: 'center',
+        }}>Por favor espera...</Text>
+      </View>
+    </Animated.View>
+  );
+};
 
 const OrdenesScreen = () => {
+  const navigation = useNavigation();
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const orientation = useOrientation();
@@ -40,6 +166,8 @@ const OrdenesScreen = () => {
   const [isSendingComanda, setIsSendingComanda] = useState(false);
   const [areas, setAreas] = useState([]);
   const [filtroAreaMesa, setFiltroAreaMesa] = useState("All"); // Filtro para el modal de mesas
+  const [mostrarOverlayCarga, setMostrarOverlayCarga] = useState(false);
+  const [mensajeCarga, setMensajeCarga] = useState("Creando comanda...");
 
   useEffect(() => {
     loadUserData();
@@ -220,8 +348,27 @@ const OrdenesScreen = () => {
         return;
       }
 
-      // Validar estado de la mesa antes de crear la comanda
-      const estadoMesa = (selectedMesa.estado || 'libre').toLowerCase();
+      // IMPORTANTE: Obtener el estado actualizado de la mesa desde el servidor
+      // para evitar problemas cuando se elimina una comanda y la mesa cambia a "libre"
+      let mesaActualizada = selectedMesa;
+      try {
+        const mesasResponse = await axios.get(SELECTABLE_API_GET, { timeout: 5000 });
+        const mesaEncontrada = mesasResponse.data.find(m => m._id === selectedMesa._id);
+        if (mesaEncontrada) {
+          mesaActualizada = mesaEncontrada;
+          // Actualizar selectedMesa con el estado más reciente
+          setSelectedMesa(mesaActualizada);
+          console.log(`✅ Estado actualizado de la mesa ${mesaActualizada.nummesa}: ${mesaActualizada.estado}`);
+        } else {
+          console.warn(`⚠️ No se encontró la mesa ${selectedMesa._id} en el servidor`);
+        }
+      } catch (error) {
+        console.error("⚠️ Error al obtener estado actualizado de la mesa:", error);
+        // Continuar con el estado local si falla la petición
+      }
+      
+      // Validar estado de la mesa antes de crear la comanda (usando estado actualizado)
+      const estadoMesa = (mesaActualizada.estado || 'libre').toLowerCase();
       
       // Si la mesa NO está libre, verificar que sea el mismo mozo que creó la comanda
       if (estadoMesa !== 'libre') {
@@ -244,7 +391,7 @@ const OrdenesScreen = () => {
             { timeout: 5000 }
           );
           const comandasMesa = response.data.filter(
-            (c) => c.mesas?.nummesa === selectedMesa.nummesa && 
+            (c) => c.mesas?.nummesa === mesaActualizada.nummesa && 
                    c.status?.toLowerCase() !== "pagado" && 
                    c.status?.toLowerCase() !== "completado"
           );
@@ -266,13 +413,13 @@ const OrdenesScreen = () => {
             // Si es el mismo mozo, permitir crear nueva comanda
             // Si la mesa está en "preparado", se creará la nueva comanda y la mesa pasará a "pedido"
             if (estadoMesa === 'preparado') {
-              console.log(`✅ Creando nueva comanda en mesa ${selectedMesa.nummesa} (estado: preparado) - Mismo mozo`);
+              console.log(`✅ Creando nueva comanda en mesa ${mesaActualizada.nummesa} (estado: preparado) - Mismo mozo`);
             }
           } else {
             // Si no hay comandas activas pero la mesa está en "preparado", permitir crear comanda
             // (puede ser un estado inconsistente o la comanda ya fue pagada)
             if (estadoMesa === 'preparado') {
-              console.log(`✅ Creando nueva comanda en mesa ${selectedMesa.nummesa} (estado: preparado) - Sin comandas activas`);
+              console.log(`✅ Creando nueva comanda en mesa ${mesaActualizada.nummesa} (estado: preparado) - Sin comandas activas`);
               // Permitir continuar con la creación de la comanda
             } else {
               // Para otros estados sin comandas activas, rechazar
@@ -316,7 +463,7 @@ const OrdenesScreen = () => {
 
       const comandaData = {
         mozos: userInfo._id,
-        mesas: selectedMesa._id,
+        mesas: mesaActualizada._id,
         platos: platosData,
         cantidades: cantidadesArray,
         observaciones: observaciones || "",
@@ -331,18 +478,92 @@ const OrdenesScreen = () => {
         platosCount: comandaData.platos.length
       });
 
-      const response = await axios.post(COMANDA_API, comandaData, { timeout: 5000 });
+      // Mostrar overlay de carga
+      setMostrarOverlayCarga(true);
+      setMensajeCarga("Creando comanda...");
+      
+      const response = await axios.post(COMANDA_API, comandaData, { timeout: 10000 });
       
       const comandaNumber = response.data.comanda?.comandaNumber || response.data.comandaNumber || "N/A";
+      const comandaCreada = response.data.comanda;
       
-      // El backend actualiza automáticamente la mesa a "pedido" al crear la comanda
-      // Si la mesa estaba en "preparado", ahora está en "pedido" con la nueva comanda
-      const mensaje = estadoMesa === 'preparado' 
-        ? `Comanda #${comandaNumber} creada. La mesa pasó de "Preparado" a "Pedido" con la nueva comanda.`
-        : `Comanda #${comandaNumber} creada. La mesa ahora está en estado "Pedido".`;
+      // Verificar que la comanda se creó correctamente
+      if (!comandaCreada || !comandaCreada._id) {
+        setMostrarOverlayCarga(false);
+        Alert.alert("Error", "No se pudo crear la comanda correctamente");
+        setIsSendingComanda(false);
+        return;
+      }
       
-      Alert.alert("✅ Éxito", mensaje);
-
+      setMensajeCarga("Verificando comanda creada...");
+      console.log(`✅ Comanda #${comandaNumber} creada correctamente`);
+      
+      // Verificar que la mesa esté en estado "pedido" en el servidor
+      setMensajeCarga("Verificando estado de la mesa...");
+      const mesaId = mesaActualizada._id;
+      const mesaNum = mesaActualizada.nummesa;
+      
+      let mesaVerificada = false;
+      let intentos = 0;
+      const maxIntentos = 10; // Máximo 10 intentos (5 segundos)
+      
+      while (!mesaVerificada && intentos < maxIntentos) {
+        try {
+          await new Promise(resolve => setTimeout(resolve, 500)); // Esperar 500ms entre intentos
+          
+          const mesasResponse = await axios.get(SELECTABLE_API_GET, { timeout: 5000 });
+          const mesaEncontrada = mesasResponse.data.find(m => {
+            const mId = m._id?.toString ? m._id.toString() : m._id;
+            const mesaIdStr = mesaId?.toString ? mesaId.toString() : mesaId;
+            return mId === mesaIdStr || m.nummesa === mesaNum;
+          });
+          
+          if (mesaEncontrada) {
+            const estadoMesaVerificado = (mesaEncontrada.estado || '').toLowerCase();
+            console.log(`🔄 Intento ${intentos + 1}/${maxIntentos}: Mesa ${mesaNum} en estado "${estadoMesaVerificado}"`);
+            
+            if (estadoMesaVerificado === 'pedido') {
+              mesaVerificada = true;
+              console.log(`✅ Mesa ${mesaNum} confirmada en estado "pedido"`);
+              break;
+            }
+          }
+          
+          intentos++;
+        } catch (error) {
+          console.error(`⚠️ Error verificando mesa (intento ${intentos + 1}):`, error);
+          intentos++;
+        }
+      }
+      
+      if (!mesaVerificada) {
+        console.warn(`⚠️ No se pudo verificar el estado de la mesa después de ${maxIntentos} intentos`);
+        // Continuar de todas formas, el backend debería haber actualizado la mesa
+      }
+      
+      // Actualizar estado local de la mesa
+      try {
+        if (mesaActualizada) {
+          const mesaActualizadaLocal = { ...mesaActualizada, estado: 'pedido' };
+          setSelectedMesa(mesaActualizadaLocal);
+        }
+        
+        setMesas(prev => {
+          const index = prev.findIndex(m => m._id === mesaActualizada._id);
+          if (index !== -1) {
+            const nuevas = [...prev];
+            nuevas[index] = { ...nuevas[index], estado: 'pedido' };
+            return nuevas;
+          }
+          return prev;
+        });
+      } catch (error) {
+        console.error("⚠️ Error actualizando estado local de mesa:", error);
+      }
+      
+      setMensajeCarga("Comanda creada exitosamente");
+      
+      // Limpiar datos locales
       await AsyncStorage.removeItem("mesaSeleccionada");
       await AsyncStorage.removeItem("selectedPlates");
       await AsyncStorage.removeItem("selectedPlatesIds");
@@ -353,8 +574,18 @@ const OrdenesScreen = () => {
       setSelectedPlatos([]);
       setCantidades({});
       setObservaciones("");
+      
+      // Esperar un momento antes de navegar para que el usuario vea el mensaje de éxito
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      // Ocultar overlay y navegar a Inicio
+      setMostrarOverlayCarga(false);
+      navigation.navigate("Inicio");
     } catch (error) {
       console.error("❌ Error enviando comanda:", error);
+      
+      // Ocultar overlay de carga en caso de error
+      setMostrarOverlayCarga(false);
       
       // Manejar errores HTTP 409 (Conflict) - Mesa ocupada
       if (error.response?.status === 409) {
@@ -844,6 +1075,11 @@ const OrdenesScreen = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Overlay de Carga Animado */}
+      {mostrarOverlayCarga && (
+        <AnimatedOverlay mensaje={mensajeCarga} />
+      )}
     </SafeAreaView>
   );
 };

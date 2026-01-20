@@ -20,7 +20,7 @@ import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight, textIconos } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
-import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET, BOUCHER_API, CLIENTES_API, SELECTABLE_API_GET } from "../../../apiConfig";
+import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET, BOUCHER_API, CLIENTES_API, SELECTABLE_API_GET, DISHES_API } from "../../../apiConfig";
 import ModalClientes from "../../../Components/ModalClientes";
 import IconoBoton from "../../../Components/IconoBoton";
 import { useWindowDimensions } from "react-native";
@@ -202,45 +202,204 @@ const PagosScreen = () => {
         mesaPago: mesaData ? "Sí" : "No"
       });
       
+      let comandasArray = [];
+      
       if (comandasData) {
-        const comandasArray = JSON.parse(comandasData);
-        console.log("✅ Comandas cargadas:", comandasArray.length);
-        
-        // Filtrar comandas por cliente: asegurar que todas pertenezcan al mismo cliente
-        if (comandasArray.length > 0) {
-          const primeraComanda = comandasArray[0];
-          const clienteId = primeraComanda.cliente?._id || primeraComanda.cliente;
-          
-          if (clienteId) {
-            // Filtrar solo las comandas del mismo cliente
-            const comandasFiltradas = comandasArray.filter(c => {
-              const comandaClienteId = c.cliente?._id || c.cliente;
-              return comandaClienteId && comandaClienteId.toString() === clienteId.toString();
-            });
-            
-            if (comandasFiltradas.length !== comandasArray.length) {
-              console.log(`⚠️ Filtrando comandas: ${comandasFiltradas.length} de ${comandasArray.length} pertenecen al mismo cliente`);
-            }
-            
-            setComandas(comandasFiltradas);
-          } else {
-            // Si no hay cliente, usar todas las comandas (caso legacy)
-            console.log("⚠️ Comandas sin cliente asignado (caso legacy)");
-            setComandas(comandasArray);
-          }
-        } else {
-          setComandas(comandasArray);
-        }
+        comandasArray = JSON.parse(comandasData);
+        console.log("✅ Comandas cargadas desde AsyncStorage:", comandasArray.length);
       } else {
         // Fallback al formato antiguo (una sola comanda)
         const comandaData = await AsyncStorage.getItem("comandaPago");
         if (comandaData) {
           const comanda = JSON.parse(comandaData);
           console.log("✅ Comanda única cargada (formato antiguo)");
-          setComandas([comanda]);
+          comandasArray = [comanda];
         } else {
           console.warn("⚠️ No se encontraron comandas en AsyncStorage");
         }
+      }
+      
+      // IMPORTANTE: Obtener TODAS las comandas de la mesa del servidor con platos populados
+      // para asegurar que los nombres y precios estén disponibles, incluyendo comandas nuevas
+      if (comandasArray.length > 0 && mesaData) {
+        try {
+          const mesa = JSON.parse(mesaData);
+          const mesaId = mesa._id;
+          const mesaNum = mesa.nummesa;
+          
+          console.log("🔄 Obteniendo TODAS las comandas de la mesa del servidor con platos populados...");
+          console.log(`   Mesa: ${mesaNum} (ID: ${mesaId})`);
+          
+          // Obtener todas las comandas del día
+          const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
+          const response = await axios.get(
+            `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
+            { timeout: 10000 }
+          );
+          
+          // Filtrar comandas de la mesa (por número de mesa para incluir comandas nuevas)
+          const comandasMesa = response.data.filter(c => {
+            const comandaMesaNum = c.mesas?.nummesa || c.mesas?.nummesa;
+            const comandaMesaId = c.mesas?._id || c.mesas;
+            return (comandaMesaNum === mesaNum) || (comandaMesaId && comandaMesaId.toString() === mesaId.toString());
+          });
+          
+          console.log(`✅ ${comandasMesa.length} comanda(s) de la mesa ${mesaNum} encontrada(s) en el servidor`);
+          
+          if (comandasMesa.length > 0) {
+            // Obtener todos los platos del servidor para corregir los que no tienen nombre/precio
+            let platosDisponibles = [];
+            try {
+              const platosResponse = await axios.get(DISHES_API, { timeout: 5000 });
+              platosDisponibles = platosResponse.data || [];
+              console.log(`✅ ${platosDisponibles.length} plato(s) obtenido(s) del servidor para corrección`);
+            } catch (error) {
+              console.error("⚠️ Error obteniendo platos del servidor:", error);
+            }
+            
+            // Corregir platos sin nombre o precio en cada comanda
+            const comandasConPlatosCompletos = comandasMesa.map((comanda) => {
+              if (comanda.platos && Array.isArray(comanda.platos)) {
+                const platosCorregidos = comanda.platos.map((platoItem) => {
+                  const plato = platoItem.plato || platoItem;
+                  
+                  // Si el plato no tiene nombre o precio, intentar obtenerlo del servidor
+                  if (!plato.nombre || !plato.precio || plato.precio === 0) {
+                    console.warn(`⚠️ Plato sin nombre o precio en comanda ${comanda.comandaNumber || comanda._id}:`, {
+                      platoId: plato._id,
+                      platoNumId: platoItem.platoId,
+                      tieneNombre: !!plato.nombre,
+                      tienePrecio: !!plato.precio,
+                      precio: plato.precio
+                    });
+                    
+                    // Intentar encontrar el plato usando platoId numérico
+                    if (platoItem.platoId && platosDisponibles.length > 0) {
+                      const platoEncontrado = platosDisponibles.find(p => p.id === platoItem.platoId);
+                      if (platoEncontrado) {
+                        console.log(`✅ Plato encontrado por ID numérico ${platoItem.platoId}: ${platoEncontrado.nombre} - S/. ${platoEncontrado.precio}`);
+                        return {
+                          ...platoItem,
+                          plato: {
+                            ...plato,
+                            nombre: platoEncontrado.nombre,
+                            precio: platoEncontrado.precio || 0,
+                            _id: platoEncontrado._id,
+                            id: platoEncontrado.id
+                          }
+                        };
+                      }
+                    }
+                    
+                    // Si no se encontró por ID numérico, intentar por ObjectId
+                    if (plato._id && platosDisponibles.length > 0) {
+                      const platoIdStr = plato._id.toString ? plato._id.toString() : plato._id;
+                      const platoEncontrado = platosDisponibles.find(p => {
+                        const pIdStr = p._id?.toString ? p._id.toString() : p._id;
+                        return pIdStr === platoIdStr;
+                      });
+                      if (platoEncontrado) {
+                        console.log(`✅ Plato encontrado por ObjectId: ${platoEncontrado.nombre} - S/. ${platoEncontrado.precio}`);
+                        return {
+                          ...platoItem,
+                          plato: {
+                            ...plato,
+                            nombre: platoEncontrado.nombre,
+                            precio: platoEncontrado.precio || 0,
+                            _id: platoEncontrado._id,
+                            id: platoEncontrado.id
+                          }
+                        };
+                      }
+                    }
+                    
+                    // Si no se encontró, mantener el plato original pero con valores por defecto
+                    console.warn(`⚠️ No se pudo encontrar el plato ${platoItem.platoId || plato._id}, usando valores por defecto`);
+                  }
+                  
+                  return platoItem;
+                });
+                
+                return { ...comanda, platos: platosCorregidos };
+              }
+              
+              return comanda;
+            });
+            
+            console.log(`✅ ${comandasConPlatosCompletos.length} comanda(s) procesada(s) con platos populados`);
+            comandasArray = comandasConPlatosCompletos;
+          } else {
+            console.warn("⚠️ No se encontraron comandas de la mesa en el servidor, usando datos de AsyncStorage");
+          }
+        } catch (error) {
+          console.error("⚠️ Error obteniendo comandas frescas del servidor:", error);
+          console.log("📦 Usando datos de AsyncStorage como fallback");
+          // Continuar con los datos de AsyncStorage si falla la petición
+        }
+      }
+      
+      // IMPORTANTE: Filtrar comandas por cliente de manera más estricta
+      // Solo mostrar comandas sin cliente (nuevas) o comandas del mismo cliente
+      // NO mezclar comandas de diferentes clientes
+      if (comandasArray.length > 0) {
+        // Separar comandas con cliente y sin cliente
+        const comandasConCliente = comandasArray.filter(c => {
+          const clienteId = c.cliente?._id || c.cliente;
+          return clienteId !== null && clienteId !== undefined;
+        });
+        
+        const comandasSinCliente = comandasArray.filter(c => {
+          const clienteId = c.cliente?._id || c.cliente;
+          return !clienteId || clienteId === null || clienteId === undefined;
+        });
+        
+        console.log(`📊 Comandas encontradas: ${comandasArray.length} total`);
+        console.log(`   - Con cliente: ${comandasConCliente.length}`);
+        console.log(`   - Sin cliente: ${comandasSinCliente.length}`);
+        
+        let comandasFiltradas = [];
+        
+        if (comandasConCliente.length > 0 && comandasSinCliente.length > 0) {
+          // Si hay comandas con cliente Y sin cliente, priorizar las SIN cliente (comandas nuevas)
+          // Esto evita mostrar comandas de otros clientes cuando se crea una nueva comanda
+          console.log("⚠️ Detectadas comandas con cliente y sin cliente - Mostrando solo comandas SIN cliente (nuevas)");
+          comandasFiltradas = comandasSinCliente;
+        } else if (comandasConCliente.length > 0) {
+          // Si solo hay comandas con cliente, filtrar por el mismo cliente
+          const primeraComandaConCliente = comandasConCliente[0];
+          const clienteId = primeraComandaConCliente.cliente?._id || primeraComandaConCliente.cliente;
+          
+          if (clienteId) {
+            comandasFiltradas = comandasConCliente.filter(c => {
+              const comandaClienteId = c.cliente?._id || c.cliente;
+              return comandaClienteId && comandaClienteId.toString() === clienteId.toString();
+            });
+            
+            if (comandasFiltradas.length !== comandasConCliente.length) {
+              console.log(`⚠️ Filtrando comandas por cliente: ${comandasFiltradas.length} de ${comandasConCliente.length} pertenecen al mismo cliente`);
+            }
+          } else {
+            comandasFiltradas = comandasConCliente;
+          }
+        } else {
+          // Si solo hay comandas sin cliente, usar todas
+          console.log("✅ Mostrando comandas sin cliente (nuevas)");
+          comandasFiltradas = comandasSinCliente;
+        }
+        
+        if (comandasFiltradas.length === 0) {
+          console.warn("⚠️ No se encontraron comandas válidas después del filtrado");
+          Alert.alert(
+            "Sin Comandas",
+            "No se encontraron comandas válidas para esta mesa. Por favor, verifica que haya comandas activas.",
+            [{ text: "OK", onPress: () => navigation.navigate("Inicio") }]
+          );
+        } else {
+          console.log(`✅ ${comandasFiltradas.length} comanda(s) filtrada(s) para mostrar`);
+          setComandas(comandasFiltradas);
+        }
+      } else {
+        setComandas(comandasArray);
       }
       
       if (mesaData) {

@@ -22,6 +22,7 @@ import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
 import logger from "../../../utils/logger";
+import { useSocket } from "../../../context/SocketContext";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -206,17 +207,252 @@ const InicioScreen = () => {
     obtenerAreas();
   }, []);
 
-  // Polling solo cuando la pantalla está enfocada
+  // Obtener socket del contexto global (mantiene conexión activa en todas las pantallas)
+  const { subscribeToEvents, joinMesa, leaveMesa, connected: socketConnected } = useSocket();
+
+  // Callbacks para eventos WebSocket
+  const handleMesaActualizada = useCallback((mesa) => {
+    console.log('📥 [MOZOS] Mesa actualizada vía WebSocket:', mesa.nummesa, 'Estado:', mesa.estado);
+    setMesas(prev => {
+      const index = prev.findIndex(m => {
+        const mId = m._id?.toString ? m._id.toString() : m._id;
+        const mesaId = mesa._id?.toString ? mesa._id.toString() : mesa._id;
+        return mId === mesaId || m.nummesa === mesa.nummesa;
+      });
+      if (index !== -1) {
+        const nuevas = [...prev];
+        const mesaAnterior = nuevas[index];
+        // CRÍTICO: Usar el estado del servidor directamente (es la fuente de verdad)
+        // No recalcular aquí, el backend ya calculó el estado correcto
+        nuevas[index] = { ...mesaAnterior, ...mesa, estado: mesa.estado }; // Asegurar que el estado se actualice
+        console.log(`✅ Mesa ${mesa.nummesa} actualizada en estado local: "${mesaAnterior.estado}" → "${mesa.estado}" (estado del servidor)`);
+        return nuevas;
+      }
+      // Si no existe, agregarla
+      console.log(`ℹ️ Mesa ${mesa.nummesa} no encontrada en estado local, agregándola`);
+      return [...prev, mesa];
+    });
+  }, []);
+
+  const handleComandaActualizada = useCallback(async (comanda) => {
+    // Detectar si es una reversión (status cambió de un estado avanzado a uno anterior)
+    const esReversion = comanda.historialEstados && 
+      comanda.historialEstados.length > 0 &&
+      comanda.historialEstados[comanda.historialEstados.length - 1]?.accion?.includes('revertido');
+    
+    if (esReversion) {
+      console.log('🔄 [MOZOS] Comanda REVERTIDA vía WebSocket:', comanda._id, 'Status:', comanda.status, 'Acción:', comanda.historialEstados[comanda.historialEstados.length - 1]?.accion);
+      console.log('⏳ [MOZOS] Esperando evento mesa-actualizada del servidor (NO recalcular manualmente para evitar condición de carrera)');
+    } else {
+      console.log('📥 [MOZOS] Comanda actualizada vía WebSocket:', comanda._id, 'Status:', comanda.status);
+    }
+    
+    // Actualizar la comanda en el estado local
+    setComandas(prev => {
+      const index = prev.findIndex(c => c._id === comanda._id);
+      if (index !== -1) {
+        const nuevas = [...prev];
+        nuevas[index] = comanda;
+        return nuevas;
+      }
+      return prev;
+    });
+    
+    // CRÍTICO: Si es una reversión, NO recalcular manualmente
+    // El backend ya calculó el estado correcto y emitirá mesa-actualizada
+    // Recalcular aquí causaría condición de carrera (estado cambia a "pedido" y luego vuelve a "preparado")
+    if (esReversion) {
+      console.log('✅ [MOZOS] Comanda revertida actualizada en estado local. Esperando evento mesa-actualizada del servidor...');
+      // Solo actualizar la comanda, el evento mesa-actualizada llegará después con el estado correcto
+      return;
+    }
+    
+    // Para actualizaciones normales (no reversiones), hacer el recálculo completo
+    const mesaId = comanda.mesas?._id || comanda.mesas;
+    const mesaNum = comanda.mesas?.nummesa;
+    
+    if (mesaId || mesaNum) {
+      try {
+        // Obtener todas las comandas del día del servidor
+        const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
+        const response = await axios.get(
+          `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
+          { timeout: 5000 }
+        );
+        
+        // Filtrar comandas de esta mesa
+        const comandasMesaServidor = response.data.filter(c => {
+          const cMesaId = c.mesas?._id || c.mesas;
+          const cMesaNum = c.mesas?.nummesa;
+          return (mesaId && cMesaId && cMesaId.toString() === mesaId.toString()) ||
+                 (mesaNum && cMesaNum === mesaNum);
+        });
+        
+        console.log(`🔄 Obtenidas ${comandasMesaServidor.length} comanda(s) de la mesa ${mesaNum || mesaId} del servidor para recalcular estado`);
+        
+        // Actualizar todas las comandas de la mesa en el estado local
+        setComandas(prev => {
+          const nuevas = [...prev];
+          comandasMesaServidor.forEach(comandaServidor => {
+            const index = nuevas.findIndex(c => c._id === comandaServidor._id);
+            if (index !== -1) {
+              nuevas[index] = comandaServidor;
+            } else {
+              nuevas.push(comandaServidor);
+            }
+          });
+          return nuevas;
+        });
+        
+        // Recalcular el estado de la mesa basándose en TODAS las comandas del servidor
+        // LÓGICA CORREGIDA: Priorizar "en_espera" sobre otros estados
+        let nuevoEstadoMesa = 'libre';
+        
+        if (comandasMesaServidor.length > 0) {
+          // Filtrar solo comandas activas (no pagadas)
+          const comandasActivas = comandasMesaServidor.filter(c => {
+            const status = (c.status || '').toLowerCase();
+            return status !== 'pagado' && status !== 'completado' && c.IsActive !== false;
+          });
+          
+          if (comandasActivas.length > 0) {
+            // Contar comandas por estado
+            const comandasEnEspera = comandasActivas.filter(c => {
+              const status = (c.status || '').toLowerCase();
+              return status === 'en_espera';
+            });
+            const comandasRecoger = comandasActivas.filter(c => {
+              const status = (c.status || '').toLowerCase();
+              return status === 'recoger';
+            });
+            const comandasEntregadas = comandasActivas.filter(c => {
+              const status = (c.status || '').toLowerCase();
+              return status === 'entregado';
+            });
+            
+            // PRIORIDAD CORREGIDA: "en_espera" tiene máxima prioridad (hay trabajo pendiente)
+            if (comandasEnEspera.length > 0) {
+              nuevoEstadoMesa = 'pedido';
+              console.log(`✅ Mesa ${mesaNum || mesaId} tiene ${comandasActivas.length} comanda(s) activa(s): ${comandasEnEspera.length} en "en_espera", ${comandasRecoger.length} en "recoger", ${comandasEntregadas.length} en "entregado" - Estado: "pedido" (prioridad: en_espera)`);
+            }
+            // Si no hay "en_espera" pero hay "recoger", la mesa está "preparado"
+            else if (comandasRecoger.length > 0) {
+              nuevoEstadoMesa = 'preparado';
+              console.log(`✅ Mesa ${mesaNum || mesaId} tiene ${comandasRecoger.length} comanda(s) en "recoger" - Estado: "preparado"`);
+            }
+            // Si solo hay comandas "entregado" (todas entregadas pero no pagadas), mesa en "preparado"
+            else if (comandasEntregadas.length > 0) {
+              nuevoEstadoMesa = 'preparado';
+              console.log(`✅ Mesa ${mesaNum || mesaId} tiene ${comandasEntregadas.length} comanda(s) en "entregado" (todas entregadas, esperando pago) - Estado: "preparado"`);
+            }
+          }
+        }
+        
+        // Actualizar el estado de la mesa inmediatamente
+        setMesas(prevMesas => {
+          const mesaIndex = prevMesas.findIndex(m => {
+            const mId = m._id?.toString ? m._id.toString() : m._id;
+            const mesaIdStr = mesaId?.toString ? mesaId.toString() : mesaId;
+            return (mesaId && mId === mesaIdStr) || (mesaNum && m.nummesa === mesaNum);
+          });
+          
+          if (mesaIndex !== -1) {
+            const mesa = prevMesas[mesaIndex];
+            if (mesa.estado !== nuevoEstadoMesa) {
+              console.log(`✅ Mesa ${mesa.nummesa} actualizada inmediatamente de "${mesa.estado}" a "${nuevoEstadoMesa}" basándose en todas las comandas del servidor`);
+              const nuevasMesas = [...prevMesas];
+              nuevasMesas[mesaIndex] = { ...mesa, estado: nuevoEstadoMesa };
+              return nuevasMesas;
+            }
+          }
+          
+          return prevMesas;
+        });
+      } catch (error) {
+        console.error("⚠️ Error obteniendo comandas de la mesa del servidor:", error);
+        // Si falla, al menos actualizar la comanda y obtener mesas del servidor
+        obtenerMesas();
+      }
+    }
+    
+    // También obtener mesas del servidor para sincronización completa
+    obtenerMesas();
+  }, [obtenerMesas]);
+
+  const handleNuevaComanda = useCallback((comanda) => {
+    console.log('📥 [MOZOS] Nueva comanda vía WebSocket:', comanda.comandaNumber);
+    setComandas(prev => {
+      const existe = prev.find(c => c._id === comanda._id);
+      if (existe) {
+        return prev.map(c => c._id === comanda._id ? comanda : c);
+      } else {
+        return [comanda, ...prev];
+      }
+    });
+    
+    // IMPORTANTE: Actualizar el estado de la mesa inmediatamente cuando llega una nueva comanda
+    // para evitar que se vea "libre" por un segundo al regresar a InicioScreen
+    const mesaId = comanda.mesas?._id || comanda.mesas;
+    if (mesaId) {
+      setMesas(prev => {
+        const index = prev.findIndex(m => {
+          const mId = m._id?.toString ? m._id.toString() : m._id;
+          const mesaIdStr = mesaId?.toString ? mesaId.toString() : mesaId;
+          return mId === mesaIdStr;
+        });
+        if (index !== -1) {
+          const nuevas = [...prev];
+          nuevas[index] = { ...nuevas[index], estado: 'pedido' };
+          console.log(`✅ Mesa ${nuevas[index].nummesa} actualizada inmediatamente a "pedido"`);
+          return nuevas;
+        }
+        return prev;
+      });
+    }
+    
+    // También obtener mesas del servidor para sincronización completa
+    // pero el estado local ya está actualizado para evitar el parpadeo
+    obtenerMesas();
+  }, [obtenerMesas]);
+
+  // 🔥 ESTÁNDAR INDUSTRIA: Unirse a rooms de todas las mesas activas
+  useEffect(() => {
+    if (socketConnected && mesas.length > 0) {
+      // Unirse a rooms de todas las mesas que tienen comandas activas
+      mesas.forEach(mesa => {
+        const mesaId = mesa._id?.toString ? mesa._id.toString() : mesa._id;
+        if (mesaId) {
+          joinMesa(mesaId);
+        }
+      });
+      console.log(`📌 [MOZOS] Unido a ${mesas.length} room(s) de mesa(s)`);
+    }
+  }, [socketConnected, mesas, joinMesa]);
+
+  // Suscribirse a eventos WebSocket y cargar datos cuando la pantalla está enfocada
   useFocusEffect(
     useCallback(() => {
+      // Suscribirse a eventos WebSocket
+      subscribeToEvents({
+        onMesaActualizada: handleMesaActualizada,
+        onComandaActualizada: handleComandaActualizada,
+        onNuevaComanda: handleNuevaComanda
+      });
+
+      // Cargar datos iniciales
       obtenerMesas();
       obtenerComandasHoy();
-      const interval = setInterval(() => {
-        obtenerMesas();
-        obtenerComandasHoy();
-      }, 3000);
-      return () => clearInterval(interval);
-    }, [])
+      // NO más polling - WebSocket actualiza en tiempo real
+
+      // Cleanup: desuscribirse cuando la pantalla pierde el foco
+      return () => {
+        subscribeToEvents({
+          onMesaActualizada: null,
+          onComandaActualizada: null,
+          onNuevaComanda: null
+        });
+      };
+    }, [handleMesaActualizada, handleComandaActualizada, handleNuevaComanda, subscribeToEvents, obtenerMesas, obtenerComandasHoy])
   );
 
   // Actualizar hora cada segundo
@@ -299,6 +535,43 @@ const InicioScreen = () => {
     }
   }, []);
 
+  // Función de sincronización manual (fallback cuando WebSocket falla)
+  const sincronizarManual = useCallback(async () => {
+    try {
+      console.log('🔄 Sincronizando manualmente...');
+      await Promise.all([
+        obtenerMesas(),
+        obtenerComandasHoy()
+      ]);
+      console.log('✅ Sincronización manual completada');
+      Alert.alert('✅ Sincronización', 'Datos actualizados correctamente');
+    } catch (error) {
+      console.error('❌ Error en sincronización manual:', error);
+      Alert.alert('❌ Error', 'No se pudo sincronizar los datos. Intente nuevamente.');
+    }
+  }, [obtenerMesas, obtenerComandasHoy]);
+
+  // 🔥 FALLBACK POLLING: Sincronizar mesas "preparado" cada 15s (solo si WebSocket desconectado)
+  useEffect(() => {
+    if (!socketConnected) {
+      console.log('⚠️ [MOZOS] WebSocket desconectado, activando polling de fallback cada 15s');
+      const pollingInterval = setInterval(() => {
+        // Solo sincronizar mesas que están en "preparado" (más críticas)
+        const mesasPreparado = mesas.filter(m => m.estado?.toLowerCase() === 'preparado');
+        if (mesasPreparado.length > 0) {
+          console.log(`🔄 [POLLING] Sincronizando ${mesasPreparado.length} mesa(s) en estado "preparado"`);
+          obtenerMesas();
+          obtenerComandasHoy();
+        }
+      }, 15000); // 15 segundos
+
+      return () => {
+        clearInterval(pollingInterval);
+        console.log('🛑 [MOZOS] Polling de fallback detenido');
+      };
+    }
+  }, [socketConnected, mesas, obtenerMesas, obtenerComandasHoy]);
+
   // Obtener todas las comandas de la mesa (incluyendo pagadas) - para mostrar mozo
   const getTodasComandasPorMesa = (mesaNum) => {
     return comandas.filter(
@@ -321,8 +594,37 @@ const InicioScreen = () => {
 
   const getEstadoMesa = (mesa) => {
     // Si la mesa tiene estado definido, usarlo (prioridad al estado de la mesa)
+    // PERO verificar que el estado sea consistente con las comandas actuales
     if (mesa.estado) {
       const estadoLower = mesa.estado.toLowerCase();
+      
+      // Verificar que el estado de la mesa sea consistente con las comandas
+      const comandasMesa = getComandasPorMesa(mesa.nummesa);
+      
+      if (comandasMesa.length > 0) {
+        // Verificar si hay comandas realmente preparadas (todos los platos en "recoger")
+        const hayComandasPreparadas = comandasMesa.some(c => {
+          if (!c.platos || c.platos.length === 0) return false;
+          return c.platos.every(p => p.estado === "recoger");
+        });
+        
+        // Si la mesa dice "preparado" pero no hay comandas preparadas, recalcular
+        if (estadoLower === "preparado" && !hayComandasPreparadas) {
+          console.log(`⚠️ Mesa ${mesa.nummesa} tiene estado "preparado" pero no hay comandas preparadas - Recalculando estado`);
+          // Recalcular basándose en las comandas
+          const hayComandasActivas = comandasMesa.some(c => {
+            const status = (c.status || '').toLowerCase();
+            return status === 'en_espera' || status === 'recoger';
+          });
+          
+          if (hayComandasActivas) {
+            return "Pedido";
+          } else {
+            return "Libre";
+          }
+        }
+      }
+      
       return estadoLower.charAt(0).toUpperCase() + estadoLower.slice(1);
     }
     
@@ -330,10 +632,11 @@ const InicioScreen = () => {
     const comandasMesa = getComandasPorMesa(mesa.nummesa);
     if (comandasMesa.length === 0) return "Libre";
     
-    // Verificar si hay comandas en estado "recoger" (preparado)
-    const hayPreparadas = comandasMesa.some(
-      (c) => c.status?.toLowerCase() === "recoger"
-    );
+    // Verificar si hay comandas preparadas (TODOS los platos en "recoger")
+    const hayPreparadas = comandasMesa.some(c => {
+      if (!c.platos || c.platos.length === 0) return false;
+      return c.platos.every(p => p.estado === "recoger");
+    });
     
     if (hayPreparadas) return "Preparado";
     
@@ -1275,6 +1578,15 @@ const InicioScreen = () => {
               setSearchPlato("");
               setCategoriaFiltro(null);
               
+              // IMPORTANTE: Actualizar mesas inmediatamente después de eliminar la comanda
+              // para que el estado de la mesa se sincronice en todas las pantallas (especialmente OrdenesScreen)
+              try {
+                await obtenerMesas();
+                console.log("✅ Mesas actualizadas después de eliminar comanda");
+              } catch (error) {
+                console.error("⚠️ Error al actualizar mesas después de eliminar comanda:", error);
+              }
+              
               // Actualizar comandas desde el servidor (con debounce para evitar múltiples peticiones)
               // Solo si no hay más eliminaciones en proceso
               setTimeout(async () => {
@@ -1361,7 +1673,15 @@ const InicioScreen = () => {
           <MaterialCommunityIcons name="account-circle" size={32} color={theme.colors.text.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>LAS GAMBUSINAS</Text>
-        <Text style={styles.headerTime}>{horaActual.format("HH:mm:ss")}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity 
+            onPress={sincronizarManual}
+            style={{ padding: 4 }}
+          >
+            <MaterialCommunityIcons name="sync" size={24} color={theme.colors.text.white} />
+          </TouchableOpacity>
+          <Text style={styles.headerTime}>{horaActual.format("HH:mm:ss")}</Text>
+        </View>
       </View>
 
       {/* Barra de Tabs de Áreas */}
@@ -1851,8 +2171,58 @@ const InicioScreen = () => {
                     console.log("📋 Comandas a guardar:", comandasOpciones.length);
                     console.log("🪑 Mesa a guardar:", mesaOpciones.nummesa);
                     
-                    // Guardar todas las comandas de la mesa para el pago
-                    await AsyncStorage.setItem("comandasPago", JSON.stringify(comandasOpciones));
+                    // IMPORTANTE: Filtrar comandas antes de guardar
+                    // Solo guardar comandas sin cliente (nuevas) o comandas del mismo cliente
+                    // NO guardar comandas de otros clientes
+                    const comandasConCliente = comandasOpciones.filter(c => {
+                      const clienteId = c.cliente?._id || c.cliente;
+                      return clienteId !== null && clienteId !== undefined;
+                    });
+                    
+                    const comandasSinCliente = comandasOpciones.filter(c => {
+                      const clienteId = c.cliente?._id || c.cliente;
+                      return !clienteId || clienteId === null || clienteId === undefined;
+                    });
+                    
+                    let comandasParaGuardar = [];
+                    
+                    if (comandasConCliente.length > 0 && comandasSinCliente.length > 0) {
+                      // Si hay comandas con cliente Y sin cliente, priorizar las SIN cliente (comandas nuevas)
+                      console.log("⚠️ Detectadas comandas con cliente y sin cliente - Guardando solo comandas SIN cliente (nuevas)");
+                      comandasParaGuardar = comandasSinCliente;
+                    } else if (comandasConCliente.length > 0) {
+                      // Si solo hay comandas con cliente, filtrar por el mismo cliente
+                      const primeraComandaConCliente = comandasConCliente[0];
+                      const clienteId = primeraComandaConCliente.cliente?._id || primeraComandaConCliente.cliente;
+                      
+                      if (clienteId) {
+                        comandasParaGuardar = comandasConCliente.filter(c => {
+                          const comandaClienteId = c.cliente?._id || c.cliente;
+                          return comandaClienteId && comandaClienteId.toString() === clienteId.toString();
+                        });
+                        console.log(`✅ Filtrando comandas por cliente: ${comandasParaGuardar.length} de ${comandasConCliente.length} pertenecen al mismo cliente`);
+                      } else {
+                        comandasParaGuardar = comandasConCliente;
+                      }
+                    } else {
+                      // Si solo hay comandas sin cliente, usar todas
+                      console.log("✅ Guardando comandas sin cliente (nuevas)");
+                      comandasParaGuardar = comandasSinCliente;
+                    }
+                    
+                    if (comandasParaGuardar.length === 0) {
+                      Alert.alert(
+                        "Sin Comandas",
+                        "No se encontraron comandas válidas para pagar. Por favor, verifica que haya comandas activas.",
+                        [{ text: "OK" }]
+                      );
+                      return;
+                    }
+                    
+                    console.log(`✅ Guardando ${comandasParaGuardar.length} comanda(s) para el pago`);
+                    
+                    // Guardar solo las comandas filtradas
+                    await AsyncStorage.setItem("comandasPago", JSON.stringify(comandasParaGuardar));
                     await AsyncStorage.setItem("mesaPago", JSON.stringify(mesaOpciones));
                     
                     // Verificar que se guardaron correctamente

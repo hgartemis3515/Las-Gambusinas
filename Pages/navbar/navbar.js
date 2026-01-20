@@ -8,12 +8,16 @@ import OrdenesScreen from "./screens/OrdenesScreen";
 import PagosScreen from "./screens/PagosScreen";
 import MasScreen from "./screens/MasScreen";
 import { useTheme } from "../../context/ThemeContext";
+import { SocketProvider, useSocket } from "../../context/SocketContext";
+import SocketStatus from "../../Components/SocketStatus";
 
 const Tab = createMaterialBottomTabNavigator();
 
-const Navbar = () => {
+// Componente interno que usa el contexto
+const NavbarContent = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const { isDarkMode } = useTheme();
+  const { connected, connectionStatus, reconnectAttempts } = useSocket();
   
   // Color rojo según dark mode (igual que en BottomNavBar)
   const navBgColor = isDarkMode ? "#A11228" : "#C41E3A";
@@ -34,6 +38,13 @@ const Navbar = () => {
 
   return (
     <View style={{ flex: 1 }}>
+      {/* Indicador de estado WebSocket - SIEMPRE VISIBLE en todas las pantallas */}
+      <SocketStatus 
+        isConnected={connected} 
+        connectionStatus={connectionStatus}
+        reconnectAttempts={reconnectAttempts}
+      />
+      
       {/* Screens encima */}
       <View style={{ flex: 1 }}>
         <Tab.Navigator
@@ -75,6 +86,15 @@ const Navbar = () => {
         <BottomNavBar activeIndex={currentIndex} />
       </View>
     </View>
+  );
+};
+
+// Componente wrapper que provee el contexto
+const Navbar = () => {
+  return (
+    <SocketProvider>
+      <NavbarContent />
+    </SocketProvider>
   );
 };
 
