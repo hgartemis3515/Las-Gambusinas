@@ -31,6 +31,8 @@ import * as Haptics from "expo-haptics";
 import { LOGIN_AUTH_API } from "../../apiConfig";
 import { colors } from "../../constants/colors";
 import { useOrientation } from "../../hooks/useOrientation";
+import SettingsModal from "../../Components/SettingsModal";
+import apiConfig from "../../config/apiConfig";
 
 // Componente de partículas flotantes
 const FloatingParticle = ({ delay = 0, screenHeight, screenWidth }) => {
@@ -389,8 +391,22 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [welcomeUserName, setWelcomeUserName] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [isConfigured, setIsConfigured] = useState(false);
   const buttonScale = useSharedValue(1);
   const titlePulse = useSharedValue(1);
+
+  // Verificar estado de configuración
+  useEffect(() => {
+    const checkConfig = () => {
+      setIsConfigured(apiConfig.isConfigured);
+    };
+    
+    checkConfig();
+    const interval = setInterval(checkConfig, 2000); // Verificar cada 2 segundos
+    
+    return () => clearInterval(interval);
+  }, []);
 
   const handleLogin = async () => {
     // Validación
@@ -415,8 +431,13 @@ const Login = () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
+      // Usar endpoint dinámico desde apiConfig
+      const loginURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/mozos/auth')
+        : LOGIN_AUTH_API;
+
       const response = await axios.post(
-        LOGIN_AUTH_API,
+        loginURL,
         {
           name: nombre.trim(),
           DNI: dni.trim(),
@@ -512,6 +533,62 @@ const Login = () => {
       end={{ x: 1, y: 1 }}
     >
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
+        {/* Header con botón de configuración */}
+        <View style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          left: 0,
+          zIndex: 1000,
+          paddingTop: Platform.OS === 'ios' ? 10 : 20,
+          paddingHorizontal: 20,
+          paddingBottom: 10,
+          flexDirection: 'row',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+        }}>
+          <TouchableOpacity
+            onPress={() => setShowSettings(true)}
+            style={{
+              padding: 10,
+              borderRadius: 20,
+              backgroundColor: isConfigured 
+                ? 'rgba(34, 197, 94, 0.2)' 
+                : 'rgba(239, 68, 68, 0.2)',
+              borderWidth: 2,
+              borderColor: isConfigured ? '#22C55E' : '#EF4444',
+              position: 'relative',
+            }}
+          >
+            <MaterialCommunityIcons 
+              name="cog-outline" 
+              size={24} 
+              color={isConfigured ? '#22C55E' : '#EF4444'} 
+            />
+            {!isConfigured && (
+              <View style={{
+                position: 'absolute',
+                top: -2,
+                right: -2,
+                width: 16,
+                height: 16,
+                borderRadius: 8,
+                backgroundColor: '#EF4444',
+                borderWidth: 2,
+                borderColor: '#FFFFFF',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}>
+                <Text style={{
+                  color: '#FFFFFF',
+                  fontSize: 10,
+                  fontWeight: '900',
+                }}>!</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
           style={{ flex: 1 }}
@@ -708,6 +785,16 @@ const Login = () => {
         visible={showWelcome}
         userName={welcomeUserName}
         onClose={() => setShowWelcome(false)}
+      />
+
+      {/* Modal de Configuración del Servidor */}
+      <SettingsModal
+        visible={showSettings}
+        onClose={() => {
+          setShowSettings(false);
+          // Recargar estado de configuración después de cerrar
+          setIsConfigured(apiConfig.isConfigured);
+        }}
       />
     </LinearGradient>
   );

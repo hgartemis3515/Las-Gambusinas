@@ -14,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API, COMANDASEARCH_API_GET } from "../../../apiConfig";
+import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API, COMANDASEARCH_API_GET, apiConfig } from "../../../apiConfig";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
 import { useOrientation } from "../../../hooks/useOrientation";
@@ -186,7 +186,10 @@ const OrdenesScreen = () => {
 
   const obtenerAreas = async () => {
     try {
-      const response = await axios.get(AREAS_API, { timeout: 5000 });
+      const areasURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/areas')
+        : AREAS_API;
+      const response = await axios.get(areasURL, { timeout: 5000 });
       setAreas(response.data.filter(area => area.isActive !== false));
     } catch (error) {
       console.error("Error al obtener las áreas:", error.message);
@@ -226,7 +229,10 @@ const OrdenesScreen = () => {
 
   const loadPlatosData = async () => {
     try {
-      const response = await axios.get(DISHES_API, { timeout: 5000 });
+      const platosURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/platos')
+        : DISHES_API;
+      const response = await axios.get(platosURL, { timeout: 5000 });
       setPlatos(response.data);
     } catch (error) {
       console.error("Error cargando platos:", error);
@@ -269,7 +275,10 @@ const OrdenesScreen = () => {
 
   const fetchMesas = async () => {
     try {
-      const response = await axios.get(SELECTABLE_API_GET, { timeout: 5000 });
+      const mesasURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/mesas')
+        : SELECTABLE_API_GET;
+      const response = await axios.get(mesasURL, { timeout: 5000 });
       setMesas(response.data);
     } catch (error) {
       console.error("Error obteniendo mesas:", error);
@@ -352,7 +361,10 @@ const OrdenesScreen = () => {
       // para evitar problemas cuando se elimina una comanda y la mesa cambia a "libre"
       let mesaActualizada = selectedMesa;
       try {
-        const mesasResponse = await axios.get(SELECTABLE_API_GET, { timeout: 5000 });
+        const mesasURL = apiConfig.isConfigured 
+          ? apiConfig.getEndpoint('/mesas')
+          : SELECTABLE_API_GET;
+        const mesasResponse = await axios.get(mesasURL, { timeout: 5000 });
         const mesaEncontrada = mesasResponse.data.find(m => m._id === selectedMesa._id);
         if (mesaEncontrada) {
           mesaActualizada = mesaEncontrada;
@@ -482,7 +494,10 @@ const OrdenesScreen = () => {
       setMostrarOverlayCarga(true);
       setMensajeCarga("Creando comanda...");
       
-      const response = await axios.post(COMANDA_API, comandaData, { timeout: 10000 });
+      const comandaURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/comanda')
+        : COMANDA_API;
+      const response = await axios.post(comandaURL, comandaData, { timeout: 10000 });
       
       const comandaNumber = response.data.comanda?.comandaNumber || response.data.comandaNumber || "N/A";
       const comandaCreada = response.data.comanda;
@@ -511,7 +526,10 @@ const OrdenesScreen = () => {
         try {
           await new Promise(resolve => setTimeout(resolve, 500)); // Esperar 500ms entre intentos
           
-          const mesasResponse = await axios.get(SELECTABLE_API_GET, { timeout: 5000 });
+          const mesasURL = apiConfig.isConfigured 
+          ? apiConfig.getEndpoint('/mesas')
+          : SELECTABLE_API_GET;
+        const mesasResponse = await axios.get(mesasURL, { timeout: 5000 });
           const mesaEncontrada = mesasResponse.data.find(m => {
             const mId = m._id?.toString ? m._id.toString() : m._id;
             const mesaIdStr = mesaId?.toString ? mesaId.toString() : mesaId;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import moment from 'moment-timezone';
+import { getWebSocketURL } from '../apiConfig';
 
 /**
  * Hook personalizado para manejar conexión Socket.io con namespace /mozos
@@ -26,22 +27,15 @@ const useSocketMozos = ({
   const reconnectDelay = 2000; // 2 segundos
   const lastReconnectTimeRef = useRef(null);
 
-  // Obtener URL del servidor desde apiConfig
-  const getServerUrl = () => {
-    // Intentar obtener desde variable de entorno o usar default
-    // En React Native, podemos usar una constante
-    const defaultUrl = 'http://192.168.18.11:3000';
-    // Extraer base URL si viene con /api
-    return defaultUrl;
-  };
-
   useEffect(() => {
-    const serverUrl = getServerUrl();
+    // Obtener URL del servidor desde configuración dinámica
+    const serverUrl = getWebSocketURL();
     
-    console.log('🔌 [MOZOS] Conectando a Socket.io:', `${serverUrl}/mozos`);
+    const wsURL = `${serverUrl}/mozos`;
+    console.log('🔌 [MOZOS] Conectando a Socket.io:', wsURL);
 
     // Crear conexión Socket.io al namespace /mozos
-    const socket = io(`${serverUrl}/mozos`, {
+    const socket = io(wsURL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: reconnectDelay,

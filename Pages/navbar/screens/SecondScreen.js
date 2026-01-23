@@ -14,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API, COMANDASEARCH_API_GET } from "../../../apiConfig";
+import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API, COMANDASEARCH_API_GET, apiConfig } from "../../../apiConfig";
 import moment from "moment-timezone";
 // Animaciones Premium 60fps
 import Animated, {
@@ -62,7 +62,10 @@ const SecondScreen = () => {
 
   const obtenerAreas = async () => {
     try {
-      const response = await axios.get(AREAS_API, { timeout: 5000 });
+      const areasURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/areas')
+        : AREAS_API;
+      const response = await axios.get(areasURL, { timeout: 5000 });
       setAreas(response.data.filter(area => area.isActive !== false));
     } catch (error) {
       console.error("Error al obtener las áreas:", error.message);
@@ -97,7 +100,10 @@ const SecondScreen = () => {
 
   const loadPlatosData = async () => {
     try {
-      const response = await axios.get(DISHES_API, { timeout: 5000 });
+      const platosURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/platos')
+        : DISHES_API;
+      const response = await axios.get(platosURL, { timeout: 5000 });
       setPlatos(response.data);
       console.log("🍽️ Platos cargados:", response.data.length);
     } catch (error) {
@@ -142,7 +148,10 @@ const SecondScreen = () => {
 
   const fetchMesas = async () => {
     try {
-      const response = await axios.get(SELECTABLE_API_GET, { timeout: 5000 });
+      const mesasURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/mesas')
+        : SELECTABLE_API_GET;
+      const response = await axios.get(mesasURL, { timeout: 5000 });
       setMesas(response.data);
       console.log("🪑 Mesas obtenidas:", response.data.length);
     } catch (error) {
@@ -273,9 +282,10 @@ const SecondScreen = () => {
           try {
             // Obtener comandas de la mesa para verificar el mozo
             const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-            const response = await axios.get(
-              `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
-              { timeout: 5000 }
+            const comandasURL = apiConfig.isConfigured 
+              ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
+              : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
+            const response = await axios.get(comandasURL, { timeout: 5000 }
             );
             const comandasMesa = response.data.filter(
               (c) => c.mesas?.nummesa === selectedMesa.nummesa && 
@@ -354,7 +364,10 @@ const SecondScreen = () => {
 
       console.log("📤 Enviando comanda:", JSON.stringify(comandaData, null, 2));
 
-      const response = await axios.post(COMANDA_API, comandaData, { timeout: 5000 });
+      const comandaURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/comanda')
+        : COMANDA_API;
+      const response = await axios.post(comandaURL, comandaData, { timeout: 5000 });
       
       console.log("✅ Comanda enviada:", response.data);
       

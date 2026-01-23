@@ -14,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { COMANDASEARCH_API_GET, COMANDA_API_SEARCH_BY_DATE, COMANDA_API, SELECTABLE_API_GET, DISHES_API, AREAS_API } from "../../../apiConfig";
+import { COMANDASEARCH_API_GET, COMANDA_API_SEARCH_BY_DATE, COMANDA_API, SELECTABLE_API_GET, DISHES_API, AREAS_API, apiConfig } from "../../../apiConfig";
 import moment from "moment-timezone";
 
 const ThirdScreen = () => {
@@ -42,7 +42,10 @@ const ThirdScreen = () => {
 
   const obtenerAreas = async () => {
     try {
-      const response = await axios.get(AREAS_API, { timeout: 5000 });
+      const areasURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/areas')
+        : AREAS_API;
+      const response = await axios.get(areasURL, { timeout: 5000 });
       setAreas(response.data.filter(area => area.isActive !== false));
     } catch (error) {
       console.error("Error al obtener las áreas:", error.message);
@@ -65,10 +68,10 @@ const ThirdScreen = () => {
   const fetchComandas = async () => {
     try {
       console.log("📋 Buscando comandas para fecha:", fecha);
-      const response = await axios.get(
-        `${COMANDA_API_SEARCH_BY_DATE}/${fecha}`,
-        { timeout: 5000 }
-      );
+      const comandasURL = apiConfig.isConfigured 
+        ? `${apiConfig.getEndpoint('/comanda/fecha')}/${fecha}`
+        : `${COMANDA_API_SEARCH_BY_DATE}/${fecha}`;
+      const response = await axios.get(comandasURL, { timeout: 5000 });
       
       // Filtrar solo las comandas del usuario logueado
       let filtered = response.data;
@@ -88,7 +91,10 @@ const ThirdScreen = () => {
 
   const fetchMesas = async () => {
     try {
-      const response = await axios.get(SELECTABLE_API_GET, { timeout: 5000 });
+      const mesasURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/mesas')
+        : SELECTABLE_API_GET;
+      const response = await axios.get(mesasURL, { timeout: 5000 });
       setMesas(response.data);
       console.log("🪑 Mesas cargadas:", response.data.length);
     } catch (error) {
@@ -98,7 +104,10 @@ const ThirdScreen = () => {
 
   const fetchPlatos = async () => {
     try {
-      const response = await axios.get(DISHES_API, { timeout: 5000 });
+      const platosURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/platos')
+        : DISHES_API;
+      const response = await axios.get(platosURL, { timeout: 5000 });
       setPlatos(response.data);
       console.log("🍽️ Platos cargados:", response.data.length);
     } catch (error) {
@@ -190,7 +199,10 @@ const ThirdScreen = () => {
           onPress: async () => {
             try {
               console.log("🗑️ Eliminando comanda:", comanda._id);
-              await axios.delete(`${COMANDA_API}/${comanda._id}`, { timeout: 5000 });
+              const deleteURL = apiConfig.isConfigured 
+                ? `${apiConfig.getEndpoint('/comanda')}/${comanda._id}`
+                : `${COMANDA_API}/${comanda._id}`;
+              await axios.delete(deleteURL, { timeout: 5000 });
               Alert.alert("✅", "Comanda eliminada exitosamente");
               fetchComandas();
             } catch (error) {
@@ -248,7 +260,10 @@ const ThirdScreen = () => {
       console.log("📤 Actualizando comanda:", comandaEditando._id);
       console.log("📋 Datos:", JSON.stringify(updateData, null, 2));
 
-      await axios.put(`${COMANDA_API}/${comandaEditando._id}`, updateData, { timeout: 5000 });
+      const updateURL = apiConfig.isConfigured 
+        ? `${apiConfig.getEndpoint('/comanda')}/${comandaEditando._id}`
+        : `${COMANDA_API}/${comandaEditando._id}`;
+      await axios.put(updateURL, updateData, { timeout: 5000 });
       
       Alert.alert("✅", "Comanda actualizada exitosamente");
       setModalEditVisible(false);

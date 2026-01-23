@@ -20,7 +20,7 @@ import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight, textIconos } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
-import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET, BOUCHER_API, CLIENTES_API, SELECTABLE_API_GET, DISHES_API } from "../../../apiConfig";
+import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET, BOUCHER_API, CLIENTES_API, SELECTABLE_API_GET, DISHES_API, apiConfig } from "../../../apiConfig";
 import ModalClientes from "../../../Components/ModalClientes";
 import IconoBoton from "../../../Components/IconoBoton";
 import { useWindowDimensions } from "react-native";
@@ -233,9 +233,10 @@ const PagosScreen = () => {
           
           // Obtener todas las comandas del día
           const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-          const response = await axios.get(
-            `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
-            { timeout: 10000 }
+          const comandasURL = apiConfig.isConfigured 
+            ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
+            : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
+          const response = await axios.get(comandasURL, { timeout: 10000 }
           );
           
           // Filtrar comandas de la mesa (por número de mesa para incluir comandas nuevas)
@@ -251,7 +252,10 @@ const PagosScreen = () => {
             // Obtener todos los platos del servidor para corregir los que no tienen nombre/precio
             let platosDisponibles = [];
             try {
-              const platosResponse = await axios.get(DISHES_API, { timeout: 5000 });
+              const platosURL = apiConfig.isConfigured 
+                ? apiConfig.getEndpoint('/platos')
+                : DISHES_API;
+              const platosResponse = await axios.get(platosURL, { timeout: 5000 });
               platosDisponibles = platosResponse.data || [];
               console.log(`✅ ${platosDisponibles.length} plato(s) obtenido(s) del servidor para corrección`);
             } catch (error) {
@@ -727,9 +731,10 @@ const PagosScreen = () => {
       
       // Obtener todas las comandas del día del servidor
       const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-      const response = await axios.get(
-        `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
-        { timeout: 10000 }
+      const comandasURL = apiConfig.isConfigured 
+        ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
+        : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
+      const response = await axios.get(comandasURL, { timeout: 10000 }
       );
       
       // Filtrar comandas de esta mesa
@@ -962,7 +967,10 @@ const PagosScreen = () => {
     try {
       // Intentar obtener la mesa individual primero
       try {
-        const response = await axios.get(`${SELECTABLE_API_GET}/${mesaId}`, { timeout: 5000 });
+        const mesaURL = apiConfig.isConfigured 
+          ? `${apiConfig.getEndpoint('/mesas')}/${mesaId}`
+          : `${SELECTABLE_API_GET}/${mesaId}`;
+        const response = await axios.get(mesaURL, { timeout: 5000 });
         if (response.data?.estado) {
           return response.data.estado.toLowerCase() === "pagado";
         }
@@ -972,7 +980,10 @@ const PagosScreen = () => {
       }
       
       // Método alternativo: obtener todas las mesas y filtrar
-      const response = await axios.get(SELECTABLE_API_GET, { timeout: 5000 });
+      const mesasURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/mesas')
+        : SELECTABLE_API_GET;
+      const response = await axios.get(mesasURL, { timeout: 5000 });
       const mesa = response.data.find(m => m._id === mesaId || m._id?.toString() === mesaId?.toString());
       return mesa?.estado?.toLowerCase() === "pagado";
     } catch (error) {
@@ -992,8 +1003,11 @@ const PagosScreen = () => {
       // Asociar cliente a todas las comandas y actualizar totales
       for (const comanda of comandas) {
         // Actualizar comanda con cliente
+        const comandaUpdateURL = apiConfig.isConfigured 
+          ? `${apiConfig.getEndpoint('/comanda')}/${comanda._id}`
+          : `${COMANDA_API}/${comanda._id}`;
         await axios.put(
-          `${COMANDA_API}/${comanda._id}`,
+          comandaUpdateURL,
           { cliente: cliente._id },
           { timeout: 5000 }
         );
@@ -1008,7 +1022,10 @@ const PagosScreen = () => {
 
         // Asociar cliente a comanda y actualizar totales del cliente
         try {
-          const baseUrl = CLIENTES_API.replace('/clientes', '');
+          const clientesURL = apiConfig.isConfigured 
+            ? apiConfig.getEndpoint('/clientes')
+            : CLIENTES_API;
+          const baseUrl = clientesURL.replace('/clientes', '');
           await axios.post(
             `${baseUrl}/comandas/${comanda._id}/cliente`,
             { clienteId: cliente._id, totalComanda: totalComanda },
@@ -1021,8 +1038,11 @@ const PagosScreen = () => {
         // Marcar comanda como pagada solo si no está ya pagada
         if (comanda.status?.toLowerCase() !== "pagado") {
           try {
+            const comandaStatusURL = apiConfig.isConfigured 
+              ? `${apiConfig.getEndpoint('/comanda')}/${comanda._id}/status`
+              : `${COMANDA_API}/${comanda._id}/status`;
             await axios.put(
-              `${COMANDA_API}/${comanda._id}/status`,
+              comandaStatusURL,
               { nuevoStatus: "pagado" },
               { timeout: 5000 }
             );
@@ -1044,8 +1064,11 @@ const PagosScreen = () => {
       setMensajeCarga("Actualizando estado de la mesa...");
       if (mesa.estado?.toLowerCase() !== "pagado") {
         try {
+          const mesaUpdateURL = apiConfig.isConfigured 
+            ? `${apiConfig.getEndpoint('/mesas')}/${mesa._id}/estado`
+            : `${MESAS_API_UPDATE}/${mesa._id}/estado`;
           await axios.put(
-            `${MESAS_API_UPDATE}/${mesa._id}/estado`,
+            mesaUpdateURL,
             { estado: "pagado" },
             { timeout: 5000 }
           );
@@ -1130,7 +1153,10 @@ const PagosScreen = () => {
       // Nota: La asociación del boucher al cliente se hace automáticamente en el backend
       // cuando se crea el boucher (ver boucher.repository.js)
       try {
-        const boucherResponse = await axios.post(BOUCHER_API, boucherData, { timeout: 5000 });
+        const boucherURL = apiConfig.isConfigured 
+          ? apiConfig.getEndpoint('/boucher')
+          : BOUCHER_API;
+        const boucherResponse = await axios.post(boucherURL, boucherData, { timeout: 5000 });
         console.log("✅ Boucher guardado:", boucherResponse.data.boucherNumber || boucherResponse.data._id);
         console.log("✅ Boucher asociado automáticamente al cliente en el backend");
       } catch (boucherError) {

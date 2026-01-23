@@ -17,7 +17,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, DISHES_API, AREAS_API, MESAS_API_UPDATE } from "../../../apiConfig";
+import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, DISHES_API, AREAS_API, MESAS_API_UPDATE, apiConfig } from "../../../apiConfig";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
@@ -336,10 +336,10 @@ const InicioScreen = () => {
     
       // Obtener todas las comandas del día del servidor
       const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-      const response = await axios.get(
-        `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
-        { timeout: 10000 }
-      );
+      const comandasURL = apiConfig.isConfigured 
+        ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
+        : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
+      const response = await axios.get(comandasURL, { timeout: 10000 });
       
       // Filtrar comandas de esta mesa
       const comandasMesa = response.data.filter(c => {
@@ -402,7 +402,10 @@ const InicioScreen = () => {
         // Obtener todos los platos del servidor para corregir
         let platosDisponibles = [];
         try {
-          const platosResponse = await axios.get(DISHES_API, { timeout: 5000 });
+          const platosURL = apiConfig.isConfigured 
+            ? apiConfig.getEndpoint('/platos')
+            : DISHES_API;
+          const platosResponse = await axios.get(platosURL, { timeout: 5000 });
           platosDisponibles = platosResponse.data || [];
           console.log(`✅ [INICIO] ${platosDisponibles.length} plato(s) obtenido(s) para corrección`);
         } catch (error) {
@@ -600,10 +603,10 @@ const InicioScreen = () => {
       try {
         // Obtener todas las comandas del día del servidor
         const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-        const response = await axios.get(
-          `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
-          { timeout: 5000 }
-        );
+        const comandasURL = apiConfig.isConfigured 
+          ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
+          : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
+        const response = await axios.get(comandasURL, { timeout: 5000 });
         
         // Filtrar comandas de esta mesa
         const comandasMesaServidor = response.data.filter(c => {
@@ -822,7 +825,10 @@ const InicioScreen = () => {
 
   const obtenerMesas = useCallback(async () => {
     try {
-      const response = await axios.get(SELECTABLE_API_GET, { timeout: 5000 });
+      const mesasURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/mesas')
+        : SELECTABLE_API_GET;
+      const response = await axios.get(mesasURL, { timeout: 5000 });
       setMesas(response.data);
     } catch (error) {
       console.error("Error al obtener las mesas:", error.message);
@@ -832,10 +838,10 @@ const InicioScreen = () => {
   const obtenerComandasHoy = useCallback(async () => {
     try {
       const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-      const response = await axios.get(
-        `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
-        { timeout: 5000 }
-      );
+      const comandasURL = apiConfig.isConfigured 
+        ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
+        : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
+      const response = await axios.get(comandasURL, { timeout: 5000 });
       setComandas(response.data);
     } catch (error) {
       console.error("Error al obtener las comandas de hoy:", error.message);
@@ -844,7 +850,10 @@ const InicioScreen = () => {
 
   const obtenerPlatos = async () => {
     try {
-      const response = await axios.get(DISHES_API, { timeout: 5000 });
+      const platosURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/platos')
+        : DISHES_API;
+      const response = await axios.get(platosURL, { timeout: 5000 });
       setPlatos(response.data);
     } catch (error) {
       console.error("Error cargando platos:", error);
@@ -853,7 +862,10 @@ const InicioScreen = () => {
 
   const obtenerAreas = useCallback(async () => {
     try {
-      const response = await axios.get(AREAS_API, { timeout: 5000 });
+      const areasURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/areas')
+        : AREAS_API;
+      const response = await axios.get(areasURL, { timeout: 5000 });
       setAreas(response.data.filter(area => area.isActive !== false));
     } catch (error) {
       console.error("Error al obtener las áreas:", error.message);
@@ -1334,7 +1346,10 @@ const InicioScreen = () => {
         observaciones: comandaEditando.observacionesEditadas || "",
       };
 
-      await axios.put(`${COMANDA_API}/${comandaEditando._id}`, updateData, { timeout: 5000 });
+      const comandaUpdateURL = apiConfig.isConfigured 
+        ? `${apiConfig.getEndpoint('/comanda')}/${comandaEditando._id}`
+        : `${COMANDA_API}/${comandaEditando._id}`;
+      await axios.put(comandaUpdateURL, updateData, { timeout: 5000 });
       
       Alert.alert("✅", "Comanda actualizada exitosamente");
       setModalEditVisible(false);
@@ -1386,8 +1401,11 @@ const InicioScreen = () => {
       });
 
       // Usar el endpoint de edición con auditoría
+      const comandaEditURL = apiConfig.isConfigured 
+        ? `${apiConfig.getEndpoint('/comanda')}/${comandaEditando._id}/editar-platos`
+        : `${COMANDA_API}/${comandaEditando._id}/editar-platos`;
       await axios.put(
-        `${COMANDA_API}/${comandaEditando._id}/editar-platos`,
+        comandaEditURL,
         {
           platosNuevos: platosNuevosData,
           platosEliminados: platosEliminadosData,
@@ -1520,8 +1538,11 @@ const InicioScreen = () => {
               console.log("🔄 Liberando mesa:", mesaId);
               
               // Actualizar mesa a "libre"
+              const mesaUpdateURL = apiConfig.isConfigured 
+                ? `${apiConfig.getEndpoint('/mesas')}/${mesaId}/estado`
+                : `${MESAS_API_UPDATE}/${mesaId}/estado`;
               await axios.put(
-                `${MESAS_API_UPDATE}/${mesaId}/estado`,
+                mesaUpdateURL,
                 { estado: "libre" },
                 { timeout: 5000 }
               );
@@ -1581,7 +1602,10 @@ const InicioScreen = () => {
                   
                   if (comandaId) {
                     console.log(`  - Eliminando comanda #${comanda.comandaNumber || comandaId.slice(-4)}`);
-                    await axios.delete(`${COMANDA_API}/${comandaId}`, { timeout: 5000 });
+                    const deleteURL = apiConfig.isConfigured 
+                      ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}`
+                      : `${COMANDA_API}/${comandaId}`;
+                    await axios.delete(deleteURL, { timeout: 5000 });
                     return { success: true, comandaId };
                   } else {
                     console.warn(`  - ⚠️ No se pudo obtener ID de comanda:`, comanda);
@@ -1820,7 +1844,10 @@ const InicioScreen = () => {
               
               // Eliminar la comanda
               setMensajeCargaEliminacion("Eliminando comanda del servidor...");
-              await axios.delete(`${COMANDA_API}/${comandaId}`, { timeout: 10000 });
+              const deleteURL = apiConfig.isConfigured 
+                ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}`
+                : `${COMANDA_API}/${comandaId}`;
+              await axios.delete(deleteURL, { timeout: 10000 });
               console.log("✅ Última comanda eliminada del servidor");
               
               // Verificar que la comanda se eliminó correctamente
@@ -1851,7 +1878,10 @@ const InicioScreen = () => {
               if (comandaEliminadaExiste) {
                 // La comanda aún existe, intentar nuevamente
                 setMensajeCargaEliminacion("Reintentando eliminación...");
-                await axios.delete(`${COMANDA_API}/${comandaId}`, { timeout: 10000 });
+                const deleteURL = apiConfig.isConfigured 
+                  ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}`
+                  : `${COMANDA_API}/${comandaId}`;
+                await axios.delete(deleteURL, { timeout: 10000 });
                 await new Promise(resolve => setTimeout(resolve, 800));
                 await obtenerComandasHoy();
                 await obtenerMesas();
@@ -1966,14 +1996,17 @@ const InicioScreen = () => {
                 return;
               }
               
+              const deleteURL = apiConfig.isConfigured 
+                ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}`
+                : `${COMANDA_API}/${comandaId}`;
               console.log("🗑️ Eliminando comanda:");
               console.log("  - ID:", comandaId);
               console.log("  - Tipo:", typeof comandaId);
-              console.log("  - URL:", `${COMANDA_API}/${comandaId}`);
+              console.log("  - URL:", deleteURL);
               console.log("  - Comanda completa:", JSON.stringify(comanda, null, 2));
               
               // Eliminar la comanda
-              const deleteResponse = await axios.delete(`${COMANDA_API}/${comandaId}`, { timeout: 5000 });
+              const deleteResponse = await axios.delete(deleteURL, { timeout: 5000 });
               console.log("✅ Comanda eliminada");
               
               // Actualizar comandas localmente (remover la eliminada del estado)
@@ -2043,7 +2076,9 @@ const InicioScreen = () => {
                 comandaNumber: comanda?.comandaNumber,
                 mesaId: mesa?._id,
                 mesaNum: mesa?.nummesa,
-                url: `${COMANDA_API}/${comanda?._id}`,
+                url: apiConfig.isConfigured 
+                  ? `${apiConfig.getEndpoint('/comanda')}/${comanda?._id}`
+                  : `${COMANDA_API}/${comanda?._id}`,
                 timestamp: moment().tz("America/Lima").format("YYYY-MM-DD HH:mm:ss"),
               });
               
