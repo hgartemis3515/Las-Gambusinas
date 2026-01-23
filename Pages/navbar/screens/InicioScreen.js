@@ -42,6 +42,130 @@ import { MotiPressable } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { slideInRightDelay, springConfig } from "../../../constants/animations";
 
+// Componente de Overlay de Carga Animado
+const AnimatedOverlay = ({ mensaje }) => {
+  const themeContext = useTheme();
+  const theme = themeContext?.theme || themeLight;
+  const rotateAnim = useSharedValue(0);
+  const pulseAnim = useSharedValue(1);
+  const fadeAnim = useSharedValue(0);
+
+  useEffect(() => {
+    // Fade in inicial
+    fadeAnim.value = withTiming(1, {
+      duration: 300,
+      easing: Easing.out(Easing.ease),
+    });
+
+    // Rotación continua usando withRepeat
+    rotateAnim.value = 0;
+    rotateAnim.value = withRepeat(
+      withTiming(360, {
+        duration: 2000,
+        easing: Easing.linear,
+      }),
+      -1, // Repetir infinitamente
+      false // No revertir, volver a empezar desde 0
+    );
+
+    // Pulso continuo usando withRepeat
+    pulseAnim.value = 1;
+    pulseAnim.value = withRepeat(
+      withTiming(1.2, {
+        duration: 1000,
+        easing: Easing.inOut(Easing.ease),
+      }),
+      -1, // Repetir infinitamente
+      true // Revertir (hace el efecto de pulso: 1 -> 1.2 -> 1 -> 1.2...)
+    );
+
+    // Cleanup: resetear valores cuando el componente se desmonte
+    return () => {
+      rotateAnim.value = 0;
+      pulseAnim.value = 1;
+      fadeAnim.value = 0;
+    };
+  }, []);
+
+  const rotateStyle = useAnimatedStyle(() => {
+    // Asegurar que el valor esté en el rango 0-360
+    const rotation = rotateAnim.value % 360;
+    return {
+      transform: [{ rotate: `${rotation}deg` }],
+    };
+  });
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseAnim.value }],
+  }));
+
+  const fadeStyle = useAnimatedStyle(() => ({
+    opacity: fadeAnim.value,
+  }));
+
+  const overlayStyles = {
+    overlayContainer: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.85)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 9999,
+    },
+    overlayContent: {
+      backgroundColor: theme.colors?.surface || '#FFFFFF',
+      borderRadius: 20,
+      padding: 40,
+      alignItems: 'center',
+      justifyContent: 'center',
+      minWidth: 280,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 10,
+    },
+    overlayText: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: theme.colors?.text?.primary || '#333333',
+      textAlign: 'center',
+      marginBottom: 8,
+    },
+    overlaySubtext: {
+      fontSize: 14,
+      color: theme.colors?.text?.secondary || '#666666',
+      textAlign: 'center',
+    },
+  };
+
+  return (
+    <Animated.View style={[overlayStyles.overlayContainer, fadeStyle]}>
+      <View style={overlayStyles.overlayContent}>
+        <Animated.View style={[pulseStyle, { marginBottom: 20 }]}>
+          <Animated.View style={rotateStyle}>
+            <MaterialCommunityIcons 
+              name="cash-multiple" 
+              size={80} 
+              color={theme.colors?.primary || "#C41E3A"} 
+            />
+          </Animated.View>
+        </Animated.View>
+        <ActivityIndicator 
+          size="large" 
+          color={theme.colors?.primary || "#C41E3A"} 
+          style={{ marginBottom: 16 }}
+        />
+        <Text style={overlayStyles.overlayText}>{mensaje}</Text>
+        <Text style={overlayStyles.overlaySubtext}>Por favor espera...</Text>
+      </View>
+    </Animated.View>
+  );
+};
+
 // Componente Mesa Animada Premium 60fps
 const MesaAnimada = React.memo(({ 
   mesa, 
@@ -190,6 +314,207 @@ const InicioScreen = () => {
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [eliminandoUltimaComanda, setEliminandoUltimaComanda] = useState(false);
   const [mensajeCargaEliminacion, setMensajeCargaEliminacion] = useState("");
+  const [verificandoComandas, setVerificandoComandas] = useState(false);
+  const [mensajeCargaVerificacion, setMensajeCargaVerificacion] = useState("");
+
+  // 🔥 FUNCIÓN CRÍTICA: Verificar y cargar todas las comandas y platos antes de permitir pago
+  const verificarYRecargarComandas = async (mesa, comandasActuales) => {
+    if (!mesa) {
+      Alert.alert("Error", "No hay información de mesa");
+      return null;
+    }
+
+    setVerificandoComandas(true);
+    setMensajeCargaVerificacion("🔍 Verificando comandas y platos...");
+    
+    try {
+      const mesaId = mesa._id;
+      const mesaNum = mesa.nummesa;
+      
+      console.log("🔍 [INICIO] Verificando comandas y platos de la mesa antes de pagar...");
+      setMensajeCargaVerificacion("📡 Obteniendo comandas del servidor...");
+    
+      // Obtener todas las comandas del día del servidor
+      const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
+      const response = await axios.get(
+        `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
+        { timeout: 10000 }
+      );
+      
+      // Filtrar comandas de esta mesa
+      const comandasMesa = response.data.filter(c => {
+        const comandaMesaNum = c.mesas?.nummesa;
+        const comandaMesaId = c.mesas?._id || c.mesas;
+        return (comandaMesaNum === mesaNum) || 
+               (comandaMesaId && comandaMesaId.toString() === mesaId.toString());
+      });
+      
+      console.log(`✅ [INICIO] ${comandasMesa.length} comanda(s) encontrada(s) en el servidor`);
+      
+      if (comandasMesa.length === 0) {
+        Alert.alert("Error", "No se encontraron comandas para esta mesa");
+        setVerificandoComandas(false);
+        return null;
+      }
+      
+      // Verificar que todas las comandas tengan platos populados
+      setMensajeCargaVerificacion(`🍽️ Verificando ${comandasMesa.length} comanda(s) y sus platos...`);
+      
+      let todasComandasCompletas = true;
+      const comandasIncompletas = [];
+      
+      for (const comanda of comandasMesa) {
+        if (!comanda.platos || comanda.platos.length === 0) {
+          todasComandasCompletas = false;
+          comandasIncompletas.push(comanda.comandaNumber || comanda._id);
+          console.warn(`⚠️ [INICIO] Comanda ${comanda.comandaNumber || comanda._id} sin platos`);
+          continue;
+        }
+        
+        // Verificar que cada plato tenga nombre y precio
+        const platosIncompletos = comanda.platos.filter((platoItem, index) => {
+          const plato = platoItem.plato || platoItem;
+          const tieneNombre = plato.nombre && plato.nombre.trim() !== '';
+          const tienePrecio = plato.precio && plato.precio > 0;
+          
+          if (!tieneNombre || !tienePrecio) {
+            console.warn(`⚠️ [INICIO] Plato ${index} en comanda ${comanda.comandaNumber || comanda._id} incompleto:`, {
+              tieneNombre,
+              tienePrecio,
+              nombre: plato.nombre,
+              precio: plato.precio
+            });
+            return true;
+          }
+          return false;
+        });
+        
+        if (platosIncompletos.length > 0) {
+          todasComandasCompletas = false;
+          comandasIncompletas.push(comanda.comandaNumber || comanda._id);
+        }
+      }
+      
+      if (!todasComandasCompletas) {
+        console.warn(`⚠️ [INICIO] Comandas incompletas detectadas: ${comandasIncompletas.join(', ')}`);
+        setMensajeCargaVerificacion("🔧 Corrigiendo platos faltantes...");
+        
+        // Obtener todos los platos del servidor para corregir
+        let platosDisponibles = [];
+        try {
+          const platosResponse = await axios.get(DISHES_API, { timeout: 5000 });
+          platosDisponibles = platosResponse.data || [];
+          console.log(`✅ [INICIO] ${platosDisponibles.length} plato(s) obtenido(s) para corrección`);
+        } catch (error) {
+          console.error("⚠️ [INICIO] Error obteniendo platos:", error);
+        }
+        
+        // Corregir platos en cada comanda
+        const comandasCorregidas = comandasMesa.map((comanda) => {
+          if (comanda.platos && Array.isArray(comanda.platos)) {
+            const platosCorregidos = comanda.platos.map((platoItem) => {
+              const plato = platoItem.plato || platoItem;
+              
+              // Si el plato no tiene nombre o precio, intentar obtenerlo del servidor
+              if (!plato.nombre || !plato.precio || plato.precio === 0) {
+                // Intentar encontrar el plato usando platoId numérico
+                if (platoItem.platoId && platosDisponibles.length > 0) {
+                  const platoEncontrado = platosDisponibles.find(p => p.id === platoItem.platoId);
+                  if (platoEncontrado) {
+                    return {
+                      ...platoItem,
+                      plato: {
+                        ...plato,
+                        nombre: platoEncontrado.nombre,
+                        precio: platoEncontrado.precio || 0,
+                        _id: platoEncontrado._id,
+                        id: platoEncontrado.id
+                      }
+                    };
+                  }
+                }
+                
+                // Si no se encontró por ID numérico, intentar por ObjectId
+                if (plato._id && platosDisponibles.length > 0) {
+                  const platoIdStr = plato._id.toString ? plato._id.toString() : plato._id;
+                  const platoEncontrado = platosDisponibles.find(p => {
+                    const pIdStr = p._id?.toString ? p._id.toString() : p._id;
+                    return pIdStr === platoIdStr;
+                  });
+                  if (platoEncontrado) {
+                    return {
+                      ...platoItem,
+                      plato: {
+                        ...plato,
+                        nombre: platoEncontrado.nombre,
+                        precio: platoEncontrado.precio || 0,
+                        _id: platoEncontrado._id,
+                        id: platoEncontrado.id
+                      }
+                    };
+                  }
+                }
+              }
+              
+              return platoItem;
+            });
+            
+            return { ...comanda, platos: platosCorregidos };
+          }
+          
+          return comanda;
+        });
+        
+        // Verificar nuevamente después de la corrección
+        let todasCompletasDespues = true;
+        for (const comanda of comandasCorregidas) {
+          if (!comanda.platos || comanda.platos.length === 0) {
+            todasCompletasDespues = false;
+            break;
+          }
+          
+          const platosIncompletos = comanda.platos.filter((platoItem) => {
+            const plato = platoItem.plato || platoItem;
+            return !plato.nombre || !plato.precio || plato.precio === 0;
+          });
+          
+          if (platosIncompletos.length > 0) {
+            todasCompletasDespues = false;
+            break;
+          }
+        }
+        
+        if (!todasCompletasDespues) {
+          Alert.alert(
+            "Error de Sincronización",
+            "No se pudieron cargar todos los platos correctamente. Por favor, intente nuevamente o sincronice manualmente.",
+            [{ text: "OK" }]
+          );
+          setVerificandoComandas(false);
+          return null;
+        }
+        
+        // Retornar comandas corregidas
+        console.log(`✅ [INICIO] Comandas corregidas y actualizadas`);
+        setMensajeCargaVerificacion("✅ Verificación completada");
+        await new Promise(resolve => setTimeout(resolve, 500));
+        setVerificandoComandas(false);
+        return comandasCorregidas;
+      } else {
+        // Todas las comandas están completas
+        console.log(`✅ [INICIO] Todas las comandas están completas`);
+        setMensajeCargaVerificacion("✅ Verificación completada");
+        await new Promise(resolve => setTimeout(resolve, 500));
+        setVerificandoComandas(false);
+        return comandasMesa;
+      }
+    } catch (error) {
+      console.error("❌ [INICIO] Error verificando comandas:", error);
+      Alert.alert("Error", "No se pudo verificar las comandas. Por favor, intente nuevamente.");
+      setVerificandoComandas(false);
+      return null;
+    }
+  };
 
   // Detectar si es móvil
   const isMobile = width < 400 || adaptMobile;
@@ -924,6 +1249,9 @@ const InicioScreen = () => {
       };
     });
 
+    // Guardar platos originales para comparar después
+    setPlatosOriginales(comanda.platos || []);
+
     setComandaEditando({
       ...comanda,
       platosEditados,
@@ -932,6 +1260,12 @@ const InicioScreen = () => {
     });
     setModalEditVisible(true);
   };
+
+  // Estados para modal de confirmación de eliminación de platos
+  const [modalConfirmarEliminacionVisible, setModalConfirmarEliminacionVisible] = useState(false);
+  const [platosAEliminar, setPlatosAEliminar] = useState([]);
+  const [motivoEliminacion, setMotivoEliminacion] = useState("");
+  const [platosOriginales, setPlatosOriginales] = useState([]);
 
   const handleGuardarEdicion = async () => {
     if (!comandaEditando) return;
@@ -942,6 +1276,46 @@ const InicioScreen = () => {
         return;
       }
 
+      // Comparar platos originales con editados para detectar eliminaciones
+      const platosOriginalesIds = new Set(
+        platosOriginales.map(p => {
+          const platoId = p.plato?._id || p.plato || p._id;
+          return platoId?.toString();
+        })
+      );
+
+      const platosEditadosIds = new Set(
+        comandaEditando.platosEditados.map(p => {
+          const platoId = p.plato?._id || p.plato;
+          return platoId?.toString();
+        })
+      );
+
+      // Encontrar platos eliminados
+      const platosEliminados = platosOriginales.filter(p => {
+        const platoId = (p.plato?._id || p.plato || p._id)?.toString();
+        return platoId && !platosEditadosIds.has(platoId);
+      });
+
+      // Si hay platos eliminados, mostrar modal de confirmación
+      if (platosEliminados.length > 0) {
+        setPlatosAEliminar(platosEliminados);
+        setModalConfirmarEliminacionVisible(true);
+        return; // No continuar hasta que se confirme
+      }
+
+      // Si no hay platos eliminados, guardar directamente
+      await guardarEdicionSinEliminaciones();
+    } catch (error) {
+      console.error("Error al verificar cambios:", error);
+      Alert.alert("Error", "No se pudo verificar los cambios");
+    }
+  };
+
+  const guardarEdicionSinEliminaciones = async () => {
+    if (!comandaEditando) return;
+
+    try {
       const platosData = comandaEditando.platosEditados.map(p => {
         const platoCompleto = platos.find(pl => pl._id === p.plato || pl._id === p.plato?.toString());
         return {
@@ -973,6 +1347,70 @@ const InicioScreen = () => {
     } catch (error) {
       console.error("Error actualizando comanda:", error);
       Alert.alert("Error", error.response?.data?.message || "No se pudo actualizar la comanda");
+    }
+  };
+
+  const handleConfirmarEliminacionPlatos = async () => {
+    if (!motivoEliminacion || motivoEliminacion.trim() === "") {
+      Alert.alert("Error", "Por favor, indique el motivo de la cancelación");
+      return;
+    }
+
+    if (!comandaEditando) return;
+
+    try {
+      // Obtener usuario actual
+      const user = await AsyncStorage.getItem("user");
+      const userInfo = user ? JSON.parse(user) : null;
+      const usuarioId = userInfo?._id || null;
+
+      // Preparar platos eliminados para el endpoint
+      const platosEliminadosData = platosAEliminar.map(p => {
+        const platoId = p.plato?._id || p.plato || p._id;
+        const platoNumId = p.platoId || p.plato?.id;
+        return {
+          platoId: platoNumId || platoId,
+          plato: platoId
+        };
+      });
+
+      // Preparar platos nuevos (los que quedan)
+      const platosNuevosData = comandaEditando.platosEditados.map(p => {
+        const platoCompleto = platos.find(pl => pl._id === p.plato || pl._id === p.plato?.toString());
+        return {
+          plato: p.plato,
+          platoId: platoCompleto?.id || p.platoId || null,
+          estado: p.estado || "en_espera",
+          cantidad: p.cantidad || 1
+        };
+      });
+
+      // Usar el endpoint de edición con auditoría
+      await axios.put(
+        `${COMANDA_API}/${comandaEditando._id}/editar-platos`,
+        {
+          platosNuevos: platosNuevosData,
+          platosEliminados: platosEliminadosData,
+          motivo: motivoEliminacion.trim(),
+          usuarioId: usuarioId
+        },
+        { timeout: 10000 }
+      );
+
+      Alert.alert("✅", "Comanda actualizada exitosamente con auditoría");
+      setModalConfirmarEliminacionVisible(false);
+      setModalEditVisible(false);
+      setComandaEditando(null);
+      setPlatosAEliminar([]);
+      setMotivoEliminacion("");
+      setTipoPlatoFiltro(null);
+      setSearchPlato("");
+      setCategoriaFiltro(null);
+      obtenerComandasHoy();
+      obtenerMesas();
+    } catch (error) {
+      console.error("Error al eliminar platos:", error);
+      Alert.alert("Error", error.response?.data?.message || "No se pudieron eliminar los platos");
     }
   };
 
@@ -2126,6 +2564,109 @@ const InicioScreen = () => {
         </View>
       </Modal>
 
+      {/* Modal de Confirmación de Eliminación de Platos */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalConfirmarEliminacionVisible}
+        onRequestClose={() => {
+          setModalConfirmarEliminacionVisible(false);
+          setMotivoEliminacion("");
+          setPlatosAEliminar([]);
+        }}
+      >
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>⚠️ Confirmar Eliminación de Platos</Text>
+              <TouchableOpacity onPress={() => {
+                setModalConfirmarEliminacionVisible(false);
+                setMotivoEliminacion("");
+                setPlatosAEliminar([]);
+              }}>
+                <MaterialCommunityIcons name="close" size={24} color={theme.colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalScrollView}>
+              <View style={styles.editSection}>
+                <Text style={[styles.editLabel, { color: theme.colors.primary, fontWeight: 'bold', marginBottom: 10 }]}>
+                  ¿Está seguro de eliminar los siguientes platos?
+                </Text>
+                
+                {platosAEliminar.map((plato, index) => {
+                  const platoObj = plato.plato || plato;
+                  const cantidad = comandaEditando?.cantidades?.[comandaEditando?.platos?.indexOf(plato)] || 1;
+                  const nombre = platoObj?.nombre || "Plato desconocido";
+                  
+                  return (
+                    <View key={index} style={[styles.platoEditItem, { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5', borderWidth: 1 }]}>
+                      <View style={styles.platoEditInfo}>
+                        <Text style={[styles.platoEditNombre, { color: '#DC2626', textDecorationLine: 'line-through' }]}>
+                          {nombre}
+                        </Text>
+                        <Text style={[styles.platoEditPrecio, { color: '#DC2626' }]}>
+                          x{cantidad}
+                        </Text>
+                      </View>
+                      <MaterialCommunityIcons name="close-circle" size={24} color="#DC2626" />
+                    </View>
+                  );
+                })}
+              </View>
+
+              <View style={styles.editSection}>
+                <Text style={[styles.editLabel, { marginBottom: 10 }]}>
+                  Por favor, indique el motivo de la cancelación: *
+                </Text>
+                <TextInput
+                  style={[styles.observacionesInput, { 
+                    borderColor: !motivoEliminacion || motivoEliminacion.trim() === "" ? '#DC2626' : theme.colors.primary,
+                    borderWidth: 2,
+                    minHeight: 100
+                  }]}
+                  placeholder="Ej: Cliente canceló, sin stock, error en pedido..."
+                  placeholderTextColor={theme.colors.text.light}
+                  value={motivoEliminacion}
+                  onChangeText={setMotivoEliminacion}
+                  multiline
+                  numberOfLines={4}
+                />
+                {(!motivoEliminacion || motivoEliminacion.trim() === "") && (
+                  <Text style={{ color: '#DC2626', fontSize: 12, marginTop: 5 }}>
+                    * El motivo es obligatorio
+                  </Text>
+                )}
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.saveButton, { 
+                  backgroundColor: !motivoEliminacion || motivoEliminacion.trim() === "" ? '#9CA3AF' : '#DC2626',
+                  opacity: !motivoEliminacion || motivoEliminacion.trim() === "" ? 0.5 : 1
+                }]}
+                onPress={handleConfirmarEliminacionPlatos}
+                disabled={!motivoEliminacion || motivoEliminacion.trim() === ""}
+              >
+                <MaterialCommunityIcons name="delete" size={20} color={theme.colors.text.white} />
+                <Text style={styles.saveButtonText}> Eliminar Platos</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setModalConfirmarEliminacionVisible(false);
+                  setMotivoEliminacion("");
+                  setPlatosAEliminar([]);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Modal de Opciones de Mesa (Preparado) */}
       <Modal
         animationType="fade"
@@ -2163,23 +2704,40 @@ const InicioScreen = () => {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.modalOpcionesButton, styles.modalOpcionesButtonPrimary]}
+                style={[
+                  styles.modalOpcionesButton, 
+                  styles.modalOpcionesButtonPrimary,
+                  verificandoComandas && { opacity: 0.5 }
+                ]}
                 onPress={async () => {
+                  if (verificandoComandas) {
+                    return; // Prevenir múltiples clics
+                  }
+                  
                   setModalOpcionesMesaVisible(false);
+                  
+                  // Primero verificar y recargar comandas del servidor
+                  const comandasVerificadas = await verificarYRecargarComandas(mesaOpciones, comandasOpciones);
+                  
+                  if (!comandasVerificadas || comandasVerificadas.length === 0) {
+                    console.error("❌ No se pudieron verificar las comandas");
+                    return;
+                  }
+                  
                   try {
                     console.log("💾 Guardando datos para pago...");
-                    console.log("📋 Comandas a guardar:", comandasOpciones.length);
+                    console.log("📋 Comandas verificadas a guardar:", comandasVerificadas.length);
                     console.log("🪑 Mesa a guardar:", mesaOpciones.nummesa);
                     
                     // IMPORTANTE: Filtrar comandas antes de guardar
                     // Solo guardar comandas sin cliente (nuevas) o comandas del mismo cliente
                     // NO guardar comandas de otros clientes
-                    const comandasConCliente = comandasOpciones.filter(c => {
+                    const comandasConCliente = comandasVerificadas.filter(c => {
                       const clienteId = c.cliente?._id || c.cliente;
                       return clienteId !== null && clienteId !== undefined;
                     });
                     
-                    const comandasSinCliente = comandasOpciones.filter(c => {
+                    const comandasSinCliente = comandasVerificadas.filter(c => {
                       const clienteId = c.cliente?._id || c.cliente;
                       return !clienteId || clienteId === null || clienteId === undefined;
                     });
@@ -2226,12 +2784,12 @@ const InicioScreen = () => {
                     await AsyncStorage.setItem("mesaPago", JSON.stringify(mesaOpciones));
                     
                     // Verificar que se guardaron correctamente
-                    const comandasVerificadas = await AsyncStorage.getItem("comandasPago");
+                    const comandasVerificadasStorage = await AsyncStorage.getItem("comandasPago");
                     const mesaVerificada = await AsyncStorage.getItem("mesaPago");
                     
-                    if (comandasVerificadas && mesaVerificada) {
+                    if (comandasVerificadasStorage && mesaVerificada) {
                       console.log("✅ Datos guardados correctamente");
-                      console.log("📋 Comandas guardadas:", JSON.parse(comandasVerificadas).length);
+                      console.log("📋 Comandas guardadas:", JSON.parse(comandasVerificadasStorage).length);
                       navigation.navigate("Pagos");
                     } else {
                       console.error("❌ Error: Los datos no se guardaron correctamente");
@@ -2242,6 +2800,7 @@ const InicioScreen = () => {
                     Alert.alert("Error", "No se pudo preparar el pago");
                   }
                 }}
+                disabled={verificandoComandas}
               >
                 <MaterialCommunityIcons name="cash" size={24} color={theme.colors.text.white} />
                 <Text style={styles.modalOpcionesButtonText}>Pagar</Text>
@@ -2276,6 +2835,11 @@ const InicioScreen = () => {
       {/* Overlay de Carga para Eliminación de Última Comanda */}
       {eliminandoUltimaComanda && (
         <OverlayEliminacion mensaje={mensajeCargaEliminacion} />
+      )}
+
+      {/* Overlay de Carga para Verificación de Comandas antes de Pagar */}
+      {verificandoComandas && (
+        <AnimatedOverlay mensaje={mensajeCargaVerificacion} />
       )}
     </SafeAreaView>
   );

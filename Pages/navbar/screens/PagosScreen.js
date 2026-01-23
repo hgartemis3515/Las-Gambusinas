@@ -177,6 +177,7 @@ const PagosScreen = () => {
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [procesandoPago, setProcesandoPago] = useState(false);
   const [mensajeCarga, setMensajeCarga] = useState("Procesando pago...");
+  const [verificandoComandas, setVerificandoComandas] = useState(false);
 
   useEffect(() => {
     loadPagoData();
@@ -707,6 +708,212 @@ const PagosScreen = () => {
     }
   };
 
+  // 🔥 FUNCIÓN CRÍTICA: Verificar y cargar todas las comandas y platos antes de permitir pago
+  const verificarYRecargarComandas = async () => {
+    if (!mesa) {
+      Alert.alert("Error", "No hay información de mesa");
+      return false;
+    }
+
+    setVerificandoComandas(true);
+      setMensajeCarga("🔍 Verificando comandas y platos...");
+      
+      try {
+        const mesaId = mesa._id;
+        const mesaNum = mesa.nummesa;
+        
+        console.log("🔍 [PAGO] Verificando comandas y platos de la mesa antes de pagar...");
+        setMensajeCarga("📡 Obteniendo comandas del servidor...");
+      
+      // Obtener todas las comandas del día del servidor
+      const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
+      const response = await axios.get(
+        `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
+        { timeout: 10000 }
+      );
+      
+      // Filtrar comandas de esta mesa
+      const comandasMesa = response.data.filter(c => {
+        const comandaMesaNum = c.mesas?.nummesa;
+        const comandaMesaId = c.mesas?._id || c.mesas;
+        return (comandaMesaNum === mesaNum) || 
+               (comandaMesaId && comandaMesaId.toString() === mesaId.toString());
+      });
+      
+      console.log(`✅ [PAGO] ${comandasMesa.length} comanda(s) encontrada(s) en el servidor`);
+      
+      if (comandasMesa.length === 0) {
+        Alert.alert("Error", "No se encontraron comandas para esta mesa");
+        setVerificandoComandas(false);
+        return false;
+      }
+      
+      // Verificar que todas las comandas tengan platos populados
+      setMensajeCarga(`🍽️ Verificando ${comandasMesa.length} comanda(s) y sus platos...`);
+      
+      let todasComandasCompletas = true;
+      const comandasIncompletas = [];
+      
+      for (const comanda of comandasMesa) {
+        if (!comanda.platos || comanda.platos.length === 0) {
+          todasComandasCompletas = false;
+          comandasIncompletas.push(comanda.comandaNumber || comanda._id);
+          console.warn(`⚠️ [PAGO] Comanda ${comanda.comandaNumber || comanda._id} sin platos`);
+          continue;
+        }
+        
+        // Verificar que cada plato tenga nombre y precio
+        const platosIncompletos = comanda.platos.filter((platoItem, index) => {
+          const plato = platoItem.plato || platoItem;
+          const tieneNombre = plato.nombre && plato.nombre.trim() !== '';
+          const tienePrecio = plato.precio && plato.precio > 0;
+          
+          if (!tieneNombre || !tienePrecio) {
+            console.warn(`⚠️ [PAGO] Plato ${index} en comanda ${comanda.comandaNumber || comanda._id} incompleto:`, {
+              tieneNombre,
+              tienePrecio,
+              nombre: plato.nombre,
+              precio: plato.precio
+            });
+            return true;
+          }
+          return false;
+        });
+        
+        if (platosIncompletos.length > 0) {
+          todasComandasCompletas = false;
+          comandasIncompletas.push(comanda.comandaNumber || comanda._id);
+        }
+      }
+      
+      if (!todasComandasCompletas) {
+        console.warn(`⚠️ [PAGO] Comandas incompletas detectadas: ${comandasIncompletas.join(', ')}`);
+        setMensajeCarga("🔧 Corrigiendo platos faltantes...");
+        
+        // Obtener todos los platos del servidor para corregir
+        let platosDisponibles = [];
+        try {
+          const platosResponse = await axios.get(DISHES_API, { timeout: 5000 });
+          platosDisponibles = platosResponse.data || [];
+          console.log(`✅ [PAGO] ${platosDisponibles.length} plato(s) obtenido(s) para corrección`);
+        } catch (error) {
+          console.error("⚠️ [PAGO] Error obteniendo platos:", error);
+        }
+        
+        // Corregir platos en cada comanda
+        const comandasCorregidas = comandasMesa.map((comanda) => {
+          if (comanda.platos && Array.isArray(comanda.platos)) {
+            const platosCorregidos = comanda.platos.map((platoItem) => {
+              const plato = platoItem.plato || platoItem;
+              
+              // Si el plato no tiene nombre o precio, intentar obtenerlo del servidor
+              if (!plato.nombre || !plato.precio || plato.precio === 0) {
+                // Intentar encontrar el plato usando platoId numérico
+                if (platoItem.platoId && platosDisponibles.length > 0) {
+                  const platoEncontrado = platosDisponibles.find(p => p.id === platoItem.platoId);
+                  if (platoEncontrado) {
+                    return {
+                      ...platoItem,
+                      plato: {
+                        ...plato,
+                        nombre: platoEncontrado.nombre,
+                        precio: platoEncontrado.precio || 0,
+                        _id: platoEncontrado._id,
+                        id: platoEncontrado.id
+                      }
+                    };
+                  }
+                }
+                
+                // Si no se encontró por ID numérico, intentar por ObjectId
+                if (plato._id && platosDisponibles.length > 0) {
+                  const platoIdStr = plato._id.toString ? plato._id.toString() : plato._id;
+                  const platoEncontrado = platosDisponibles.find(p => {
+                    const pIdStr = p._id?.toString ? p._id.toString() : p._id;
+                    return pIdStr === platoIdStr;
+                  });
+                  if (platoEncontrado) {
+                    return {
+                      ...platoItem,
+                      plato: {
+                        ...plato,
+                        nombre: platoEncontrado.nombre,
+                        precio: platoEncontrado.precio || 0,
+                        _id: platoEncontrado._id,
+                        id: platoEncontrado.id
+                      }
+                    };
+                  }
+                }
+              }
+              
+              return platoItem;
+            });
+            
+            return { ...comanda, platos: platosCorregidos };
+          }
+          
+          return comanda;
+        });
+        
+        // Verificar nuevamente después de la corrección
+        let todasCompletasDespues = true;
+        for (const comanda of comandasCorregidas) {
+          if (!comanda.platos || comanda.platos.length === 0) {
+            todasCompletasDespues = false;
+            break;
+          }
+          
+          const platosIncompletos = comanda.platos.filter((platoItem) => {
+            const plato = platoItem.plato || platoItem;
+            return !plato.nombre || !plato.precio || plato.precio === 0;
+          });
+          
+          if (platosIncompletos.length > 0) {
+            todasCompletasDespues = false;
+            break;
+          }
+        }
+        
+        if (!todasCompletasDespues) {
+          Alert.alert(
+            "Error de Sincronización",
+            "No se pudieron cargar todos los platos correctamente. Por favor, intente nuevamente o sincronice manualmente.",
+            [{ text: "OK" }]
+          );
+          setVerificandoComandas(false);
+          return false;
+        }
+        
+        // Actualizar comandas con las corregidas
+        setComandas(comandasCorregidas);
+        console.log(`✅ [PAGO] Comandas corregidas y actualizadas`);
+      } else {
+        // Todas las comandas están completas, actualizar estado
+        setComandas(comandasMesa);
+        console.log(`✅ [PAGO] Todas las comandas están completas`);
+      }
+      
+      // Esperar un momento para asegurar que el estado se actualice
+      setMensajeCarga("✅ Verificación completada");
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      console.log("✅ [PAGO] Verificación de comandas y platos completada - Listo para proceder con el pago");
+      return true;
+      
+    } catch (error) {
+      console.error("❌ [PAGO] Error verificando comandas:", error);
+      Alert.alert(
+        "Error de Verificación",
+        "No se pudo verificar las comandas. Por favor, intente nuevamente.",
+        [{ text: "OK" }]
+      );
+      return false;
+    } finally {
+      setVerificandoComandas(false);
+    }
+  };
+
   const handlePagar = async () => {
     if (!comandas || comandas.length === 0 || !mesa) {
       Alert.alert("Error", "No hay información de comandas o mesa");
@@ -737,7 +944,16 @@ const PagosScreen = () => {
       return;
     }
 
-    // Abrir modal de cliente antes de procesar el pago
+    // 🔥 CRÍTICO: Verificar y recargar comandas antes de permitir pago
+    // Esto evita confirmar pago de platos faltantes
+    const verificacionExitosa = await verificarYRecargarComandas();
+    
+    if (!verificacionExitosa) {
+      // Si la verificación falla, no proceder con el pago
+      return;
+    }
+
+    // Abrir modal de cliente solo después de verificar que todo está cargado
     setModalClienteVisible(true);
   };
 
@@ -1181,9 +1397,9 @@ const PagosScreen = () => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               handlePagar();
             }}
-            disabled={isGenerating}
+            disabled={isGenerating || verificandoComandas}
             activeOpacity={0.8}
-            style={{ flex: 1 }}
+            style={{ flex: 1, opacity: (isGenerating || verificandoComandas) ? 0.5 : 1 }}
           >
             <View style={[styles.buttonNew, { minHeight: 60 * escala, backgroundColor: colors.success }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 * escala }}>
@@ -1204,8 +1420,13 @@ const PagosScreen = () => {
         onClienteSeleccionado={handleClienteSeleccionado}
       />
 
-      {/* Overlay de Carga Animado */}
+      {/* Overlay de Carga Animado - Procesando Pago */}
       {procesandoPago && (
+        <AnimatedOverlay mensaje={mensajeCarga} />
+      )}
+
+      {/* Overlay de Verificación - Verificando Comandas antes de Pagar */}
+      {verificandoComandas && (
         <AnimatedOverlay mensaje={mensajeCarga} />
       )}
     </SafeAreaView>
