@@ -2278,101 +2278,84 @@ const InicioScreen = () => {
               await axios.delete(deleteURL, { timeout: 10000 });
               console.log("✅ Última comanda eliminada del servidor");
               
-              // Verificar que la comanda se eliminó correctamente
-              setMensajeCargaEliminacion("Verificando eliminación...");
-              
-              // Esperar un momento para que el servidor procese
-              await new Promise(resolve => setTimeout(resolve, 800));
-              
-              // Actualizar comandas desde el servidor para verificar
-              setMensajeCargaEliminacion("Actualizando comandas...");
-              await obtenerComandasHoy();
-              await obtenerMesas();
-              
-              // Verificar que la comanda ya no existe - hacer petición directa al servidor
-              setMensajeCargaEliminacion("Verificando eliminación en servidor...");
-              const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-              const comandasActualizadas = await axios.get(
-                `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
-                { timeout: 10000 }
-              );
-              
-              const comandaEliminadaExiste = comandasActualizadas.data.some(c => {
-                const cId = c._id?.toString ? c._id.toString() : c._id;
-                const comandaIdStr = comandaId?.toString ? comandaId.toString() : comandaId;
-                return cId === comandaIdStr;
-              });
-              
-              if (comandaEliminadaExiste) {
-                // La comanda aún existe, intentar nuevamente
-                setMensajeCargaEliminacion("Reintentando eliminación...");
-                const deleteURL = apiConfig.isConfigured 
-                  ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}`
-                  : `${COMANDA_API}/${comandaId}`;
-                await axios.delete(deleteURL, { timeout: 10000 });
-                await new Promise(resolve => setTimeout(resolve, 800));
-                await obtenerComandasHoy();
-                await obtenerMesas();
-              }
-              
-              setMensajeCargaEliminacion("Verificando comandas restantes...");
-              
-              // Obtener comandas actualizadas para verificar las restantes
-              const comandasActualizadasFinal = await axios.get(
-                `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
-                { timeout: 10000 }
-              );
-              
-              // Verificar las comandas restantes de la mesa
-              const comandasRestantes = comandasActualizadasFinal.data.filter(c => {
-                return c.mesas?.nummesa === mesa.nummesa &&
-                       c.IsActive !== false && 
-                       c.status?.toLowerCase() !== "pagado" && 
-                       c.status?.toLowerCase() !== "completado";
-              });
-              
-              console.log(`✅ Verificación completada. Comandas restantes en mesa ${mesa.nummesa}: ${comandasRestantes.length}`);
-              
-              // Cerrar pantalla de carga
+              // ✅ Cerrar pantalla de carga INMEDIATAMENTE después de eliminación exitosa
               setEliminandoUltimaComanda(false);
               setMensajeCargaEliminacion("");
               
               // Cerrar modal
               setModalOpcionesMesaVisible(false);
               
+              // ✅ Actualizaciones en segundo plano (sin bloquear ni mostrar errores)
+              // Hacer las actualizaciones sin mostrar loading ni errores al usuario
+              Promise.all([
+                // Actualizar comandas (sin bloquear si falla)
+                obtenerComandasHoy().catch(err => {
+                  console.warn("⚠️ Error actualizando comandas (no crítico):", err.message);
+                }),
+                // Actualizar mesas (sin bloquear si falla)
+                obtenerMesas().catch(err => {
+                  console.warn("⚠️ Error actualizando mesas (no crítico):", err.message);
+                })
+              ]).then(() => {
+                console.log("✅ Datos actualizados en segundo plano");
+              }).catch(() => {
+                // Ignorar errores - ya mostramos éxito al usuario
+                console.warn("⚠️ Algunas actualizaciones fallaron, pero la eliminación fue exitosa");
+              });
+              
+              // ✅ Mostrar éxito inmediatamente (sin esperar verificaciones)
               Alert.alert(
-                "✅", 
-                `Última comanda eliminada exitosamente.\n\nComandas restantes en la mesa: ${comandasRestantes.length}`
+                "✅ Éxito", 
+                `Última comanda eliminada exitosamente de la mesa ${mesa.nummesa}.`
               );
             } catch (error) {
-              console.error("❌ Error eliminando última comanda:", error);
-              
-              // Cerrar pantalla de carga
+              // ✅ SIEMPRE cerrar pantalla de carga en caso de error
               setEliminandoUltimaComanda(false);
               setMensajeCargaEliminacion("");
               
-              let errorMessage = "No se pudo eliminar la comanda";
+              // ✅ Solo mostrar error si es un error REAL de eliminación (no de verificación)
+              // Si el error es de red pero la eliminación ya se procesó, no mostrar error
+              const isNetworkError = error.code === 'ECONNABORTED' || 
+                                     error.code === 'ECONNREFUSED' ||
+                                     error.message?.includes('Network Error') ||
+                                     (!error.response && !error.request);
               
-              if (error.response) {
-                const status = error.response.status;
-                const data = error.response.data;
-                
-                if (status === 400) {
-                  errorMessage = data?.message || `Solicitud inválida (400)`;
-                } else if (status === 404) {
-                  errorMessage = "Comanda no encontrada";
-                } else if (status === 500) {
-                  errorMessage = "Error del servidor al eliminar la comanda";
-                } else {
-                  errorMessage = data?.message || `Error ${status}: No se pudo eliminar la comanda`;
-                }
-              } else if (error.request) {
-                errorMessage = "No se recibió respuesta del servidor. Verifica tu conexión.";
+              // Si es error de red pero tenemos respuesta del servidor, la eliminación probablemente funcionó
+              if (isNetworkError && !error.response) {
+                console.warn("⚠️ Error de red durante eliminación, pero puede haber funcionado:", error.message);
+                // Verificar si la eliminación realmente falló o solo fue un error de red en verificación
+                // Por ahora, asumimos que si no hay response, puede ser un error de red temporal
+                Alert.alert(
+                  "⚠️ Advertencia",
+                  "Hubo un problema de conexión durante la eliminación. Por favor, verifica si la comanda fue eliminada correctamente."
+                );
               } else {
-                errorMessage = error.message || "Error desconocido al eliminar la comanda";
+                // Error real del servidor
+                console.error("❌ Error eliminando última comanda:", error);
+                
+                let errorMessage = "No se pudo eliminar la comanda";
+                
+                if (error.response) {
+                  const status = error.response.status;
+                  const data = error.response.data;
+                  
+                  if (status === 400) {
+                    errorMessage = data?.message || `Solicitud inválida (400)`;
+                  } else if (status === 404) {
+                    errorMessage = "Comanda no encontrada";
+                  } else if (status === 500) {
+                    errorMessage = "Error del servidor al eliminar la comanda";
+                  } else {
+                    errorMessage = data?.message || `Error ${status}: No se pudo eliminar la comanda`;
+                  }
+                } else if (error.request) {
+                  errorMessage = "No se recibió respuesta del servidor. Verifica tu conexión.";
+                } else {
+                  errorMessage = error.message || "Error desconocido al eliminar la comanda";
+                }
+                
+                Alert.alert("Error", errorMessage);
               }
-              
-              Alert.alert("Error", errorMessage);
             }
           }
         }
