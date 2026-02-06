@@ -24,7 +24,8 @@ const useSocketMozos = ({
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 10;
-  const reconnectDelay = 2000; // 2 segundos
+  const initialDelay = 1000; // 1 segundo inicial
+  const maxDelay = 30000; // 30 segundos máximo
   const lastReconnectTimeRef = useRef(null);
 
   useEffect(() => {
@@ -34,12 +35,12 @@ const useSocketMozos = ({
     const wsURL = `${serverUrl}/mozos`;
     console.log('🔌 [MOZOS] Conectando a Socket.io:', wsURL);
 
-    // Crear conexión Socket.io al namespace /mozos
+    // Crear conexión Socket.io al namespace /mozos con backoff exponencial
     const socket = io(wsURL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionDelay: reconnectDelay,
-      reconnectionDelayMax: 5000,
+      reconnectionDelay: initialDelay, // Delay inicial
+      reconnectionDelayMax: maxDelay, // Delay máximo (backoff exponencial)
       reconnectionAttempts: maxReconnectAttempts,
       timeout: 20000,
       // Opciones para evitar desconexiones temporales
@@ -123,7 +124,7 @@ const useSocketMozos = ({
       }
     });
 
-    // Evento: Error de conexión
+    // Evento: Error de conexión con retry automático
     socket.on('connect_error', (error) => {
       console.error('❌ [MOZOS] Error de conexión Socket.io:', error.message);
       setConnectionStatus('desconectado');
@@ -132,6 +133,9 @@ const useSocketMozos = ({
       if (onSocketStatus) {
         onSocketStatus({ connected: false, status: 'desconectado', error: error.message });
       }
+      
+      // Socket.io ya tiene reconexión automática con backoff exponencial
+      // No necesitamos hacer nada adicional aquí
     });
 
     // Evento: Reconexión fallida

@@ -3,6 +3,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { ThemeProvider } from './context/ThemeContext';
+import { SocketProvider } from './context/SocketContext';
 import Login from './Pages/Login/Login';
 import Navbar from './Pages/navbar/navbar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -15,25 +16,27 @@ export default function App() {
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <ThemeProvider>
-          <NavigationContainer>
-            <Stack.Navigator 
-              initialRouteName="Login"
-              screenOptions={{
-                headerShown: false,
-              }}
-            >
-              <Stack.Screen
-                name="Login"
-                component={Login}
-                options={{ headerShown: false }}
-              />
-              <Stack.Screen
-                name="Navbar"
-                component={Navbar}
-                options={{ headerShown: false }}
-              />
-            </Stack.Navigator>
-          </NavigationContainer>
+          <SocketProvider>
+            <NavigationContainer>
+              <Stack.Navigator 
+                initialRouteName="Login"
+                screenOptions={{
+                  headerShown: false,
+                }}
+              >
+                <Stack.Screen
+                  name="Login"
+                  component={Login}
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen
+                  name="Navbar"
+                  component={Navbar}
+                  options={{ headerShown: false }}
+                />
+              </Stack.Navigator>
+            </NavigationContainer>
+          </SocketProvider>
         </ThemeProvider>
       </GestureHandlerRootView>
     </SafeAreaProvider>

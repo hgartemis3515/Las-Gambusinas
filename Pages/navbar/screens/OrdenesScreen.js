@@ -398,15 +398,20 @@ const OrdenesScreen = () => {
         try {
           // Obtener comandas de la mesa para verificar el mozo
           const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-          const response = await axios.get(
-            `${COMANDASEARCH_API_GET}/fecha/${currentDate}`,
-            { timeout: 5000 }
-          );
-          const comandasMesa = response.data.filter(
+          const comandasURL = apiConfig.isConfigured 
+            ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
+            : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
+          
+          const response = await axios.get(comandasURL, { 
+            timeout: 10000, // Aumentado de 5000 a 10000ms para conexiones lentas
+            validateStatus: (status) => status < 500 // Aceptar errores 4xx sin lanzar excepción
+          });
+          
+          const comandasMesa = response.data?.filter ? response.data.filter(
             (c) => c.mesas?.nummesa === mesaActualizada.nummesa && 
                    c.status?.toLowerCase() !== "pagado" && 
                    c.status?.toLowerCase() !== "completado"
-          );
+          ) : [];
           
           if (comandasMesa.length > 0) {
             const primeraComanda = comandasMesa[0];
@@ -445,10 +450,41 @@ const OrdenesScreen = () => {
             }
           }
         } catch (error) {
-          console.error("Error verificando comandas de la mesa:", error);
-          Alert.alert("Error", "No se pudo verificar las comandas de la mesa");
-          setIsSendingComanda(false);
-          return;
+          // Manejo mejorado de errores de red
+          const isNetworkError = error.code === 'ECONNABORTED' || 
+                                 error.message?.includes('Network Error') ||
+                                 error.message?.includes('timeout') ||
+                                 !error.response;
+          
+          if (isNetworkError) {
+            console.warn("⚠️ Error de red al verificar comandas:", error.message);
+            
+            // Si la mesa está en "preparado", permitir crear comanda aunque falle la verificación
+            // (el backend validará y actualizará el estado correctamente)
+            if (estadoMesa === 'preparado') {
+              console.log(`⚠️ [ORDENES] Error de red, pero permitiendo crear comanda en mesa ${mesaActualizada.nummesa} (estado: preparado)`);
+              // Continuar con la creación de la comanda - NO retornar aquí
+            } else {
+              // Para otros estados, mostrar error pero más informativo
+              Alert.alert(
+                "Error de Conexión",
+                `No se pudo verificar las comandas de la mesa debido a un error de red. Por favor, verifica tu conexión e intenta nuevamente.\n\nEstado de la mesa: ${estadoMesa}`,
+                [{ text: "OK" }]
+              );
+              setIsSendingComanda(false);
+              return;
+            }
+          } else {
+            // Error del servidor (no de red)
+            console.error("Error verificando comandas de la mesa:", error);
+            Alert.alert(
+              "Error del Servidor",
+              `No se pudo verificar las comandas de la mesa. Error: ${error.response?.data?.message || error.message}`,
+              [{ text: "OK" }]
+            );
+            setIsSendingComanda(false);
+            return;
+          }
         }
       }
 

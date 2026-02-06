@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET, BOUCHER_API, CLIE
 import ModalClientes from "../../../Components/ModalClientes";
 import IconoBoton from "../../../Components/IconoBoton";
 import { useWindowDimensions } from "react-native";
+import { useSocket } from "../../../context/SocketContext";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -179,18 +180,74 @@ const PagosScreen = () => {
   const [mensajeCarga, setMensajeCarga] = useState("Procesando pago...");
   const [verificandoComandas, setVerificandoComandas] = useState(false);
 
-  useEffect(() => {
-    loadPagoData();
+  // Refs para evitar ejecuciones múltiples
+  const isLoadingRef = useRef(false);
+  const hasLoadedRef = useRef(false);
+  const alertShownRef = useRef(false); // Para evitar mostrar Alert repetidamente
+
+  // Obtener socket del contexto
+  const { subscribeToEvents, connected: socketConnected } = useSocket();
+
+  // Handler para comanda actualizada (actualizar totales y status)
+  const handleComandaActualizada = React.useCallback((comanda) => {
+    console.log('📥 [PAGOS] Comanda actualizada vía WebSocket:', comanda._id, 'Status:', comanda.status);
+    
+    // Actualizar comanda en estado local
+    setComandas(prev => {
+      const index = prev.findIndex(c => c._id === comanda._id);
+      if (index !== -1) {
+        const nuevas = [...prev];
+        nuevas[index] = comanda;
+        return nuevas;
+      }
+      return prev;
+    });
+    
+    // Recalcular total si hay cambios
+    // El total se recalcula automáticamente en el useEffect que depende de comandas
   }, []);
 
-  // Recargar datos cuando se enfoca la pantalla
-  useFocusEffect(
-    React.useCallback(() => {
-      loadPagoData();
-    }, [])
-  );
+  // Handler para nueva comanda
+  const handleNuevaComanda = React.useCallback((comanda) => {
+    console.log('📥 [PAGOS] Nueva comanda vía WebSocket:', comanda.comandaNumber);
+    
+    // Si la nueva comanda es de la misma mesa, agregarla
+    const mesaId = mesa?._id;
+    const comandaMesaId = comanda.mesas?._id || comanda.mesas;
+    
+    if (mesaId && comandaMesaId && comandaMesaId.toString() === mesaId.toString()) {
+      setComandas(prev => {
+        const existe = prev.find(c => c._id === comanda._id);
+        if (!existe) {
+          return [comanda, ...prev];
+        }
+        return prev;
+      });
+    }
+  }, [mesa]);
 
-  const loadPagoData = async () => {
+  // Memoizar loadPagoData para evitar recreaciones innecesarias
+  const loadPagoData = React.useCallback(async () => {
+    // Evitar ejecuciones múltiples simultáneas
+    if (isLoadingRef.current) {
+      console.log("⏸️ loadPagoData ya está en ejecución, omitiendo...");
+      return;
+    }
+
+    // Si ya se cargaron los datos y hay comandas, no recargar
+    if (hasLoadedRef.current && comandas.length > 0) {
+      console.log("✅ Datos ya cargados, omitiendo recarga...");
+      return;
+    }
+
+    // Si ya se mostró un alert y no hay comandas, no intentar cargar nuevamente
+    // Esto evita ejecuciones repetitivas cuando no hay datos
+    if (hasLoadedRef.current && alertShownRef.current && comandas.length === 0) {
+      console.log("⏸️ Ya se intentó cargar y no hay datos, omitiendo recarga repetitiva...");
+      return;
+    }
+
+    isLoadingRef.current = true;
     try {
       console.log("📋 Cargando datos de pago...");
       
@@ -203,32 +260,66 @@ const PagosScreen = () => {
         mesaPago: mesaData ? "Sí" : "No"
       });
       
-      let comandasArray = [];
+      // Si hay datos, loggear el tamaño del string para debugging (solo si hay datos válidos)
+      if (comandasData && comandasData.trim() !== "[]" && comandasData.length > 2) {
+        console.log("📏 Tamaño de comandasData:", comandasData.length, "caracteres");
+      }
       
-      if (comandasData) {
-        comandasArray = JSON.parse(comandasData);
-        console.log("✅ Comandas cargadas desde AsyncStorage:", comandasArray.length);
+      let comandasArray = [];
+      let comandasFromStorage = false;
+      
+      if (comandasData && comandasData.trim() !== "[]" && comandasData.length > 2) {
+        try {
+          const parsed = JSON.parse(comandasData);
+          // Verificar que sea un array válido
+          if (Array.isArray(parsed)) {
+            if (parsed.length > 0) {
+              comandasArray = parsed;
+              comandasFromStorage = true;
+              console.log("✅ Comandas cargadas desde AsyncStorage:", comandasArray.length);
+              console.log("📋 Primeras comandas:", comandasArray.slice(0, 2).map(c => ({
+                _id: c._id?.slice(-6),
+                comandaNumber: c.comandaNumber,
+                platosCount: c.platos?.length || 0
+              })));
+            } else {
+              // Array vacío, no hacer nada
+              comandasArray = [];
+            }
+          } else {
+            // No es un array válido, no hacer nada
+            comandasArray = [];
+          }
+        } catch (parseError) {
+          console.error("❌ Error parseando comandas desde AsyncStorage:", parseError);
+          comandasArray = [];
+        }
       } else {
         // Fallback al formato antiguo (una sola comanda)
         const comandaData = await AsyncStorage.getItem("comandaPago");
         if (comandaData) {
-          const comanda = JSON.parse(comandaData);
-          console.log("✅ Comanda única cargada (formato antiguo)");
-          comandasArray = [comanda];
-        } else {
-          console.warn("⚠️ No se encontraron comandas en AsyncStorage");
+          try {
+            const comanda = JSON.parse(comandaData);
+            console.log("✅ Comanda única cargada (formato antiguo)");
+            comandasArray = [comanda];
+            comandasFromStorage = true;
+          } catch (parseError) {
+            console.error("❌ Error parseando comanda única desde AsyncStorage:", parseError);
+          }
         }
       }
       
-      // IMPORTANTE: Obtener TODAS las comandas de la mesa del servidor con platos populados
-      // para asegurar que los nombres y precios estén disponibles, incluyendo comandas nuevas
-      if (comandasArray.length > 0 && mesaData) {
+      // IMPORTANTE: Solo buscar comandas del servidor si hay comandas en AsyncStorage
+      // Esto evita búsquedas repetitivas cuando no hay datos
+      // Si AsyncStorage está vacío, significa que el usuario no vino de "Imprimir Boucher"
+      // y no debería estar en esta pantalla sin datos
+      if (mesaData && comandasFromStorage && comandasArray.length > 0) {
         try {
           const mesa = JSON.parse(mesaData);
           const mesaId = mesa._id;
           const mesaNum = mesa.nummesa;
           
-          console.log("🔄 Obteniendo TODAS las comandas de la mesa del servidor con platos populados...");
+          console.log("🔄 Actualizando comandas del servidor para verificar datos...");
           console.log(`   Mesa: ${mesaNum} (ID: ${mesaId})`);
           
           // Obtener todas las comandas del día
@@ -236,18 +327,26 @@ const PagosScreen = () => {
           const comandasURL = apiConfig.isConfigured 
             ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
             : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
-          const response = await axios.get(comandasURL, { timeout: 10000 }
-          );
+          const response = await axios.get(comandasURL, { timeout: 10000 });
           
-          // Filtrar comandas de la mesa (por número de mesa para incluir comandas nuevas)
+          // Filtrar comandas de la mesa
+          const mesaPagada = mesa.estado?.toLowerCase() === "pagado";
           const comandasMesa = response.data.filter(c => {
             const comandaMesaNum = c.mesas?.nummesa || c.mesas?.nummesa;
             const comandaMesaId = c.mesas?._id || c.mesas;
-            return (comandaMesaNum === mesaNum) || (comandaMesaId && comandaMesaId.toString() === mesaId.toString());
+            const coincideMesa = (comandaMesaNum === mesaNum) || (comandaMesaId && comandaMesaId.toString() === mesaId.toString());
+            
+            if (mesaPagada) {
+              return coincideMesa;
+            } else {
+              const status = c.status?.toLowerCase();
+              return coincideMesa && status !== "pagado" && status !== "completado";
+            }
           });
           
           console.log(`✅ ${comandasMesa.length} comanda(s) de la mesa ${mesaNum} encontrada(s) en el servidor`);
           
+          // Si hay comandas del servidor, actualizar con datos frescos
           if (comandasMesa.length > 0) {
             // Obtener todos los platos del servidor para corregir los que no tienen nombre/precio
             let platosDisponibles = [];
@@ -270,19 +369,10 @@ const PagosScreen = () => {
                   
                   // Si el plato no tiene nombre o precio, intentar obtenerlo del servidor
                   if (!plato.nombre || !plato.precio || plato.precio === 0) {
-                    console.warn(`⚠️ Plato sin nombre o precio en comanda ${comanda.comandaNumber || comanda._id}:`, {
-                      platoId: plato._id,
-                      platoNumId: platoItem.platoId,
-                      tieneNombre: !!plato.nombre,
-                      tienePrecio: !!plato.precio,
-                      precio: plato.precio
-                    });
-                    
                     // Intentar encontrar el plato usando platoId numérico
                     if (platoItem.platoId && platosDisponibles.length > 0) {
                       const platoEncontrado = platosDisponibles.find(p => p.id === platoItem.platoId);
                       if (platoEncontrado) {
-                        console.log(`✅ Plato encontrado por ID numérico ${platoItem.platoId}: ${platoEncontrado.nombre} - S/. ${platoEncontrado.precio}`);
                         return {
                           ...platoItem,
                           plato: {
@@ -304,7 +394,6 @@ const PagosScreen = () => {
                         return pIdStr === platoIdStr;
                       });
                       if (platoEncontrado) {
-                        console.log(`✅ Plato encontrado por ObjectId: ${platoEncontrado.nombre} - S/. ${platoEncontrado.precio}`);
                         return {
                           ...platoItem,
                           plato: {
@@ -317,9 +406,6 @@ const PagosScreen = () => {
                         };
                       }
                     }
-                    
-                    // Si no se encontró, mantener el plato original pero con valores por defecto
-                    console.warn(`⚠️ No se pudo encontrar el plato ${platoItem.platoId || plato._id}, usando valores por defecto`);
                   }
                   
                   return platoItem;
@@ -334,19 +420,28 @@ const PagosScreen = () => {
             console.log(`✅ ${comandasConPlatosCompletos.length} comanda(s) procesada(s) con platos populados`);
             comandasArray = comandasConPlatosCompletos;
           } else {
-            console.warn("⚠️ No se encontraron comandas de la mesa en el servidor, usando datos de AsyncStorage");
+            // Si no hay comandas en el servidor pero hay en AsyncStorage, usar AsyncStorage
+            console.log("📦 No se encontraron comandas actualizadas en el servidor, usando datos de AsyncStorage");
           }
         } catch (error) {
-          console.error("⚠️ Error obteniendo comandas frescas del servidor:", error);
+          console.error("⚠️ Error obteniendo comandas del servidor:", error);
           console.log("📦 Usando datos de AsyncStorage como fallback");
           // Continuar con los datos de AsyncStorage si falla la petición
         }
+      } else if (!comandasFromStorage && comandasArray.length === 0) {
+        // Si no hay comandas en AsyncStorage, simplemente no hacer nada
+        // La UI mostrará el estado vacío automáticamente
       }
       
       // IMPORTANTE: Filtrar comandas por cliente de manera más estricta
       // Solo mostrar comandas sin cliente (nuevas) o comandas del mismo cliente
       // NO mezclar comandas de diferentes clientes
+      // CRÍTICO: Si la mesa está pagada, mostrar las comandas pagadas (con cliente)
       if (comandasArray.length > 0) {
+        // Verificar si la mesa está pagada
+        const mesaParseada = mesaData ? JSON.parse(mesaData) : null;
+        const mesaPagada = mesaParseada?.estado?.toLowerCase() === "pagado";
+        
         // Separar comandas con cliente y sin cliente
         const comandasConCliente = comandasArray.filter(c => {
           const clienteId = c.cliente?._id || c.cliente;
@@ -361,10 +456,32 @@ const PagosScreen = () => {
         console.log(`📊 Comandas encontradas: ${comandasArray.length} total`);
         console.log(`   - Con cliente: ${comandasConCliente.length}`);
         console.log(`   - Sin cliente: ${comandasSinCliente.length}`);
+        console.log(`   - Mesa pagada: ${mesaPagada ? "Sí" : "No"}`);
         
         let comandasFiltradas = [];
         
-        if (comandasConCliente.length > 0 && comandasSinCliente.length > 0) {
+        // Si la mesa está pagada, priorizar comandas con cliente (pagadas)
+        if (mesaPagada && comandasConCliente.length > 0) {
+          // Mesa pagada: mostrar comandas pagadas (con cliente)
+          console.log("✅ Mesa pagada - Mostrando comandas pagadas (con cliente)");
+          
+          // Filtrar por el mismo cliente si hay múltiples clientes
+          const primeraComandaConCliente = comandasConCliente[0];
+          const clienteId = primeraComandaConCliente.cliente?._id || primeraComandaConCliente.cliente;
+          
+          if (clienteId) {
+            comandasFiltradas = comandasConCliente.filter(c => {
+              const comandaClienteId = c.cliente?._id || c.cliente;
+              return comandaClienteId && comandaClienteId.toString() === clienteId.toString();
+            });
+            
+            if (comandasFiltradas.length !== comandasConCliente.length) {
+              console.log(`⚠️ Filtrando comandas por cliente: ${comandasFiltradas.length} de ${comandasConCliente.length} pertenecen al mismo cliente`);
+            }
+          } else {
+            comandasFiltradas = comandasConCliente;
+          }
+        } else if (comandasConCliente.length > 0 && comandasSinCliente.length > 0) {
           // Si hay comandas con cliente Y sin cliente, priorizar las SIN cliente (comandas nuevas)
           // Esto evita mostrar comandas de otros clientes cuando se crea una nueva comanda
           console.log("⚠️ Detectadas comandas con cliente y sin cliente - Mostrando solo comandas SIN cliente (nuevas)");
@@ -393,24 +510,39 @@ const PagosScreen = () => {
         }
         
         if (comandasFiltradas.length === 0) {
-          console.warn("⚠️ No se encontraron comandas válidas después del filtrado");
-          Alert.alert(
-            "Sin Comandas",
-            "No se encontraron comandas válidas para esta mesa. Por favor, verifica que haya comandas activas.",
-            [{ text: "OK", onPress: () => navigation.navigate("Inicio") }]
-          );
+          // No hay comandas válidas, simplemente no hacer nada
+          // La UI mostrará el estado vacío automáticamente
         } else {
           console.log(`✅ ${comandasFiltradas.length} comanda(s) filtrada(s) para mostrar`);
+          if (comandasFiltradas.length > 0) {
+            console.log("📋 Comandas que se mostrarán:", comandasFiltradas.map(c => ({
+              _id: c._id?.slice(-6),
+              comandaNumber: c.comandaNumber,
+              platosCount: c.platos?.length || 0,
+              status: c.status
+            })));
+          }
           setComandas(comandasFiltradas);
         }
       } else {
-        setComandas(comandasArray);
+        // Si no hay comandas para filtrar, usar las que se cargaron
+        if (comandasArray.length > 0) {
+          console.log(`✅ ${comandasArray.length} comanda(s) sin filtrar para mostrar`);
+          setComandas(comandasArray);
+        } else {
+          // No hay comandas para mostrar, establecer array vacío
+          setComandas([]);
+        }
       }
       
       if (mesaData) {
-        const mesa = JSON.parse(mesaData);
-        console.log("✅ Mesa cargada:", mesa.nummesa);
-        setMesa(mesa);
+        try {
+          const mesa = JSON.parse(mesaData);
+          console.log("✅ Mesa cargada:", mesa.nummesa, "Estado:", mesa.estado);
+          setMesa(mesa);
+        } catch (error) {
+          console.error("❌ Error parseando mesa desde AsyncStorage:", error);
+        }
       } else {
         console.warn("⚠️ No se encontró mesa en AsyncStorage");
       }
@@ -419,8 +551,38 @@ const PagosScreen = () => {
       Alert.alert("Error", "No se pudieron cargar los datos de pago");
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
+      hasLoadedRef.current = true;
     }
-  };
+  }, [comandas.length]); // Solo dependencia de comandas.length para evitar recargas innecesarias
+
+  // Suscribirse a eventos Socket cuando la pantalla está enfocada
+  useFocusEffect(
+    React.useCallback(() => {
+      // Suscribirse a eventos
+      subscribeToEvents({
+        onComandaActualizada: handleComandaActualizada,
+        onNuevaComanda: handleNuevaComanda
+      });
+
+      // Resetear los flags cuando se enfoca la pantalla
+      // Esto permite recargar si el usuario vuelve a esta pantalla
+      hasLoadedRef.current = false;
+      alertShownRef.current = false; // Resetear el flag de alert para permitir mostrar alertas nuevamente
+
+      // Cargar datos solo una vez cuando se enfoca la pantalla
+      // El flag isLoadingRef evitará ejecuciones múltiples simultáneas
+      loadPagoData();
+
+      // Cleanup: desuscribirse
+      return () => {
+        subscribeToEvents({
+          onComandaActualizada: null,
+          onNuevaComanda: null
+        });
+      };
+    }, [handleComandaActualizada, handleNuevaComanda, subscribeToEvents, loadPagoData])
+  );
 
   useEffect(() => {
     if (comandas.length > 0) {
@@ -659,6 +821,19 @@ const PagosScreen = () => {
   };
 
   const generarPDF = async () => {
+    // Verificar que haya comandas antes de generar el PDF
+    if (!comandas || comandas.length === 0) {
+      // No mostrar alerta, simplemente no hacer nada
+      return;
+    }
+
+    // Verificar que las comandas tengan platos
+    const comandasConPlatos = comandas.filter(c => c.platos && c.platos.length > 0);
+    if (comandasConPlatos.length === 0) {
+      // No mostrar alerta, simplemente no hacer nada
+      return;
+    }
+
     try {
       setIsGenerating(true);
       const html = generarHTMLBoucher();

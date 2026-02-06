@@ -18,8 +18,7 @@ import axios from "axios";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../constants/colors";
 import * as Haptics from 'expo-haptics';
-
-const CLIENTES_API = "http://192.168.18.11:3000/api/clientes";
+import { CLIENTES_API, apiConfig } from "../apiConfig";
 
 const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
   const themeContext = useTheme();
@@ -39,11 +38,19 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
     try {
       let clienteData = null;
 
+      // Usar apiConfig para obtener la URL dinámica
+      const clientesURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/clientes')
+        : CLIENTES_API;
+
       // Si está marcado como invitado o no hay ningún dato, crear invitado
       if (esInvitado || (!dni && !nombre && !telefono)) {
         // Crear cliente invitado automáticamente
         console.log("🆕 Creando cliente invitado automático...");
-        const response = await axios.post(CLIENTES_API, {}, { timeout: 5000 });
+        const response = await axios.post(clientesURL, {}, { 
+          timeout: 10000, // Aumentado de 5000 a 10000ms
+          validateStatus: (status) => status < 500 // Aceptar errores 4xx sin lanzar excepción
+        });
         clienteData = response.data;
         console.log("✅ Cliente invitado creado:", clienteData.nombre);
       } else {
@@ -69,7 +76,10 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
         }
 
         console.log("📝 Creando cliente registrado con datos:", datosCliente);
-        const response = await axios.post(CLIENTES_API, datosCliente, { timeout: 5000 });
+        const response = await axios.post(clientesURL, datosCliente, { 
+          timeout: 10000, // Aumentado de 5000 a 10000ms
+          validateStatus: (status) => status < 500 // Aceptar errores 4xx sin lanzar excepción
+        });
         clienteData = response.data;
         console.log("✅ Cliente registrado creado:", clienteData.nombre);
       }
@@ -84,12 +94,41 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
       setEsInvitado(true);
     } catch (error) {
       console.error("❌ Error al crear cliente:", error);
-      Alert.alert(
-        "Error",
-        error.response?.data?.message || "No se pudo crear el cliente. Intente nuevamente."
-      );
-    } finally {
-      setLoading(false);
+      
+      // Manejo mejorado de errores de red
+      const isNetworkError = error.code === 'ECONNABORTED' || 
+                             error.message?.includes('Network Error') ||
+                             error.message?.includes('timeout') ||
+                             !error.response;
+      
+      if (isNetworkError) {
+        Alert.alert(
+          "Error de Conexión",
+          "No se pudo crear el cliente debido a un error de red. Por favor, verifica tu conexión e intenta nuevamente.",
+          [
+            { 
+              text: "Reintentar", 
+              onPress: () => {
+                setLoading(false);
+                // Pequeño delay antes de reintentar para evitar loop infinito
+                setTimeout(() => handleContinuar(), 500);
+              }
+            },
+            { 
+              text: "Cancelar", 
+              style: "cancel", 
+              onPress: () => setLoading(false) 
+            }
+          ]
+        );
+      } else {
+        // Error del servidor (no de red)
+        Alert.alert(
+          "Error",
+          error.response?.data?.message || error.message || "No se pudo crear el cliente. Intente nuevamente."
+        );
+        setLoading(false);
+      }
     }
   };
 

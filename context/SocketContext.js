@@ -41,7 +41,22 @@ export const SocketProvider = ({ children }) => {
 
   const handleSocketStatus = useCallback((status) => {
     setSocketStatus(status);
-  }, []);
+    
+    // Si se reconectó, procesar queue offline si existe
+    if (status.connected && status.status === 'conectado') {
+      // Importar dinámicamente para evitar problemas de circular dependencies
+      import('../utils/offlineQueue').then(module => {
+        const offlineQueue = module.default;
+        offlineQueue.processQueue({
+          'comanda-actualizada': handleComandaActualizada,
+          'mesa-actualizada': handleMesaActualizada,
+          'nueva-comanda': handleNuevaComanda
+        }).catch(error => {
+          console.error('Error procesando queue offline:', error);
+        });
+      });
+    }
+  }, [handleComandaActualizada, handleMesaActualizada, handleNuevaComanda]);
 
   // Hook WebSocket global - se mantiene activo en todas las pantallas
   // Los callbacks usan useRef para evitar recrear el hook y causar desconexiones

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -166,7 +166,7 @@ const AnimatedOverlay = ({ mensaje }) => {
   );
 };
 
-// Componente Mesa Animada Premium 60fps
+// Componente Mesa Animada Premium 60fps con sincronización WebSocket
 const MesaAnimada = React.memo(({ 
   mesa, 
   estado, 
@@ -182,10 +182,36 @@ const MesaAnimada = React.memo(({
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
   const pulseScale = useSharedValue(1);
+  const opacity = useSharedValue(1);
+  const flashOpacity = useSharedValue(1);
+  const prevEstadoRef = useRef(estado);
   
-  // Animación según estado
+  // Animación según estado + transición cuando cambia (sincronización WebSocket)
   useEffect(() => {
     const estadoLower = estado?.toLowerCase() || "libre";
+    const estadoAnterior = prevEstadoRef.current?.toLowerCase() || "";
+    const cambioEstado = estadoLower !== estadoAnterior;
+    
+    // Si cambió el estado (evento WebSocket), animar transición
+    if (cambioEstado && estadoAnterior) {
+      // Flash de transición cuando cambia el estado
+      flashOpacity.value = withSequence(
+        withTiming(0.5, { duration: 150 }),
+        withTiming(1, { duration: 150 })
+      );
+      
+      // Haptic feedback cuando cambia estado
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch (e) {
+        // Silenciar errores de haptic
+      }
+      
+      console.log(`🎨 [ANIMACION] Mesa ${mesa.nummesa} cambió de "${estadoAnterior}" a "${estadoLower}"`);
+    }
+    
+    // Actualizar referencia del estado anterior
+    prevEstadoRef.current = estado;
     
     // Resetear animaciones anteriores
     translateX.value = withTiming(0, { duration: 200 });
@@ -219,12 +245,17 @@ const MesaAnimada = React.memo(({
         true
       );
       translateX.value = 0; // Sin movimiento horizontal
+    } else if (estadoLower === "pagado") {
+      // Fade out sutil para mesas pagadas
+      pulseScale.value = withTiming(0.95, { duration: 500 });
+      opacity.value = withTiming(0.7, { duration: 500 });
     } else {
       // Para otros estados, sin animación
       pulseScale.value = 1;
       translateX.value = 0;
+      opacity.value = 1;
     }
-  }, [estado]);
+  }, [estado, mesa.nummesa]);
 
   // Función helper para haptic seguro
   const triggerHaptic = () => {
@@ -255,6 +286,7 @@ const MesaAnimada = React.memo(({
       { scale: scale.value * pulseScale.value },
       { translateX: translateX.value },
     ],
+    opacity: opacity.value * flashOpacity.value,
   }));
 
   const borderAnimatedStyle = useAnimatedStyle(() => ({
@@ -270,10 +302,10 @@ const MesaAnimada = React.memo(({
           {
             width: mesaSize,
             height: mesaSize,
-            backgroundColor: estadoColor,
+            backgroundColor: estadoColor, // Color se actualiza automáticamente cuando cambia estado (WebSocket)
             borderColor: isSelected ? theme.colors.secondary : "transparent",
           },
-          animatedStyle,
+          animatedStyle, // Incluye opacity y flashOpacity para transiciones suaves
           borderAnimatedStyle,
         ]}
       >
@@ -539,8 +571,10 @@ const InicioScreen = () => {
   const { subscribeToEvents, joinMesa, leaveMesa, connected: socketConnected } = useSocket();
 
   // Callbacks para eventos WebSocket
-  const handleMesaActualizada = useCallback((mesa) => {
+  const handleMesaActualizada = useCallback(async (mesa) => {
     console.log('📥 [MOZOS] Mesa actualizada vía WebSocket:', mesa.nummesa, 'Estado:', mesa.estado);
+    
+    // Actualizar estado local (esto disparará re-render y animaciones)
     setMesas(prev => {
       const index = prev.findIndex(m => {
         const mId = m._id?.toString ? m._id.toString() : m._id;
@@ -550,165 +584,89 @@ const InicioScreen = () => {
       if (index !== -1) {
         const nuevas = [...prev];
         const mesaAnterior = nuevas[index];
+        const estadoAnterior = mesaAnterior.estado;
+        const nuevoEstado = mesa.estado;
+        
         // CRÍTICO: Usar el estado del servidor directamente (es la fuente de verdad)
-        // No recalcular aquí, el backend ya calculó el estado correcto
-        nuevas[index] = { ...mesaAnterior, ...mesa, estado: mesa.estado }; // Asegurar que el estado se actualice
-        console.log(`✅ Mesa ${mesa.nummesa} actualizada en estado local: "${mesaAnterior.estado}" → "${mesa.estado}" (estado del servidor)`);
+        nuevas[index] = { ...mesaAnterior, ...mesa, estado: nuevoEstado };
+        
+        // Log del cambio para debugging de animaciones
+        if (estadoAnterior !== nuevoEstado) {
+          console.log(`🎨 [ANIMACION] Mesa ${mesa.nummesa} cambiará animación: "${estadoAnterior}" → "${nuevoEstado}"`);
+        }
+        
         return nuevas;
       }
       // Si no existe, agregarla
-      console.log(`ℹ️ Mesa ${mesa.nummesa} no encontrada en estado local, agregándola`);
       return [...prev, mesa];
     });
+    
+    // Actualizar AsyncStorage
+    try {
+      const mesasKey = 'mesas';
+      const mesasStorage = await AsyncStorage.getItem(mesasKey);
+      if (mesasStorage) {
+        const mesasArray = JSON.parse(mesasStorage);
+        const index = mesasArray.findIndex(m => {
+          const mId = m._id?.toString ? m._id.toString() : m._id;
+          const mesaId = mesa._id?.toString ? mesa._id.toString() : mesa._id;
+          return mId === mesaId || m.nummesa === mesa.nummesa;
+        });
+        if (index !== -1) {
+          mesasArray[index] = { ...mesasArray[index], ...mesa, estado: mesa.estado };
+        } else {
+          mesasArray.push(mesa);
+        }
+        await AsyncStorage.setItem(mesasKey, JSON.stringify(mesasArray));
+      }
+    } catch (error) {
+      console.error('⚠️ Error actualizando AsyncStorage:', error);
+    }
   }, []);
 
   const handleComandaActualizada = useCallback(async (comanda) => {
-    // Detectar si es una reversión (status cambió de un estado avanzado a uno anterior)
-    const esReversion = comanda.historialEstados && 
-      comanda.historialEstados.length > 0 &&
-      comanda.historialEstados[comanda.historialEstados.length - 1]?.accion?.includes('revertido');
+    console.log('📥 [MOZOS] Comanda actualizada vía WebSocket:', comanda._id, 'Status:', comanda.status);
     
-    if (esReversion) {
-      console.log('🔄 [MOZOS] Comanda REVERTIDA vía WebSocket:', comanda._id, 'Status:', comanda.status, 'Acción:', comanda.historialEstados[comanda.historialEstados.length - 1]?.accion);
-      console.log('⏳ [MOZOS] Esperando evento mesa-actualizada del servidor (NO recalcular manualmente para evitar condición de carrera)');
-    } else {
-      console.log('📥 [MOZOS] Comanda actualizada vía WebSocket:', comanda._id, 'Status:', comanda.status);
-    }
-    
-    // Actualizar la comanda en el estado local
+    // Actualizar la comanda en el estado local (usar datos del servidor directamente)
     setComandas(prev => {
       const index = prev.findIndex(c => c._id === comanda._id);
       if (index !== -1) {
         const nuevas = [...prev];
-        nuevas[index] = comanda;
+        nuevas[index] = comanda; // Usar comanda completa del servidor
         return nuevas;
+      } else {
+        // Si no existe, agregarla
+        return [comanda, ...prev];
       }
-      return prev;
     });
     
-    // CRÍTICO: Si es una reversión, NO recalcular manualmente
-    // El backend ya calculó el estado correcto y emitirá mesa-actualizada
-    // Recalcular aquí causaría condición de carrera (estado cambia a "pedido" y luego vuelve a "preparado")
-    if (esReversion) {
-      console.log('✅ [MOZOS] Comanda revertida actualizada en estado local. Esperando evento mesa-actualizada del servidor...');
-      // Solo actualizar la comanda, el evento mesa-actualizada llegará después con el estado correcto
-      return;
-    }
-    
-    // Para actualizaciones normales (no reversiones), hacer el recálculo completo
-    const mesaId = comanda.mesas?._id || comanda.mesas;
-    const mesaNum = comanda.mesas?.nummesa;
-    
-    if (mesaId || mesaNum) {
-      try {
-        // Obtener todas las comandas del día del servidor
-        const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-        const comandasURL = apiConfig.isConfigured 
-          ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
-          : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
-        const response = await axios.get(comandasURL, { timeout: 5000 });
-        
-        // Filtrar comandas de esta mesa
-        const comandasMesaServidor = response.data.filter(c => {
-          const cMesaId = c.mesas?._id || c.mesas;
-          const cMesaNum = c.mesas?.nummesa;
-          return (mesaId && cMesaId && cMesaId.toString() === mesaId.toString()) ||
-                 (mesaNum && cMesaNum === mesaNum);
-        });
-        
-        console.log(`🔄 Obtenidas ${comandasMesaServidor.length} comanda(s) de la mesa ${mesaNum || mesaId} del servidor para recalcular estado`);
-        
-        // Actualizar todas las comandas de la mesa en el estado local
-        setComandas(prev => {
-          const nuevas = [...prev];
-          comandasMesaServidor.forEach(comandaServidor => {
-            const index = nuevas.findIndex(c => c._id === comandaServidor._id);
-            if (index !== -1) {
-              nuevas[index] = comandaServidor;
-            } else {
-              nuevas.push(comandaServidor);
-            }
-          });
-          return nuevas;
-        });
-        
-        // Recalcular el estado de la mesa basándose en TODAS las comandas del servidor
-        // LÓGICA CORREGIDA: Priorizar "en_espera" sobre otros estados
-        let nuevoEstadoMesa = 'libre';
-        
-        if (comandasMesaServidor.length > 0) {
-          // Filtrar solo comandas activas (no pagadas)
-          const comandasActivas = comandasMesaServidor.filter(c => {
-            const status = (c.status || '').toLowerCase();
-            return status !== 'pagado' && status !== 'completado' && c.IsActive !== false;
-          });
-          
-          if (comandasActivas.length > 0) {
-            // Contar comandas por estado
-            const comandasEnEspera = comandasActivas.filter(c => {
-              const status = (c.status || '').toLowerCase();
-              return status === 'en_espera';
-            });
-            const comandasRecoger = comandasActivas.filter(c => {
-              const status = (c.status || '').toLowerCase();
-              return status === 'recoger';
-            });
-            const comandasEntregadas = comandasActivas.filter(c => {
-              const status = (c.status || '').toLowerCase();
-              return status === 'entregado';
-            });
-            
-            // PRIORIDAD CORREGIDA: "en_espera" tiene máxima prioridad (hay trabajo pendiente)
-            if (comandasEnEspera.length > 0) {
-              nuevoEstadoMesa = 'pedido';
-              console.log(`✅ Mesa ${mesaNum || mesaId} tiene ${comandasActivas.length} comanda(s) activa(s): ${comandasEnEspera.length} en "en_espera", ${comandasRecoger.length} en "recoger", ${comandasEntregadas.length} en "entregado" - Estado: "pedido" (prioridad: en_espera)`);
-            }
-            // Si no hay "en_espera" pero hay "recoger", la mesa está "preparado"
-            else if (comandasRecoger.length > 0) {
-              nuevoEstadoMesa = 'preparado';
-              console.log(`✅ Mesa ${mesaNum || mesaId} tiene ${comandasRecoger.length} comanda(s) en "recoger" - Estado: "preparado"`);
-            }
-            // Si solo hay comandas "entregado" (todas entregadas pero no pagadas), mesa en "preparado"
-            else if (comandasEntregadas.length > 0) {
-              nuevoEstadoMesa = 'preparado';
-              console.log(`✅ Mesa ${mesaNum || mesaId} tiene ${comandasEntregadas.length} comanda(s) en "entregado" (todas entregadas, esperando pago) - Estado: "preparado"`);
-            }
-          }
+    // Actualizar AsyncStorage con la comanda actualizada
+    try {
+      const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
+      const comandasKey = `comandas_${currentDate}`;
+      const comandasStorage = await AsyncStorage.getItem(comandasKey);
+      if (comandasStorage) {
+        const comandasArray = JSON.parse(comandasStorage);
+        const index = comandasArray.findIndex(c => c._id === comanda._id);
+        if (index !== -1) {
+          comandasArray[index] = comanda;
+        } else {
+          comandasArray.push(comanda);
         }
-        
-        // Actualizar el estado de la mesa inmediatamente
-        setMesas(prevMesas => {
-          const mesaIndex = prevMesas.findIndex(m => {
-            const mId = m._id?.toString ? m._id.toString() : m._id;
-            const mesaIdStr = mesaId?.toString ? mesaId.toString() : mesaId;
-            return (mesaId && mId === mesaIdStr) || (mesaNum && m.nummesa === mesaNum);
-          });
-          
-          if (mesaIndex !== -1) {
-            const mesa = prevMesas[mesaIndex];
-            if (mesa.estado !== nuevoEstadoMesa) {
-              console.log(`✅ Mesa ${mesa.nummesa} actualizada inmediatamente de "${mesa.estado}" a "${nuevoEstadoMesa}" basándose en todas las comandas del servidor`);
-              const nuevasMesas = [...prevMesas];
-              nuevasMesas[mesaIndex] = { ...mesa, estado: nuevoEstadoMesa };
-              return nuevasMesas;
-            }
-          }
-          
-          return prevMesas;
-        });
-      } catch (error) {
-        console.error("⚠️ Error obteniendo comandas de la mesa del servidor:", error);
-        // Si falla, al menos actualizar la comanda y obtener mesas del servidor
-        obtenerMesas();
+        await AsyncStorage.setItem(comandasKey, JSON.stringify(comandasArray));
       }
+    } catch (error) {
+      console.error('⚠️ Error actualizando AsyncStorage:', error);
     }
     
-    // También obtener mesas del servidor para sincronización completa
-    obtenerMesas();
-  }, [obtenerMesas]);
+    // NO hacer polling - el backend ya emite mesa-actualizada si es necesario
+    // Confiar en el backend como fuente única de verdad
+  }, []);
 
-  const handleNuevaComanda = useCallback((comanda) => {
+  const handleNuevaComanda = useCallback(async (comanda) => {
     console.log('📥 [MOZOS] Nueva comanda vía WebSocket:', comanda.comandaNumber);
+    
+    // Actualizar estado local
     setComandas(prev => {
       const existe = prev.find(c => c._id === comanda._id);
       if (existe) {
@@ -718,30 +676,29 @@ const InicioScreen = () => {
       }
     });
     
-    // IMPORTANTE: Actualizar el estado de la mesa inmediatamente cuando llega una nueva comanda
-    // para evitar que se vea "libre" por un segundo al regresar a InicioScreen
-    const mesaId = comanda.mesas?._id || comanda.mesas;
-    if (mesaId) {
-      setMesas(prev => {
-        const index = prev.findIndex(m => {
-          const mId = m._id?.toString ? m._id.toString() : m._id;
-          const mesaIdStr = mesaId?.toString ? mesaId.toString() : mesaId;
-          return mId === mesaIdStr;
-        });
-        if (index !== -1) {
-          const nuevas = [...prev];
-          nuevas[index] = { ...nuevas[index], estado: 'pedido' };
-          console.log(`✅ Mesa ${nuevas[index].nummesa} actualizada inmediatamente a "pedido"`);
-          return nuevas;
-        }
-        return prev;
-      });
+    // Actualizar AsyncStorage
+    try {
+      const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
+      const comandasKey = `comandas_${currentDate}`;
+      const comandasStorage = await AsyncStorage.getItem(comandasKey);
+      const comandasArray = comandasStorage ? JSON.parse(comandasStorage) : [];
+      const existe = comandasArray.find(c => c._id === comanda._id);
+      if (existe) {
+        const index = comandasArray.findIndex(c => c._id === comanda._id);
+        comandasArray[index] = comanda;
+      } else {
+        comandasArray.unshift(comanda);
+      }
+      await AsyncStorage.setItem(comandasKey, JSON.stringify(comandasArray));
+    } catch (error) {
+      console.error('⚠️ Error actualizando AsyncStorage:', error);
     }
     
-    // También obtener mesas del servidor para sincronización completa
-    // pero el estado local ya está actualizado para evitar el parpadeo
-    obtenerMesas();
-  }, [obtenerMesas]);
+    // Actualizar mesa si viene en el evento (el backend ya calculó el estado)
+    if (comanda.mesas) {
+      handleMesaActualizada(comanda.mesas);
+    }
+  }, [handleMesaActualizada]);
 
   // 🔥 ESTÁNDAR INDUSTRIA: Unirse a rooms de todas las mesas activas
   useEffect(() => {
@@ -888,26 +845,25 @@ const InicioScreen = () => {
     }
   }, [obtenerMesas, obtenerComandasHoy]);
 
-  // 🔥 FALLBACK POLLING: Sincronizar mesas "preparado" cada 15s (solo si WebSocket desconectado)
+  // 🔥 FALLBACK POLLING: Solo si WebSocket desconectado (eliminado si Socket OK)
+  // El polling solo se activa cuando Socket está desconectado
   useEffect(() => {
     if (!socketConnected) {
-      console.log('⚠️ [MOZOS] WebSocket desconectado, activando polling de fallback cada 15s');
+      console.log('⚠️ [MOZOS] WebSocket desconectado, activando polling de fallback cada 30s');
       const pollingInterval = setInterval(() => {
-        // Solo sincronizar mesas que están en "preparado" (más críticas)
-        const mesasPreparado = mesas.filter(m => m.estado?.toLowerCase() === 'preparado');
-        if (mesasPreparado.length > 0) {
-          console.log(`🔄 [POLLING] Sincronizando ${mesasPreparado.length} mesa(s) en estado "preparado"`);
-          obtenerMesas();
-          obtenerComandasHoy();
-        }
-      }, 15000); // 15 segundos
+        console.log('🔄 [POLLING FALLBACK] Sincronizando datos...');
+        obtenerMesas();
+        obtenerComandasHoy();
+      }, 30000); // 30 segundos (menos frecuente que antes)
 
       return () => {
         clearInterval(pollingInterval);
         console.log('🛑 [MOZOS] Polling de fallback detenido');
       };
+    } else {
+      console.log('✅ [MOZOS] WebSocket conectado, polling desactivado');
     }
-  }, [socketConnected, mesas, obtenerMesas, obtenerComandasHoy]);
+  }, [socketConnected, obtenerMesas, obtenerComandasHoy]);
 
   // Obtener todas las comandas de la mesa (incluyendo pagadas) - para mostrar mozo
   const getTodasComandasPorMesa = (mesaNum) => {
@@ -1188,13 +1144,39 @@ const InicioScreen = () => {
             text: "📄 Imprimir Boucher",
             onPress: async () => {
               try {
+                // Validar que haya comandas antes de guardar
+                if (!comandasParaBoucher || comandasParaBoucher.length === 0) {
+                  Alert.alert(
+                    "Error",
+                    "No hay comandas pagadas para esta mesa. No se puede generar el boucher.",
+                    [{ text: "OK" }]
+                  );
+                  return;
+                }
+
+                console.log(`💾 Guardando ${comandasParaBoucher.length} comanda(s) para boucher`);
+                console.log("📋 Comandas a guardar:", comandasParaBoucher.map(c => ({
+                  _id: c._id?.slice(-6),
+                  comandaNumber: c.comandaNumber,
+                  platosCount: c.platos?.length || 0,
+                  status: c.status
+                })));
+
                 // Guardar solo las comandas del mismo cliente para generar el boucher
                 await AsyncStorage.setItem("comandasPago", JSON.stringify(comandasParaBoucher));
                 await AsyncStorage.setItem("mesaPago", JSON.stringify(mesa));
+                
+                // Verificar que se guardaron correctamente
+                const comandasVerificadas = await AsyncStorage.getItem("comandasPago");
+                if (comandasVerificadas) {
+                  const parsed = JSON.parse(comandasVerificadas);
+                  console.log(`✅ Verificado: ${parsed.length} comanda(s) guardada(s) en AsyncStorage`);
+                }
+                
                 navigation.navigate("Pagos");
               } catch (error) {
-                console.error("Error guardando datos para boucher:", error);
-                Alert.alert("Error", "No se pudo preparar el boucher");
+                console.error("❌ Error guardando datos para boucher:", error);
+                Alert.alert("Error", "No se pudo preparar el boucher. Por favor, intente nuevamente.");
               }
             }
           },
@@ -1276,6 +1258,7 @@ const InicioScreen = () => {
   // Estados para modal de confirmación de eliminación de platos
   const [modalConfirmarEliminacionVisible, setModalConfirmarEliminacionVisible] = useState(false);
   const [platosAEliminar, setPlatosAEliminar] = useState([]);
+  const [platosAgregados, setPlatosAgregados] = useState([]); // Nuevo estado para platos agregados
   const [motivoEliminacion, setMotivoEliminacion] = useState("");
   const [platosOriginales, setPlatosOriginales] = useState([]);
 
@@ -1293,14 +1276,14 @@ const InicioScreen = () => {
         platosOriginales.map(p => {
           const platoId = p.plato?._id || p.plato || p._id;
           return platoId?.toString();
-        })
+        }).filter(id => id) // Filtrar valores nulos/undefined
       );
 
       const platosEditadosIds = new Set(
         comandaEditando.platosEditados.map(p => {
           const platoId = p.plato?._id || p.plato;
           return platoId?.toString();
-        })
+        }).filter(id => id) // Filtrar valores nulos/undefined
       );
 
       // Encontrar platos eliminados
@@ -1309,9 +1292,27 @@ const InicioScreen = () => {
         return platoId && !platosEditadosIds.has(platoId);
       });
 
-      // Si hay platos eliminados, mostrar modal de confirmación
-      if (platosEliminados.length > 0) {
+      // Encontrar platos agregados (nuevos)
+      const platosAgregadosNuevos = comandaEditando.platosEditados.filter(p => {
+        const platoId = (p.plato?._id || p.plato)?.toString();
+        // Asegurar que el platoId existe y no está en los originales
+        if (!platoId) {
+          console.warn('⚠️ Plato sin ID encontrado en platosEditados:', p);
+          return false;
+        }
+        const esNuevo = !platosOriginalesIds.has(platoId);
+        if (esNuevo) {
+          console.log(`✅ Plato nuevo detectado: ${p.nombre || 'Sin nombre'} (ID: ${platoId})`);
+        }
+        return esNuevo;
+      });
+      
+      console.log(`📊 Detección de cambios: ${platosAgregadosNuevos.length} platos agregados, ${platosEliminados.length} platos eliminados`);
+
+      // Si hay platos eliminados O agregados, mostrar modal de confirmación
+      if (platosEliminados.length > 0 || platosAgregadosNuevos.length > 0) {
         setPlatosAEliminar(platosEliminados);
+        setPlatosAgregados(platosAgregadosNuevos); // Guardar platos agregados
         setModalConfirmarEliminacionVisible(true);
         return; // No continuar hasta que se confirme
       }
@@ -1366,18 +1367,30 @@ const InicioScreen = () => {
   };
 
   const handleConfirmarEliminacionPlatos = async () => {
+    console.log('🔴 handleConfirmarEliminacionPlatos llamado');
+    
     if (!motivoEliminacion || motivoEliminacion.trim() === "") {
-      Alert.alert("Error", "Por favor, indique el motivo de la cancelación");
+      Alert.alert("Error", "Por favor, indique el motivo de la edición");
       return;
     }
 
-    if (!comandaEditando) return;
+    if (!comandaEditando) {
+      console.error('❌ No hay comanda editando');
+      Alert.alert("Error", "No hay comanda para editar");
+      return;
+    }
+
+    console.log('📋 Comanda a editar:', comandaEditando._id);
+    console.log('🗑️ Platos a eliminar:', platosAEliminar.length);
+    console.log('➕ Platos a agregar:', platosAgregados.length);
+    console.log('📝 Motivo de edición:', motivoEliminacion);
 
     try {
       // Obtener usuario actual
       const user = await AsyncStorage.getItem("user");
       const userInfo = user ? JSON.parse(user) : null;
       const usuarioId = userInfo?._id || null;
+      console.log('👤 Usuario ID:', usuarioId);
 
       // Preparar platos eliminados para el endpoint
       const platosEliminadosData = platosAEliminar.map(p => {
@@ -1389,22 +1402,124 @@ const InicioScreen = () => {
         };
       });
 
-      // Preparar platos nuevos (los que quedan)
-      const platosNuevosData = comandaEditando.platosEditados.map(p => {
-        const platoCompleto = platos.find(pl => pl._id === p.plato || pl._id === p.plato?.toString());
+      // Identificar platos originales que permanecen (no eliminados)
+      const platosOriginalesIds = new Set(
+        platosOriginales.map(p => {
+          const platoId = p.plato?._id || p.plato || p._id;
+          return platoId?.toString();
+        })
+      );
+
+      const platosEliminadosIds = new Set(
+        platosEliminadosData.map(p => {
+          const platoId = p.plato?._id || p.plato;
+          return platoId?.toString();
+        })
+      );
+
+      // Separar platos en: originales que permanecen vs nuevos agregados
+      const platosOriginalesQuePermanecen = comandaEditando.platosEditados.filter(p => {
+        const platoId = (p.plato?._id || p.plato)?.toString();
+        return platoId && platosOriginalesIds.has(platoId) && !platosEliminadosIds.has(platoId);
+      });
+
+      const platosNuevosAgregados = comandaEditando.platosEditados.filter(p => {
+        const platoId = (p.plato?._id || p.plato)?.toString();
+        return !platosOriginalesIds.has(platoId);
+      });
+
+      console.log('📊 Análisis de platos:');
+      console.log(`   - Originales que permanecen: ${platosOriginalesQuePermanecen.length}`);
+      console.log(`   - Nuevos agregados: ${platosNuevosAgregados.length}`);
+      console.log(`   - Eliminados: ${platosEliminadosData.length}`);
+
+      // Preparar SOLO los platos nuevos agregados (no los originales que permanecen)
+      const platosNuevosData = platosNuevosAgregados.map((p, index) => {
+        // CRÍTICO: Usar el platoId que ya está guardado cuando se agregó el plato
+        // Solo buscar en el array si no existe platoId (para platos originales)
+        let platoIdFinal = p.platoId;
+        let platoIdValidado = p.plato;
+        
+        // Asegurar que tenemos el _id del plato (puede ser ObjectId o string)
+        if (!platoIdValidado) {
+          console.error(`❌ Error: Plato nuevo sin _id en índice ${index}:`, p);
+          return null;
+        }
+        
+        // Si no hay platoId guardado, buscar en el array de platos
+        if (!platoIdFinal && p.plato) {
+          const platoCompleto = platos.find(pl => {
+            const platoIdStr = pl._id?.toString();
+            const pPlatoStr = p.plato?.toString();
+            return platoIdStr === pPlatoStr || pl._id === p.plato;
+          });
+          
+          if (platoCompleto) {
+            platoIdFinal = platoCompleto.id || null;
+            platoIdValidado = platoCompleto._id;
+            console.log(`✅ Plato encontrado por _id: ${platoCompleto.nombre} (id numérico: ${platoIdFinal})`);
+          } else {
+            console.warn(`⚠️ No se encontró plato con _id: ${p.plato} en el array de platos disponibles`);
+          }
+        } else if (p.plato) {
+          // Validar que el plato existe y coincide con el nombre guardado
+          const platoValidado = platos.find(pl => {
+            const platoIdStr = pl._id?.toString();
+            const pPlatoStr = p.plato?.toString();
+            const coincideId = platoIdStr === pPlatoStr || pl._id === p.plato;
+            // Validación adicional: el nombre debe coincidir
+            const coincideNombre = pl.nombre === p.nombre;
+            return coincideId && coincideNombre;
+          });
+          
+          // Si encontramos el plato validado, usar su ID numérico
+          if (platoValidado) {
+            platoIdFinal = platoValidado.id || platoIdFinal;
+            platoIdValidado = platoValidado._id;
+            console.log(`✅ Plato validado: ${platoValidado.nombre} (id numérico: ${platoIdFinal})`);
+          } else {
+            // Si no encontramos el plato validado, buscar solo por ID
+            const platoPorId = platos.find(pl => {
+              const platoIdStr = pl._id?.toString();
+              const pPlatoStr = p.plato?.toString();
+              return platoIdStr === pPlatoStr || pl._id === p.plato;
+            });
+            if (platoPorId) {
+              platoIdFinal = platoPorId.id || platoIdFinal;
+              platoIdValidado = platoPorId._id;
+              console.log(`✅ Plato encontrado solo por ID: ${platoPorId.nombre} (id numérico: ${platoIdFinal})`);
+            } else {
+              console.warn(`⚠️ No se pudo validar plato: ${p.nombre} (ID: ${p.plato})`);
+            }
+          }
+        }
+        
+        // Asegurar que tenemos al menos el _id del plato
+        if (!platoIdValidado) {
+          console.error(`❌ Error crítico: No se pudo obtener _id del plato en índice ${index}:`, p);
+          return null;
+        }
+        
+        console.log(`🍽️ [${index}] Preparando plato: nombre="${p.nombre}", platoId guardado=${p.platoId}, platoId final=${platoIdFinal}, plato _id=${platoIdValidado}`);
+        
         return {
-          plato: p.plato,
-          platoId: platoCompleto?.id || p.platoId || null,
+          plato: platoIdValidado,
+          platoId: platoIdFinal || p.platoId || null,
           estado: p.estado || "en_espera",
           cantidad: p.cantidad || 1
         };
-      });
+      }).filter(p => p !== null); // Filtrar platos nulos (errores)
 
-      // Usar el endpoint de edición con auditoría
+      // Usar el endpoint de edición con auditoría (una sola llamada, más rápido y confiable)
       const comandaEditURL = apiConfig.isConfigured 
         ? `${apiConfig.getEndpoint('/comanda')}/${comandaEditando._id}/editar-platos`
         : `${COMANDA_API}/${comandaEditando._id}/editar-platos`;
-      await axios.put(
+      
+      console.log('📤 Llamando endpoint de edición:', comandaEditURL);
+      console.log('📋 Platos nuevos:', platosNuevosData.length);
+      console.log('🗑️ Platos eliminados:', platosEliminadosData.length);
+      
+      const response = await axios.put(
         comandaEditURL,
         {
           platosNuevos: platosNuevosData,
@@ -1412,14 +1527,23 @@ const InicioScreen = () => {
           motivo: motivoEliminacion.trim(),
           usuarioId: usuarioId
         },
-        { timeout: 10000 }
+        { timeout: 30000 } // Aumentar timeout a 30 segundos para operaciones más complejas
       );
+      
+      console.log('✅ Edición completada:', response.data);
 
-      Alert.alert("✅", "Comanda actualizada exitosamente con auditoría");
+      console.log('✅ Proceso completado, cerrando modales');
+      const mensajeExito = platosAgregados.length > 0 && platosAEliminar.length > 0
+        ? `Comanda modificada exitosamente:\n- ${platosAgregados.length} plato(s) agregado(s)\n- ${platosAEliminar.length} plato(s) eliminado(s)`
+        : platosAgregados.length > 0
+        ? `Comanda modificada exitosamente:\n- ${platosAgregados.length} plato(s) agregado(s)`
+        : `Comanda modificada exitosamente:\n- ${platosAEliminar.length} plato(s) eliminado(s)`;
+      Alert.alert("✅", mensajeExito);
       setModalConfirmarEliminacionVisible(false);
       setModalEditVisible(false);
       setComandaEditando(null);
       setPlatosAEliminar([]);
+      setPlatosAgregados([]); // Limpiar platos agregados
       setMotivoEliminacion("");
       setTipoPlatoFiltro(null);
       setSearchPlato("");
@@ -1427,13 +1551,20 @@ const InicioScreen = () => {
       obtenerComandasHoy();
       obtenerMesas();
     } catch (error) {
-      console.error("Error al eliminar platos:", error);
-      Alert.alert("Error", error.response?.data?.message || "No se pudieron eliminar los platos");
+      console.error("❌ Error al eliminar platos:", error);
+      console.error("Error response:", error.response?.data);
+      console.error("Error message:", error.message);
+      Alert.alert(
+        "Error", 
+        error.response?.data?.message || error.message || "No se pudieron eliminar los platos"
+      );
     }
   };
 
   const handleRemoverPlato = (index) => {
     if (!comandaEditando) return;
+    
+    // Eliminar plato del array local (se confirmará al guardar con el modal existente)
     const nuevosPlatos = [...comandaEditando.platosEditados];
     nuevosPlatos.splice(index, 1);
     setComandaEditando({
@@ -1465,7 +1596,11 @@ const InicioScreen = () => {
     
     // Verificar si el plato ya existe en la comanda
     const platoExistente = comandaEditando.platosEditados.find(
-      p => (p.plato === plato._id || p.plato?.toString() === plato._id?.toString())
+      p => {
+        const pPlatoStr = p.plato?.toString();
+        const platoIdStr = plato._id?.toString();
+        return pPlatoStr === platoIdStr || p.plato === plato._id;
+      }
     );
     
     if (platoExistente) {
@@ -1475,14 +1610,17 @@ const InicioScreen = () => {
       Alert.alert("✅", `Cantidad de ${plato.nombre} aumentada`);
     } else {
       // Si no existe, agregarlo
+      // CRÍTICO: Guardar tanto _id como id numérico para evitar problemas de búsqueda
       const nuevoPlato = {
         plato: plato._id,
-        platoId: plato.id || null,
+        platoId: plato.id || null, // ID numérico del plato (importante para el backend)
         estado: "en_espera",
         cantidad: 1,
         nombre: plato.nombre,
         precio: plato.precio,
       };
+
+      console.log(`➕ Agregando plato: nombre="${plato.nombre}", _id=${plato._id}, id=${plato.id}`);
 
       setComandaEditando({
         ...comandaEditando,
@@ -2215,7 +2353,7 @@ const InicioScreen = () => {
 
                 return (
                   <MesaAnimada
-                    key={mesa._id}
+                    key={`${mesa._id}-${estado}`} // Key incluye estado para forzar re-render cuando cambia
                     mesa={mesa}
                     estado={estado}
                     estadoColor={estadoColor}
@@ -2238,7 +2376,7 @@ const InicioScreen = () => {
 
                 return (
                   <MesaAnimada
-                    key={mesa._id}
+                    key={`${mesa._id}-${estado}`} // Key incluye estado para forzar re-render cuando cambia
                     mesa={mesa}
                     estado={estado}
                     estadoColor={estadoColor}
@@ -2439,7 +2577,11 @@ const InicioScreen = () => {
                         style={styles.removeButton}
                         onPress={() => handleRemoverPlato(index)}
                       >
-                        <MaterialCommunityIcons name="delete" size={20} color={theme.colors.primary} />
+                        <MaterialCommunityIcons 
+                          name="delete" 
+                          size={20} 
+                          color={theme.colors.primary} 
+                        />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -2608,51 +2750,96 @@ const InicioScreen = () => {
           setModalConfirmarEliminacionVisible(false);
           setMotivoEliminacion("");
           setPlatosAEliminar([]);
+          setPlatosAgregados([]);
         }}
       >
         <View style={styles.modalBackground}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>⚠️ Confirmar Eliminación de Platos</Text>
+              <Text style={styles.modalTitle}>📝 Modificación de Comanda</Text>
               <TouchableOpacity onPress={() => {
                 setModalConfirmarEliminacionVisible(false);
                 setMotivoEliminacion("");
                 setPlatosAEliminar([]);
+                setPlatosAgregados([]);
               }}>
                 <MaterialCommunityIcons name="close" size={24} color={theme.colors.text.primary} />
               </TouchableOpacity>
             </View>
             
             <ScrollView style={styles.modalScrollView}>
-              <View style={styles.editSection}>
-                <Text style={[styles.editLabel, { color: theme.colors.primary, fontWeight: 'bold', marginBottom: 10 }]}>
-                  ¿Está seguro de eliminar los siguientes platos?
-                </Text>
-                
-                {platosAEliminar.map((plato, index) => {
-                  const platoObj = plato.plato || plato;
-                  const cantidad = comandaEditando?.cantidades?.[comandaEditando?.platos?.indexOf(plato)] || 1;
-                  const nombre = platoObj?.nombre || "Plato desconocido";
+              {/* Sección de platos eliminados */}
+              {platosAEliminar.length > 0 && (
+                <View style={styles.editSection}>
+                  <Text style={[styles.editLabel, { color: '#DC2626', fontWeight: 'bold', marginBottom: 10 }]}>
+                    ⚠️ Platos a eliminar:
+                  </Text>
                   
-                  return (
-                    <View key={index} style={[styles.platoEditItem, { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5', borderWidth: 1 }]}>
-                      <View style={styles.platoEditInfo}>
-                        <Text style={[styles.platoEditNombre, { color: '#DC2626', textDecorationLine: 'line-through' }]}>
-                          {nombre}
-                        </Text>
-                        <Text style={[styles.platoEditPrecio, { color: '#DC2626' }]}>
-                          x{cantidad}
-                        </Text>
+                  {platosAEliminar.map((plato, index) => {
+                    const platoObj = plato.plato || plato;
+                    // Buscar la cantidad en platosEditados o en cantidades originales
+                    const platoEnEditados = comandaEditando?.platosEditados?.find(p => {
+                      const pId = (p.plato?._id || p.plato)?.toString();
+                      const platoId = (platoObj?._id || platoObj || plato._id)?.toString();
+                      return pId === platoId;
+                    });
+                    const cantidad = platoEnEditados?.cantidad || comandaEditando?.cantidades?.[comandaEditando?.platos?.indexOf(plato)] || 1;
+                    const nombre = platoObj?.nombre || "Plato desconocido";
+                    
+                    return (
+                      <View key={`eliminar-${index}`} style={[styles.platoEditItem, { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5', borderWidth: 1 }]}>
+                        <View style={styles.platoEditInfo}>
+                          <Text style={[styles.platoEditNombre, { color: '#DC2626', textDecorationLine: 'line-through' }]}>
+                            {nombre}
+                          </Text>
+                          <Text style={[styles.platoEditPrecio, { color: '#DC2626' }]}>
+                            x{cantidad}
+                          </Text>
+                        </View>
+                        <MaterialCommunityIcons name="close-circle" size={24} color="#DC2626" />
                       </View>
-                      <MaterialCommunityIcons name="close-circle" size={24} color="#DC2626" />
-                    </View>
-                  );
-                })}
-              </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* Sección de platos agregados */}
+              {platosAgregados.length > 0 && (
+                <View style={styles.editSection}>
+                  <Text style={[styles.editLabel, { color: theme.colors.success || '#10B981', fontWeight: 'bold', marginBottom: 10 }]}>
+                    ✅ Platos agregados:
+                  </Text>
+                  
+                  {platosAgregados.map((plato, index) => {
+                    const cantidad = plato.cantidad || 1;
+                    const nombre = plato.nombre || "Plato desconocido";
+                    const precio = plato.precio || 0;
+                    
+                    return (
+                      <View key={`agregar-${index}`} style={[styles.platoEditItem, { backgroundColor: '#F0FDF4', borderColor: '#86EFAC', borderWidth: 1 }]}>
+                        <View style={styles.platoEditInfo}>
+                          <Text style={[styles.platoEditNombre, { color: '#059669' }]}>
+                            {nombre}
+                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Text style={[styles.platoEditPrecio, { color: '#059669' }]}>
+                              x{cantidad}
+                            </Text>
+                            <Text style={[styles.platoEditPrecio, { color: '#059669', fontSize: 12 }]}>
+                              S/. {precio.toFixed(2)}
+                            </Text>
+                          </View>
+                        </View>
+                        <MaterialCommunityIcons name="check-circle" size={24} color="#10B981" />
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
 
               <View style={styles.editSection}>
                 <Text style={[styles.editLabel, { marginBottom: 10 }]}>
-                  Por favor, indique el motivo de la cancelación: *
+                  Por favor, indique el motivo de la edición: *
                 </Text>
                 <TextInput
                   style={[styles.observacionesInput, { 
@@ -2660,7 +2847,7 @@ const InicioScreen = () => {
                     borderWidth: 2,
                     minHeight: 100
                   }]}
-                  placeholder="Ej: Cliente canceló, sin stock, error en pedido..."
+                  placeholder="Ej: Cliente solicitó cambio, agregar plato adicional, corregir pedido..."
                   placeholderTextColor={theme.colors.text.light}
                   value={motivoEliminacion}
                   onChangeText={setMotivoEliminacion}
@@ -2669,7 +2856,7 @@ const InicioScreen = () => {
                 />
                 {(!motivoEliminacion || motivoEliminacion.trim() === "") && (
                   <Text style={{ color: '#DC2626', fontSize: 12, marginTop: 5 }}>
-                    * El motivo es obligatorio
+                    * El motivo de la edición es obligatorio
                   </Text>
                 )}
               </View>
@@ -2681,11 +2868,29 @@ const InicioScreen = () => {
                   backgroundColor: !motivoEliminacion || motivoEliminacion.trim() === "" ? '#9CA3AF' : '#DC2626',
                   opacity: !motivoEliminacion || motivoEliminacion.trim() === "" ? 0.5 : 1
                 }]}
-                onPress={handleConfirmarEliminacionPlatos}
+                onPress={async () => {
+                  try {
+                    console.log('✅ Botón Confirmar Edición presionado');
+                    console.log('📝 Motivo:', motivoEliminacion);
+                    console.log('🗑️ Platos a eliminar:', platosAEliminar.length);
+                    console.log('➕ Platos a agregar:', platosAgregados.length);
+                    console.log('📋 Comanda:', comandaEditando?._id);
+                    
+                    if (!motivoEliminacion || motivoEliminacion.trim() === "") {
+                      Alert.alert("Error", "Por favor, indique el motivo de la edición");
+                      return;
+                    }
+                    
+                    await handleConfirmarEliminacionPlatos();
+                  } catch (error) {
+                    console.error('❌ Error en onPress del botón:', error);
+                    Alert.alert("Error", "Ocurrió un error al procesar la edición: " + error.message);
+                  }
+                }}
                 disabled={!motivoEliminacion || motivoEliminacion.trim() === ""}
               >
-                <MaterialCommunityIcons name="delete" size={20} color={theme.colors.text.white} />
-                <Text style={styles.saveButtonText}> Eliminar Platos</Text>
+                <MaterialCommunityIcons name="check-circle" size={20} color={theme.colors.text.white} />
+                <Text style={styles.saveButtonText}> Confirmar Edición</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.cancelButton}
@@ -2693,6 +2898,7 @@ const InicioScreen = () => {
                   setModalConfirmarEliminacionVisible(false);
                   setMotivoEliminacion("");
                   setPlatosAEliminar([]);
+                  setPlatosAgregados([]);
                 }}
               >
                 <Text style={styles.cancelButtonText}>Cancelar</Text>
@@ -2876,6 +3082,7 @@ const InicioScreen = () => {
       {verificandoComandas && (
         <AnimatedOverlay mensaje={mensajeCargaVerificacion} />
       )}
+
     </SafeAreaView>
   );
 };
