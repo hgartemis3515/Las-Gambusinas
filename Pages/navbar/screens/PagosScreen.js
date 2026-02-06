@@ -13,8 +13,6 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import { FileSystem } from "expo-file-system";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
@@ -163,416 +161,195 @@ const AnimatedOverlay = ({ mensaje }) => {
 
 const PagosScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const styles = PagosScreenStyles(theme);
   const { width } = useWindowDimensions();
   const escala = width < 390 ? 0.9 : 1;
   
+  // ✅ NUEVO FLUJO: Usar SOLO route.params - Backend = FUENTE ÚNICA DE VERDAD
+  // IMPORTANTE: Leer route.params directamente en cada render para Tab Navigator
+  const routeParams = route.params || {};
+  const { mesa: mesaParam, comandasParaPagar, totalPendiente, boucher: boucherFromParams } = routeParams;
+  
   const [comandas, setComandas] = useState([]);
   const [mesa, setMesa] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [modalClienteVisible, setModalClienteVisible] = useState(false);
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [procesandoPago, setProcesandoPago] = useState(false);
   const [mensajeCarga, setMensajeCarga] = useState("Procesando pago...");
-  const [verificandoComandas, setVerificandoComandas] = useState(false);
-
-  // Refs para evitar ejecuciones múltiples
-  const isLoadingRef = useRef(false);
-  const hasLoadedRef = useRef(false);
-  const alertShownRef = useRef(false); // Para evitar mostrar Alert repetidamente
+  const [boucherData, setBoucherData] = useState(boucherFromParams || null);
 
   // Obtener socket del contexto
   const { subscribeToEvents, connected: socketConnected } = useSocket();
 
-  // Handler para comanda actualizada (actualizar totales y status)
+  // ❌ DESHABILITADO: No actualizar comandas desde WebSocket en PagosScreen
+  // Backend = única fuente de verdad. Solo usar route.params
+  // Los handlers de WebSocket pueden mezclar comandas antiguas con nuevas
   const handleComandaActualizada = React.useCallback((comanda) => {
-    console.log('📥 [PAGOS] Comanda actualizada vía WebSocket:', comanda._id, 'Status:', comanda.status);
-    
-    // Actualizar comanda en estado local
-    setComandas(prev => {
-      const index = prev.findIndex(c => c._id === comanda._id);
-      if (index !== -1) {
-        const nuevas = [...prev];
-        nuevas[index] = comanda;
-        return nuevas;
-      }
-      return prev;
-    });
-    
-    // Recalcular total si hay cambios
-    // El total se recalcula automáticamente en el useEffect que depende de comandas
+    console.log('📥 [PAGOS] Comanda actualizada vía WebSocket (ignorada en PagosScreen):', comanda._id, 'Status:', comanda.status);
+    // NO actualizar estado local - usar solo route.params del backend
+    // Si se necesita actualizar, recargar desde InicioScreen con nuevo endpoint
   }, []);
 
-  // Handler para nueva comanda
+  // ❌ DESHABILITADO: No agregar comandas desde WebSocket en PagosScreen
+  // Backend = única fuente de verdad. Solo usar route.params
   const handleNuevaComanda = React.useCallback((comanda) => {
-    console.log('📥 [PAGOS] Nueva comanda vía WebSocket:', comanda.comandaNumber);
+    console.log('📥 [PAGOS] Nueva comanda vía WebSocket (ignorada en PagosScreen):', comanda.comandaNumber);
+    // NO agregar al estado local - usar solo route.params del backend
+    // Si se necesita actualizar, recargar desde InicioScreen con nuevo endpoint
+  }, []);
+
+  // ✅ INICIALIZACIÓN: Usar datos de route.params directamente - Backend = FUENTE ÚNICA DE VERDAD
+  // IMPORTANTE: Re-ejecutar cuando cambien los params (navegación desde InicioScreen)
+  // Leer route.params directamente en cada ejecución para Tab Navigator
+  // ❌ NUNCA agregar comandas desde WebSocket o caché - solo route.params
+  useEffect(() => {
+    // Leer params directamente del route en cada ejecución
+    const currentParams = route.params || {};
+    const currentMesa = currentParams.mesa;
+    const currentComandas = currentParams.comandasParaPagar;
+    const currentTotal = currentParams.totalPendiente;
+    const currentBoucher = currentParams.boucher;
     
-    // Si la nueva comanda es de la misma mesa, agregarla
-    const mesaId = mesa?._id;
-    const comandaMesaId = comanda.mesas?._id || comanda.mesas;
-    
-    if (mesaId && comandaMesaId && comandaMesaId.toString() === mesaId.toString()) {
-      setComandas(prev => {
-        const existe = prev.find(c => c._id === comanda._id);
-        if (!existe) {
-          return [comanda, ...prev];
-        }
-        return prev;
-      });
-    }
-  }, [mesa]);
+    console.log("🔄 [PAGOS] useEffect ejecutado - route.params:", {
+      tieneBoucher: !!currentBoucher,
+      tieneComandas: !!currentComandas,
+      cantidadComandas: currentComandas?.length || 0,
+      tieneMesa: !!currentMesa,
+      total: currentTotal,
+      routeParamsKeys: Object.keys(currentParams)
+    });
 
-  // Memoizar loadPagoData para evitar recreaciones innecesarias
-  const loadPagoData = React.useCallback(async () => {
-    // Evitar ejecuciones múltiples simultáneas
-    if (isLoadingRef.current) {
-      console.log("⏸️ loadPagoData ya está en ejecución, omitiendo...");
-      return;
-    }
-
-    // Si ya se cargaron los datos y hay comandas, no recargar
-    if (hasLoadedRef.current && comandas.length > 0) {
-      console.log("✅ Datos ya cargados, omitiendo recarga...");
-      return;
-    }
-
-    // Si ya se mostró un alert y no hay comandas, no intentar cargar nuevamente
-    // Esto evita ejecuciones repetitivas cuando no hay datos
-    if (hasLoadedRef.current && alertShownRef.current && comandas.length === 0) {
-      console.log("⏸️ Ya se intentó cargar y no hay datos, omitiendo recarga repetitiva...");
-      return;
-    }
-
-    isLoadingRef.current = true;
-    try {
-      console.log("📋 Cargando datos de pago...");
-      
-      // Intentar cargar comandas múltiples primero (nuevo formato)
-      const comandasData = await AsyncStorage.getItem("comandasPago");
-      const mesaData = await AsyncStorage.getItem("mesaPago");
-      
-      console.log("📦 Datos encontrados:", {
-        comandasPago: comandasData ? "Sí" : "No",
-        mesaPago: mesaData ? "Sí" : "No"
+    if (currentBoucher) {
+      // Si viene boucher desde "Imprimir Boucher", usar esos datos
+      console.log("✅ Boucher recibido desde navegación (Imprimir Boucher)");
+      setBoucherData(currentBoucher);
+      // Limpiar comandas cuando se recibe boucher
+      setComandas([]);
+      if (currentBoucher.mesa) {
+        const mesa = typeof currentBoucher.mesa === 'object' ? currentBoucher.mesa : { _id: currentBoucher.mesa, nummesa: currentBoucher.numMesa };
+        setMesa(mesa);
+      }
+      if (currentBoucher.cliente) {
+        const cliente = typeof currentBoucher.cliente === 'object' ? currentBoucher.cliente : { _id: currentBoucher.cliente };
+        setClienteSeleccionado(cliente);
+      }
+    } else if (currentComandas && currentMesa && currentComandas.length > 0) {
+      // ✅ Si vienen datos limpios desde InicioScreen, LIMPIAR estado anterior y usar SOLO estos datos
+      console.log("✅ Datos limpios recibidos desde InicioScreen (LIMPIANDO estado anterior):", {
+        comandas: currentComandas.length,
+        mesa: currentMesa.nummesa,
+        total: currentTotal,
+        primeraComanda: currentComandas[0]?._id,
+        platosPrimeraComanda: currentComandas[0]?.platos?.length || 0,
+        platosDetalle: currentComandas[0]?.platos?.map((p, i) => ({
+          index: i,
+          nombre: p.plato?.nombre || 'Sin nombre',
+          precio: p.plato?.precio || p.precio || 0,
+          cantidad: currentComandas[0]?.cantidades?.[i] || 1
+        })) || []
       });
       
-      // Si hay datos, loggear el tamaño del string para debugging (solo si hay datos válidos)
-      if (comandasData && comandasData.trim() !== "[]" && comandasData.length > 2) {
-        console.log("📏 Tamaño de comandasData:", comandasData.length, "caracteres");
-      }
-      
-      let comandasArray = [];
-      let comandasFromStorage = false;
-      
-      if (comandasData && comandasData.trim() !== "[]" && comandasData.length > 2) {
-        try {
-          const parsed = JSON.parse(comandasData);
-          // Verificar que sea un array válido
-          if (Array.isArray(parsed)) {
-            if (parsed.length > 0) {
-              comandasArray = parsed;
-              comandasFromStorage = true;
-              console.log("✅ Comandas cargadas desde AsyncStorage:", comandasArray.length);
-              console.log("📋 Primeras comandas:", comandasArray.slice(0, 2).map(c => ({
-                _id: c._id?.slice(-6),
-                comandaNumber: c.comandaNumber,
-                platosCount: c.platos?.length || 0
-              })));
-            } else {
-              // Array vacío, no hacer nada
-              comandasArray = [];
-            }
-          } else {
-            // No es un array válido, no hacer nada
-            comandasArray = [];
-          }
-        } catch (parseError) {
-          console.error("❌ Error parseando comandas desde AsyncStorage:", parseError);
-          comandasArray = [];
-        }
+      // Validar que las comandas tengan platos
+      const comandasConPlatos = currentComandas.filter(c => c.platos && c.platos.length > 0);
+      if (comandasConPlatos.length === 0) {
+        console.warn("⚠️ [PAGOS] Las comandas recibidas no tienen platos");
+        console.warn("⚠️ [PAGOS] Detalle de comandas:", currentComandas.map(c => ({
+          _id: c._id,
+          comandaNumber: c.comandaNumber,
+          tienePlatos: !!c.platos,
+          cantidadPlatos: c.platos?.length || 0
+        })));
       } else {
-        // Fallback al formato antiguo (una sola comanda)
-        const comandaData = await AsyncStorage.getItem("comandaPago");
-        if (comandaData) {
-          try {
-            const comanda = JSON.parse(comandaData);
-            console.log("✅ Comanda única cargada (formato antiguo)");
-            comandasArray = [comanda];
-            comandasFromStorage = true;
-          } catch (parseError) {
-            console.error("❌ Error parseando comanda única desde AsyncStorage:", parseError);
-          }
-        }
+        console.log("✅ [PAGOS] Comandas con platos:", comandasConPlatos.length);
       }
       
-      // IMPORTANTE: Solo buscar comandas del servidor si hay comandas en AsyncStorage
-      // Esto evita búsquedas repetitivas cuando no hay datos
-      // Si AsyncStorage está vacío, significa que el usuario no vino de "Imprimir Boucher"
-      // y no debería estar en esta pantalla sin datos
-      if (mesaData && comandasFromStorage && comandasArray.length > 0) {
-        try {
-          const mesa = JSON.parse(mesaData);
-          const mesaId = mesa._id;
-          const mesaNum = mesa.nummesa;
-          
-          console.log("🔄 Actualizando comandas del servidor para verificar datos...");
-          console.log(`   Mesa: ${mesaNum} (ID: ${mesaId})`);
-          
-          // Obtener todas las comandas del día
-          const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-          const comandasURL = apiConfig.isConfigured 
-            ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
-            : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
-          const response = await axios.get(comandasURL, { timeout: 10000 });
-          
-          // Filtrar comandas de la mesa
-          const mesaPagada = mesa.estado?.toLowerCase() === "pagado";
-          const comandasMesa = response.data.filter(c => {
-            const comandaMesaNum = c.mesas?.nummesa || c.mesas?.nummesa;
-            const comandaMesaId = c.mesas?._id || c.mesas;
-            const coincideMesa = (comandaMesaNum === mesaNum) || (comandaMesaId && comandaMesaId.toString() === mesaId.toString());
-            
-            if (mesaPagada) {
-              return coincideMesa;
-            } else {
-              const status = c.status?.toLowerCase();
-              return coincideMesa && status !== "pagado" && status !== "completado";
-            }
-          });
-          
-          console.log(`✅ ${comandasMesa.length} comanda(s) de la mesa ${mesaNum} encontrada(s) en el servidor`);
-          
-          // Si hay comandas del servidor, actualizar con datos frescos
-          if (comandasMesa.length > 0) {
-            // Obtener todos los platos del servidor para corregir los que no tienen nombre/precio
-            let platosDisponibles = [];
-            try {
-              const platosURL = apiConfig.isConfigured 
-                ? apiConfig.getEndpoint('/platos')
-                : DISHES_API;
-              const platosResponse = await axios.get(platosURL, { timeout: 5000 });
-              platosDisponibles = platosResponse.data || [];
-              console.log(`✅ ${platosDisponibles.length} plato(s) obtenido(s) del servidor para corrección`);
-            } catch (error) {
-              console.error("⚠️ Error obteniendo platos del servidor:", error);
-            }
-            
-            // Corregir platos sin nombre o precio en cada comanda
-            const comandasConPlatosCompletos = comandasMesa.map((comanda) => {
-              if (comanda.platos && Array.isArray(comanda.platos)) {
-                const platosCorregidos = comanda.platos.map((platoItem) => {
-                  const plato = platoItem.plato || platoItem;
-                  
-                  // Si el plato no tiene nombre o precio, intentar obtenerlo del servidor
-                  if (!plato.nombre || !plato.precio || plato.precio === 0) {
-                    // Intentar encontrar el plato usando platoId numérico
-                    if (platoItem.platoId && platosDisponibles.length > 0) {
-                      const platoEncontrado = platosDisponibles.find(p => p.id === platoItem.platoId);
-                      if (platoEncontrado) {
-                        return {
-                          ...platoItem,
-                          plato: {
-                            ...plato,
-                            nombre: platoEncontrado.nombre,
-                            precio: platoEncontrado.precio || 0,
-                            _id: platoEncontrado._id,
-                            id: platoEncontrado.id
-                          }
-                        };
-                      }
-                    }
-                    
-                    // Si no se encontró por ID numérico, intentar por ObjectId
-                    if (plato._id && platosDisponibles.length > 0) {
-                      const platoIdStr = plato._id.toString ? plato._id.toString() : plato._id;
-                      const platoEncontrado = platosDisponibles.find(p => {
-                        const pIdStr = p._id?.toString ? p._id.toString() : p._id;
-                        return pIdStr === platoIdStr;
-                      });
-                      if (platoEncontrado) {
-                        return {
-                          ...platoItem,
-                          plato: {
-                            ...plato,
-                            nombre: platoEncontrado.nombre,
-                            precio: platoEncontrado.precio || 0,
-                            _id: platoEncontrado._id,
-                            id: platoEncontrado.id
-                          }
-                        };
-                      }
-                    }
-                  }
-                  
-                  return platoItem;
-                });
-                
-                return { ...comanda, platos: platosCorregidos };
-              }
-              
-              return comanda;
-            });
-            
-            console.log(`✅ ${comandasConPlatosCompletos.length} comanda(s) procesada(s) con platos populados`);
-            comandasArray = comandasConPlatosCompletos;
-          } else {
-            // Si no hay comandas en el servidor pero hay en AsyncStorage, usar AsyncStorage
-            console.log("📦 No se encontraron comandas actualizadas en el servidor, usando datos de AsyncStorage");
-          }
-        } catch (error) {
-          console.error("⚠️ Error obteniendo comandas del servidor:", error);
-          console.log("📦 Usando datos de AsyncStorage como fallback");
-          // Continuar con los datos de AsyncStorage si falla la petición
-        }
-      } else if (!comandasFromStorage && comandasArray.length === 0) {
-        // Si no hay comandas en AsyncStorage, simplemente no hacer nada
-        // La UI mostrará el estado vacío automáticamente
-      }
+      // ✅ LIMPIAR estado anterior y usar SOLO los datos del backend (route.params)
+      // Crear nuevos objetos/arrays para forzar actualización completa
+      setComandas([...currentComandas]); // SOLO estas comandas del backend
+      setMesa({ ...currentMesa }); // SOLO esta mesa del backend
+      setTotal(currentTotal || 0); // SOLO este total del backend
+      setBoucherData(null); // Limpiar boucher anterior si existe
+      setClienteSeleccionado(null); // Limpiar cliente anterior
       
-      // IMPORTANTE: Filtrar comandas por cliente de manera más estricta
-      // Solo mostrar comandas sin cliente (nuevas) o comandas del mismo cliente
-      // NO mezclar comandas de diferentes clientes
-      // CRÍTICO: Si la mesa está pagada, mostrar las comandas pagadas (con cliente)
-      if (comandasArray.length > 0) {
-        // Verificar si la mesa está pagada
-        const mesaParseada = mesaData ? JSON.parse(mesaData) : null;
-        const mesaPagada = mesaParseada?.estado?.toLowerCase() === "pagado";
-        
-        // Separar comandas con cliente y sin cliente
-        const comandasConCliente = comandasArray.filter(c => {
-          const clienteId = c.cliente?._id || c.cliente;
-          return clienteId !== null && clienteId !== undefined;
+      console.log("✅ [PAGOS] Estado LIMPIADO y actualizado SOLO con datos del backend:", {
+        comandasEnEstado: currentComandas.length,
+        mesaEnEstado: currentMesa.nummesa,
+        totalEnEstado: currentTotal,
+        idsComandas: currentComandas.map(c => c._id?.slice(-6))
+      });
+    } else {
+      // Si no hay datos en params, limpiar estado
+      if (!currentBoucher) {
+        console.warn("⚠️ [PAGOS] No se recibieron datos válidos en route.params - LIMPIANDO estado", {
+          tieneComandas: !!currentComandas,
+          tieneMesa: !!currentMesa,
+          cantidadComandas: currentComandas?.length || 0
         });
-        
-        const comandasSinCliente = comandasArray.filter(c => {
-          const clienteId = c.cliente?._id || c.cliente;
-          return !clienteId || clienteId === null || clienteId === undefined;
-        });
-        
-        console.log(`📊 Comandas encontradas: ${comandasArray.length} total`);
-        console.log(`   - Con cliente: ${comandasConCliente.length}`);
-        console.log(`   - Sin cliente: ${comandasSinCliente.length}`);
-        console.log(`   - Mesa pagada: ${mesaPagada ? "Sí" : "No"}`);
-        
-        let comandasFiltradas = [];
-        
-        // Si la mesa está pagada, priorizar comandas con cliente (pagadas)
-        if (mesaPagada && comandasConCliente.length > 0) {
-          // Mesa pagada: mostrar comandas pagadas (con cliente)
-          console.log("✅ Mesa pagada - Mostrando comandas pagadas (con cliente)");
-          
-          // Filtrar por el mismo cliente si hay múltiples clientes
-          const primeraComandaConCliente = comandasConCliente[0];
-          const clienteId = primeraComandaConCliente.cliente?._id || primeraComandaConCliente.cliente;
-          
-          if (clienteId) {
-            comandasFiltradas = comandasConCliente.filter(c => {
-              const comandaClienteId = c.cliente?._id || c.cliente;
-              return comandaClienteId && comandaClienteId.toString() === clienteId.toString();
-            });
-            
-            if (comandasFiltradas.length !== comandasConCliente.length) {
-              console.log(`⚠️ Filtrando comandas por cliente: ${comandasFiltradas.length} de ${comandasConCliente.length} pertenecen al mismo cliente`);
-            }
-          } else {
-            comandasFiltradas = comandasConCliente;
-          }
-        } else if (comandasConCliente.length > 0 && comandasSinCliente.length > 0) {
-          // Si hay comandas con cliente Y sin cliente, priorizar las SIN cliente (comandas nuevas)
-          // Esto evita mostrar comandas de otros clientes cuando se crea una nueva comanda
-          console.log("⚠️ Detectadas comandas con cliente y sin cliente - Mostrando solo comandas SIN cliente (nuevas)");
-          comandasFiltradas = comandasSinCliente;
-        } else if (comandasConCliente.length > 0) {
-          // Si solo hay comandas con cliente, filtrar por el mismo cliente
-          const primeraComandaConCliente = comandasConCliente[0];
-          const clienteId = primeraComandaConCliente.cliente?._id || primeraComandaConCliente.cliente;
-          
-          if (clienteId) {
-            comandasFiltradas = comandasConCliente.filter(c => {
-              const comandaClienteId = c.cliente?._id || c.cliente;
-              return comandaClienteId && comandaClienteId.toString() === clienteId.toString();
-            });
-            
-            if (comandasFiltradas.length !== comandasConCliente.length) {
-              console.log(`⚠️ Filtrando comandas por cliente: ${comandasFiltradas.length} de ${comandasConCliente.length} pertenecen al mismo cliente`);
-            }
-          } else {
-            comandasFiltradas = comandasConCliente;
-          }
-        } else {
-          // Si solo hay comandas sin cliente, usar todas
-          console.log("✅ Mostrando comandas sin cliente (nuevas)");
-          comandasFiltradas = comandasSinCliente;
-        }
-        
-        if (comandasFiltradas.length === 0) {
-          // No hay comandas válidas, simplemente no hacer nada
-          // La UI mostrará el estado vacío automáticamente
-        } else {
-          console.log(`✅ ${comandasFiltradas.length} comanda(s) filtrada(s) para mostrar`);
-          if (comandasFiltradas.length > 0) {
-            console.log("📋 Comandas que se mostrarán:", comandasFiltradas.map(c => ({
-              _id: c._id?.slice(-6),
-              comandaNumber: c.comandaNumber,
-              platosCount: c.platos?.length || 0,
-              status: c.status
-            })));
-          }
-          setComandas(comandasFiltradas);
-        }
-      } else {
-        // Si no hay comandas para filtrar, usar las que se cargaron
-        if (comandasArray.length > 0) {
-          console.log(`✅ ${comandasArray.length} comanda(s) sin filtrar para mostrar`);
-          setComandas(comandasArray);
-        } else {
-          // No hay comandas para mostrar, establecer array vacío
-          setComandas([]);
-        }
+        // Limpiar estado si no hay datos válidos
+        setComandas([]);
+        setMesa(null);
+        setTotal(0);
       }
-      
-      if (mesaData) {
-        try {
-          const mesa = JSON.parse(mesaData);
-          console.log("✅ Mesa cargada:", mesa.nummesa, "Estado:", mesa.estado);
-          setMesa(mesa);
-        } catch (error) {
-          console.error("❌ Error parseando mesa desde AsyncStorage:", error);
-        }
-      } else {
-        console.warn("⚠️ No se encontró mesa en AsyncStorage");
-      }
-    } catch (error) {
-      console.error("❌ Error cargando datos de pago:", error);
-      Alert.alert("Error", "No se pudieron cargar los datos de pago");
-    } finally {
-      setLoading(false);
-      isLoadingRef.current = false;
-      hasLoadedRef.current = true;
     }
-  }, [comandas.length]); // Solo dependencia de comandas.length para evitar recargas innecesarias
+  }, [route.params]); // ✅ Dependencia: route.params completo para detectar cualquier cambio
 
-  // Suscribirse a eventos Socket cuando la pantalla está enfocada
+  // ✅ Suscribirse a eventos Socket cuando la pantalla está enfocada (solo para actualizaciones en tiempo real)
+  // También recargar datos si vienen nuevos params al enfocar la pantalla
   useFocusEffect(
     React.useCallback(() => {
+      // Leer params directamente del route al enfocar
+      const currentParams = route.params || {};
+      const currentMesa = currentParams.mesa;
+      const currentComandas = currentParams.comandasParaPagar;
+      const currentTotal = currentParams.totalPendiente;
+      const currentBoucher = currentParams.boucher;
+      
+      console.log("🔍 [PAGOS] Pantalla enfocada - route.params:", {
+        tieneBoucher: !!currentBoucher,
+        tieneComandas: !!currentComandas,
+        cantidadComandas: currentComandas?.length || 0,
+        tieneMesa: !!currentMesa,
+        total: currentTotal
+      });
+
+      // ✅ Si hay nuevos datos en params al enfocar, LIMPIAR estado anterior y usar SOLO estos datos
+      if (currentComandas && currentMesa && currentComandas.length > 0) {
+        console.log("🔄 [PAGOS] Actualizando datos desde route.params al enfocar (LIMPIANDO estado anterior)");
+        console.log("📋 [PAGOS] Comandas recibidas:", currentComandas.map(c => ({
+          _id: c._id?.slice(-6),
+          comandaNumber: c.comandaNumber,
+          platos: c.platos?.length || 0
+        })));
+        
+        // ✅ LIMPIAR estado anterior y usar SOLO los datos del backend
+        setComandas([...currentComandas]); // SOLO estas comandas
+        setMesa({ ...currentMesa }); // SOLO esta mesa
+        setTotal(currentTotal || 0); // SOLO este total
+        setBoucherData(null); // Limpiar boucher anterior
+        setClienteSeleccionado(null); // Limpiar cliente anterior
+      } else if (currentBoucher) {
+        console.log("🔄 [PAGOS] Actualizando boucher desde route.params al enfocar");
+        setBoucherData(currentBoucher);
+        // Limpiar comandas cuando se recibe boucher
+        setComandas([]);
+      } else if (!currentBoucher && !currentComandas) {
+        // Si no hay datos, limpiar estado
+        console.log("🔄 [PAGOS] No hay datos en params - LIMPIANDO estado");
+        setComandas([]);
+        setMesa(null);
+        setTotal(0);
+      }
+
       // Suscribirse a eventos
       subscribeToEvents({
         onComandaActualizada: handleComandaActualizada,
         onNuevaComanda: handleNuevaComanda
       });
-
-      // Resetear los flags cuando se enfoca la pantalla
-      // Esto permite recargar si el usuario vuelve a esta pantalla
-      hasLoadedRef.current = false;
-      alertShownRef.current = false; // Resetear el flag de alert para permitir mostrar alertas nuevamente
-
-      // Cargar datos solo una vez cuando se enfoca la pantalla
-      // El flag isLoadingRef evitará ejecuciones múltiples simultáneas
-      loadPagoData();
 
       // Cleanup: desuscribirse
       return () => {
@@ -581,29 +358,50 @@ const PagosScreen = () => {
           onNuevaComanda: null
         });
       };
-    }, [handleComandaActualizada, handleNuevaComanda, subscribeToEvents, loadPagoData])
+    }, [handleComandaActualizada, handleNuevaComanda, subscribeToEvents, route.params])
   );
 
   useEffect(() => {
-    if (comandas.length > 0) {
-      calcularTotal();
-    }
-  }, [comandas]);
-
-  const calcularTotal = () => {
-    if (!comandas || comandas.length === 0) {
+    // Calcular total cuando cambien las comandas o route.params
+    // Leer route.params directamente
+    const paramsParaCalcular = route.params || {};
+    const comandasDeParamsParaCalcular = paramsParaCalcular.comandasParaPagar || [];
+    const totalPendienteDeParams = paramsParaCalcular.totalPendiente || 0;
+    const comandasParaCalcular = comandas.length > 0 ? comandas : comandasDeParamsParaCalcular;
+    if (comandasParaCalcular.length > 0) {
+      calcularTotal(comandasParaCalcular);
+    } else if (totalPendienteDeParams) {
+      // Si hay totalPendiente de route.params, usarlo
+      setTotal(totalPendienteDeParams);
+    } else {
       setTotal(0);
+    }
+  }, [comandas, route.params]); // ✅ Dependencia: route.params para detectar cambios
+
+  const calcularTotal = (comandasACalcular = comandas) => {
+    if (!comandasACalcular || comandasACalcular.length === 0) {
+      // Si no hay comandas pero hay totalPendiente en route.params, usarlo
+      const paramsParaTotal = route.params || {};
+      const totalPendienteDeParams = paramsParaTotal.totalPendiente || 0;
+      if (totalPendienteDeParams) {
+        setTotal(totalPendienteDeParams);
+      } else {
+        setTotal(0);
+      }
       return;
     }
 
     let totalCalculado = 0;
     // Acumular total de todas las comandas
-    comandas.forEach((comanda) => {
+    comandasACalcular.forEach((comanda) => {
       if (comanda.platos) {
         comanda.platos.forEach((platoItem, index) => {
-          const cantidad = comanda.cantidades?.[index] || 1;
-          const precio = platoItem.plato?.precio || platoItem.precio || 0;
-          totalCalculado += precio * cantidad;
+          // Solo contar platos no eliminados
+          if (!platoItem.eliminado) {
+            const cantidad = comanda.cantidades?.[index] || 1;
+            const precio = platoItem.plato?.precio || platoItem.precio || 0;
+            totalCalculado += precio * cantidad;
+          }
         });
       }
     });
@@ -613,19 +411,29 @@ const PagosScreen = () => {
   // Contador animado para el total
   const totalAnim = useSharedValue(0);
   const totalCalculado = useMemo(() => {
-    if (!comandas || comandas.length === 0) return 0;
+    // Leer route.params directamente
+    const paramsParaCalcular = route.params || {};
+    const comandasDeParamsParaCalcular = paramsParaCalcular.comandasParaPagar || [];
+    const totalPendienteDeParams = paramsParaCalcular.totalPendiente || 0;
+    const comandasParaCalcular = comandas.length > 0 ? comandas : comandasDeParamsParaCalcular;
+    if (!comandasParaCalcular || comandasParaCalcular.length === 0) {
+      return totalPendienteDeParams || 0;
+    }
     let total = 0;
-    comandas.forEach((comanda) => {
+    comandasParaCalcular.forEach((comanda) => {
       if (comanda.platos) {
         comanda.platos.forEach((platoItem, index) => {
-          const cantidad = comanda.cantidades?.[index] || 1;
-          const precio = platoItem.plato?.precio || platoItem.precio || 0;
-          total += precio * cantidad;
+          // Solo contar platos no eliminados
+          if (!platoItem.eliminado) {
+            const cantidad = comanda.cantidades?.[index] || 1;
+            const precio = platoItem.plato?.precio || platoItem.precio || 0;
+            total += precio * cantidad;
+          }
         });
       }
     });
-    return total;
-  }, [comandas]);
+    return total || totalPendienteDeParams || 0;
+  }, [comandas, route.params]); // ✅ Dependencia: route.params para detectar cambios
 
   useEffect(() => {
     totalAnim.value = withTiming(totalCalculado, {
@@ -638,33 +446,74 @@ const PagosScreen = () => {
     opacity: totalAnim.value > 0 ? 1 : 0.5,
   }));
 
-  const generarHTMLBoucher = () => {
-    const fechaActual = moment().tz("America/Lima").format("DD/MM/YYYY HH:mm:ss");
-    const primeraComanda = comandas[0];
-    const fecha = moment(primeraComanda?.createdAt || primeraComanda?.fecha).tz("America/Lima");
+  /**
+   * Genera el HTML del boucher para el PDF
+   * @param {Object|null} boucher - Datos del boucher del backend (opcional, si viene de "Imprimir Boucher")
+   */
+  const generarHTMLBoucher = (boucher = null) => {
+    // Si hay boucher del backend, usar esos datos; si no, usar datos locales
+    const usarBoucherBackend = boucher && boucher.platos && boucher.platos.length > 0;
+    
+    const fechaActual = boucher?.fechaPagoString || moment().tz("America/Lima").format("DD/MM/YYYY HH:mm:ss");
+    const primeraComanda = usarBoucherBackend ? null : comandas[0];
+    const fecha = usarBoucherBackend 
+      ? moment(boucher.fechaPago || boucher.createdAt).tz("America/Lima")
+      : moment(primeraComanda?.createdAt || primeraComanda?.fecha).tz("America/Lima");
     const fechaFormateada = fecha.format("DD/MM/YYYY HH:mm:ss");
+    
+    // Obtener voucherId y boucherNumber del boucher o de los datos locales
+    const voucherId = boucher?.voucherId || boucherData?.voucherId || "N/A";
+    const boucherNumber = boucher?.boucherNumber || boucherData?.boucherNumber || "N/A";
 
     let itemsHTML = "";
-    // Acumular todos los platos de todas las comandas
-    comandas.forEach((comanda, comandaIndex) => {
-      if (comanda.platos) {
-        comanda.platos.forEach((platoItem, index) => {
-          const plato = platoItem.plato || platoItem;
-          const cantidad = comanda.cantidades?.[index] || 1;
-          const precio = plato.precio || 0;
-          const subtotal = precio * cantidad;
-          const comandaNum = comanda.comandaNumber || comanda._id.slice(-6);
-          itemsHTML += `
-            <tr>
-              <td style="padding: 8px; border-bottom: 1px solid #ddd;">${cantidad}x</td>
-              <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: left;">${plato.nombre || "Plato"} ${comandas.length > 1 ? `(C#${comandaNum})` : ''}</td>
-              <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">S/. ${precio.toFixed(2)}</td>
-              <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">S/. ${subtotal.toFixed(2)}</td>
-            </tr>
-          `;
-        });
-      }
-    });
+    
+    if (usarBoucherBackend) {
+      // Usar platos del boucher del backend
+      boucher.platos.forEach((platoItem) => {
+        const cantidad = platoItem.cantidad || 1;
+        const precio = platoItem.precio || 0;
+        const subtotal = platoItem.subtotal || (precio * cantidad);
+        const comandaNum = platoItem.comandaNumber || "";
+        itemsHTML += `
+          <tr>
+            <td style="padding: 8px; border-bottom: 1px solid #ddd;">${cantidad}x</td>
+            <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: left;">${platoItem.nombre || "Plato"} ${comandaNum ? `(C#${comandaNum})` : ''}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">S/. ${precio.toFixed(2)}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">S/. ${subtotal.toFixed(2)}</td>
+          </tr>
+        `;
+      });
+    } else {
+      // Usar platos de las comandas locales
+      comandas.forEach((comanda, comandaIndex) => {
+        if (comanda.platos) {
+          comanda.platos.forEach((platoItem, index) => {
+            const plato = platoItem.plato || platoItem;
+            const cantidad = comanda.cantidades?.[index] || 1;
+            const precio = plato.precio || 0;
+            const subtotal = precio * cantidad;
+            const comandaNum = comanda.comandaNumber || comanda._id.slice(-6);
+            itemsHTML += `
+              <tr>
+                <td style="padding: 8px; border-bottom: 1px solid #ddd;">${cantidad}x</td>
+                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: left;">${plato.nombre || "Plato"} ${comandas.length > 1 ? `(C#${comandaNum})` : ''}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">S/. ${precio.toFixed(2)}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">S/. ${subtotal.toFixed(2)}</td>
+              </tr>
+            `;
+          });
+        }
+      });
+    }
+    
+    // Calcular totales: usar del boucher si está disponible, si no calcular localmente
+    const subtotalFinal = boucher?.subtotal || total;
+    const igvFinal = boucher?.igv || (total * 0.18);
+    const totalFinal = boucher?.total || (total * 1.18);
+    
+    // Obtener comandas numbers del boucher o de las comandas locales
+    const comandasNumbers = boucher?.comandasNumbers || comandas.map(c => c.comandaNumber || c._id.slice(-6));
+    const comandasNumbersStr = comandasNumbers.map(n => `#${n}`).join(', ');
 
     const html = `
       <!DOCTYPE html>
@@ -746,16 +595,24 @@ const PagosScreen = () => {
           
           <div class="info">
             <div class="info-row">
+              <span><strong>Voucher ID:</strong></span>
+              <span style="font-weight: bold; font-size: 14px;">${voucherId}</span>
+            </div>
+            <div class="info-row">
+              <span><strong>Boucher #:</strong></span>
+              <span>${boucherNumber}</span>
+            </div>
+            <div class="info-row">
               <span><strong>Comanda(s):</strong></span>
-              <span>${comandas.map(c => `#${c.comandaNumber || c._id.slice(-6)}`).join(', ')}</span>
+              <span>${comandasNumbersStr}</span>
             </div>
             <div class="info-row">
               <span><strong>Mesa:</strong></span>
-              <span>${mesa?.nummesa || comandas[0]?.mesas?.nummesa || "N/A"}</span>
+              <span>${boucher?.numMesa || mesa?.nummesa || comandas[0]?.mesas?.nummesa || "N/A"}</span>
             </div>
             <div class="info-row">
               <span><strong>Mozo:</strong></span>
-              <span>${comandas[0]?.mozos?.name || "N/A"}</span>
+              <span>${boucher?.nombreMozo || comandas[0]?.mozos?.name || "N/A"}</span>
             </div>
             <div class="info-row">
               <span><strong>Fecha Pedido:</strong></span>
@@ -765,10 +622,10 @@ const PagosScreen = () => {
               <span><strong>Fecha Pago:</strong></span>
               <span>${fechaActual}</span>
             </div>
-            ${clienteSeleccionado ? `
+            ${(boucher?.cliente?.nombre || clienteSeleccionado?.nombre) ? `
             <div class="info-row">
               <span><strong>Cliente:</strong></span>
-              <span>${clienteSeleccionado.nombre || 'N/A'}</span>
+              <span>${boucher?.cliente?.nombre || clienteSeleccionado?.nombre || 'N/A'}</span>
             </div>
             ` : ''}
           </div>
@@ -787,25 +644,25 @@ const PagosScreen = () => {
             </tbody>
           </table>
 
-          ${comandas.some(c => c.observaciones) ? `
+          ${(boucher?.observaciones || comandas.some(c => c.observaciones)) ? `
             <div class="observaciones">
               <strong>Observaciones:</strong><br/>
-              ${comandas.filter(c => c.observaciones).map(c => `C#${c.comandaNumber || c._id.slice(-6)}: ${c.observaciones}`).join('<br/>')}
+              ${boucher?.observaciones || comandas.filter(c => c.observaciones).map(c => `C#${c.comandaNumber || c._id.slice(-6)}: ${c.observaciones}`).join('<br/>')}
             </div>
           ` : ""}
 
           <div class="total">
             <div class="total-row">
               <span>SUBTOTAL:</span>
-              <span>S/. ${total.toFixed(2)}</span>
+              <span>S/. ${subtotalFinal.toFixed(2)}</span>
             </div>
             <div class="total-row">
               <span>IGV (18%):</span>
-              <span>S/. ${(total * 0.18).toFixed(2)}</span>
+              <span>S/. ${igvFinal.toFixed(2)}</span>
             </div>
             <div class="total-row" style="font-size: 16px; margin-top: 10px;">
               <span>TOTAL:</span>
-              <span>S/. ${(total * 1.18).toFixed(2)}</span>
+              <span>S/. ${totalFinal.toFixed(2)}</span>
             </div>
           </div>
 
@@ -820,23 +677,30 @@ const PagosScreen = () => {
     return html;
   };
 
-  const generarPDF = async () => {
-    // Verificar que haya comandas antes de generar el PDF
-    if (!comandas || comandas.length === 0) {
-      // No mostrar alerta, simplemente no hacer nada
-      return;
-    }
+  /**
+   * Genera el PDF del boucher
+   * @param {Object|null} boucher - Datos del boucher del backend (opcional, si viene de "Imprimir Boucher")
+   */
+  const generarPDF = async (boucher = null) => {
+    // Si hay boucher del backend, usarlo directamente; si no, verificar comandas locales
+    if (!boucher) {
+      // Verificar que haya comandas antes de generar el PDF
+      if (!comandas || comandas.length === 0) {
+        // No mostrar alerta, simplemente no hacer nada
+        return;
+      }
 
-    // Verificar que las comandas tengan platos
-    const comandasConPlatos = comandas.filter(c => c.platos && c.platos.length > 0);
-    if (comandasConPlatos.length === 0) {
-      // No mostrar alerta, simplemente no hacer nada
-      return;
+      // Verificar que las comandas tengan platos
+      const comandasConPlatos = comandas.filter(c => c.platos && c.platos.length > 0);
+      if (comandasConPlatos.length === 0) {
+        // No mostrar alerta, simplemente no hacer nada
+        return;
+      }
     }
 
     try {
       setIsGenerating(true);
-      const html = generarHTMLBoucher();
+      const html = generarHTMLBoucher(boucher || boucherData);
       
       const { uri } = await Print.printToFileAsync({
         html,
@@ -887,213 +751,8 @@ const PagosScreen = () => {
     }
   };
 
-  // 🔥 FUNCIÓN CRÍTICA: Verificar y cargar todas las comandas y platos antes de permitir pago
-  const verificarYRecargarComandas = async () => {
-    if (!mesa) {
-      Alert.alert("Error", "No hay información de mesa");
-      return false;
-    }
 
-    setVerificandoComandas(true);
-      setMensajeCarga("🔍 Verificando comandas y platos...");
-      
-      try {
-        const mesaId = mesa._id;
-        const mesaNum = mesa.nummesa;
-        
-        console.log("🔍 [PAGO] Verificando comandas y platos de la mesa antes de pagar...");
-        setMensajeCarga("📡 Obteniendo comandas del servidor...");
-      
-      // Obtener todas las comandas del día del servidor
-      const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-      const comandasURL = apiConfig.isConfigured 
-        ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
-        : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
-      const response = await axios.get(comandasURL, { timeout: 10000 }
-      );
-      
-      // Filtrar comandas de esta mesa
-      const comandasMesa = response.data.filter(c => {
-        const comandaMesaNum = c.mesas?.nummesa;
-        const comandaMesaId = c.mesas?._id || c.mesas;
-        return (comandaMesaNum === mesaNum) || 
-               (comandaMesaId && comandaMesaId.toString() === mesaId.toString());
-      });
-      
-      console.log(`✅ [PAGO] ${comandasMesa.length} comanda(s) encontrada(s) en el servidor`);
-      
-      if (comandasMesa.length === 0) {
-        Alert.alert("Error", "No se encontraron comandas para esta mesa");
-        setVerificandoComandas(false);
-        return false;
-      }
-      
-      // Verificar que todas las comandas tengan platos populados
-      setMensajeCarga(`🍽️ Verificando ${comandasMesa.length} comanda(s) y sus platos...`);
-      
-      let todasComandasCompletas = true;
-      const comandasIncompletas = [];
-      
-      for (const comanda of comandasMesa) {
-        if (!comanda.platos || comanda.platos.length === 0) {
-          todasComandasCompletas = false;
-          comandasIncompletas.push(comanda.comandaNumber || comanda._id);
-          console.warn(`⚠️ [PAGO] Comanda ${comanda.comandaNumber || comanda._id} sin platos`);
-          continue;
-        }
-        
-        // Verificar que cada plato tenga nombre y precio
-        const platosIncompletos = comanda.platos.filter((platoItem, index) => {
-          const plato = platoItem.plato || platoItem;
-          const tieneNombre = plato.nombre && plato.nombre.trim() !== '';
-          const tienePrecio = plato.precio && plato.precio > 0;
-          
-          if (!tieneNombre || !tienePrecio) {
-            console.warn(`⚠️ [PAGO] Plato ${index} en comanda ${comanda.comandaNumber || comanda._id} incompleto:`, {
-              tieneNombre,
-              tienePrecio,
-              nombre: plato.nombre,
-              precio: plato.precio
-            });
-            return true;
-          }
-          return false;
-        });
-        
-        if (platosIncompletos.length > 0) {
-          todasComandasCompletas = false;
-          comandasIncompletas.push(comanda.comandaNumber || comanda._id);
-        }
-      }
-      
-      if (!todasComandasCompletas) {
-        console.warn(`⚠️ [PAGO] Comandas incompletas detectadas: ${comandasIncompletas.join(', ')}`);
-        setMensajeCarga("🔧 Corrigiendo platos faltantes...");
-        
-        // Obtener todos los platos del servidor para corregir
-        let platosDisponibles = [];
-        try {
-          const platosResponse = await axios.get(DISHES_API, { timeout: 5000 });
-          platosDisponibles = platosResponse.data || [];
-          console.log(`✅ [PAGO] ${platosDisponibles.length} plato(s) obtenido(s) para corrección`);
-        } catch (error) {
-          console.error("⚠️ [PAGO] Error obteniendo platos:", error);
-        }
-        
-        // Corregir platos en cada comanda
-        const comandasCorregidas = comandasMesa.map((comanda) => {
-          if (comanda.platos && Array.isArray(comanda.platos)) {
-            const platosCorregidos = comanda.platos.map((platoItem) => {
-              const plato = platoItem.plato || platoItem;
-              
-              // Si el plato no tiene nombre o precio, intentar obtenerlo del servidor
-              if (!plato.nombre || !plato.precio || plato.precio === 0) {
-                // Intentar encontrar el plato usando platoId numérico
-                if (platoItem.platoId && platosDisponibles.length > 0) {
-                  const platoEncontrado = platosDisponibles.find(p => p.id === platoItem.platoId);
-                  if (platoEncontrado) {
-                    return {
-                      ...platoItem,
-                      plato: {
-                        ...plato,
-                        nombre: platoEncontrado.nombre,
-                        precio: platoEncontrado.precio || 0,
-                        _id: platoEncontrado._id,
-                        id: platoEncontrado.id
-                      }
-                    };
-                  }
-                }
-                
-                // Si no se encontró por ID numérico, intentar por ObjectId
-                if (plato._id && platosDisponibles.length > 0) {
-                  const platoIdStr = plato._id.toString ? plato._id.toString() : plato._id;
-                  const platoEncontrado = platosDisponibles.find(p => {
-                    const pIdStr = p._id?.toString ? p._id.toString() : p._id;
-                    return pIdStr === platoIdStr;
-                  });
-                  if (platoEncontrado) {
-                    return {
-                      ...platoItem,
-                      plato: {
-                        ...plato,
-                        nombre: platoEncontrado.nombre,
-                        precio: platoEncontrado.precio || 0,
-                        _id: platoEncontrado._id,
-                        id: platoEncontrado.id
-                      }
-                    };
-                  }
-                }
-              }
-              
-              return platoItem;
-            });
-            
-            return { ...comanda, platos: platosCorregidos };
-          }
-          
-          return comanda;
-        });
-        
-        // Verificar nuevamente después de la corrección
-        let todasCompletasDespues = true;
-        for (const comanda of comandasCorregidas) {
-          if (!comanda.platos || comanda.platos.length === 0) {
-            todasCompletasDespues = false;
-            break;
-          }
-          
-          const platosIncompletos = comanda.platos.filter((platoItem) => {
-            const plato = platoItem.plato || platoItem;
-            return !plato.nombre || !plato.precio || plato.precio === 0;
-          });
-          
-          if (platosIncompletos.length > 0) {
-            todasCompletasDespues = false;
-            break;
-          }
-        }
-        
-        if (!todasCompletasDespues) {
-          Alert.alert(
-            "Error de Sincronización",
-            "No se pudieron cargar todos los platos correctamente. Por favor, intente nuevamente o sincronice manualmente.",
-            [{ text: "OK" }]
-          );
-          setVerificandoComandas(false);
-          return false;
-        }
-        
-        // Actualizar comandas con las corregidas
-        setComandas(comandasCorregidas);
-        console.log(`✅ [PAGO] Comandas corregidas y actualizadas`);
-      } else {
-        // Todas las comandas están completas, actualizar estado
-        setComandas(comandasMesa);
-        console.log(`✅ [PAGO] Todas las comandas están completas`);
-      }
-      
-      // Esperar un momento para asegurar que el estado se actualice
-      setMensajeCarga("✅ Verificación completada");
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      console.log("✅ [PAGO] Verificación de comandas y platos completada - Listo para proceder con el pago");
-      return true;
-      
-    } catch (error) {
-      console.error("❌ [PAGO] Error verificando comandas:", error);
-      Alert.alert(
-        "Error de Verificación",
-        "No se pudo verificar las comandas. Por favor, intente nuevamente.",
-        [{ text: "OK" }]
-      );
-      return false;
-    } finally {
-      setVerificandoComandas(false);
-    }
-  };
-
+  // ✅ SIMPLIFICADO: Usar datos limpios de route.params - Backend ya validó todo
   const handlePagar = async () => {
     if (!comandas || comandas.length === 0 || !mesa) {
       Alert.alert("Error", "No hay información de comandas o mesa");
@@ -1124,229 +783,123 @@ const PagosScreen = () => {
       return;
     }
 
-    // 🔥 CRÍTICO: Verificar y recargar comandas antes de permitir pago
-    // Esto evita confirmar pago de platos faltantes
-    const verificacionExitosa = await verificarYRecargarComandas();
-    
-    if (!verificacionExitosa) {
-      // Si la verificación falla, no proceder con el pago
-      return;
-    }
-
-    // Abrir modal de cliente solo después de verificar que todo está cargado
+    // ✅ Datos ya vienen limpios del backend - Abrir modal de cliente directamente
     setModalClienteVisible(true);
   };
 
-  // Función para verificar el estado de la mesa
-  const verificarEstadoMesa = async (mesaId) => {
-    try {
-      // Intentar obtener la mesa individual primero
-      try {
-        const mesaURL = apiConfig.isConfigured 
-          ? `${apiConfig.getEndpoint('/mesas')}/${mesaId}`
-          : `${SELECTABLE_API_GET}/${mesaId}`;
-        const response = await axios.get(mesaURL, { timeout: 5000 });
-        if (response.data?.estado) {
-          return response.data.estado.toLowerCase() === "pagado";
-        }
-      } catch (individualError) {
-        // Si falla, obtener todas las mesas y filtrar
-        console.log("ℹ️ Intentando método alternativo para verificar estado de mesa");
-      }
-      
-      // Método alternativo: obtener todas las mesas y filtrar
-      const mesasURL = apiConfig.isConfigured 
-        ? apiConfig.getEndpoint('/mesas')
-        : SELECTABLE_API_GET;
-      const response = await axios.get(mesasURL, { timeout: 5000 });
-      const mesa = response.data.find(m => m._id === mesaId || m._id?.toString() === mesaId?.toString());
-      return mesa?.estado?.toLowerCase() === "pagado";
-    } catch (error) {
-      console.warn("⚠️ Error al verificar estado de mesa:", error);
-      return false;
-    }
-  };
 
+  // ✅ NUEVO FLUJO: Usar endpoint POST /boucher con comandasIds - Backend valida y procesa todo
+  // ✅ IMPORTANTE: Usar SOLO comandas de route.params (backend = única fuente de verdad)
   const procesarPagoConCliente = async (cliente) => {
-    // Activar overlay de carga
     setProcesandoPago(true);
     setMensajeCarga("Procesando pago...");
     
     try {
+      // ✅ Leer comandas SOLO de route.params (backend = única fuente de verdad)
+      const paramsParaPago = route.params || {};
+      const comandasParaPagar = paramsParaPago.comandasParaPagar || [];
+      const mesaParaPago = paramsParaPago.mesa || mesa;
+      
+      // Si no hay comandas en params, usar estado local (fallback)
+      const comandasFinales = comandasParaPagar.length > 0 ? comandasParaPagar : comandas;
+      const mesaFinal = mesaParaPago || mesa;
+      
+      if (comandasFinales.length === 0) {
+        throw new Error("No hay comandas para pagar");
+      }
+      
+      if (!mesaFinal || !mesaFinal._id) {
+        throw new Error("No se pudo obtener la información de la mesa");
+      }
+      
       console.log("💳 Procesando pago con cliente:", cliente.nombre || cliente._id);
+      console.log("📋 Comandas para pagar (SOLO del backend):", comandasFinales.map(c => ({
+        _id: c._id?.slice(-6),
+        comandaNumber: c.comandaNumber,
+        status: c.status
+      })));
 
-      // Asociar cliente a todas las comandas y actualizar totales
-      for (const comanda of comandas) {
-        // Actualizar comanda con cliente
-        const comandaUpdateURL = apiConfig.isConfigured 
-          ? `${apiConfig.getEndpoint('/comanda')}/${comanda._id}`
-          : `${COMANDA_API}/${comanda._id}`;
-        await axios.put(
-          comandaUpdateURL,
-          { cliente: cliente._id },
-          { timeout: 5000 }
-        );
-
-        // Asociar cliente a comanda y actualizar totales
-        const totalComanda = comanda.platos?.reduce((sum, platoItem, index) => {
-          const plato = platoItem.plato || platoItem;
-          const cantidad = comanda.cantidades?.[index] || 1;
-          const precio = plato.precio || 0;
-          return sum + (precio * cantidad);
-        }, 0) || 0;
-
-        // Asociar cliente a comanda y actualizar totales del cliente
-        try {
-          const clientesURL = apiConfig.isConfigured 
-            ? apiConfig.getEndpoint('/clientes')
-            : CLIENTES_API;
-          const baseUrl = clientesURL.replace('/clientes', '');
-          await axios.post(
-            `${baseUrl}/comandas/${comanda._id}/cliente`,
-            { clienteId: cliente._id, totalComanda: totalComanda },
-            { timeout: 5000 }
-          );
-        } catch (error) {
-          console.warn("⚠️ Error al asociar cliente a comanda (continuando):", error);
-        }
-
-        // Marcar comanda como pagada solo si no está ya pagada
-        if (comanda.status?.toLowerCase() !== "pagado") {
-          try {
-            const comandaStatusURL = apiConfig.isConfigured 
-              ? `${apiConfig.getEndpoint('/comanda')}/${comanda._id}/status`
-              : `${COMANDA_API}/${comanda._id}/status`;
-            await axios.put(
-              comandaStatusURL,
-              { nuevoStatus: "pagado" },
-              { timeout: 5000 }
-            );
-            console.log(`✅ Comanda ${comanda.comandaNumber || comanda._id.slice(-4)} marcada como pagada con cliente`);
-          } catch (comandaError) {
-            // Si la comanda ya está pagada, no es un error crítico
-            if (comandaError.response?.status === 400) {
-              console.log(`ℹ️ Comanda ${comanda.comandaNumber || comanda._id.slice(-4)} ya está pagada, continuando...`);
-            } else {
-              throw comandaError; // Re-lanzar si es otro tipo de error
-            }
-          }
-        } else {
-          console.log(`ℹ️ Comanda ${comanda.comandaNumber || comanda._id.slice(-4)} ya está pagada, omitiendo actualización`);
-        }
+      // Obtener mozoId del contexto o de las comandas
+      const mozoId = comandasFinales[0]?.mozos?._id || comandasFinales[0]?.mozos;
+      if (!mozoId) {
+        throw new Error("No se pudo obtener el ID del mozo");
       }
 
-      // Actualizar mesa a "pagado" solo si no está ya en "pagado"
-      setMensajeCarga("Actualizando estado de la mesa...");
-      if (mesa.estado?.toLowerCase() !== "pagado") {
+      // ✅ USAR ENDPOINT POST /boucher con comandasIds - Backend valida y procesa todo
+      const boucherURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/boucher')
+        : BOUCHER_API;
+      
+      // Extraer IDs de mesa de forma segura
+      let mesaIdFinal = mesaFinal._id;
+      if (mesaIdFinal && typeof mesaIdFinal === 'object') {
+        mesaIdFinal = mesaIdFinal.toString();
+      }
+      
+      const boucherData = {
+        mesaId: mesaIdFinal,
+        mozoId: mozoId,
+        clienteId: cliente._id,
+        comandasIds: comandasFinales.map(c => {
+          // Extraer ID de forma segura
+          let comandaId = c._id;
+          if (comandaId && typeof comandaId === 'object') {
+            comandaId = comandaId.toString();
+          }
+          return comandaId;
+        }), // ← EXACTAMENTE estas comandas del backend (route.params)
+        observaciones: comandasFinales.map(c => c.observaciones).filter(o => o).join("; ") || ""
+      };
+      
+      console.log("📤 [PAGO] Enviando al backend:", {
+        mesaId: mesaIdFinal,
+        cantidadComandas: boucherData.comandasIds.length,
+        comandasIds: boucherData.comandasIds.map(id => id?.slice(-6))
+      });
+
+      setMensajeCarga("Creando boucher y procesando pago...");
+      const boucherResponse = await axios.post(boucherURL, boucherData, { timeout: 10000 });
+      const boucherCreado = boucherResponse.data;
+      
+      console.log("✅ Boucher creado:", boucherCreado.boucherNumber || boucherCreado._id);
+      console.log("✅ VoucherId:", boucherCreado.voucherId);
+      console.log("✅ Comandas marcadas como pagadas automáticamente por el backend");
+
+      // Guardar boucher en estado local
+      setBoucherData(boucherCreado);
+
+      // Actualizar estado de la mesa a "pagado"
+      if (mesaFinal && mesaIdFinal) {
         try {
+          setMensajeCarga("Actualizando estado de la mesa...");
+          
+          console.log(`🔄 Actualizando mesa ${mesaFinal.nummesa} a estado "pagado"...`);
+          
+          // Actualizar mesa a "pagado"
           const mesaUpdateURL = apiConfig.isConfigured 
-            ? `${apiConfig.getEndpoint('/mesas')}/${mesa._id}/estado`
-            : `${MESAS_API_UPDATE}/${mesa._id}/estado`;
+            ? `${apiConfig.getEndpoint('/mesas')}/${mesaIdFinal}/estado`
+            : `${MESAS_API_UPDATE}/${mesaIdFinal}/estado`;
+          
           await axios.put(
             mesaUpdateURL,
             { estado: "pagado" },
             { timeout: 5000 }
           );
-          console.log("✅ Mesa actualizada a 'pagado'");
-        } catch (mesaError) {
-          // Si la mesa ya está en "pagado", no es un error crítico
-          if (mesaError.response?.status === 400 && mesaError.response?.data?.message?.includes('Transición no permitida')) {
-            console.log("ℹ️ Mesa ya está en estado 'pagado', continuando...");
-          } else {
-            throw mesaError; // Re-lanzar si es otro tipo de error
-          }
-        }
-      } else {
-        console.log("ℹ️ Mesa ya está en estado 'pagado', omitiendo actualización");
-      }
-
-      // Verificar periódicamente que la mesa esté en estado "Pagado"
-      setMensajeCarga("Verificando confirmación del pago...");
-      let intentos = 0;
-      const maxIntentos = 10; // Máximo 10 intentos (5 segundos)
-      let mesaConfirmada = false;
-
-      while (intentos < maxIntentos && !mesaConfirmada) {
-        await new Promise(resolve => setTimeout(resolve, 500)); // Esperar 500ms entre intentos
-        mesaConfirmada = await verificarEstadoMesa(mesa._id);
-        intentos++;
-        
-        if (!mesaConfirmada) {
-          setMensajeCarga(`Verificando confirmación del pago... (${intentos}/${maxIntentos})`);
+          
+          console.log(`✅ Mesa ${mesaFinal.nummesa} actualizada a estado "pagado"`);
+          
+          // Actualizar estado local de la mesa
+          setMesa(prev => prev ? { ...prev, estado: "pagado" } : null);
+        } catch (error) {
+          console.error(`❌ Error actualizando estado de la mesa:`, error);
+          // No bloquear el flujo si falla la actualización de la mesa
+          // El backend debería haber actualizado la mesa automáticamente
         }
       }
 
-      if (!mesaConfirmada) {
-        console.warn("⚠️ No se pudo confirmar el estado 'pagado' de la mesa después de varios intentos");
-      } else {
-        console.log("✅ Mesa confirmada en estado 'pagado'");
-      }
-
-      // Preparar datos del boucher
-      const platosBoucher = [];
-      comandas.forEach((comanda) => {
-        if (comanda.platos && Array.isArray(comanda.platos)) {
-          comanda.platos.forEach((platoItem, index) => {
-            const plato = platoItem.plato || platoItem;
-            const cantidad = comanda.cantidades?.[index] || 1;
-            const precio = plato.precio || 0;
-            const subtotal = precio * cantidad;
-            
-            platosBoucher.push({
-              plato: plato._id || plato,
-              platoId: plato.id || null,
-              nombre: plato.nombre || "Plato",
-              precio: precio,
-              cantidad: cantidad,
-              subtotal: subtotal,
-              comandaNumber: comanda.comandaNumber || null
-            });
-          });
-        }
-      });
-
-      const boucherData = {
-        mesa: mesa._id,
-        numMesa: mesa.nummesa,
-        mozo: comandas[0]?.mozos?._id || comandas[0]?.mozos,
-        nombreMozo: comandas[0]?.mozos?.name || "N/A",
-        cliente: cliente._id, // Asociar cliente al boucher
-        comandas: comandas.map(c => c._id),
-        comandasNumbers: comandas.map(c => c.comandaNumber).filter(n => n != null),
-        platos: platosBoucher,
-        subtotal: total,
-        igv: total * 0.18,
-        total: total * 1.18,
-        observaciones: comandas.map(c => c.observaciones).filter(o => o).join("; ") || "",
-        fechaPago: new Date(),
-        fechaPagoString: moment().tz("America/Lima").format("DD/MM/YYYY HH:mm:ss"),
-        usadoEnComanda: comandas[0]?._id || null,
-        fechaUso: new Date()
-      };
-
-      // Guardar boucher en el backend
-      // Nota: La asociación del boucher al cliente se hace automáticamente en el backend
-      // cuando se crea el boucher (ver boucher.repository.js)
-      try {
-        const boucherURL = apiConfig.isConfigured 
-          ? apiConfig.getEndpoint('/boucher')
-          : BOUCHER_API;
-        const boucherResponse = await axios.post(boucherURL, boucherData, { timeout: 5000 });
-        console.log("✅ Boucher guardado:", boucherResponse.data.boucherNumber || boucherResponse.data._id);
-        console.log("✅ Boucher asociado automáticamente al cliente en el backend");
-      } catch (boucherError) {
-        console.error("⚠️ Error guardando boucher (pero pago procesado):", boucherError);
-        // No bloquear el proceso si falla guardar el boucher
-      }
-
-      // Limpiar AsyncStorage
-      await AsyncStorage.removeItem("comandasPago");
-      await AsyncStorage.removeItem("comandaPago");
-      await AsyncStorage.removeItem("mesaPago");
-
-      // Generar PDF
+      // Generar PDF con el boucher creado
       setMensajeCarga("Generando voucher...");
-      await generarPDF();
+      await generarPDF(boucherCreado);
 
       // Cerrar overlay de carga
       setProcesandoPago(false);
@@ -1354,42 +907,21 @@ const PagosScreen = () => {
 
       Alert.alert(
         "✅", 
-        `Pago procesado y voucher generado.\n\nCliente: ${cliente.nombre}\nLa mesa ahora está en estado 'Pagado'. Puedes liberarla desde la pantalla de Inicio.`
+        `Pago procesado y voucher generado.\n\nCliente: ${cliente.nombre}\nVoucher ID: ${boucherCreado.voucherId}\n\nLa mesa ahora está en estado 'Pagado'. Puedes liberarla desde la pantalla de Inicio.`
       );
+      
+      // Limpiar estado y volver a Inicio
       setComandas([]);
       setMesa(null);
       setClienteSeleccionado(null);
       navigation.navigate("Inicio");
     } catch (error) {
-      console.error("Error procesando pago:", error);
-      
-      // Cerrar overlay de carga en caso de error
+      console.error("❌ Error procesando pago:", error);
       setProcesandoPago(false);
       setMensajeCarga("Procesando pago...");
       
-      // Si el error es 400 y el mensaje indica que ya está pagado, mostrar mensaje más amigable
-      if (error.response?.status === 400) {
-        const errorMessage = error.response?.data?.message || error.message || "";
-        if (errorMessage.includes('Transición no permitida') || errorMessage.includes('ya está')) {
-          // El proceso probablemente se completó, solo mostrar advertencia
-          console.warn("⚠️ Algunas operaciones ya estaban completadas, pero el pago se procesó");
-          Alert.alert(
-            "⚠️ Advertencia", 
-            "El pago se procesó, pero algunas operaciones ya estaban completadas. Verifica que todo esté correcto."
-          );
-          // Continuar con el flujo normal
-          await AsyncStorage.removeItem("comandasPago");
-          await AsyncStorage.removeItem("comandaPago");
-          await AsyncStorage.removeItem("mesaPago");
-          setComandas([]);
-          setMesa(null);
-          setClienteSeleccionado(null);
-          navigation.navigate("Inicio");
-          return;
-        }
-      }
-      
-      Alert.alert("Error", error.response?.data?.message || "No se pudo procesar el pago");
+      const errorMessage = error.response?.data?.message || error.message || "No se pudo procesar el pago";
+      Alert.alert("Error", errorMessage);
     }
   };
 
@@ -1420,18 +952,33 @@ const PagosScreen = () => {
     );
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.container} edges={[]}>
-        <View style={styles.emptyContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.emptyText}>Cargando...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (!comandas || comandas.length === 0) {
+  // Si no hay comandas ni boucher, mostrar pantalla vacía
+  // Pero si hay boucher (viene de "Imprimir Boucher"), mostrar la pantalla con el boucher
+  // IMPORTANTE: Leer route.params DIRECTAMENTE aquí para Tab Navigator (puede que el estado aún no se haya actualizado)
+  const paramsActuales = route.params || {};
+  const comandasDeParams = paramsActuales.comandasParaPagar || [];
+  const mesaDeParams = paramsActuales.mesa;
+  const boucherDeParams = paramsActuales.boucher;
+  
+  const tieneDatos = (comandas && comandas.length > 0) || 
+                     (comandasDeParams && comandasDeParams.length > 0) ||
+                     boucherData || 
+                     boucherFromParams || 
+                     boucherDeParams;
+  
+  // Log para debugging
+  console.log("🔍 [PAGOS] Verificando tieneDatos:", {
+    comandasEstado: comandas?.length || 0,
+    comandasParams: comandasDeParams?.length || 0,
+    tieneBoucherData: !!boucherData,
+    tieneBoucherFromParams: !!boucherFromParams,
+    tieneBoucherDeParams: !!boucherDeParams,
+    tieneDatos: tieneDatos,
+    routeParamsKeys: Object.keys(paramsActuales),
+    primeraComandaParams: comandasDeParams?.[0]?._id?.slice(-6) || 'N/A'
+  });
+  
+  if (!tieneDatos) {
     return (
       <SafeAreaView style={styles.container} edges={[]}>
         <View style={styles.header}>
@@ -1447,21 +994,8 @@ const PagosScreen = () => {
           <Text style={styles.emptySubtext}>
             Selecciona una mesa en estado "Preparado" y elige "Pagar"
           </Text>
-          <Text style={[styles.emptySubtext, { marginTop: 10, fontSize: 12, color: theme.colors.text.light }]}>
-            {loading ? "Cargando datos..." : "No se encontraron datos en AsyncStorage"}
-          </Text>
           <TouchableOpacity
-            style={[styles.backButton, { marginTop: 20 }]}
-            onPress={async () => {
-              setLoading(true);
-              await loadPagoData();
-            }}
-          >
-            <MaterialCommunityIcons name="refresh" size={20} color={theme.colors.text.white} />
-            <Text style={styles.backButtonText}>Recargar Datos</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.backButton, { marginTop: 10, backgroundColor: theme.colors.primary }]}
+            style={[styles.backButton, { marginTop: 20, backgroundColor: theme.colors.primary }]}
             onPress={() => navigation.navigate("Inicio")}
           >
             <Text style={styles.backButtonText}>Ir a Inicio</Text>
@@ -1483,85 +1017,254 @@ const PagosScreen = () => {
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <View style={styles.infoCard}>
+          {(boucherData || boucherFromParams) && (
+            <>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Voucher ID:</Text>
+                <Text style={[styles.infoValue, { fontWeight: 'bold', fontSize: 16 }]}>
+                  {(boucherData || boucherFromParams)?.voucherId || "N/A"}
+                </Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Boucher #:</Text>
+                <Text style={styles.infoValue}>
+                  {(boucherData || boucherFromParams)?.boucherNumber || "N/A"}
+                </Text>
+              </View>
+            </>
+          )}
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Comanda(s):</Text>
             <Text style={styles.infoValue}>
-              {comandas.map(c => `#${c.comandaNumber || c._id.slice(-6)}`).join(', ')}
+              {(boucherData || boucherFromParams)?.comandasNumbers?.map(n => `#${n}`).join(', ') || 
+               (() => {
+                 // Leer route.params directamente
+                 const paramsParaInfo = route.params || {};
+                 const comandasDeParamsParaInfo = paramsParaInfo.comandasParaPagar || [];
+                 const comandasParaMostrar = comandas.length > 0 ? comandas : comandasDeParamsParaInfo;
+                 return comandasParaMostrar.map(c => `#${c.comandaNumber || c._id?.slice(-6) || 'N/A'}`).join(', ') || 'N/A';
+               })()}
             </Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Mesa:</Text>
-            <Text style={styles.infoValue}>{mesa?.nummesa || comandas[0]?.mesas?.nummesa || "N/A"}</Text>
+            <Text style={styles.infoValue}>
+              {(boucherData || boucherFromParams)?.numMesa || 
+               mesa?.nummesa || 
+               mesaParam?.nummesa ||
+               (() => {
+                 // Leer route.params directamente
+                 const paramsParaMesa = route.params || {};
+                 const comandasDeParamsParaMesa = paramsParaMesa.comandasParaPagar || [];
+                 const comandasParaMostrar = comandas.length > 0 ? comandas : comandasDeParamsParaMesa;
+                 return comandasParaMostrar[0]?.mesas?.nummesa || paramsParaMesa.mesa?.nummesa || "N/A";
+               })()}
+            </Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Mozo:</Text>
-            <Text style={styles.infoValue}>{comandas[0]?.mozos?.name || "N/A"}</Text>
+            <Text style={styles.infoValue}>
+              {(boucherData || boucherFromParams)?.nombreMozo || 
+               (() => {
+                 // Leer route.params directamente
+                 const paramsParaMozo = route.params || {};
+                 const comandasDeParamsParaMozo = paramsParaMozo.comandasParaPagar || [];
+                 const comandasParaMostrar = comandas.length > 0 ? comandas : comandasDeParamsParaMozo;
+                 return comandasParaMostrar[0]?.mozos?.name || "N/A";
+               })()}
+            </Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Fecha:</Text>
             <Text style={styles.infoValue}>
-              {moment(comandas[0]?.createdAt || comandas[0]?.fecha).tz("America/Lima").format("DD/MM/YYYY HH:mm")}
+              {(boucherData || boucherFromParams)?.fechaPagoString || 
+               moment(comandas[0]?.createdAt || comandas[0]?.fecha).tz("America/Lima").format("DD/MM/YYYY HH:mm")}
             </Text>
           </View>
+          {((boucherData || boucherFromParams)?.cliente?.nombre || clienteSeleccionado?.nombre) && (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Cliente:</Text>
+              <Text style={styles.infoValue}>
+                {(boucherData || boucherFromParams)?.cliente?.nombre || clienteSeleccionado?.nombre || "N/A"}
+              </Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.platosCard}>
           <Text style={styles.sectionTitle}>Platos</Text>
-          {comandas.map((comanda, comandaIndex) => (
-            <View key={comanda._id || comandaIndex}>
-              {comandas.length > 1 && (
-                <Text style={styles.comandaHeader}>
-                  Comanda #{comanda.comandaNumber || comanda._id.slice(-6)}
-                </Text>
-              )}
-              {comanda.platos?.map((platoItem, index) => {
-                const plato = platoItem.plato || platoItem;
-                const cantidad = comanda.cantidades?.[index] || 1;
-                const precio = plato.precio || 0;
-                const subtotal = precio * cantidad;
-                
+          {(boucherData || boucherFromParams)?.platos ? (
+            // Mostrar platos del boucher del backend
+            (boucherData || boucherFromParams).platos.map((platoItem, index) => {
+              const cantidad = platoItem.cantidad || 1;
+              const precio = platoItem.precio || 0;
+              const subtotal = platoItem.subtotal || (precio * cantidad);
+              const comandaNum = platoItem.comandaNumber;
+              
+              return (
+                <View key={index} style={styles.platoItem}>
+                  <View style={styles.platoInfo}>
+                    <Text style={styles.platoNombre}>{platoItem.nombre || "Plato"}</Text>
+                    <Text style={styles.platoCantidad}>x{cantidad}</Text>
+                  </View>
+                  <Text style={styles.platoSubtotal}>S/. {subtotal.toFixed(2)}</Text>
+                </View>
+              );
+            })
+          ) : (
+            // Mostrar platos de las comandas - usar route.params directamente si comandas está vacío
+            (() => {
+              // Leer route.params directamente para asegurar datos actualizados
+              const paramsParaRender = route.params || {};
+              const comandasDeParamsParaRender = paramsParaRender.comandasParaPagar || [];
+              const comandasParaMostrar = comandas.length > 0 ? comandas : comandasDeParamsParaRender;
+              
+              console.log("📋 [PAGOS] Renderizando platos:", {
+                usandoComandas: comandas.length > 0,
+                usandoComandasParaPagar: comandas.length === 0 && comandasDeParamsParaRender.length > 0,
+                cantidadComandas: comandasParaMostrar.length,
+                primeraComandaPlatos: comandasParaMostrar[0]?.platos?.length || 0,
+                primeraComandaId: comandasParaMostrar[0]?._id?.slice(-6) || 'N/A',
+                platosDetalle: comandasParaMostrar[0]?.platos?.map((p, i) => ({
+                  index: i,
+                  nombre: p.plato?.nombre || p.nombre || 'Sin nombre',
+                  precio: p.plato?.precio || p.precio || 0,
+                  tienePlato: !!p.plato,
+                  tieneNombre: !!(p.plato?.nombre || p.nombre)
+                })) || []
+              });
+              
+              if (comandasParaMostrar.length === 0) {
                 return (
-                  <View key={`${comandaIndex}-${index}`} style={styles.platoItem}>
-                    <View style={styles.platoInfo}>
-                      <Text style={styles.platoNombre}>{plato.nombre || "Plato"}</Text>
-                      <Text style={styles.platoCantidad}>x{cantidad}</Text>
-                    </View>
-                    <Text style={styles.platoSubtotal}>S/. {subtotal.toFixed(2)}</Text>
+                  <View style={{ padding: 20, alignItems: 'center' }}>
+                    <Text style={{ color: theme.colors.text.secondary }}>
+                      No hay platos para mostrar
+                    </Text>
                   </View>
                 );
-              })}
-            </View>
-          ))}
+              }
+              
+              // Verificar que haya al menos una comanda con platos
+              const comandasConPlatos = comandasParaMostrar.filter(c => 
+                c.platos && Array.isArray(c.platos) && c.platos.length > 0
+              );
+              
+              if (comandasConPlatos.length === 0) {
+                return (
+                  <View style={{ padding: 20, alignItems: 'center' }}>
+                    <Text style={{ color: theme.colors.text.secondary }}>
+                      Las comandas no tienen platos disponibles
+                    </Text>
+                  </View>
+                );
+              }
+              
+              return comandasParaMostrar.map((comanda, comandaIndex) => {
+                // Verificar que la comanda tenga platos
+                if (!comanda.platos || !Array.isArray(comanda.platos) || comanda.platos.length === 0) {
+                  return null;
+                }
+                
+                return (
+                  <View key={comanda._id || comandaIndex}>
+                    {comandasParaMostrar.length > 1 && (
+                      <Text style={styles.comandaHeader}>
+                        Comanda #{comanda.comandaNumber || comanda._id?.slice(-6) || comandaIndex + 1}
+                      </Text>
+                    )}
+                    {comanda.platos.map((platoItem, index) => {
+                      // Manejar diferentes estructuras de platoItem
+                      const plato = platoItem.plato || platoItem;
+                      const cantidad = comanda.cantidades?.[index] || platoItem.cantidad || 1;
+                      const precio = plato?.precio || platoItem.precio || 0;
+                      const nombre = plato?.nombre || platoItem.nombre || "Plato";
+                      const subtotal = precio * cantidad;
+                      
+                      // Solo mostrar platos no eliminados
+                      if (platoItem.eliminado) {
+                        return null;
+                      }
+                      
+                      return (
+                        <View key={`${comandaIndex}-${index}`} style={styles.platoItem}>
+                          <View style={styles.platoInfo}>
+                            <Text style={styles.platoNombre}>{nombre}</Text>
+                            <Text style={styles.platoCantidad}>x{cantidad}</Text>
+                          </View>
+                          <Text style={styles.platoSubtotal}>S/. {subtotal.toFixed(2)}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              }).filter(Boolean); // Filtrar nulls
+            })()
+          )}
         </View>
 
-        {comandas.some(c => c.observaciones) && (
-          <View style={styles.observacionesCard}>
-            <Text style={styles.sectionTitle}>Observaciones</Text>
-            {comandas.filter(c => c.observaciones).map((c, idx) => (
-              <Text key={idx} style={styles.observacionesText}>
-                C#{c.comandaNumber || c._id.slice(-6)}: {c.observaciones}
-              </Text>
-            ))}
-          </View>
-        )}
+        {(() => {
+          // Leer route.params directamente
+          const paramsParaObservaciones = route.params || {};
+          const comandasDeParamsParaObservaciones = paramsParaObservaciones.comandasParaPagar || [];
+          const comandasParaObservaciones = comandas.length > 0 ? comandas : comandasDeParamsParaObservaciones;
+          const tieneObservaciones = (boucherData || boucherFromParams)?.observaciones || 
+                                    comandasParaObservaciones.some(c => c.observaciones);
+          
+          if (!tieneObservaciones) return null;
+          
+          return (
+            <View style={styles.observacionesCard}>
+              <Text style={styles.sectionTitle}>Observaciones</Text>
+              {(boucherData || boucherFromParams)?.observaciones ? (
+                <Text style={styles.observacionesText}>
+                  {(boucherData || boucherFromParams).observaciones}
+                </Text>
+              ) : (
+                comandasParaObservaciones.filter(c => c.observaciones).map((c, idx) => (
+                  <Text key={idx} style={styles.observacionesText}>
+                    C#{c.comandaNumber || c._id?.slice(-6) || idx + 1}: {c.observaciones}
+                  </Text>
+                ))
+              )}
+            </View>
+          );
+        })()}
 
         <Animated.View style={[styles.totalCard, animatedTotalStyle]}>
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Subtotal:</Text>
             <Text style={styles.totalValue}>
-              S/. {total.toFixed(2)}
+              S/. {(() => {
+                if (boucherData || boucherFromParams) {
+                  return ((boucherData || boucherFromParams)?.subtotal || 0).toFixed(2);
+                }
+                const subtotalFinal = total || totalPendiente || 0;
+                return subtotalFinal.toFixed(2);
+              })()}
             </Text>
           </View>
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>IGV (18%):</Text>
             <Text style={styles.totalValue}>
-              S/. {(total * 0.18).toFixed(2)}
+              S/. {(() => {
+                if (boucherData || boucherFromParams) {
+                  return ((boucherData || boucherFromParams)?.igv || 0).toFixed(2);
+                }
+                const subtotalFinal = total || totalPendiente || 0;
+                return (subtotalFinal * 0.18).toFixed(2);
+              })()}
             </Text>
           </View>
           <View style={[styles.totalRow, styles.totalRowFinal]}>
             <Text style={styles.totalLabelFinal}>TOTAL:</Text>
             <Text style={styles.totalValueFinal}>
-              S/. {(total * 1.18).toFixed(2)}
+              S/. {(() => {
+                if (boucherData || boucherFromParams) {
+                  return ((boucherData || boucherFromParams)?.total || 0).toFixed(2);
+                }
+                const subtotalFinal = total || totalPendiente || 0;
+                return (subtotalFinal * 1.18).toFixed(2);
+              })()}
             </Text>
           </View>
         </Animated.View>
@@ -1571,7 +1274,7 @@ const PagosScreen = () => {
         <TouchableOpacity
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            generarPDF();
+            generarPDF(boucherData || boucherFromParams);
           }}
           disabled={isGenerating}
           activeOpacity={0.8}
@@ -1598,9 +1301,9 @@ const PagosScreen = () => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               handlePagar();
             }}
-            disabled={isGenerating || verificandoComandas}
+            disabled={isGenerating}
             activeOpacity={0.8}
-            style={{ flex: 1, opacity: (isGenerating || verificandoComandas) ? 0.5 : 1 }}
+            style={{ flex: 1, opacity: isGenerating ? 0.5 : 1 }}
           >
             <View style={[styles.buttonNew, { minHeight: 60 * escala, backgroundColor: colors.success }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 * escala }}>
@@ -1623,11 +1326,6 @@ const PagosScreen = () => {
 
       {/* Overlay de Carga Animado - Procesando Pago */}
       {procesandoPago && (
-        <AnimatedOverlay mensaje={mensajeCarga} />
-      )}
-
-      {/* Overlay de Verificación - Verificando Comandas antes de Pagar */}
-      {verificandoComandas && (
         <AnimatedOverlay mensaje={mensajeCarga} />
       )}
     </SafeAreaView>

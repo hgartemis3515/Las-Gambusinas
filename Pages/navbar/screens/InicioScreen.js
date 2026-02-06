@@ -346,6 +346,8 @@ const InicioScreen = () => {
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [eliminandoUltimaComanda, setEliminandoUltimaComanda] = useState(false);
   const [mensajeCargaEliminacion, setMensajeCargaEliminacion] = useState("");
+  const [eliminandoTodasComandas, setEliminandoTodasComandas] = useState(false);
+  const [mensajeCargaEliminacionTodas, setMensajeCargaEliminacionTodas] = useState("");
   const [verificandoComandas, setVerificandoComandas] = useState(false);
   const [mensajeCargaVerificacion, setMensajeCargaVerificacion] = useState("");
 
@@ -364,6 +366,68 @@ const InicioScreen = () => {
       const mesaNum = mesa.nummesa;
       
       console.log("🔍 [INICIO] Verificando comandas y platos de la mesa antes de pagar...");
+      console.log(`📋 Comandas del cache (comandasActuales): ${comandasActuales?.length || 0}`);
+      
+      // ESTRATEGIA MEJORADA: Usar cache primero, luego verificar con servidor
+      // 1. Intentar usar cache de verificaciones anteriores (si es reciente, < 30 segundos)
+      // 2. Si hay comandas en cache (comandasActuales), usarlas como base
+      // 3. Obtener comandas del servidor para actualizar datos
+      // 4. Combinar ambas fuentes, priorizando comandas más recientes
+      
+      // Intentar usar cache de verificaciones anteriores
+      let comandasCacheVerificadas = null;
+      try {
+        const cacheKey = `comandas_verificadas_mesa_${mesaNum}`;
+        const cacheData = await AsyncStorage.getItem(cacheKey);
+        if (cacheData) {
+          const parsed = JSON.parse(cacheData);
+          const cacheAge = Date.now() - (parsed.timestamp || 0);
+          const CACHE_MAX_AGE = 30000; // 30 segundos
+          
+          if (cacheAge < CACHE_MAX_AGE && parsed.comandas && parsed.comandas.length > 0) {
+            comandasCacheVerificadas = parsed.comandas;
+            console.log(`✅ [INICIO] Usando cache de verificaciones anteriores (${Math.round(cacheAge / 1000)}s de antigüedad)`);
+          } else {
+            console.log(`⚠️ [INICIO] Cache expirado o inválido (${Math.round(cacheAge / 1000)}s de antigüedad)`);
+          }
+        }
+      } catch (error) {
+        console.warn("⚠️ [INICIO] Error leyendo cache de verificaciones:", error);
+      }
+      
+      let comandasCache = [];
+      if (comandasActuales && Array.isArray(comandasActuales) && comandasActuales.length > 0) {
+        // Usar comandas del cache como base
+        comandasCache = comandasActuales;
+        console.log(`✅ [INICIO] Usando ${comandasCache.length} comanda(s) del cache (comandasActuales) como base`);
+        
+        // Log de comandas del cache
+        comandasCache.forEach((c, idx) => {
+          const clienteId = c.cliente?._id || c.cliente;
+          const tieneCliente = clienteId ? 'Sí' : 'No';
+          const fechaCreacion = c.createdAt ? moment(c.createdAt).tz("America/Lima").format('HH:mm:ss') : 'N/A';
+          console.log(`   Cache ${idx + 1}: Comanda #${c.comandaNumber} - Cliente: ${tieneCliente} - ${c.platos?.length || 0} plato(s) - Creada: ${fechaCreacion}`);
+        });
+      }
+      
+      // Si tenemos cache de verificaciones reciente, podemos usarlo como base adicional
+      if (comandasCacheVerificadas && comandasCacheVerificadas.length > 0) {
+        // Combinar con comandas del cache actual
+        const cacheMap = new Map();
+        comandasCache.forEach(c => {
+          const id = c._id?.toString();
+          if (id) cacheMap.set(id, c);
+        });
+        comandasCacheVerificadas.forEach(c => {
+          const id = c._id?.toString();
+          if (id && !cacheMap.has(id)) {
+            cacheMap.set(id, c);
+          }
+        });
+        comandasCache = Array.from(cacheMap.values());
+        console.log(`✅ [INICIO] Cache combinado: ${comandasCache.length} comanda(s)`);
+      }
+      
       setMensajeCargaVerificacion("📡 Obteniendo comandas del servidor...");
     
       // Obtener todas las comandas del día del servidor
@@ -373,20 +437,81 @@ const InicioScreen = () => {
         : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
       const response = await axios.get(comandasURL, { timeout: 10000 });
       
-      // Filtrar comandas de esta mesa
-      const comandasMesa = response.data.filter(c => {
+      // Filtrar comandas de esta mesa (solo las que NO están pagadas)
+      const comandasMesaServidor = response.data.filter(c => {
         const comandaMesaNum = c.mesas?.nummesa;
         const comandaMesaId = c.mesas?._id || c.mesas;
-        return (comandaMesaNum === mesaNum) || 
+        const coincideMesa = (comandaMesaNum === mesaNum) || 
                (comandaMesaId && comandaMesaId.toString() === mesaId.toString());
+        const status = c.status?.toLowerCase();
+        // Solo incluir comandas no pagadas
+        return coincideMesa && status !== "pagado" && status !== "completado";
       });
       
-      console.log(`✅ [INICIO] ${comandasMesa.length} comanda(s) encontrada(s) en el servidor`);
+      console.log(`✅ [INICIO] ${comandasMesaServidor.length} comanda(s) encontrada(s) en el servidor (no pagadas)`);
+      
+      // COMBINAR: Cache + Servidor, eliminando duplicados
+      // Priorizar datos del servidor (más actualizados) pero mantener todas las comandas
+      const comandasMap = new Map();
+      
+      // Primero agregar comandas del cache (para mantener las que pueden no estar en el servidor aún)
+      comandasCache.forEach(c => {
+        const comandaId = c._id?.toString();
+        if (comandaId) {
+          comandasMap.set(comandaId, c);
+        }
+      });
+      
+      // Luego actualizar/agregar comandas del servidor (datos más frescos)
+      comandasMesaServidor.forEach(c => {
+        const comandaId = c._id?.toString();
+        if (comandaId) {
+          // Actualizar con datos del servidor (más recientes)
+          comandasMap.set(comandaId, c);
+        }
+      });
+      
+      // Convertir Map a Array
+      const comandasMesa = Array.from(comandasMap.values());
+      
+      // Ordenar por fecha de creación descendente (más recientes primero)
+      comandasMesa.sort((a, b) => {
+        if (a.createdAt && b.createdAt) {
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        }
+        // Fallback: usar comandaNumber
+        return (b.comandaNumber || 0) - (a.comandaNumber || 0);
+      });
+      
+      console.log(`✅ [INICIO] ${comandasMesa.length} comanda(s) combinada(s) (cache + servidor, sin duplicados)`);
+      
+      // Log detallado de comandas combinadas
+      comandasMesa.forEach((c, idx) => {
+        const clienteId = c.cliente?._id || c.cliente;
+        const tieneCliente = clienteId ? 'Sí' : 'No';
+        const fechaCreacion = c.createdAt ? moment(c.createdAt).tz("America/Lima").format('HH:mm:ss') : 'N/A';
+        console.log(`   ${idx + 1}. Comanda #${c.comandaNumber} - Status: ${c.status} - Cliente: ${tieneCliente} - ${c.platos?.length || 0} plato(s) - Creada: ${fechaCreacion}`);
+      });
       
       if (comandasMesa.length === 0) {
         Alert.alert("Error", "No se encontraron comandas para esta mesa");
         setVerificandoComandas(false);
         return null;
+      }
+      
+      // Guardar en cache las comandas verificadas para esta mesa (para futuras referencias)
+      try {
+        const cacheKey = `comandas_verificadas_mesa_${mesaNum}`;
+        await AsyncStorage.setItem(cacheKey, JSON.stringify({
+          mesaNum,
+          mesaId,
+          comandas: comandasMesa,
+          timestamp: Date.now()
+        }));
+        console.log(`💾 [INICIO] Comandas guardadas en cache para mesa ${mesaNum}`);
+      } catch (error) {
+        console.warn("⚠️ [INICIO] Error guardando comandas en cache:", error);
+        // No es crítico, continuar
       }
       
       // Verificar que todas las comandas tengan platos populados
@@ -531,6 +656,20 @@ const InicioScreen = () => {
         
         // Retornar comandas corregidas
         console.log(`✅ [INICIO] Comandas corregidas y actualizadas`);
+        
+        // Actualizar cache con comandas corregidas
+        try {
+          const cacheKey = `comandas_verificadas_mesa_${mesaNum}`;
+          await AsyncStorage.setItem(cacheKey, JSON.stringify({
+            mesaNum,
+            mesaId,
+            comandas: comandasCorregidas,
+            timestamp: Date.now()
+          }));
+        } catch (error) {
+          console.warn("⚠️ [INICIO] Error actualizando cache:", error);
+        }
+        
         setMensajeCargaVerificacion("✅ Verificación completada");
         await new Promise(resolve => setTimeout(resolve, 500));
         setVerificandoComandas(false);
@@ -538,6 +677,20 @@ const InicioScreen = () => {
       } else {
         // Todas las comandas están completas
         console.log(`✅ [INICIO] Todas las comandas están completas`);
+        
+        // Actualizar cache con comandas verificadas
+        try {
+          const cacheKey = `comandas_verificadas_mesa_${mesaNum}`;
+          await AsyncStorage.setItem(cacheKey, JSON.stringify({
+            mesaNum,
+            mesaId,
+            comandas: comandasMesa,
+            timestamp: Date.now()
+          }));
+        } catch (error) {
+          console.warn("⚠️ [INICIO] Error actualizando cache:", error);
+        }
+        
         setMensajeCargaVerificacion("✅ Verificación completada");
         await new Promise(resolve => setTimeout(resolve, 500));
         setVerificandoComandas(false);
@@ -1065,18 +1218,43 @@ const InicioScreen = () => {
         );
       }
     } else if (estado === "Preparado" || estado?.toLowerCase() === "preparado") {
+      // Obtener TODAS las comandas activas de la mesa (no solo las preparadas)
       const comandasMesa = getComandasPorMesa(mesa.nummesa);
-      const comandaPreparada = comandasMesa.find(c => 
-        c.status?.toLowerCase() === "recoger"
+      
+      // Ordenar comandas por fecha de creación (más recientes primero)
+      const comandasOrdenadas = [...comandasMesa].sort((a, b) => {
+        if (a.createdAt && b.createdAt) {
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        }
+        // Fallback: usar comandaNumber
+        return (b.comandaNumber || 0) - (a.comandaNumber || 0);
+      });
+      
+      console.log(`🔍 Mesa ${mesa.nummesa} - Preparado: ${comandasOrdenadas.length} comanda(s) activa(s)`);
+      comandasOrdenadas.forEach((c, idx) => {
+        const clienteId = c.cliente?._id || c.cliente;
+        const tieneCliente = clienteId ? 'Sí' : 'No';
+        console.log(`   ${idx + 1}. Comanda #${c.comandaNumber} - Status: ${c.status} - Cliente: ${tieneCliente} - ${c.platos?.length || 0} plato(s)`);
+      });
+      
+      const comandaPreparada = comandasOrdenadas.find(c => 
+        c.status?.toLowerCase() === "recoger" || 
+        (c.platos && c.platos.some(p => p.estado === "recoger"))
       );
       
-      // Obtener el mozo de la primera comanda para validar
-      const primeraComanda = comandasMesa[0];
+      // Obtener el mozo de la primera comanda (más reciente) para validar
+      const primeraComanda = comandasOrdenadas[0];
+      if (!primeraComanda) {
+        Alert.alert("Error", "No se encontraron comandas para esta mesa");
+        return;
+      }
+      
       const mozoComandaId = primeraComanda?.mozos?._id || primeraComanda?.mozos;
       const mozoActualId = userInfo?._id;
       const mismoMozo = mozoComandaId && mozoActualId && mozoComandaId.toString() === mozoActualId.toString();
 
-      if (comandaPreparada) {
+      // Mostrar modal si hay comandas activas (preparadas o no)
+      if (comandasOrdenadas.length > 0) {
         // Si no es el mismo mozo, mostrar mensaje de acceso denegado
         if (!mismoMozo) {
           Alert.alert(
@@ -1087,10 +1265,12 @@ const InicioScreen = () => {
           return;
         }
 
-        // Si es el mismo mozo, mostrar opciones en Modal personalizado para que todas sean visibles
+        // Si es el mismo mozo, mostrar opciones en Modal personalizado
+        // IMPORTANTE: Pasar TODAS las comandas activas (ordenadas por fecha)
         setMesaOpciones(mesa);
-        setComandasOpciones(comandasMesa);
+        setComandasOpciones(comandasOrdenadas); // Usar comandas ordenadas (más recientes primero)
         setModalOpcionesMesaVisible(true);
+        console.log(`✅ Modal abierto con ${comandasOrdenadas.length} comanda(s) activa(s)`);
       }
     } else if (estado === "Pagado" || estado?.toLowerCase() === "pagado") {
       // Mesa en estado Pagado - mostrar opciones de Imprimir Boucher y Liberar
@@ -1144,39 +1324,54 @@ const InicioScreen = () => {
             text: "📄 Imprimir Boucher",
             onPress: async () => {
               try {
-                // Validar que haya comandas antes de guardar
-                if (!comandasParaBoucher || comandasParaBoucher.length === 0) {
+                // Verificar que la mesa esté en estado "pagado"
+                if (mesa.estado?.toLowerCase() !== "pagado") {
                   Alert.alert(
                     "Error",
-                    "No hay comandas pagadas para esta mesa. No se puede generar el boucher.",
+                    "Solo se puede imprimir el boucher de mesas que están en estado 'Pagado'.",
                     [{ text: "OK" }]
                   );
                   return;
                 }
 
-                console.log(`💾 Guardando ${comandasParaBoucher.length} comanda(s) para boucher`);
-                console.log("📋 Comandas a guardar:", comandasParaBoucher.map(c => ({
-                  _id: c._id?.slice(-6),
-                  comandaNumber: c.comandaNumber,
-                  platosCount: c.platos?.length || 0,
-                  status: c.status
-                })));
-
-                // Guardar solo las comandas del mismo cliente para generar el boucher
-                await AsyncStorage.setItem("comandasPago", JSON.stringify(comandasParaBoucher));
+                console.log(`🔍 Obteniendo boucher de la mesa ${mesa.nummesa} (ID: ${mesa._id})`);
+                
+                // Llamar al nuevo endpoint para obtener el boucher de la mesa
+                const boucherURL = apiConfig.isConfigured 
+                  ? apiConfig.getEndpoint(`/boucher/by-mesa/${mesa._id}`)
+                  : `http://192.168.18.11:3000/api/boucher/by-mesa/${mesa._id}`;
+                
+                const boucherResponse = await axios.get(boucherURL, { timeout: 10000 });
+                const boucher = boucherResponse.data;
+                
+                console.log("✅ Boucher obtenido:", {
+                  voucherId: boucher.voucherId,
+                  boucherNumber: boucher.boucherNumber,
+                  total: boucher.total
+                });
+                
+                // Guardar boucher en AsyncStorage para que PagosScreen lo use
+                await AsyncStorage.setItem("boucherParaImprimir", JSON.stringify(boucher));
                 await AsyncStorage.setItem("mesaPago", JSON.stringify(mesa));
                 
-                // Verificar que se guardaron correctamente
-                const comandasVerificadas = await AsyncStorage.getItem("comandasPago");
-                if (comandasVerificadas) {
-                  const parsed = JSON.parse(comandasVerificadas);
-                  console.log(`✅ Verificado: ${parsed.length} comanda(s) guardada(s) en AsyncStorage`);
-                }
-                
-                navigation.navigate("Pagos");
+                // Navegar a PagosScreen con el boucher
+                navigation.navigate("Pagos", { boucher });
               } catch (error) {
-                console.error("❌ Error guardando datos para boucher:", error);
-                Alert.alert("Error", "No se pudo preparar el boucher. Por favor, intente nuevamente.");
+                console.error("❌ Error obteniendo boucher:", error);
+                
+                if (error.response?.status === 404) {
+                  Alert.alert(
+                    "Boucher no encontrado",
+                    "No se encontró ningún boucher pagado para esta mesa. Verifica que se haya realizado el pago correctamente.",
+                    [{ text: "OK" }]
+                  );
+                } else {
+                  Alert.alert(
+                    "Error",
+                    "No se pudo obtener el boucher. Por favor, intente nuevamente.",
+                    [{ text: "OK" }]
+                  );
+                }
               }
             }
           },
@@ -1724,12 +1919,18 @@ const InicioScreen = () => {
           text: "Eliminar",
           style: "destructive",
           onPress: async () => {
+            // Activar overlay de carga
+            setEliminandoTodasComandas(true);
+            setMensajeCargaEliminacionTodas("Eliminando comandas...");
+            
             try {
               console.log(`🗑️ Eliminando todas las comandas de la mesa ${mesa.nummesa}...`);
               console.log(`📋 Comandas a eliminar: ${comandasMesa.length}`);
               
               // Eliminar todas las comandas de la mesa
-              const eliminaciones = comandasMesa.map(async (comanda) => {
+              setMensajeCargaEliminacionTodas(`Eliminando ${comandasMesa.length} comanda(s)...`);
+              
+              const eliminaciones = comandasMesa.map(async (comanda, index) => {
                 try {
                   let comandaId = comanda._id;
                   
@@ -1740,6 +1941,8 @@ const InicioScreen = () => {
                   
                   if (comandaId) {
                     console.log(`  - Eliminando comanda #${comanda.comandaNumber || comandaId.slice(-4)}`);
+                    setMensajeCargaEliminacionTodas(`Eliminando comanda ${index + 1}/${comandasMesa.length}...`);
+                    
                     const deleteURL = apiConfig.isConfigured 
                       ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}`
                       : `${COMANDA_API}/${comandaId}`;
@@ -1761,9 +1964,93 @@ const InicioScreen = () => {
               
               console.log(`✅ Eliminación completada: ${exitosas} exitosas, ${fallidas} fallidas`);
               
+              // Si todas las comandas se eliminaron exitosamente, actualizar mesa a estado "libre"
+              if (fallidas === 0 && mesa && mesa._id) {
+                try {
+                  // Extraer el ID de la mesa de forma segura
+                  let mesaId = mesa._id;
+                  if (mesaId && typeof mesaId === 'object') {
+                    mesaId = mesaId.toString();
+                  }
+                  
+                  const mesaNum = mesa.nummesa;
+                  
+                  setMensajeCargaEliminacionTodas("Actualizando estado de la mesa...");
+                  console.log(`🔄 Actualizando mesa ${mesaNum} a estado "libre"...`);
+                  
+                  // Actualizar mesa a "libre"
+                  const mesaUpdateURL = apiConfig.isConfigured 
+                    ? `${apiConfig.getEndpoint('/mesas')}/${mesaId}/estado`
+                    : `${MESAS_API_UPDATE}/${mesaId}/estado`;
+                  
+                  await axios.put(
+                    mesaUpdateURL,
+                    { estado: "libre" },
+                    { timeout: 5000 }
+                  );
+                  
+                  console.log(`✅ Mesa ${mesaNum} actualizada a estado "libre"`);
+                  
+                  // Verificar que la mesa se haya actualizado correctamente
+                  setMensajeCargaEliminacionTodas("Verificando estado de la mesa...");
+                  
+                  let mesaVerificada = false;
+                  let intentos = 0;
+                  const maxIntentos = 10; // Máximo 10 intentos (5 segundos)
+                  
+                  while (!mesaVerificada && intentos < maxIntentos) {
+                    try {
+                      await new Promise(resolve => setTimeout(resolve, 500)); // Esperar 500ms entre intentos
+                      
+                      const mesasURL = apiConfig.isConfigured 
+                        ? apiConfig.getEndpoint('/mesas')
+                        : SELECTABLE_API_GET;
+                      const mesasResponse = await axios.get(mesasURL, { timeout: 5000 });
+                      
+                      const mesaEncontrada = mesasResponse.data.find(m => {
+                        const mId = m._id?.toString ? m._id.toString() : m._id;
+                        const mesaIdStr = mesaId?.toString ? mesaId.toString() : mesaId;
+                        return mId === mesaIdStr || m.nummesa === mesaNum;
+                      });
+                      
+                      if (mesaEncontrada) {
+                        const estadoMesaVerificado = (mesaEncontrada.estado || '').toLowerCase();
+                        console.log(`🔄 Intento ${intentos + 1}/${maxIntentos}: Mesa ${mesaNum} en estado "${estadoMesaVerificado}"`);
+                        
+                        if (estadoMesaVerificado === 'libre') {
+                          mesaVerificada = true;
+                          console.log(`✅ Mesa ${mesaNum} confirmada en estado "libre"`);
+                          break;
+                        }
+                      }
+                      
+                      intentos++;
+                    } catch (error) {
+                      console.error(`⚠️ Error verificando mesa (intento ${intentos + 1}):`, error);
+                      intentos++;
+                    }
+                  }
+                  
+                  if (!mesaVerificada) {
+                    console.warn(`⚠️ No se pudo verificar el estado de la mesa después de ${maxIntentos} intentos`);
+                    // Continuar de todas formas, el backend debería haber actualizado la mesa
+                  }
+                  
+                } catch (error) {
+                  console.error(`❌ Error actualizando estado de la mesa:`, error);
+                  // No mostrar error al usuario, solo loguear
+                  // La mesa se actualizará cuando se recarguen los datos
+                }
+              }
+              
+              setMensajeCargaEliminacionTodas("Actualizando datos...");
+              
               // Actualizar comandas y mesas desde el servidor
               await obtenerComandasHoy();
               await obtenerMesas();
+              
+              // Ocultar overlay
+              setEliminandoTodasComandas(false);
               
               if (fallidas === 0) {
                 Alert.alert(
@@ -1790,6 +2077,9 @@ const InicioScreen = () => {
                 comandasCount: comandasMesa.length,
                 timestamp: moment().tz("America/Lima").format("YYYY-MM-DD HH:mm:ss"),
               });
+              
+              // Ocultar overlay en caso de error
+              setEliminandoTodasComandas(false);
               
               Alert.alert(
                 "Error",
@@ -2954,91 +3244,94 @@ const InicioScreen = () => {
                   if (verificandoComandas) {
                     return; // Prevenir múltiples clics
                   }
-                  
-                  setModalOpcionesMesaVisible(false);
-                  
-                  // Primero verificar y recargar comandas del servidor
-                  const comandasVerificadas = await verificarYRecargarComandas(mesaOpciones, comandasOpciones);
-                  
-                  if (!comandasVerificadas || comandasVerificadas.length === 0) {
-                    console.error("❌ No se pudieron verificar las comandas");
+
+                  if (mesaOpciones.estado !== 'preparado') {
+                    Alert.alert('Error', 'Solo mesas preparadas pueden pagarse');
                     return;
                   }
+
+                  setModalOpcionesMesaVisible(false);
+                  setVerificandoComandas(true);
                   
                   try {
-                    console.log("💾 Guardando datos para pago...");
-                    console.log("📋 Comandas verificadas a guardar:", comandasVerificadas.length);
-                    console.log("🪑 Mesa a guardar:", mesaOpciones.nummesa);
+                    // ← NUEVO ENDPOINT - datos limpios del backend
+                    // Construir URL correctamente: /api/comanda/comandas-para-pagar/:mesaId
+                    const baseURL = apiConfig.isConfigured 
+                      ? apiConfig.getEndpoint('/comanda')
+                      : COMANDA_API;
+                    const comandasURL = `${baseURL}/comandas-para-pagar/${mesaOpciones._id}`;
                     
-                    // IMPORTANTE: Filtrar comandas antes de guardar
-                    // Solo guardar comandas sin cliente (nuevas) o comandas del mismo cliente
-                    // NO guardar comandas de otros clientes
-                    const comandasConCliente = comandasVerificadas.filter(c => {
-                      const clienteId = c.cliente?._id || c.cliente;
-                      return clienteId !== null && clienteId !== undefined;
+                    console.log('🔍 [PAGAR] Llamando endpoint:', comandasURL);
+                    console.log('🔍 [PAGAR] Mesa ID:', mesaOpciones._id);
+                    
+                    const response = await axios.get(comandasURL, { timeout: 10000 });
+                    
+                    console.log('✅ [PAGAR] Respuesta recibida:', {
+                      comandas: response.data.comandas?.length || 0,
+                      total: response.data.totalPendiente,
+                      mesa: response.data.mesa,
+                      primeraComanda: response.data.comandas?.[0]?._id,
+                      platosPrimeraComanda: response.data.comandas?.[0]?.platos?.length || 0
                     });
                     
-                    const comandasSinCliente = comandasVerificadas.filter(c => {
-                      const clienteId = c.cliente?._id || c.cliente;
-                      return !clienteId || clienteId === null || clienteId === undefined;
-                    });
-                    
-                    let comandasParaGuardar = [];
-                    
-                    if (comandasConCliente.length > 0 && comandasSinCliente.length > 0) {
-                      // Si hay comandas con cliente Y sin cliente, priorizar las SIN cliente (comandas nuevas)
-                      console.log("⚠️ Detectadas comandas con cliente y sin cliente - Guardando solo comandas SIN cliente (nuevas)");
-                      comandasParaGuardar = comandasSinCliente;
-                    } else if (comandasConCliente.length > 0) {
-                      // Si solo hay comandas con cliente, filtrar por el mismo cliente
-                      const primeraComandaConCliente = comandasConCliente[0];
-                      const clienteId = primeraComandaConCliente.cliente?._id || primeraComandaConCliente.cliente;
-                      
-                      if (clienteId) {
-                        comandasParaGuardar = comandasConCliente.filter(c => {
-                          const comandaClienteId = c.cliente?._id || c.cliente;
-                          return comandaClienteId && comandaClienteId.toString() === clienteId.toString();
-                        });
-                        console.log(`✅ Filtrando comandas por cliente: ${comandasParaGuardar.length} de ${comandasConCliente.length} pertenecen al mismo cliente`);
-                      } else {
-                        comandasParaGuardar = comandasConCliente;
-                      }
-                    } else {
-                      // Si solo hay comandas sin cliente, usar todas
-                      console.log("✅ Guardando comandas sin cliente (nuevas)");
-                      comandasParaGuardar = comandasSinCliente;
-                    }
-                    
-                    if (comandasParaGuardar.length === 0) {
-                      Alert.alert(
-                        "Sin Comandas",
-                        "No se encontraron comandas válidas para pagar. Por favor, verifica que haya comandas activas.",
-                        [{ text: "OK" }]
-                      );
+                    if (!response.data.comandas || response.data.comandas.length === 0) {
+                      Alert.alert('Nada pendiente', 'No hay comandas listas para pagar en esta mesa');
+                      setVerificandoComandas(false);
                       return;
                     }
-                    
-                    console.log(`✅ Guardando ${comandasParaGuardar.length} comanda(s) para el pago`);
-                    
-                    // Guardar solo las comandas filtradas
-                    await AsyncStorage.setItem("comandasPago", JSON.stringify(comandasParaGuardar));
-                    await AsyncStorage.setItem("mesaPago", JSON.stringify(mesaOpciones));
-                    
-                    // Verificar que se guardaron correctamente
-                    const comandasVerificadasStorage = await AsyncStorage.getItem("comandasPago");
-                    const mesaVerificada = await AsyncStorage.getItem("mesaPago");
-                    
-                    if (comandasVerificadasStorage && mesaVerificada) {
-                      console.log("✅ Datos guardados correctamente");
-                      console.log("📋 Comandas guardadas:", JSON.parse(comandasVerificadasStorage).length);
-                      navigation.navigate("Pagos");
-                    } else {
-                      console.error("❌ Error: Los datos no se guardaron correctamente");
-                      Alert.alert("Error", "No se pudieron guardar los datos para el pago");
+
+                    // Validar que las comandas tengan platos
+                    const comandasConPlatos = response.data.comandas.filter(c => c.platos && c.platos.length > 0);
+                    if (comandasConPlatos.length === 0) {
+                      console.warn("⚠️ [PAGAR] Las comandas recibidas no tienen platos");
+                      Alert.alert('Error', 'Las comandas no tienen platos. Por favor, verifica en el servidor.');
+                      setVerificandoComandas(false);
+                      return;
                     }
+
+                    console.log('📤 [PAGAR] Navegando a PagosScreen con datos:', {
+                      mesa: response.data.mesa?.nummesa,
+                      cantidadComandas: response.data.comandas.length,
+                      totalPendiente: response.data.totalPendiente,
+                      primeraComanda: response.data.comandas[0]?._id,
+                      platosPrimeraComanda: response.data.comandas[0]?.platos?.length || 0,
+                      detallePlatos: response.data.comandas[0]?.platos?.map((p, i) => ({
+                        index: i,
+                        nombre: p.plato?.nombre || 'Sin nombre',
+                        precio: p.plato?.precio || p.precio || 0,
+                        cantidad: response.data.comandas[0]?.cantidades?.[i] || 1
+                      })) || []
+                    });
+
+                    // PASAR DATOS LIMPIOS a PagosScreen vía route.params
+                    // IMPORTANTE: Para Tab Navigator, usar navigate con parámetros
+                    const paramsParaPagos = {
+                      mesa: response.data.mesa,
+                      comandasParaPagar: response.data.comandas,
+                      totalPendiente: response.data.totalPendiente
+                    };
+                    
+                    console.log('📋 [PAGAR] Parámetros a pasar:', {
+                      tieneMesa: !!paramsParaPagos.mesa,
+                      cantidadComandas: paramsParaPagos.comandasParaPagar?.length || 0,
+                      total: paramsParaPagos.totalPendiente,
+                      estructuraComandas: paramsParaPagos.comandasParaPagar?.map(c => ({
+                        _id: c._id?.slice(-6),
+                        comandaNumber: c.comandaNumber,
+                        platos: c.platos?.length || 0,
+                        platosDetalle: c.platos?.map(p => ({
+                          nombre: p.plato?.nombre || 'Sin nombre',
+                          precio: p.plato?.precio || p.precio || 0
+                        })) || []
+                      })) || []
+                    });
+                    
+                    navigation.navigate('Pagos', paramsParaPagos);
                   } catch (error) {
-                    console.error("❌ Error guardando datos para pago:", error);
-                    Alert.alert("Error", "No se pudo preparar el pago");
+                    logger.error('Error cargando comandas para pagar:', error);
+                    Alert.alert('Error', error.response?.data?.message || 'No se pudieron cargar las comandas');
+                  } finally {
+                    setVerificandoComandas(false);
                   }
                 }}
                 disabled={verificandoComandas}
@@ -3076,6 +3369,11 @@ const InicioScreen = () => {
       {/* Overlay de Carga para Eliminación de Última Comanda */}
       {eliminandoUltimaComanda && (
         <OverlayEliminacion mensaje={mensajeCargaEliminacion} />
+      )}
+
+      {/* Overlay de Carga para Eliminación de Todas las Comandas */}
+      {eliminandoTodasComandas && (
+        <OverlayEliminacion mensaje={mensajeCargaEliminacionTodas} />
       )}
 
       {/* Overlay de Carga para Verificación de Comandas antes de Pagar */}
@@ -3509,4 +3807,5 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
 });
 
 export default InicioScreen;
+
 
