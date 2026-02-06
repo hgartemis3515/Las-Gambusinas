@@ -92,11 +92,18 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
       setNombre("");
       setTelefono("");
       setEsInvitado(true);
+      
+      // ✅ Resetear loading después de éxito
+      setLoading(false);
     } catch (error) {
       console.error("❌ Error al crear cliente:", error);
       
+      // ✅ SIEMPRE resetear loading en caso de error
+      setLoading(false);
+      
       // Manejo mejorado de errores de red
       const isNetworkError = error.code === 'ECONNABORTED' || 
+                             error.code === 'ECONNREFUSED' ||
                              error.message?.includes('Network Error') ||
                              error.message?.includes('timeout') ||
                              !error.response;
@@ -109,26 +116,28 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
             { 
               text: "Reintentar", 
               onPress: () => {
-                setLoading(false);
                 // Pequeño delay antes de reintentar para evitar loop infinito
                 setTimeout(() => handleContinuar(), 500);
               }
             },
             { 
               text: "Cancelar", 
-              style: "cancel", 
-              onPress: () => setLoading(false) 
+              style: "cancel"
             }
           ]
         );
       } else {
         // Error del servidor (no de red)
+        const status = error.response?.status || 500;
+        const errorMessage = error.response?.data?.message || error.message || "Error desconocido";
         Alert.alert(
           "Error",
-          error.response?.data?.message || error.message || "No se pudo crear el cliente. Intente nuevamente."
+          `No se pudo crear el cliente (Error ${status}): ${errorMessage}`
         );
-        setLoading(false);
       }
+    } finally {
+      // ✅ GARANTIZAR que el loading siempre se resetee (doble seguridad)
+      setLoading(false);
     }
   };
 

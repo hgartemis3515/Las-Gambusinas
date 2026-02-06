@@ -790,30 +790,55 @@ const PagosScreen = () => {
 
   // ✅ NUEVO FLUJO: Usar endpoint POST /boucher con comandasIds - Backend valida y procesa todo
   // ✅ IMPORTANTE: Usar SOLO comandas de route.params (backend = única fuente de verdad)
+  // ✅ MEJORADO: try/catch/finally para evitar loading infinito
   const procesarPagoConCliente = async (cliente) => {
+    // ✅ Validaciones ANTES de activar loading
+    if (!cliente || !cliente._id) {
+      Alert.alert("Error", "No se pudo obtener la información del cliente. Por favor, intenta nuevamente.");
+      return;
+    }
+
+    // ✅ Leer comandas SOLO de route.params (backend = única fuente de verdad)
+    const paramsParaPago = route.params || {};
+    const comandasParaPagar = paramsParaPago.comandasParaPagar || [];
+    const mesaParaPago = paramsParaPago.mesa || mesa;
+    const totalPendienteParams = paramsParaPago.totalPendiente || 0;
+    
+    // Si no hay comandas en params, usar estado local (fallback)
+    const comandasFinales = comandasParaPagar.length > 0 ? comandasParaPagar : comandas;
+    const mesaFinal = mesaParaPago || mesa;
+    const totalFinal = totalPendienteParams || total;
+    
+    // ✅ Validaciones antes de procesar
+    if (comandasFinales.length === 0) {
+      Alert.alert("Error", "No hay comandas para pagar. Por favor, verifica que la mesa tenga comandas listas.");
+      return;
+    }
+    
+    if (!mesaFinal || !mesaFinal._id) {
+      Alert.alert("Error", "No se pudo obtener la información de la mesa. Por favor, intenta nuevamente.");
+      return;
+    }
+
+    if (totalFinal <= 0) {
+      Alert.alert("Error", "El total a pagar debe ser mayor a cero. Por favor, verifica las comandas.");
+      return;
+    }
+
+    // ✅ Activar loading DESPUÉS de validaciones
     setProcesandoPago(true);
     setMensajeCarga("Procesando pago...");
     
     try {
-      // ✅ Leer comandas SOLO de route.params (backend = única fuente de verdad)
-      const paramsParaPago = route.params || {};
-      const comandasParaPagar = paramsParaPago.comandasParaPagar || [];
-      const mesaParaPago = paramsParaPago.mesa || mesa;
+      console.log("💳 [PAGO] Iniciando procesamiento:", {
+        cliente: cliente.nombre || cliente._id,
+        clienteId: cliente._id?.slice(-6),
+        cantidadComandas: comandasFinales.length,
+        mesa: mesaFinal.nummesa,
+        total: totalFinal
+      });
       
-      // Si no hay comandas en params, usar estado local (fallback)
-      const comandasFinales = comandasParaPagar.length > 0 ? comandasParaPagar : comandas;
-      const mesaFinal = mesaParaPago || mesa;
-      
-      if (comandasFinales.length === 0) {
-        throw new Error("No hay comandas para pagar");
-      }
-      
-      if (!mesaFinal || !mesaFinal._id) {
-        throw new Error("No se pudo obtener la información de la mesa");
-      }
-      
-      console.log("💳 Procesando pago con cliente:", cliente.nombre || cliente._id);
-      console.log("📋 Comandas para pagar (SOLO del backend):", comandasFinales.map(c => ({
+      console.log("📋 [PAGO] Comandas para pagar (SOLO del backend):", comandasFinales.map(c => ({
         _id: c._id?.slice(-6),
         comandaNumber: c.comandaNumber,
         status: c.status
@@ -822,7 +847,7 @@ const PagosScreen = () => {
       // Obtener mozoId del contexto o de las comandas
       const mozoId = comandasFinales[0]?.mozos?._id || comandasFinales[0]?.mozos;
       if (!mozoId) {
-        throw new Error("No se pudo obtener el ID del mozo");
+        throw new Error("No se pudo obtener el ID del mozo. Verifica que las comandas tengan un mozo asignado.");
       }
 
       // ✅ USAR ENDPOINT POST /boucher con comandasIds - Backend valida y procesa todo
@@ -858,12 +883,57 @@ const PagosScreen = () => {
       });
 
       setMensajeCarga("Creando boucher y procesando pago...");
-      const boucherResponse = await axios.post(boucherURL, boucherData, { timeout: 10000 });
-      const boucherCreado = boucherResponse.data;
       
-      console.log("✅ Boucher creado:", boucherCreado.boucherNumber || boucherCreado._id);
-      console.log("✅ VoucherId:", boucherCreado.voucherId);
-      console.log("✅ Comandas marcadas como pagadas automáticamente por el backend");
+      // ✅ POST con timeout y manejo de errores específico
+      let boucherCreado;
+      try {
+        const boucherResponse = await axios.post(boucherURL, boucherData, { 
+          timeout: 15000, // Aumentado a 15s para conexiones lentas
+          validateStatus: (status) => status < 500 // No lanzar error para 4xx
+        });
+        
+        // Verificar si hay error en la respuesta
+        if (boucherResponse.status >= 400) {
+          const errorMsg = boucherResponse.data?.message || `Error ${boucherResponse.status}: ${boucherResponse.statusText}`;
+          throw new Error(errorMsg);
+        }
+        
+        boucherCreado = boucherResponse.data;
+        
+        if (!boucherCreado || !boucherCreado._id) {
+          throw new Error("El backend no retornó un boucher válido");
+        }
+        
+        console.log("✅ [PAGO] Boucher creado exitosamente:", {
+          boucherId: boucherCreado._id?.slice(-6),
+          boucherNumber: boucherCreado.boucherNumber,
+          voucherId: boucherCreado.voucherId
+        });
+      } catch (postError) {
+        // Manejo específico de errores de red
+        if (postError.code === 'ECONNABORTED' || postError.message?.includes('timeout')) {
+          throw new Error("Tiempo de espera agotado. Verifica tu conexión e intenta nuevamente.");
+        }
+        if (postError.code === 'ECONNREFUSED' || postError.message?.includes('Network Error')) {
+          throw new Error("No se pudo conectar con el servidor. Verifica que el backend esté funcionando.");
+        }
+        if (postError.response) {
+          // Error del backend (4xx, 5xx)
+          const status = postError.response.status;
+          const errorMsg = postError.response.data?.message || postError.message;
+          
+          if (status === 404) {
+            throw new Error("Mesa o comandas no encontradas. Por favor, recarga la pantalla.");
+          } else if (status === 400) {
+            throw new Error(`Datos inválidos: ${errorMsg}`);
+          } else if (status === 500) {
+            throw new Error("Error en el servidor. Por favor, intenta nuevamente o contacta al administrador.");
+          } else {
+            throw new Error(`Error ${status}: ${errorMsg}`);
+          }
+        }
+        throw postError; // Re-lanzar si no es un error conocido
+      }
 
       // Guardar boucher en estado local
       setBoucherData(boucherCreado);
@@ -899,40 +969,91 @@ const PagosScreen = () => {
 
       // Generar PDF con el boucher creado
       setMensajeCarga("Generando voucher...");
-      await generarPDF(boucherCreado);
+      try {
+        await generarPDF(boucherCreado);
+        console.log("✅ [PAGO] PDF generado exitosamente");
+      } catch (pdfError) {
+        console.error("⚠️ [PAGO] Error generando PDF (continuando de todas formas):", pdfError);
+        // No bloquear el flujo si falla la generación del PDF
+      }
 
-      // Cerrar overlay de carga
+      // ✅ Cerrar overlay de carga ANTES del Alert
       setProcesandoPago(false);
       setMensajeCarga("Procesando pago...");
 
+      // ✅ Mostrar alerta de éxito
       Alert.alert(
-        "✅", 
-        `Pago procesado y voucher generado.\n\nCliente: ${cliente.nombre}\nVoucher ID: ${boucherCreado.voucherId}\n\nLa mesa ahora está en estado 'Pagado'. Puedes liberarla desde la pantalla de Inicio.`
+        "✅ Pago Exitoso", 
+        `Pago procesado y voucher generado.\n\nCliente: ${cliente.nombre || "Invitado"}\nVoucher ID: ${boucherCreado.voucherId}\n\nLa mesa ahora está en estado 'Pagado'.`,
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              // Limpiar estado y volver a Inicio
+              setComandas([]);
+              setMesa(null);
+              setClienteSeleccionado(null);
+              setBoucherData(null);
+              navigation.navigate("Inicio");
+            }
+          }
+        ]
       );
       
-      // Limpiar estado y volver a Inicio
-      setComandas([]);
-      setMesa(null);
-      setClienteSeleccionado(null);
-      navigation.navigate("Inicio");
     } catch (error) {
-      console.error("❌ Error procesando pago:", error);
+      // ✅ SIEMPRE resetear loading en caso de error
+      console.error("❌ [PAGO] Error procesando pago:", {
+        error: error.message,
+        stack: error.stack,
+        response: error.response?.data
+      });
+      
+      // Loggear error completo
+      try {
+        await logger.error(error, {
+          action: 'procesar_pago_con_cliente',
+          clienteId: cliente?._id,
+          mesaId: mesaFinal?._id,
+          cantidadComandas: comandasFinales.length,
+          timestamp: moment().tz("America/Lima").format("YYYY-MM-DD HH:mm:ss"),
+        });
+      } catch (logError) {
+        console.error("❌ Error loggeando:", logError);
+      }
+      
+      // ✅ Resetear loading
       setProcesandoPago(false);
       setMensajeCarga("Procesando pago...");
       
-      const errorMessage = error.response?.data?.message || error.message || "No se pudo procesar el pago";
-      Alert.alert("Error", errorMessage);
+      // ✅ Mostrar mensaje de error específico
+      const errorMessage = error.message || error.response?.data?.message || "No se pudo procesar el pago. Por favor, intenta nuevamente.";
+      Alert.alert("❌ Error al Procesar Pago", errorMessage);
+    } finally {
+      // ✅ GARANTIZAR que el loading siempre se resetee (doble seguridad)
+      setProcesandoPago(false);
+      setMensajeCarga("Procesando pago...");
     }
   };
 
   const handleClienteSeleccionado = (cliente) => {
-    setClienteSeleccionado(cliente);
+    // ✅ Validar cliente antes de continuar
+    if (!cliente || !cliente._id) {
+      Alert.alert("Error", "No se pudo obtener la información del cliente. Por favor, intenta nuevamente.");
+      return;
+    }
+
+    // ✅ Cerrar modal inmediatamente
     setModalClienteVisible(false);
     
-    // Mostrar confirmación antes de procesar el pago
+    // ✅ Calcular total correctamente (usar route.params si está disponible)
+    const paramsParaTotal = route.params || {};
+    const totalParaMostrar = paramsParaTotal.totalPendiente || total || 0;
+    const totalConIGV = (totalParaMostrar * 1.18).toFixed(2);
+    
+    // ✅ Mostrar confirmación antes de procesar el pago
     Alert.alert(
       "Confirmar Pago",
-      `¿Deseas continuar con el pago para el cliente ${cliente.nombre || "Invitado"}?\n\nTotal: S/. ${(total * 1.18).toFixed(2)}`,
+      `¿Deseas continuar con el pago para el cliente ${cliente.nombre || "Invitado"}?\n\nTotal: S/. ${totalConIGV}`,
       [
         {
           text: "NO",
@@ -944,6 +1065,8 @@ const PagosScreen = () => {
         {
           text: "SÍ",
           onPress: () => {
+            // ✅ Guardar cliente seleccionado y procesar
+            setClienteSeleccionado(cliente);
             // Procesar el pago con el cliente seleccionado
             procesarPagoConCliente(cliente);
           }
