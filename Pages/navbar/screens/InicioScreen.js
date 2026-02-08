@@ -351,6 +351,8 @@ const InicioScreen = () => {
   const [mensajeCargaEliminacionTodas, setMensajeCargaEliminacionTodas] = useState("");
   const [verificandoComandas, setVerificandoComandas] = useState(false);
   const [mensajeCargaVerificacion, setMensajeCargaVerificacion] = useState("");
+  const [eliminandoPlatos, setEliminandoPlatos] = useState(false);
+  const [mensajeCargaEliminacionPlatos, setMensajeCargaEliminacionPlatos] = useState("");
 
   // 🔥 FUNCIÓN CRÍTICA: Verificar y cargar todas las comandas y platos antes de permitir pago
   const verificarYRecargarComandas = async (mesa, comandasActuales) => {
@@ -1464,6 +1466,12 @@ const InicioScreen = () => {
   const [comandaAEliminar, setComandaAEliminar] = useState(null);
   const [comandasAEliminar, setComandasAEliminar] = useState([]);
   const [motivoEliminacionComanda, setMotivoEliminacionComanda] = useState("");
+  
+  // Estados para modal de eliminar platos de comanda
+  const [modalEliminarPlatosVisible, setModalEliminarPlatosVisible] = useState(false);
+  const [comandaEliminarPlatos, setComandaEliminarPlatos] = useState(null);
+  const [platosSeleccionadosEliminar, setPlatosSeleccionadosEliminar] = useState([]);
+  const [motivoEliminarPlatos, setMotivoEliminarPlatos] = useState("");
 
   const handleGuardarEdicion = async () => {
     if (!comandaEditando) return;
@@ -1924,6 +1932,219 @@ const InicioScreen = () => {
     setComandasAEliminar(comandasMesa);
     setMotivoEliminacionComanda("");
     setModalEliminarTodasVisible(true);
+  };
+
+  // Handler para abrir modal de eliminar platos de comanda
+  const handleAbrirEliminarPlatos = async (mesa, comandasMesa) => {
+    if (!comandasMesa || comandasMesa.length === 0) {
+      Alert.alert("Error", "No hay comandas activas en esta mesa");
+      return;
+    }
+
+    // Obtener la comanda activa más reciente
+    const comandaActiva = comandasMesa[0];
+    
+    if (!comandaActiva) {
+      Alert.alert("Error", "No se encontró una comanda activa");
+      return;
+    }
+
+    // Verificar que la comanda tenga platos
+    if (!comandaActiva.platos || comandaActiva.platos.length === 0) {
+      Alert.alert("Error", "La comanda no tiene platos");
+      return;
+    }
+
+    // Determinar el estado de la mesa para filtrar platos correctamente
+    const estadoMesa = mesa?.estado?.toLowerCase() || "";
+    const estadoComanda = comandaActiva.status?.toLowerCase() || "";
+    
+    // Si la mesa está en "recoger" o la comanda tiene estado "recoger", filtrar platos "recoger"
+    // Si está en "preparado", filtrar platos "entregado"
+    const estadoPlatoFiltrar = (estadoMesa === "recoger" || estadoComanda === "recoger") ? "recoger" : "entregado";
+    
+    // Filtrar platos según el estado de la mesa/comanda
+    const platosFiltrados = comandaActiva.platos.filter((platoItem, index) => {
+      const estado = platoItem.estado?.toLowerCase() || "";
+      return estado === estadoPlatoFiltrar && !platoItem.eliminado;
+    });
+
+    if (platosFiltrados.length === 0) {
+      const mensaje = estadoPlatoFiltrar === "recoger" 
+        ? "No hay platos en estado 'recoger' para eliminar en esta comanda"
+        : "No hay platos entregados para eliminar en esta comanda";
+      Alert.alert("Info", mensaje);
+      return;
+    }
+
+    // Guardar comanda con información del estado para el modal
+    setComandaEliminarPlatos({
+      ...comandaActiva,
+      estadoFiltro: estadoPlatoFiltrar,
+      estadoMesa: estadoMesa
+    });
+    setPlatosSeleccionadosEliminar([]);
+    setMotivoEliminarPlatos("");
+    setModalEliminarPlatosVisible(true);
+  };
+
+  // Handler para confirmar eliminación de platos
+  const handleConfirmarEliminarPlatos = async () => {
+    if (!comandaEliminarPlatos) {
+      Alert.alert("Error", "No hay comanda seleccionada");
+      return;
+    }
+
+    if (platosSeleccionadosEliminar.length === 0) {
+      Alert.alert("Error", "Por favor, selecciona al menos un plato para eliminar");
+      return;
+    }
+
+    if (!motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 5) {
+      Alert.alert("Error", "Por favor, indique el motivo de la eliminación (mínimo 5 caracteres)");
+      return;
+    }
+
+    // FIX #3: Verificar si se seleccionaron TODOS los platos disponibles
+    const estadoFiltro = comandaEliminarPlatos?.estadoFiltro || "entregado";
+    const platosDisponibles = comandaEliminarPlatos.platos.filter((p, i) => {
+      const estado = p.estado?.toLowerCase() || "";
+      return estado === estadoFiltro && !p.eliminado;
+    });
+    const totalPlatosDisponibles = platosDisponibles.length;
+    const totalSeleccionados = platosSeleccionadosEliminar.length;
+
+    // Si se seleccionaron todos los platos, eliminar la comanda completa
+    if (totalSeleccionados === totalPlatosDisponibles && totalPlatosDisponibles > 0) {
+      Alert.alert(
+        "⚠️ Eliminar Comanda Completa",
+        `Has seleccionado todos los platos (${totalSeleccionados}). Esto eliminará la comanda completa. ¿Deseas continuar?`,
+        [
+          {
+            text: "Cancelar",
+            style: "cancel"
+          },
+          {
+            text: "Eliminar Comanda",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                setModalEliminarPlatosVisible(false);
+                
+                // Obtener la mesa desde comandaEliminarPlatos
+                const mesa = comandaEliminarPlatos.mesas || mesaOpciones;
+                const comandasMesa = [comandaEliminarPlatos];
+                
+                // Llamar a la función existente para eliminar última comanda
+                await handleEliminarUltimaComanda(mesa, comandasMesa);
+                
+                // Limpiar estados
+                setComandaEliminarPlatos(null);
+                setPlatosSeleccionadosEliminar([]);
+                setMotivoEliminarPlatos("");
+              } catch (error) {
+                console.error('❌ Error eliminando comanda completa:', error);
+                Alert.alert("Error", "No se pudo eliminar la comanda. Por favor, intenta nuevamente.");
+              }
+            }
+          }
+        ]
+      );
+      return;
+    }
+
+    // Eliminar directamente con overlay de carga (sin alerta de confirmación)
+    try {
+      setModalEliminarPlatosVisible(false);
+      
+      // Activar overlay de carga
+      setEliminandoPlatos(true);
+      setMensajeCargaEliminacionPlatos("Eliminando platos de la comanda...");
+      
+      // Preparar índices de platos a eliminar
+      const platosAEliminar = platosSeleccionadosEliminar.map(index => parseInt(index));
+      
+      const comandaId = comandaEliminarPlatos._id?.toString() || comandaEliminarPlatos._id;
+      
+      const usuarioId = userInfo?._id || userInfo?.id;
+      
+      const eliminarURL = apiConfig.isConfigured 
+        ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}/eliminar-platos`
+        : `${COMANDA_API}/${comandaId}/eliminar-platos`;
+      
+      console.log('🗑️ Eliminando platos de comanda:', {
+        comandaId,
+        platosAEliminar,
+        motivo: motivoEliminarPlatos.trim(),
+        usuarioId
+      });
+
+      setMensajeCargaEliminacionPlatos("Enviando solicitud al servidor...");
+      
+      const response = await axios.put(
+        eliminarURL,
+        {
+          platosAEliminar: platosAEliminar,
+          motivo: motivoEliminarPlatos.trim(),
+          mozoId: usuarioId
+        },
+        { timeout: 15000 }
+      );
+
+      console.log('✅ Platos eliminados exitosamente:', response.data);
+
+      // Verificar que los platos se eliminaron correctamente
+      setMensajeCargaEliminacionPlatos("Verificando eliminación de platos...");
+      
+      // Obtener la comanda actualizada para verificar
+      const comandaVerificarURL = apiConfig.isConfigured 
+        ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}`
+        : `${COMANDA_API}/${comandaId}`;
+      
+      const comandaVerificada = await axios.get(comandaVerificarURL, { timeout: 10000 });
+      
+      // Verificar que los platos seleccionados estén marcados como eliminados
+      const platosEliminadosCorrectamente = platosAEliminar.every(index => {
+        const plato = comandaVerificada.data.platos?.[index];
+        return plato && plato.eliminado === true;
+      });
+
+      if (!platosEliminadosCorrectamente) {
+        console.warn('⚠️ Algunos platos no se eliminaron correctamente');
+      }
+
+      setMensajeCargaEliminacionPlatos("Actualizando datos...");
+
+      // Actualizar comandas y mesas
+      await Promise.all([
+        obtenerComandasHoy().catch(err => console.warn("Error actualizando comandas:", err)),
+        obtenerMesas().catch(err => console.warn("Error actualizando mesas:", err))
+      ]);
+
+      // Cerrar overlay de carga
+      setEliminandoPlatos(false);
+      setMensajeCargaEliminacionPlatos("");
+
+      // Limpiar estados
+      setComandaEliminarPlatos(null);
+      setPlatosSeleccionadosEliminar([]);
+      setMotivoEliminarPlatos("");
+
+      Alert.alert(
+        "✅ Éxito",
+        `${platosAEliminar.length} plato(s) eliminado(s) exitosamente de la comanda.`
+      );
+    } catch (error) {
+      // Cerrar overlay de carga en caso de error
+      setEliminandoPlatos(false);
+      setMensajeCargaEliminacionPlatos("");
+      
+      console.error('❌ Error eliminando platos:', error);
+      Alert.alert(
+        "Error",
+        error.response?.data?.message || "No se pudieron eliminar los platos. Por favor, intenta nuevamente."
+      );
+    }
   };
 
   // Función para confirmar eliminación de todas las comandas (desde modal)
@@ -3963,7 +4184,7 @@ const InicioScreen = () => {
           <View style={styles.modalOpcionesContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                Mesa {mesaOpciones?.nummesa || 'N/A'} - Preparado
+                Mesa {mesaOpciones?.nummesa || 'N/A'} - {mesaOpciones?.estado === 'recoger' ? 'Recoger' : 'Preparado'}
               </Text>
               <TouchableOpacity onPress={() => setModalOpcionesMesaVisible(false)}>
                 <MaterialCommunityIcons name="close" size={24} color={theme.colors.text.primary} />
@@ -3971,7 +4192,9 @@ const InicioScreen = () => {
             </View>
             
             <Text style={styles.modalOpcionesMessage}>
-              El pedido está listo. ¿Qué deseas hacer?
+              {mesaOpciones?.estado === 'recoger' 
+                ? 'El pedido está listo para recoger. ¿Qué deseas hacer?'
+                : 'El pedido está listo. ¿Qué deseas hacer?'}
             </Text>
 
             <View style={styles.modalOpcionesButtons}>
@@ -4109,11 +4332,215 @@ const InicioScreen = () => {
                 style={[styles.modalOpcionesButton, styles.modalOpcionesButtonDanger]}
                 onPress={() => {
                   setModalOpcionesMesaVisible(false);
+                  handleAbrirEliminarPlatos(mesaOpciones, comandasOpciones);
+                }}
+              >
+                <MaterialCommunityIcons name="delete-circle-outline" size={24} color={theme.colors.text.white} />
+                <Text style={styles.modalOpcionesButtonText}>Eliminar plato Comanda</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalOpcionesButton, styles.modalOpcionesButtonDanger]}
+                onPress={() => {
+                  setModalOpcionesMesaVisible(false);
                   handleEliminarTodasComandasMesa(mesaOpciones, comandasOpciones);
                 }}
               >
                 <MaterialCommunityIcons name="delete" size={24} color={theme.colors.text.white} />
                 <Text style={styles.modalOpcionesButtonText}>Eliminar Todas las Comandas</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Eliminar Platos de Comanda */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalEliminarPlatosVisible}
+        onRequestClose={() => {
+          setModalEliminarPlatosVisible(false);
+          setMotivoEliminarPlatos("");
+          setPlatosSeleccionadosEliminar([]);
+          setComandaEliminarPlatos(null);
+        }}
+      >
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContainer}>
+            <View style={[styles.modalHeader, { backgroundColor: colors.danger, padding: theme.spacing.md, borderRadius: theme.borderRadius.md, marginBottom: 0 }]}>
+              <Text style={[styles.modalTitle, { color: theme.colors.text.white, flex: 1 }]}>
+                🗑️ Eliminar platos Comanda #{comandaEliminarPlatos?.comandaNumber || comandaEliminarPlatos?._id?.slice(-4) || 'N/A'}
+              </Text>
+              <TouchableOpacity onPress={() => {
+                setModalEliminarPlatosVisible(false);
+                setMotivoEliminarPlatos("");
+                setPlatosSeleccionadosEliminar([]);
+                setComandaEliminarPlatos(null);
+              }}>
+                <MaterialCommunityIcons name="close" size={24} color={theme.colors.text.white} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView 
+              style={styles.modalScrollView}
+              contentContainerStyle={styles.modalScrollContent}
+              nestedScrollEnabled={true}
+              showsVerticalScrollIndicator={true}
+            >
+              {/* Título de la mesa */}
+              <View style={styles.editSection}>
+                <Text style={[styles.editLabel, { fontSize: 16, fontWeight: 'bold', marginBottom: 10 }]}>
+                  Mesa {comandaEliminarPlatos?.mesas?.nummesa || 'N/A'} - {comandaEliminarPlatos?.estadoMesa === 'recoger' ? 'Estado Recoger' : 'Comanda activa'}
+                </Text>
+              </View>
+
+              {/* Lista de platos según estado */}
+              {comandaEliminarPlatos?.platos && (() => {
+                const estadoFiltro = comandaEliminarPlatos?.estadoFiltro || "entregado";
+                const esRecoger = estadoFiltro === "recoger";
+                
+                return (
+                  <View style={styles.editSection}>
+                    <Text style={[styles.editLabel, { color: colors.danger, fontWeight: 'bold', marginBottom: 10 }]}>
+                      {esRecoger 
+                        ? "Platos en estado recoger (selecciona los que deseas eliminar):"
+                        : "Platos entregados (selecciona los que deseas eliminar):"}
+                    </Text>
+                    
+                    {comandaEliminarPlatos.platos.map((platoItem, index) => {
+                      const plato = platoItem.plato || platoItem;
+                      const cantidad = comandaEliminarPlatos.cantidades?.[index] || 1;
+                      const precio = plato?.precio || platoItem.precio || 0;
+                      const subtotal = precio * cantidad;
+                      const nombre = plato?.nombre || "Plato desconocido";
+                      const estado = platoItem.estado?.toLowerCase() || "";
+                      
+                      // Filtrar según el estado (recoger o entregado)
+                      if (estado !== estadoFiltro || platoItem.eliminado) {
+                        return null;
+                      }
+
+                    const isSelected = platosSeleccionadosEliminar.includes(index.toString());
+
+                    return (
+                      <TouchableOpacity
+                        key={`plato-${index}`}
+                        style={[
+                          styles.platoEditItem,
+                          {
+                            backgroundColor: isSelected ? '#FEF2F2' : '#FFFFFF',
+                            borderColor: isSelected ? colors.danger : '#E0E0E0',
+                            borderWidth: isSelected ? 2 : 1,
+                            marginBottom: 8
+                          }
+                        ]}
+                        onPress={() => {
+                          const indexStr = index.toString();
+                          if (isSelected) {
+                            setPlatosSeleccionadosEliminar(prev => prev.filter(i => i !== indexStr));
+                          } else {
+                            setPlatosSeleccionadosEliminar(prev => [...prev, indexStr]);
+                          }
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                          <View style={[
+                            {
+                              width: 24,
+                              height: 24,
+                              borderRadius: 4,
+                              borderWidth: 2,
+                              borderColor: isSelected ? colors.danger : '#9CA3AF',
+                              backgroundColor: isSelected ? colors.danger : 'transparent',
+                              marginRight: 12,
+                              justifyContent: 'center',
+                              alignItems: 'center'
+                            }
+                          ]}>
+                            {isSelected && (
+                              <MaterialCommunityIcons name="check" size={16} color="#FFFFFF" />
+                            )}
+                          </View>
+                          <View style={styles.platoEditInfo}>
+                            <Text 
+                              style={[styles.platoEditNombre, { color: colors.danger }]}
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                            >
+                              {nombre} x{cantidad}
+                            </Text>
+                            <Text style={[styles.platoEditPrecio, { color: colors.danger, marginLeft: 8 }]}>
+                              ✓ {esRecoger ? 'recoger' : 'entregado'} - S/. {subtotal.toFixed(2)}
+                            </Text>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  
+                  {comandaEliminarPlatos.platos.filter((p, i) => {
+                    const estado = p.estado?.toLowerCase() || "";
+                    return estado === estadoFiltro && !p.eliminado;
+                  }).length === 0 && (
+                    <Text style={{ color: colors.danger, fontSize: 14, textAlign: 'center', marginTop: 20 }}>
+                      {esRecoger 
+                        ? "No hay platos en estado 'recoger' disponibles para eliminar"
+                        : "No hay platos entregados disponibles para eliminar"}
+                    </Text>
+                  )}
+                  </View>
+                );
+              })()}
+
+              {/* Texto obligatorio rojo */}
+              <View style={styles.editSection}>
+                <Text style={[styles.editLabel, { color: colors.danger, fontWeight: 'bold', marginBottom: 10 }]}>
+                  Por favor, indique el motivo de la eliminación de platos *
+                </Text>
+                <TextInput
+                  style={[styles.observacionesInput, { 
+                    borderColor: !motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 5 ? colors.danger : theme.colors.primary,
+                    borderWidth: 2,
+                    minHeight: 100
+                  }]}
+                  placeholder="Ej: Cliente no quiso, plato mal preparado, error en pedido..."
+                  placeholderTextColor={theme.colors.text.light}
+                  value={motivoEliminarPlatos}
+                  onChangeText={setMotivoEliminarPlatos}
+                  multiline
+                  numberOfLines={4}
+                />
+                {(!motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 5) && (
+                  <Text style={{ color: colors.danger, fontSize: 12, marginTop: 5 }}>
+                    * El motivo es obligatorio (mínimo 5 caracteres)
+                  </Text>
+                )}
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.saveButton, { 
+                  backgroundColor: !motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 5 || platosSeleccionadosEliminar.length === 0 ? '#9CA3AF' : colors.danger,
+                  opacity: !motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 5 || platosSeleccionadosEliminar.length === 0 ? 0.5 : 1
+                }]}
+                onPress={handleConfirmarEliminarPlatos}
+                disabled={!motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 5 || platosSeleccionadosEliminar.length === 0}
+              >
+                <MaterialCommunityIcons name="delete-circle" size={20} color={theme.colors.text.white} />
+                <Text style={styles.saveButtonText}> ELIMINAR PLATOS SELECCIONADOS</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setModalEliminarPlatosVisible(false);
+                  setMotivoEliminarPlatos("");
+                  setPlatosSeleccionadosEliminar([]);
+                  setComandaEliminarPlatos(null);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -4133,6 +4560,11 @@ const InicioScreen = () => {
       {/* Overlay de Carga para Verificación de Comandas antes de Pagar */}
       {verificandoComandas && (
         <AnimatedOverlay mensaje={mensajeCargaVerificacion} />
+      )}
+
+      {/* Overlay de Carga para Eliminación de Platos de Comanda */}
+      {eliminandoPlatos && (
+        <OverlayEliminacion mensaje={mensajeCargaEliminacionPlatos} />
       )}
 
     </SafeAreaView>
@@ -4276,8 +4708,9 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
   modalContainer: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.lg,
-    width: "90%",
-    maxHeight: "90%",
+    width: "95%",
+    maxWidth: 500,
+    maxHeight: "90vh",
     minHeight: 400,
     padding: theme.spacing.lg,
     ...theme.shadows.large,
@@ -4304,7 +4737,7 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
     marginBottom: theme.spacing.md,
   },
   editLabel: {
-    fontSize: 16,
+    fontSize: Math.max(14, Math.min(16, fontSize * 0.85)),
     fontWeight: "600",
     marginBottom: theme.spacing.sm,
     color: theme.colors.text.primary,
@@ -4314,17 +4747,21 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
     padding: theme.spacing.md,
     borderRadius: theme.borderRadius.md,
     marginBottom: theme.spacing.sm,
+    minHeight: 52, // Touch-safe height
   },
   platoEditInfo: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: theme.spacing.sm,
+    flex: 1,
   },
   platoEditNombre: {
-    fontSize: 16,
+    fontSize: Math.max(14, Math.min(16, fontSize * 0.85)),
     fontWeight: "600",
     flex: 1,
     color: theme.colors.text.primary,
+    numberOfLines: 1,
+    ellipsizeMode: "tail",
   },
   platoEditPrecio: {
     fontSize: 16,
@@ -4495,11 +4932,14 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
     padding: theme.spacing.md,
     borderRadius: theme.borderRadius.md,
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 52, // Touch-safe height for S24 FE
+    minWidth: 120,
   },
   saveButtonText: {
     color: theme.colors.text.white,
     fontWeight: "700",
-    fontSize: 14,
+    fontSize: Math.max(14, Math.min(16, fontSize * 0.9)),
   },
   cancelButton: {
     flex: 1,
