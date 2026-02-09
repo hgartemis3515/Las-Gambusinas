@@ -1464,10 +1464,12 @@ const InicioScreen = () => {
       // El usuario puede usar la barra derecha para navegar
     } else if (estado === "Pedido" || estado?.toLowerCase() === "pedido") {
       const comandasMesa = getComandasPorMesa(mesa.nummesa);
-      const comandaActiva = comandasMesa.find(c => 
+      const comandasActivas = comandasMesa.filter(c => 
         c.status?.toLowerCase() !== "pagado" && 
         c.status?.toLowerCase() !== "completado"
-      ) || comandasMesa[0];
+      );
+      
+      const comandaActiva = comandasActivas[0] || comandasMesa[0];
 
       if (comandaActiva) {
         const mozoComandaId = comandaActiva.mozos?._id || comandaActiva.mozos;
@@ -1482,28 +1484,16 @@ const InicioScreen = () => {
           return;
         }
 
-        Alert.alert(
-          `Mesa ${mesa.nummesa}`,
-          "¿Qué deseas hacer?",
-          [
-            {
-              text: "Editar",
-              onPress: async () => {
-                await obtenerPlatos();
-                await handleEditarComanda(comandaActiva);
-              }
-            },
-            {
-              text: "Eliminar",
-              style: "destructive",
-              onPress: () => handleEliminarComanda(comandaActiva, mesa)
-            },
-            {
-              text: "Cancelar",
-              style: "cancel"
-            }
-          ]
-        );
+        // Navegar al nuevo screen de detalle de comanda
+        navigation.navigate('ComandaDetalle', {
+          mesa: mesa,
+          comandas: comandasActivas.length > 0 ? comandasActivas : [comandaActiva],
+          onRefresh: () => {
+            // Callback para refrescar datos cuando se vuelva
+            obtenerMesas();
+            obtenerComandasHoy();
+          }
+        });
       }
     } else if (estado === "Preparado" || estado?.toLowerCase() === "preparado") {
       // Obtener TODAS las comandas activas de la mesa (no solo las preparadas)
@@ -1553,12 +1543,17 @@ const InicioScreen = () => {
           return;
         }
 
-        // Si es el mismo mozo, mostrar opciones en Modal personalizado
-        // IMPORTANTE: Pasar TODAS las comandas activas (ordenadas por fecha)
-        setMesaOpciones(mesa);
-        setComandasOpciones(comandasOrdenadas); // Usar comandas ordenadas (más recientes primero)
-        setModalOpcionesMesaVisible(true);
-        console.log(`✅ Modal abierto con ${comandasOrdenadas.length} comanda(s) activa(s)`);
+        // Si es el mismo mozo, navegar al screen de detalle de comanda
+        navigation.navigate('ComandaDetalle', {
+          mesa: mesa,
+          comandas: comandasOrdenadas,
+          onRefresh: () => {
+            // Callback para refrescar datos cuando se vuelva
+            obtenerMesas();
+            obtenerComandasHoy();
+          }
+        });
+        console.log(`✅ Navegando a ComandaDetalle con ${comandasOrdenadas.length} comanda(s) activa(s)`);
       }
     } else if (estado === "Pagado" || estado?.toLowerCase() === "pagado") {
       // Mesa en estado Pagado - mostrar opciones de Imprimir Boucher y Liberar
