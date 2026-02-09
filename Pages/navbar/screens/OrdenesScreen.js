@@ -12,7 +12,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
+// 🔥 Usar axios configurado globalmente (timeout 10s, anti-bloqueo)
+import axios from "../../../config/axiosConfig";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API, COMANDASEARCH_API_GET, apiConfig } from "../../../apiConfig";
 import { useTheme } from "../../../context/ThemeContext";
@@ -181,6 +182,11 @@ const OrdenesScreen = () => {
     useCallback(() => {
       loadMesaData();
       loadUserData(); // Recargar usuario para asegurar que esté actualizado
+      
+      // 🔥 CRÍTICO: Resetear estado de envío cuando la pantalla se enfoca
+      // Esto previene que el botón quede en "Enviando..." si el usuario navega y vuelve
+      setIsSendingComanda(false);
+      setMostrarOverlayCarga(false);
     }, [])
   );
 
@@ -333,6 +339,50 @@ const OrdenesScreen = () => {
       total += plato.precio * cantidad;
     });
     return total.toFixed(2);
+  };
+
+  // 🔥 Función para verificar si la comanda se creó en el backend
+  const verificarComandaEnBackend = async (mesaId, mozoId, comandaNumber = null) => {
+    try {
+      setMensajeCarga("Verificando comanda en el servidor...");
+      
+      // Obtener comandas del día actual
+      const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
+      const comandasURL = apiConfig.isConfigured 
+        ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
+        : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
+      
+      const response = await axios.get(comandasURL, { timeout: 8000 });
+      const comandas = response.data || [];
+      
+      // Filtrar comandas recientes (últimos 2 minutos) de esta mesa y mozo
+      const ahora = moment().tz("America/Lima");
+      const comandasRecientes = comandas.filter(c => {
+        const comandaMesaId = c.mesas?._id?.toString() || c.mesas?.toString() || c.mesas;
+        const comandaMozoId = c.mozos?._id?.toString() || c.mozos?.toString() || c.mozos;
+        const fechaCreacion = moment(c.fechaCreacion || c.createdAt).tz("America/Lima");
+        const minutosDiferencia = ahora.diff(fechaCreacion, 'minutes');
+        
+        const coincideMesa = comandaMesaId === mesaId?.toString();
+        const coincideMozo = comandaMozoId === mozoId?.toString();
+        const esReciente = minutosDiferencia <= 2; // Últimos 2 minutos
+        const coincideNumero = comandaNumber ? c.comandaNumber === comandaNumber : true;
+        
+        return coincideMesa && coincideMozo && esReciente && coincideNumero;
+      });
+      
+      if (comandasRecientes.length > 0) {
+        const comandaEncontrada = comandasRecientes[0];
+        console.log(`✅ [VERIFICACIÓN] Comanda encontrada en backend: #${comandaEncontrada.comandaNumber}`);
+        return { success: true, comanda: comandaEncontrada };
+      }
+      
+      console.log(`⚠️ [VERIFICACIÓN] No se encontró comanda reciente en backend`);
+      return { success: false };
+    } catch (error) {
+      console.error("❌ [VERIFICACIÓN] Error verificando comanda en backend:", error);
+      return { success: false, error };
+    }
   };
 
   const handleEnviarComanda = async () => {
@@ -533,23 +583,83 @@ const OrdenesScreen = () => {
       const comandaURL = apiConfig.isConfigured 
         ? apiConfig.getEndpoint('/comanda')
         : COMANDA_API;
-      const response = await axios.post(comandaURL, comandaData, { timeout: 10000 });
       
-      const comandaNumber = response.data.comanda?.comandaNumber || response.data.comandaNumber || "N/A";
-      const comandaCreada = response.data.comanda;
+      // 🔥 MEJORADO: Intentar POST y manejar respuesta inteligentemente
+      let response;
+      let comandaNumber = null;
+      let comandaCreada = null;
       
-      // Verificar que la comanda se creó correctamente
-      if (!comandaCreada || !comandaCreada._id) {
-        setMostrarOverlayCarga(false);
-        Alert.alert("Error", "No se pudo crear la comanda correctamente");
-        setIsSendingComanda(false);
-        return;
+      try {
+        response = await axios.post(comandaURL, comandaData, { timeout: 10000 });
+        
+        // Extraer datos de la respuesta
+        comandaNumber = response.data?.comanda?.comandaNumber || response.data?.comandaNumber || null;
+        comandaCreada = response.data?.comanda || response.data;
+        
+        // Verificar que la comanda se creó correctamente
+        if (!comandaCreada || !comandaCreada._id) {
+          // Si no hay comanda en la respuesta, verificar en backend
+          console.warn("⚠️ No se encontró comanda en respuesta, verificando en backend...");
+          const verificacion = await verificarComandaEnBackend(
+            mesaActualizada._id,
+            userInfo._id,
+            comandaNumber
+          );
+          
+          if (verificacion.success) {
+            comandaCreada = verificacion.comanda;
+            comandaNumber = verificacion.comanda.comandaNumber;
+            console.log(`✅ Comanda verificada en backend: #${comandaNumber}`);
+          } else {
+            setMostrarOverlayCarga(false);
+            Alert.alert("Error", "No se pudo crear la comanda correctamente");
+            setIsSendingComanda(false);
+            return;
+          }
+        }
+      } catch (postError) {
+        // 🔥 MEJORADO: Si hay error en POST, verificar si la comanda se creó de todas formas
+        console.warn("⚠️ Error en POST comanda, verificando si se creó:", postError.message);
+        
+        // Intentar extraer datos del error si existen
+        if (postError.response?.data) {
+          comandaNumber = postError.response.data?.comanda?.comandaNumber || postError.response.data?.comandaNumber;
+          comandaCreada = postError.response.data?.comanda || postError.response.data;
+        }
+        
+        // Si no hay datos en el error, verificar en backend
+        if (!comandaCreada || !comandaCreada._id) {
+          setMensajeCarga("Verificando si la comanda se creó...");
+          const verificacion = await verificarComandaEnBackend(
+            mesaActualizada._id,
+            userInfo._id,
+            comandaNumber
+          );
+          
+          if (verificacion.success) {
+            comandaCreada = verificacion.comanda;
+            comandaNumber = verificacion.comanda.comandaNumber;
+            console.log(`✅ Comanda encontrada en backend después de error: #${comandaNumber}`);
+            // Continuar con el flujo normal (no lanzar error)
+          } else {
+            // Realmente falló, lanzar el error para que se maneje en el catch externo
+            throw postError;
+          }
+        } else {
+          // Hay datos en el error, la comanda se creó exitosamente
+          console.log(`✅ Comanda creada exitosamente (datos en error response): #${comandaNumber}`);
+        }
       }
       
-      setMensajeCarga("Verificando comanda creada...");
+      // Si llegamos aquí, la comanda se creó exitosamente
+      if (!comandaNumber) {
+        comandaNumber = comandaCreada?.comandaNumber || "N/A";
+      }
+      
+      setMensajeCarga(`¡Comanda #${comandaNumber} creada!`);
       console.log(`✅ Comanda #${comandaNumber} creada correctamente`);
       
-      // Verificar que la mesa esté en estado "pedido" en el servidor
+      // Verificar que la mesa esté en estado "pedido" en el servidor (opcional, no bloqueante)
       setMensajeCarga("Verificando estado de la mesa...");
       const mesaId = mesaActualizada._id;
       const mesaNum = mesaActualizada.nummesa;
@@ -615,7 +725,7 @@ const OrdenesScreen = () => {
         console.error("⚠️ Error actualizando estado local de mesa:", error);
       }
       
-      setMensajeCarga("Comanda creada exitosamente");
+      setMensajeCarga(`¡Comanda #${comandaNumber} enviada!`);
       
       // Limpiar datos locales
       await AsyncStorage.removeItem("mesaSeleccionada");
@@ -632,16 +742,62 @@ const OrdenesScreen = () => {
       // Esperar un momento antes de navegar para que el usuario vea el mensaje de éxito
       await new Promise(resolve => setTimeout(resolve, 800));
       
-      // Ocultar overlay y navegar a Inicio
+      // 🔥 CRÍTICO: Resetear estado ANTES de navegar
+      setIsSendingComanda(false);
       setMostrarOverlayCarga(false);
+      
+      // Navegar a Inicio
       navigation.navigate("Inicio");
     } catch (error) {
-      console.error("❌ Error enviando comanda:", error);
+      // 🔥 MEJORADO: Verificación exhaustiva antes de mostrar cualquier error
+      console.warn("⚠️ Error capturado, verificando si comanda se creó:", error.message);
       
-      // Ocultar overlay de carga en caso de error
+      // Última verificación: buscar comanda en backend
+      setMensajeCarga("Verificando última vez...");
+      const verificacionFinal = await verificarComandaEnBackend(
+        mesaActualizada._id,
+        userInfo._id
+      );
+      
+      if (verificacionFinal.success) {
+        // ¡La comanda SÍ se creó! Continuar con éxito silencioso
+        console.log(`✅ Comanda encontrada en verificación final: #${verificacionFinal.comanda.comandaNumber}`);
+        comandaCreada = verificacionFinal.comanda;
+        comandaNumber = verificacionFinal.comanda.comandaNumber;
+        
+        // Continuar con el flujo de éxito (no mostrar error)
+        // Esto ejecutará el código después del try/catch que maneja el éxito
+        setMensajeCarga(`¡Comanda #${comandaNumber} enviada!`);
+        
+        // Limpiar datos locales
+        await AsyncStorage.removeItem("mesaSeleccionada");
+        await AsyncStorage.removeItem("selectedPlates");
+        await AsyncStorage.removeItem("selectedPlatesIds");
+        await AsyncStorage.removeItem("cantidadesComanda");
+        await AsyncStorage.removeItem("additionalDetails");
+        
+        setSelectedMesa(null);
+        setSelectedPlatos([]);
+        setCantidades({});
+        setObservaciones("");
+        
+        // Esperar un momento antes de navegar
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // 🔥 CRÍTICO: Resetear estado ANTES de navegar
+        setIsSendingComanda(false);
+        setMostrarOverlayCarga(false);
+        
+        // Navegar a Inicio
+        navigation.navigate("Inicio");
+        return; // Salir sin mostrar error
+      }
+      
+      // Si llegamos aquí, realmente falló - mostrar error apropiado
+      console.error("❌ Error real enviando comanda (verificación falló):", error);
       setMostrarOverlayCarga(false);
       
-      // Manejar errores HTTP 409 (Conflict) - Mesa ocupada
+      // Manejar errores HTTP específicos
       if (error.response?.status === 409) {
         Alert.alert(
           "Mesa Ocupada",
@@ -655,14 +811,20 @@ const OrdenesScreen = () => {
           [{ text: "OK" }]
         );
       } else {
+        // Error genérico - solo mostrar si realmente no se pudo crear
         Alert.alert(
           "Error",
           error.response?.data?.message || "No se pudo crear la comanda. Por favor, intenta nuevamente.",
           [{ text: "OK" }]
         );
       }
-    } finally {
+      
       setIsSendingComanda(false);
+    } finally {
+      // 🔥 GARANTÍA: Siempre resetear estado, incluso si hay errores inesperados
+      // Esto asegura que el botón nunca quede bloqueado
+      setIsSendingComanda(false);
+      setMostrarOverlayCarga(false);
     }
   };
 

@@ -23,6 +23,7 @@ import ModalClientes from "../../../Components/ModalClientes";
 import IconoBoton from "../../../Components/IconoBoton";
 import { useWindowDimensions } from "react-native";
 import { useSocket } from "../../../context/SocketContext";
+import logger from "../../../utils/logger";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -790,6 +791,151 @@ const PagosScreen = () => {
 
   // ✅ NUEVO FLUJO: Usar endpoint POST /boucher con comandasIds - Backend valida y procesa todo
   // ✅ IMPORTANTE: Usar SOLO comandas de route.params (backend = única fuente de verdad)
+  // 🔥 Función para validar comandas antes de enviar al backend
+  // MEJORADO: Obtener comandas FRESCAS del backend por mesa (no por IDs)
+  const validarComandasParaPago = async (comandasIds, mesaId) => {
+    try {
+      setMensajeCarga("Obteniendo comandas frescas del servidor...");
+      
+      // 🔥 CRÍTICO: Obtener comandas FRESCAS del backend por fecha y filtrar por mesa
+      // Esto asegura que tenemos el estado más reciente después de eliminar platos
+      const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
+      const comandasURL = apiConfig.isConfigured 
+        ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
+        : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
+      
+      // Obtener todas las comandas del día y filtrar por mesa
+      const mesaIdStr = mesaId?.toString() || mesaId;
+      const comandasResponse = await axios.get(comandasURL, { timeout: 10000 });
+      
+      const todasLasComandas = Array.isArray(comandasResponse.data) 
+        ? comandasResponse.data 
+        : (comandasResponse.data?.comandas || []);
+      
+      // Filtrar comandas de esta mesa que NO estén pagadas
+      const comandasBackend = todasLasComandas.filter(c => {
+        const comandaMesaId = c.mesas?._id?.toString() || c.mesas?.toString() || c.mesas;
+        const comandaMesaNum = c.mesas?.nummesa;
+        const coincideMesa = comandaMesaId === mesaIdStr || 
+                            (comandaMesaNum && comandaMesaNum.toString() === mesaIdStr);
+        const noPagada = c.status?.toLowerCase() !== 'pagado' && c.status?.toLowerCase() !== 'completado';
+        return coincideMesa && noPagada;
+      });
+      
+      console.log(`✅ [VALIDACIÓN] Obtenidas ${comandasBackend.length} comanda(s) fresca(s) del backend para mesa ${mesaIdStr?.slice(-6)}`);
+      
+      if (comandasIds.length > 0) {
+        console.log(`🔍 [VALIDACIÓN] Validando ${comandasIds.length} ID(s) específico(s):`, comandasIds.map(id => id?.slice(-6)));
+      } else {
+        console.log(`🔍 [VALIDACIÓN] Obteniendo todas las comandas válidas de la mesa (sin filtrar por IDs)`);
+      }
+      
+      // Filtrar comandas válidas (no eliminadas, no pagadas, con platos válidos)
+      const comandasValidas = comandasBackend.filter(c => {
+        const comandaMesaId = c.mesas?._id?.toString() || c.mesas?.toString() || c.mesas;
+        const mesaIdStr = mesaId?.toString() || mesaId;
+        
+        // Validaciones críticas:
+        const noEliminada = c.eliminada !== true; // Comanda no eliminada completamente
+        const noPagada = c.status?.toLowerCase() !== 'pagado';
+        const mismaMesa = comandaMesaId === mesaIdStr;
+        const tienePlatos = c.platos && c.platos.length > 0;
+        // 🔥 CRÍTICO: Con HARD DELETE, los platos eliminados ya no están en el array
+        // Por lo tanto, todos los platos en el array son válidos (no hay que verificar eliminado)
+        const tienePlatosNoEliminados = c.platos && c.platos.length > 0; // Todos los platos son válidos si están en el array
+        
+        const esValida = noEliminada && noPagada && mismaMesa && tienePlatos && tienePlatosNoEliminados;
+        
+        if (!esValida) {
+          const razon = !noEliminada ? 'eliminada' : 
+                       !noPagada ? 'ya pagada' : 
+                       !mismaMesa ? 'mesa diferente' : 
+                       !tienePlatos ? 'sin platos' : 
+                       !tienePlatosNoEliminados ? 'sin platos válidos' : 'desconocida';
+          console.warn(`⚠️ [VALIDACIÓN] Comanda #${c.comandaNumber || c._id?.slice(-6)} inválida: ${razon}`);
+        }
+        
+        return esValida;
+      });
+      
+      // Filtrar comandas inválidas para logging
+      const comandasInvalidas = comandasBackend.filter(c => {
+        const comandaMesaId = c.mesas?._id?.toString() || c.mesas?.toString() || c.mesas;
+        const mesaIdStr = mesaId?.toString() || mesaId;
+        
+        const noEliminada = c.eliminada !== true;
+        const noPagada = c.status?.toLowerCase() !== 'pagado';
+        const mismaMesa = comandaMesaId === mesaIdStr;
+        const tienePlatos = c.platos && c.platos.length > 0;
+        // 🔥 CRÍTICO: Con HARD DELETE, todos los platos en el array son válidos
+        const tienePlatosNoEliminados = c.platos && c.platos.length > 0;
+        
+        return !(noEliminada && noPagada && mismaMesa && tienePlatos && tienePlatosNoEliminados);
+      });
+      
+      // Verificar si los IDs originales están en las comandas válidas (solo si se pasaron IDs)
+      const comandasIdsValidas = comandasValidas.map(c => {
+        const id = c._id?.toString() || c._id;
+        return id;
+      });
+      
+      // 🔥 CRÍTICO: Inicializar idsNoEncontrados fuera del bloque if
+      let idsNoEncontrados = [];
+      
+      if (comandasIds.length > 0) {
+        // Se pasaron IDs específicos, verificar si están en las válidas
+        idsNoEncontrados = comandasIds.filter(id => {
+          const idStr = id?.toString() || id;
+          return !comandasIdsValidas.includes(idStr);
+        });
+        
+        if (idsNoEncontrados.length > 0) {
+          console.warn(`⚠️ [VALIDACIÓN] ${idsNoEncontrados.length} ID(s) de comanda(s) no encontrado(s) o inválido(s) en backend:`, idsNoEncontrados.map(id => id?.slice(-6)));
+          console.warn(`⚠️ [VALIDACIÓN] Posibles razones: comanda eliminada, ya pagada, o sin platos válidos`);
+        }
+      } else {
+        // No se pasaron IDs, obtener todas las comandas válidas de la mesa
+        console.log(`✅ [VALIDACIÓN] Obteniendo todas las comandas válidas de la mesa (sin filtrar por IDs específicos)`);
+      }
+      
+      console.log(`✅ [VALIDACIÓN] ${comandasValidas.length} comanda(s) válida(s), ${comandasInvalidas.length} inválida(s)`);
+      
+      if (comandasInvalidas.length > 0) {
+        const razones = comandasInvalidas.map(c => {
+          if (c.eliminada === true) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} eliminada`;
+          const status = c.status?.toLowerCase();
+          const tienePlatos = c.platos && c.platos.length > 0; // Con HARD DELETE, todos los platos son válidos
+          if (status === 'pagado') return `Comanda #${c.comandaNumber || c._id?.slice(-6)} ya pagada`;
+          if (!tienePlatos) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} sin platos`;
+          return `Comanda #${c.comandaNumber || c._id?.slice(-6)} inválida`;
+        });
+        console.warn(`⚠️ [VALIDACIÓN] Comandas inválidas:`, razones);
+      }
+      
+      // Verificar si todas las comandas solicitadas están en las válidas
+      const todasValidas = comandasIds.length > 0 ? comandasIds.every(id => {
+        const idStr = id?.toString() || id;
+        return comandasIdsValidas.includes(idStr);
+      }) : true; // Si no se pasaron IDs, considerar todas válidas
+      
+      return {
+        validas: comandasValidas,
+        invalidas: comandasInvalidas,
+        todasValidas: comandasIds.length > 0 ? (todasValidas && comandasValidas.length === comandasIds.length) : true,
+        idsNoEncontrados: idsNoEncontrados
+      };
+    } catch (error) {
+      console.error("❌ [VALIDACIÓN] Error validando comandas:", error);
+      // Si falla la validación, continuar de todas formas (backend validará)
+      return {
+        validas: [],
+        invalidas: [],
+        todasValidas: false,
+        error: error.message
+      };
+    }
+  };
+
   // ✅ MEJORADO: try/catch/finally para evitar loading infinito
   const procesarPagoConCliente = async (cliente) => {
     // ✅ Validaciones ANTES de activar loading
@@ -861,18 +1007,85 @@ const PagosScreen = () => {
         mesaIdFinal = mesaIdFinal.toString();
       }
       
-      const boucherData = {
-        mesaId: mesaIdFinal,
-        mozoId: mozoId,
-        clienteId: cliente._id,
-        comandasIds: comandasFinales.map(c => {
-          // Extraer ID de forma segura
+      // 🔥 CRÍTICO: Obtener comandas FRESCAS del backend ANTES de extraer IDs
+      // Esto asegura que usamos el estado más reciente después de eliminar platos
+      console.log("🔄 [PAGO] Obteniendo comandas frescas del backend (ignorando route.params si es necesario)...");
+      setMensajeCarga("Obteniendo comandas actualizadas del servidor...");
+      
+      // Obtener TODAS las comandas válidas de la mesa desde el backend (ignorar route.params)
+      const validacion = await validarComandasParaPago([], mesaIdFinal);
+      
+      if (validacion.validas.length === 0) {
+        // No hay comandas válidas en el backend
+        let mensaje = "No hay comandas válidas para pagar en esta mesa.";
+        
+        if (validacion.invalidas.length > 0) {
+          const razones = validacion.invalidas.map(c => {
+            if (c.eliminada === true) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} eliminada`;
+            if (c.status?.toLowerCase() === 'pagado') return `Comanda #${c.comandaNumber || c._id?.slice(-6)} ya pagada`;
+            if (!c.platos || c.platos.length === 0) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} sin platos`;
+            return `Comanda #${c.comandaNumber || c._id?.slice(-6)} inválida`;
+          });
+          mensaje += `\n\nComandas encontradas pero inválidas:\n${razones.join('\n')}`;
+        }
+        
+        // Comparar con route.params para informar al usuario
+        const comandasIdsDeParams = comandasFinales.map(c => {
           let comandaId = c._id;
           if (comandaId && typeof comandaId === 'object') {
             comandaId = comandaId.toString();
           }
           return comandaId;
-        }), // ← EXACTAMENTE estas comandas del backend (route.params)
+        });
+        
+        if (comandasIdsDeParams.length > 0) {
+          console.warn(`⚠️ [PAGO] IDs de route.params que ya no son válidos:`, comandasIdsDeParams.map(id => id?.slice(-6)));
+          mensaje += `\n\nNota: Las comandas que intentaste pagar ya no están disponibles (posiblemente eliminadas después de eliminar platos).`;
+        }
+        
+        setProcesandoPago(false);
+        Alert.alert("Error", mensaje);
+        return;
+      }
+      
+      // 🔥 USAR SOLO las comandas válidas del backend (ignorar route.params si hay discrepancias)
+      const comandasIdsFinales = validacion.validas.map(c => {
+        const id = c._id?.toString() || c._id;
+        return id;
+      });
+      
+      // Comparar con route.params para logging
+      const comandasIdsDeParams = comandasFinales.map(c => {
+        let comandaId = c._id;
+        if (comandaId && typeof comandaId === 'object') {
+          comandaId = comandaId.toString();
+        }
+        return comandaId;
+      });
+      
+      const idsDiferentes = comandasIdsDeParams.filter(id => !comandasIdsFinales.includes(id));
+      if (idsDiferentes.length > 0) {
+        console.warn(`⚠️ [PAGO] IDs de route.params que ya no son válidos (usando comandas frescas del backend):`, idsDiferentes.map(id => id?.slice(-6)));
+        console.log(`✅ [PAGO] Usando ${comandasIdsFinales.length} comanda(s) válida(s) del backend en lugar de ${comandasIdsDeParams.length} de route.params`);
+        
+        // Informar al usuario si hay diferencias significativas
+        if (comandasIdsFinales.length < comandasIdsDeParams.length) {
+          const comandasEliminadas = comandasIdsDeParams.length - comandasIdsFinales.length;
+          Alert.alert(
+            "⚠️ Comandas actualizadas",
+            `${comandasEliminadas} comanda(s) ya no está(n) disponible(s) (posiblemente eliminadas). Procesando ${comandasIdsFinales.length} comanda(s) válida(s).`,
+            [{ text: "Continuar", onPress: () => {} }]
+          );
+        }
+      } else {
+        console.log(`✅ [PAGO] IDs de route.params coinciden con comandas válidas del backend`);
+      }
+      
+      const boucherData = {
+        mesaId: mesaIdFinal,
+        mozoId: mozoId,
+        clienteId: cliente._id,
+        comandasIds: comandasIdsFinales, // Solo comandas válidas
         observaciones: comandasFinales.map(c => c.observaciones).filter(o => o).join("; ") || ""
       };
       
@@ -910,7 +1123,7 @@ const PagosScreen = () => {
           voucherId: boucherCreado.voucherId
         });
       } catch (postError) {
-        // Manejo específico de errores de red
+        // 🔥 MEJORADO: Manejo inteligente de errores con retry automático
         if (postError.code === 'ECONNABORTED' || postError.message?.includes('timeout')) {
           throw new Error("Tiempo de espera agotado. Verifica tu conexión e intenta nuevamente.");
         }
@@ -920,12 +1133,161 @@ const PagosScreen = () => {
         if (postError.response) {
           // Error del backend (4xx, 5xx)
           const status = postError.response.status;
-          const errorMsg = postError.response.data?.message || postError.message;
+          const errorData = postError.response.data || {};
+          const errorMsg = errorData.message || postError.message;
+          
+          // 🔥 Manejo especial de error 422/400 con comandas inválidas
+          if (status === 422 || (status === 400 && (errorMsg?.includes('no son válidas') || errorMsg?.includes('no válida')))) {
+            // Intentar extraer IDs de comandas inválidas del mensaje de error
+            const idsInvalidosEnMensaje = errorMsg.match(/[a-f0-9]{24}/g) || [];
+            console.warn(`⚠️ [PAGO] IDs de comandas inválidas detectados en mensaje:`, idsInvalidosEnMensaje);
+            
+            // Intentar extraer comandas válidas del error
+            const comandasValidasDelError = errorData.comandasValidas || errorData.validas || [];
+            const comandasInvalidasDelError = errorData.comandasInvalidas || errorData.invalidas || [];
+            
+            // Si no hay comandas válidas en el error, intentar obtenerlas del backend
+            if (comandasValidasDelError.length === 0 && idsInvalidosEnMensaje.length > 0) {
+              console.log(`🔄 [PAGO] Obteniendo comandas válidas del backend después de error...`);
+              try {
+                // Obtener comandas frescas de la mesa
+                const comandasFrescas = await validarComandasParaPago([], mesaIdFinal);
+                if (comandasFrescas.validas.length > 0) {
+                  // Usar las comandas válidas encontradas
+                  const comandasIdsValidas = comandasFrescas.validas.map(c => {
+                    const id = c._id?.toString() || c._id;
+                    return id;
+                  });
+                  
+                  // Actualizar boucherData con solo comandas válidas
+                  boucherData.comandasIds = comandasIdsValidas;
+                  
+                  // Retry automático con comandas válidas
+                  setMensajeCarga("Reintentando con comandas válidas del servidor...");
+                  const retryResponse = await axios.post(boucherURL, boucherData, { 
+                    timeout: 15000,
+                    validateStatus: (status) => status < 500
+                  });
+                  
+                  if (retryResponse.status >= 400) {
+                    throw new Error(retryResponse.data?.message || `Error ${retryResponse.status}`);
+                  }
+                  
+                  boucherCreado = retryResponse.data;
+                  
+                  if (!boucherCreado || !boucherCreado._id) {
+                    throw new Error("El backend no retornó un boucher válido");
+                  }
+                  
+                  console.log("✅ [PAGO] Boucher creado después de retry con comandas frescas:", {
+                    boucherId: boucherCreado._id?.slice(-6),
+                    boucherNumber: boucherCreado.boucherNumber
+                  });
+                  
+                  // Continuar con el flujo normal
+                  return; // Salir del catch para continuar con el flujo de éxito
+                }
+              } catch (retryError) {
+                console.error("❌ [PAGO] Error en retry con comandas frescas:", retryError);
+                // Continuar con el manejo de error original
+              }
+            }
+            
+            if (comandasValidasDelError.length > 0) {
+              // Hay comandas válidas, retry automático
+              console.log(`🔄 [PAGO] Retry automático con ${comandasValidasDelError.length} comanda(s) válida(s)`);
+              
+              // Extraer IDs de comandas válidas
+              const comandasIdsValidas = comandasValidasDelError.map(c => {
+                const id = c._id?.toString() || c._id || c;
+                return id;
+              });
+              
+              // Actualizar boucherData con solo comandas válidas
+              boucherData.comandasIds = comandasIdsValidas;
+              
+              // Retry automático
+              try {
+                setMensajeCarga("Reintentando con comandas válidas...");
+                const retryResponse = await axios.post(boucherURL, boucherData, { 
+                  timeout: 15000,
+                  validateStatus: (status) => status < 500
+                });
+                
+                if (retryResponse.status >= 400) {
+                  throw new Error(retryResponse.data?.message || `Error ${retryResponse.status}`);
+                }
+                
+                boucherCreado = retryResponse.data;
+                
+                if (!boucherCreado || !boucherCreado._id) {
+                  throw new Error("El backend no retornó un boucher válido");
+                }
+                
+                // Mostrar mensaje informativo
+                if (comandasInvalidasDelError.length > 0) {
+                  Alert.alert(
+                    "⚠️ Algunas comandas ya pagadas",
+                    `${comandasInvalidasDelError.length} comanda(s) ya estaban pagada(s). Se procesó el pago de ${comandasValidasDelError.length} comanda(s) válida(s).`,
+                    [{ text: "OK" }]
+                  );
+                }
+                
+                console.log("✅ [PAGO] Boucher creado después de retry:", {
+                  boucherId: boucherCreado._id?.slice(-6),
+                  boucherNumber: boucherCreado.boucherNumber
+                });
+                
+                // Mostrar mensaje informativo (no bloqueante)
+                if (comandasInvalidasDelError.length > 0) {
+                  // Mostrar alerta de forma no bloqueante
+                  setTimeout(() => {
+                    Alert.alert(
+                      "⚠️ Algunas comandas ya pagadas",
+                      `${comandasInvalidasDelError.length} comanda(s) ya estaban pagada(s). Se procesó el pago de ${comandasValidasDelError.length} comanda(s) válida(s).`,
+                      [{ text: "OK" }]
+                    );
+                  }, 100);
+                }
+                
+                // Continuar con el flujo normal (no lanzar error, continuar después del catch)
+                // El código después del catch se ejecutará normalmente
+              } catch (retryError) {
+                // Si el retry también falla, mostrar error
+                throw new Error(`No se pudo procesar el pago: ${retryError.message || errorMsg}`);
+              }
+            } else {
+              // No hay comandas válidas - construir mensaje detallado
+              let mensajeError = "No hay comandas válidas para pagar.";
+              
+              if (idsInvalidosEnMensaje.length > 0) {
+                mensajeError += `\n\nComanda(s) inválida(s) detectada(s): ${idsInvalidosEnMensaje.map(id => id.slice(-6)).join(', ')}`;
+                mensajeError += `\n\nPosibles razones:`;
+                mensajeError += `\n- Comanda(s) eliminada(s) completamente`;
+                mensajeError += `\n- Comanda(s) ya pagada(s)`;
+                mensajeError += `\n- Comanda(s) sin platos válidos`;
+                mensajeError += `\n\nPor favor, verifica las comandas en la pantalla de inicio.`;
+              } else if (comandasInvalidasDelError.length > 0) {
+                const detalles = comandasInvalidasDelError.map(c => {
+                  if (c.eliminada === true) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} eliminada`;
+                  if (c.status?.toLowerCase() === 'pagado') return `Comanda #${c.comandaNumber || c._id?.slice(-6)} ya pagada`;
+                  if (!c.platos || c.platos.length === 0) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} sin platos`;
+                  return `Comanda #${c.comandaNumber || c._id?.slice(-6)} inválida`;
+                }).join('\n');
+                mensajeError += `\n\n${detalles}`;
+              }
+              
+              throw new Error(mensajeError);
+            }
+          }
           
           if (status === 404) {
             throw new Error("Mesa o comandas no encontradas. Por favor, recarga la pantalla.");
           } else if (status === 400) {
-            throw new Error(`Datos inválidos: ${errorMsg}`);
+            // Mejorar mensaje de error 400 con detalles del backend
+            const backendError = errorData.error || errorData.message || errorMsg;
+            const detalles = errorData.details ? `\n\nDetalles: ${JSON.stringify(errorData.details)}` : '';
+            throw new Error(`Datos inválidos: ${backendError}${detalles}`);
           } else if (status === 500) {
             throw new Error("Error en el servidor. Por favor, intenta nuevamente o contacta al administrador.");
           } else {
@@ -934,9 +1296,17 @@ const PagosScreen = () => {
         }
         throw postError; // Re-lanzar si no es un error conocido
       }
+      
+      // 🔥 Si llegamos aquí, el boucher se creó exitosamente (ya sea en el primer intento o en el retry)
+      // Continuar con el flujo de éxito
+      // NOTA: Si el retry fue exitoso, boucherCreado ya está asignado y no se lanzó error
 
       // Guardar boucher en estado local
-      setBoucherData(boucherCreado);
+      if (boucherCreado && boucherCreado._id) {
+        setBoucherData(boucherCreado);
+      } else {
+        throw new Error("No se pudo crear el boucher. Por favor, intenta nuevamente.");
+      }
 
       // Actualizar estado de la mesa a "pagado"
       if (mesaFinal && mesaIdFinal) {
@@ -1008,17 +1378,23 @@ const PagosScreen = () => {
         response: error.response?.data
       });
       
-      // Loggear error completo
+      // Loggear error completo (con manejo seguro)
       try {
-        await logger.error(error, {
-          action: 'procesar_pago_con_cliente',
-          clienteId: cliente?._id,
-          mesaId: mesaFinal?._id,
-          cantidadComandas: comandasFinales.length,
-          timestamp: moment().tz("America/Lima").format("YYYY-MM-DD HH:mm:ss"),
-        });
+        if (logger && typeof logger.error === 'function') {
+          await logger.error(error, {
+            action: 'procesar_pago_con_cliente',
+            clienteId: cliente?._id,
+            mesaId: mesaFinal?._id,
+            cantidadComandas: comandasFinales.length,
+            timestamp: moment().tz("America/Lima").format("YYYY-MM-DD HH:mm:ss"),
+          });
+        } else {
+          // Fallback si logger no está disponible
+          console.error("❌ [PAGO] Logger no disponible, usando console.error");
+        }
       } catch (logError) {
-        console.error("❌ Error loggeando:", logError);
+        // No mostrar error si falla el logging (evitar loop infinito)
+        console.warn("⚠️ [PAGO] Error en logger (ignorado):", logError.message);
       }
       
       // ✅ Resetear loading

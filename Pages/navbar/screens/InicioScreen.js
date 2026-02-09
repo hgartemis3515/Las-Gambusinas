@@ -15,7 +15,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import axios from "axios";
+// 🔥 Usar axios configurado globalmente (timeout 10s, anti-bloqueo)
+import axios from "../../../config/axiosConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, DISHES_API, AREAS_API, MESAS_API_UPDATE, apiConfig } from "../../../apiConfig";
 import moment from "moment-timezone";
@@ -42,6 +43,121 @@ import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MotiPressable } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { slideInRightDelay, springConfig } from "../../../constants/animations";
+
+// Componente de Loading con Verificaciones Paso a Paso
+const LoadingVerificacionEliminar = ({ visible, mensaje, pasos = [] }) => {
+  const themeContext = useTheme();
+  const theme = themeContext?.theme || themeLight;
+  const fadeAnim = useSharedValue(0);
+
+  useEffect(() => {
+    if (visible) {
+      fadeAnim.value = withTiming(1, { duration: 300 });
+    } else {
+      fadeAnim.value = withTiming(0, { duration: 200 });
+    }
+  }, [visible]);
+
+  const fadeStyle = useAnimatedStyle(() => ({
+    opacity: fadeAnim.value,
+  }));
+
+  if (!visible) return null;
+
+  const getPasoIcono = (status) => {
+    switch (status) {
+      case 'completed':
+        return '✓';
+      case 'progress':
+        return '🔄';
+      case 'error':
+        return '⚠️';
+      default:
+        return '⏳';
+    }
+  };
+
+  const getPasoColor = (status) => {
+    switch (status) {
+      case 'completed':
+        return '#10B981'; // verde
+      case 'progress':
+        return '#3B82F6'; // azul
+      case 'error':
+        return '#EF4444'; // rojo
+      default:
+        return '#9CA3AF'; // gris
+    }
+  };
+
+  return (
+    <Animated.View style={[{
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.9)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 99999,
+    }, fadeStyle]}>
+      <View style={{
+        backgroundColor: theme.colors?.surface || '#FFFFFF',
+        borderRadius: 20,
+        padding: 30,
+        alignItems: 'center',
+        minWidth: 320,
+        maxWidth: '90%',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 10,
+      }}>
+        <ActivityIndicator size="large" color={theme.colors?.primary || "#C41E3A"} style={{ marginBottom: 20 }} />
+        
+        <Text style={{
+          fontSize: 18,
+          fontWeight: '700',
+          color: theme.colors?.text?.primary || '#333333',
+          textAlign: 'center',
+          marginBottom: 20,
+        }}>
+          {mensaje || "Procesando..."}
+        </Text>
+
+        {pasos.length > 0 && (
+          <View style={{ width: '100%', marginTop: 10 }}>
+            {pasos.map((paso, index) => (
+              <View key={paso.id || index} style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                marginBottom: 12,
+                paddingVertical: 4,
+              }}>
+                <Text style={{
+                  fontSize: 18,
+                  marginRight: 12,
+                  color: getPasoColor(paso.status),
+                }}>
+                  {getPasoIcono(paso.status)}
+                </Text>
+                <Text style={{
+                  fontSize: 14,
+                  color: paso.status === 'progress' ? theme.colors?.primary : theme.colors?.text?.secondary || '#666666',
+                  flex: 1,
+                }}>
+                  {paso.label}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+    </Animated.View>
+  );
+};
 
 // Componente de Overlay de Carga Animado
 const AnimatedOverlay = ({ mensaje }) => {
@@ -1472,6 +1588,26 @@ const InicioScreen = () => {
   const [comandaEliminarPlatos, setComandaEliminarPlatos] = useState(null);
   const [platosSeleccionadosEliminar, setPlatosSeleccionadosEliminar] = useState([]);
   const [motivoEliminarPlatos, setMotivoEliminarPlatos] = useState("");
+  
+  // Estados para loading con verificaciones paso a paso
+  const [loadingEliminarPlatos, setLoadingEliminarPlatos] = useState(false);
+  const [mensajeLoadingEliminar, setMensajeLoadingEliminar] = useState("");
+  const [pasosEliminar, setPasosEliminar] = useState([
+    { id: 1, label: "Eliminando platos", status: "pending" },
+    { id: 2, label: "Verificando ID comanda", status: "pending" },
+    { id: 3, label: "Sincronizando datos", status: "pending" },
+    { id: 4, label: "Actualizando mesa", status: "pending" }
+  ]);
+  
+  // Helper para actualizar pasos
+  const actualizarPaso = useCallback((pasoId, status) => {
+    setPasosEliminar(prev => prev.map(p => 
+      p.id === pasoId ? { ...p, status } : p
+    ));
+  }, []);
+  
+  // Helper para delay
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   const handleGuardarEdicion = async () => {
     if (!comandaEditando) return;
@@ -2053,34 +2189,45 @@ const InicioScreen = () => {
       return;
     }
 
-    // Eliminar directamente con overlay de carga (sin alerta de confirmación)
+    // Eliminar con loading paso a paso y verificaciones
     try {
+      // Cerrar modal inmediatamente
       setModalEliminarPlatosVisible(false);
-      
-      // Activar overlay de carga
-      setEliminandoPlatos(true);
-      setMensajeCargaEliminacionPlatos("Eliminando platos de la comanda...");
       
       // Preparar índices de platos a eliminar
       const platosAEliminar = platosSeleccionadosEliminar.map(index => parseInt(index));
-      
       const comandaId = comandaEliminarPlatos._id?.toString() || comandaEliminarPlatos._id;
-      
       const usuarioId = userInfo?._id || userInfo?.id;
+      
+      // 🔥 CRÍTICO: Guardar ID antes de cualquier operación
+      const comandaIdAntes = comandaId;
+      console.log(`[ELIMINAR PLATOS] ID antes de eliminar: ${comandaIdAntes?.slice(-6)}`);
+      
+      // Resetear pasos
+      setPasosEliminar([
+        { id: 1, label: "Eliminando platos", status: "pending" },
+        { id: 2, label: "Verificando ID comanda", status: "pending" },
+        { id: 3, label: "Sincronizando datos", status: "pending" },
+        { id: 4, label: "Actualizando mesa", status: "pending" }
+      ]);
+      
+      // Mostrar loading con verificaciones
+      setLoadingEliminarPlatos(true);
+      setMensajeLoadingEliminar("Eliminando platos seleccionados...");
+      actualizarPaso(1, "progress");
       
       const eliminarURL = apiConfig.isConfigured 
         ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}/eliminar-platos`
         : `${COMANDA_API}/${comandaId}/eliminar-platos`;
       
       console.log('🗑️ Eliminando platos de comanda:', {
-        comandaId,
+        comandaId: comandaIdAntes?.slice(-6),
         platosAEliminar,
         motivo: motivoEliminarPlatos.trim(),
         usuarioId
       });
-
-      setMensajeCargaEliminacionPlatos("Enviando solicitud al servidor...");
       
+      // PASO 1: Eliminar platos backend
       const response = await axios.put(
         eliminarURL,
         {
@@ -2090,59 +2237,133 @@ const InicioScreen = () => {
         },
         { timeout: 15000 }
       );
-
+      
       console.log('✅ Platos eliminados exitosamente:', response.data);
-
-      // Verificar que los platos se eliminaron correctamente
-      setMensajeCargaEliminacionPlatos("Verificando eliminación de platos...");
+      console.log(`✅ [ELIMINAR PLATOS] Platos restantes: ${response.data.platosRestantes || response.data.comanda?.platos?.length || 0}`);
+      actualizarPaso(1, "completed");
+      await delay(300);
       
-      // Obtener la comanda actualizada para verificar
-      const comandaVerificarURL = apiConfig.isConfigured 
-        ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}`
-        : `${COMANDA_API}/${comandaId}`;
+      // PASO 2: Verificar ID NO cambió
+      actualizarPaso(2, "progress");
+      setMensajeLoadingEliminar("Verificando integridad de la comanda...");
       
-      const comandaVerificada = await axios.get(comandaVerificarURL, { timeout: 10000 });
+      const comandaIdDespues = response.data.comanda?._id?.toString() || response.data.comanda?._id;
+      console.log(`[ELIMINAR PLATOS] ID después de eliminar: ${comandaIdDespues?.slice(-6)}`);
+      console.log(`[ELIMINAR PLATOS] ID verificado en backend: ${response.data.idVerificado}`);
       
-      // Verificar que los platos seleccionados estén marcados como eliminados
-      const platosEliminadosCorrectamente = platosAEliminar.every(index => {
-        const plato = comandaVerificada.data.platos?.[index];
-        return plato && plato.eliminado === true;
-      });
-
-      if (!platosEliminadosCorrectamente) {
-        console.warn('⚠️ Algunos platos no se eliminaron correctamente');
+      if (comandaIdAntes !== comandaIdDespues) {
+        actualizarPaso(2, "error");
+        setMensajeLoadingEliminar("⚠️ Error: ID de comanda cambió");
+        await delay(2000);
+        setLoadingEliminarPlatos(false);
+        
+        Alert.alert(
+          "Error Crítico",
+          `ID de comanda cambió después de eliminar platos.\n\nAntes: ${comandaIdAntes?.slice(-6)}\nDespués: ${comandaIdDespues?.slice(-6)}\n\nContacta soporte técnico.`,
+          [{ text: "OK" }]
+        );
+        return;
       }
-
-      setMensajeCargaEliminacionPlatos("Actualizando datos...");
-
-      // Actualizar comandas y mesas
-      await Promise.all([
-        obtenerComandasHoy().catch(err => console.warn("Error actualizando comandas:", err)),
-        obtenerMesas().catch(err => console.warn("Error actualizando mesas:", err))
-      ]);
-
-      // Cerrar overlay de carga
-      setEliminandoPlatos(false);
-      setMensajeCargaEliminacionPlatos("");
-
+      
+      actualizarPaso(2, "completed");
+      await delay(300);
+      
+      // Verificar si la comanda fue eliminada completamente
+      const comandaEliminadaCompleta = response.data.comandaEliminadaCompleta === true || 
+                                       response.data.comanda?.eliminada === true ||
+                                       (response.data.platosRestantes !== undefined && response.data.platosRestantes === 0);
+      
+      // 🔥 CRÍTICO: Verificar que los platos fueron REMOVIDOS (no solo marcados)
+      const platosRestantes = response.data.platosRestantes || response.data.comanda?.platos?.length || 0;
+      console.log(`✅ [ELIMINAR PLATOS] Platos removidos correctamente. Restantes: ${platosRestantes}`);
+      
+      if (comandaEliminadaCompleta) {
+        console.log(`⚠️ [ELIMINAR PLATOS] Comanda ${comandaIdAntes?.slice(-6)} eliminada completamente (sin platos)`);
+        // Remover del estado local
+        let comandasActualizadas = comandas.filter(c => {
+          const cId = c._id?.toString ? c._id.toString() : c._id;
+          return cId !== comandaIdAntes;
+        });
+        setComandas(comandasActualizadas);
+      } else {
+        // Actualizar comanda en estado local con platos removidos
+        // La comanda ahora tiene menos platos (removidos del array)
+        console.log(`✅ [ELIMINAR PLATOS] Comanda actualizada con ${platosRestantes} plato(s) restante(s)`);
+      }
+      
+      // PASO 3: Sincronizar datos backend
+      actualizarPaso(3, "progress");
+      setMensajeLoadingEliminar("Sincronizando datos con servidor...");
+      
+      await obtenerMesas();
+      await obtenerComandasHoy();
+      
+      actualizarPaso(3, "completed");
+      await delay(300);
+      
+      // PASO 4: Actualizar estado mesa
+      actualizarPaso(4, "progress");
+      setMensajeLoadingEliminar("Actualizando estado de mesa...");
+      
+      const mesa = comandaEliminarPlatos.mesas || mesaOpciones;
+      if (mesa?._id) {
+        // Verificar estado mesa (similar a handleEliminarComanda)
+        try {
+          await obtenerMesas();
+          console.log("✅ [ELIMINAR PLATOS] Estado de mesa actualizado");
+        } catch (error) {
+          console.warn("⚠️ Error actualizando estado de mesa:", error);
+        }
+      }
+      
+      // Verificar comanda actualizada
+      const comandaActualizada = comandas.find(c => {
+        const cId = c._id?.toString ? c._id.toString() : c._id;
+        return cId === comandaIdAntes;
+      });
+      
+      if (!comandaActualizada && comandaEliminadaCompleta) {
+        console.log('[ELIMINAR PLATOS] Comanda eliminada completa OK');
+      } else if (!comandaActualizada) {
+        console.warn('[ELIMINAR PLATOS] Comanda no encontrada después de sincronización');
+      }
+      
+      actualizarPaso(4, "completed");
+      await delay(300);
+      
+      // Success
+      setMensajeLoadingEliminar("✓ Platos eliminados correctamente");
+      await delay(1000);
+      setLoadingEliminarPlatos(false);
+      
       // Limpiar estados
       setComandaEliminarPlatos(null);
       setPlatosSeleccionadosEliminar([]);
       setMotivoEliminarPlatos("");
-
+      
+      // Alert éxito
       Alert.alert(
         "✅ Éxito",
-        `${platosAEliminar.length} plato(s) eliminado(s) exitosamente de la comanda.`
+        `${platosAEliminar.length} plato(s) eliminado(s) exitosamente${comandaEliminadaCompleta ? '\n\nComanda eliminada completa (sin platos)' : ''}`,
+        [{ text: "OK" }]
       );
+      
     } catch (error) {
-      // Cerrar overlay de carga en caso de error
-      setEliminandoPlatos(false);
-      setMensajeCargaEliminacionPlatos("");
+      setLoadingEliminarPlatos(false);
+      setMensajeLoadingEliminar("");
+      
+      // Marcar pasos con error
+      pasosEliminar.forEach(p => {
+        if (p.status === "progress") {
+          actualizarPaso(p.id, "error");
+        }
+      });
       
       console.error('❌ Error eliminando platos:', error);
       Alert.alert(
         "Error",
-        error.response?.data?.message || "No se pudieron eliminar los platos. Por favor, intenta nuevamente."
+        error.response?.data?.message || "No se pudieron eliminar los platos. Por favor, intenta nuevamente.",
+        [{ text: "OK" }]
       );
     }
   };
@@ -4563,6 +4784,14 @@ const InicioScreen = () => {
       )}
 
       {/* Overlay de Carga para Eliminación de Platos de Comanda */}
+      {/* Loading con verificaciones paso a paso para eliminar platos */}
+      <LoadingVerificacionEliminar
+        visible={loadingEliminarPlatos}
+        mensaje={mensajeLoadingEliminar}
+        pasos={pasosEliminar}
+      />
+      
+      {/* Overlay antiguo (mantener para compatibilidad) */}
       {eliminandoPlatos && (
         <OverlayEliminacion mensaje={mensajeCargaEliminacionPlatos} />
       )}

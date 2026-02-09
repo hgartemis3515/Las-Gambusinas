@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import moment from 'moment-timezone';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getWebSocketURL } from '../apiConfig';
 
 /**
  * Hook personalizado para manejar conexión Socket.io con namespace /mozos
+ * OPTIMIZADO: Heartbeat, reconexión automática, persistencia
  * @param {Function} onMesaActualizada - Callback cuando se actualiza una mesa
  * @param {Function} onComandaActualizada - Callback cuando se actualiza una comanda
  * @param {Function} onNuevaComanda - Callback cuando llega nueva comanda
@@ -23,9 +25,13 @@ const useSocketMozos = ({
   const socketRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
+  const heartbeatIntervalRef = useRef(null);
+  const lastPingRef = useRef(null);
+  const roomsJoinedRef = useRef(new Set()); // Track rooms joined for rejoin on reconnect
   const maxReconnectAttempts = 10;
   const initialDelay = 1000; // 1 segundo inicial
-  const maxDelay = 30000; // 30 segundos máximo
+  const maxDelay = 5000; // 5 segundos máximo (más agresivo)
+  const heartbeatInterval = 25000; // 25 segundos (menor que timeout de 30s del servidor)
   const lastReconnectTimeRef = useRef(null);
 
   useEffect(() => {
@@ -36,20 +42,65 @@ const useSocketMozos = ({
     console.log('🔌 [MOZOS] Conectando a Socket.io:', wsURL);
 
     // Crear conexión Socket.io al namespace /mozos con backoff exponencial
+    // OPTIMIZADO: Configuración bulletproof para conexión permanente
     const socket = io(wsURL, {
-      transports: ['websocket', 'polling'],
+      transports: ['websocket', 'polling'], // WebSocket primero, polling fallback
       reconnection: true,
-      reconnectionDelay: initialDelay, // Delay inicial
-      reconnectionDelayMax: maxDelay, // Delay máximo (backoff exponencial)
-      reconnectionAttempts: maxReconnectAttempts,
-      timeout: 20000,
+      reconnectionDelay: initialDelay, // Delay inicial 1s
+      reconnectionDelayMax: maxDelay, // Delay máximo 5s (más agresivo)
+      reconnectionAttempts: maxReconnectAttempts, // 10 intentos
+      timeout: 20000, // 20s timeout inicial
       // Opciones para evitar desconexiones temporales
       forceNew: false, // Reutilizar conexión existente
       autoConnect: true, // Conectar automáticamente
-      closeOnBeforeunload: false // No cerrar al navegar
+      closeOnBeforeunload: false, // No cerrar al navegar
+      // Opciones adicionales para estabilidad
+      upgrade: true, // Permitir upgrade de polling a websocket
+      rememberUpgrade: true, // Recordar preferencia de transporte
+      // Ping/pong para mantener conexión viva
+      pingTimeout: 60000, // 60s timeout ping (mayor que heartbeat 25s)
+      pingInterval: 25000, // 25s intervalo ping (igual que heartbeat)
+      // 🔥 MEJORADO: Opciones para evitar desconexiones durante operaciones HTTP
+      allowUpgrades: true, // Permitir upgrades de transporte
+      // Configuración para manejar mejor los "transport error"
+      randomizationFactor: 0.5, // Factor de aleatoriedad en backoff (0-1)
+      // Aumentar tolerancia a errores temporales
+      reconnectionDelayFactor: 1.5 // Factor de incremento en backoff (más conservador)
     });
 
     socketRef.current = socket;
+
+    // 🔥 Función para iniciar heartbeat
+    const startHeartbeat = () => {
+      // Limpiar heartbeat anterior si existe
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+      }
+
+      // Heartbeat cada 25 segundos
+      heartbeatIntervalRef.current = setInterval(() => {
+        if (socket && socket.connected) {
+          const pingTime = Date.now();
+          socket.emit('heartbeat-ping', { timestamp: pingTime });
+          lastPingRef.current = pingTime;
+          console.log('💓 [MOZOS] Heartbeat enviado');
+          
+          // Guardar último ping en AsyncStorage
+          AsyncStorage.setItem('socketLastPing', pingTime.toString()).catch(() => {});
+        }
+      }, heartbeatInterval);
+    };
+
+    // 🔥 Función para rejoin rooms después de reconexión
+    const rejoinRooms = () => {
+      if (socket && socket.connected && roomsJoinedRef.current.size > 0) {
+        console.log(`🔄 [MOZOS] Rejoin ${roomsJoinedRef.current.size} rooms después de reconexión`);
+        roomsJoinedRef.current.forEach(mesaId => {
+          socket.emit('join-mesa', mesaId);
+          console.log(`📌 [MOZOS] Rejoin room mesa-${mesaId}`);
+        });
+      }
+    };
 
     // Evento: Conexión establecida
     socket.on('connect', () => {
@@ -69,6 +120,16 @@ const useSocketMozos = ({
       reconnectAttemptsRef.current = 0;
       lastReconnectTimeRef.current = null;
       
+      // Iniciar heartbeat
+      startHeartbeat();
+      
+      // Rejoin rooms si había alguno
+      rejoinRooms();
+      
+      // Guardar estado de conexión
+      AsyncStorage.setItem('socketConnected', 'true').catch(() => {});
+      AsyncStorage.setItem('socketReconnects', '0').catch(() => {});
+      
       // Notificar cambio de estado
       if (onSocketStatus) {
         onSocketStatus({ connected: true, status: 'conectado' });
@@ -77,13 +138,45 @@ const useSocketMozos = ({
 
     // Evento: Desconexión
     socket.on('disconnect', (reason) => {
-      console.warn('❌ [MOZOS] Socket desconectado:', reason);
+      // 🔥 MEJORADO: Manejo inteligente de desconexiones
+      // "transport error" es común durante operaciones HTTP y se reconecta automáticamente
+      // No mostrar como error crítico si se reconecta rápidamente
+      
+      const isTransportError = reason === 'transport error' || reason === 'transport close';
+      const isTemporaryDisconnect = isTransportError || reason === 'ping timeout';
+      
+      if (isTemporaryDisconnect) {
+        // Desconexión temporal (común durante operaciones HTTP)
+        // Solo log en desarrollo, no como warning crítico
+        if (__DEV__) {
+          console.log(`🔄 [MOZOS] Desconexión temporal: ${reason} (reconexión automática en curso)`);
+        }
+      } else {
+        // Desconexión no esperada, mostrar warning
+        console.warn(`❌ [MOZOS] Socket desconectado: ${reason}`);
+      }
+      
+      // Detener heartbeat
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+      
       setConnected(false);
       setConnectionStatus('desconectado');
       
+      // Guardar estado
+      AsyncStorage.setItem('socketConnected', 'false').catch(() => {});
+      
+      // Solo cambiar a "reconectando" si no es un disconnect manual
+      if (reason !== 'io client disconnect') {
+        // Socket.io manejará la reconexión automáticamente
+        setConnectionStatus('reconectando');
+      }
+      
       // Notificar cambio de estado
       if (onSocketStatus) {
-        onSocketStatus({ connected: false, status: 'desconectado' });
+        onSocketStatus({ connected: false, status: 'desconectado', reason });
       }
     });
 
@@ -98,6 +191,9 @@ const useSocketMozos = ({
       }
       
       console.log(`🔄 [MOZOS] Intentando reconectar... (${attemptNumber}/${maxReconnectAttempts})`);
+      
+      // Guardar intentos de reconexión
+      AsyncStorage.setItem('socketReconnects', attemptNumber.toString()).catch(() => {});
       
       // Notificar cambio de estado
       if (onSocketStatus) {
@@ -117,6 +213,16 @@ const useSocketMozos = ({
       setReconnectAttempts(0);
       reconnectAttemptsRef.current = 0;
       lastReconnectTimeRef.current = null;
+      
+      // Reiniciar heartbeat
+      startHeartbeat();
+      
+      // Rejoin rooms
+      rejoinRooms();
+      
+      // Guardar estado
+      AsyncStorage.setItem('socketConnected', 'true').catch(() => {});
+      AsyncStorage.setItem('socketReconnects', '0').catch(() => {});
       
       // Notificar cambio de estado
       if (onSocketStatus) {
@@ -201,7 +307,7 @@ const useSocketMozos = ({
       }
     });
 
-    // Evento: Estado de socket (heartbeat)
+    // Evento: Estado de socket (heartbeat del servidor)
     socket.on('socket-status', (data) => {
       if (data.connected !== undefined) {
         setConnected(data.connected);
@@ -209,26 +315,53 @@ const useSocketMozos = ({
       }
     });
 
+    // 🔥 Evento: Heartbeat respuesta del servidor
+    socket.on('heartbeat-pong', (data) => {
+      if (lastPingRef.current && data.timestamp) {
+        const latency = Date.now() - lastPingRef.current;
+        console.log(`💓 [MOZOS] Heartbeat recibido (latencia: ${latency}ms)`);
+      }
+    });
+
     // Cleanup - NO desconectar el socket ya que está en contexto global
     // El socket se mantiene activo en todas las pantallas
     // IMPORTANTE: No hacer cleanup del socket aquí porque está en contexto global
-    // Solo limpiar timeouts si existen
+    // Solo limpiar timeouts e intervals si existen
     return () => {
       console.log('🧹 [MOZOS] Limpiando listeners (socket se mantiene activo en contexto global)');
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
       // NO desconectar el socket - debe mantenerse activo
       // socket.disconnect(); // NO hacer esto - el socket es global
     };
   }, []); // Solo ejecutar una vez al montar - el socket vive en el contexto
 
+  // 🔥 Función para trackear rooms (usada por SocketContext)
+  const trackRoom = (mesaId) => {
+    if (mesaId) {
+      roomsJoinedRef.current.add(mesaId);
+    }
+  };
+
+  const untrackRoom = (mesaId) => {
+    if (mesaId) {
+      roomsJoinedRef.current.delete(mesaId);
+    }
+  };
+
   return {
     socket: socketRef.current,
     connected,
     connectionStatus,
-    reconnectAttempts
+    reconnectAttempts,
+    trackRoom,
+    untrackRoom
   };
 };
 

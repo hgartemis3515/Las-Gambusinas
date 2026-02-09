@@ -67,7 +67,7 @@ export const SocketProvider = ({ children }) => {
     onSocketStatus: handleSocketStatus
   });
   
-  const { connected, connectionStatus, reconnectAttempts, socket } = socketHookResult;
+  const { connected, connectionStatus, reconnectAttempts, socket, trackRoom, untrackRoom } = socketHookResult;
 
   // Función para suscribirse a eventos desde cualquier pantalla
   const subscribeToEvents = useCallback((handlers) => {
@@ -77,22 +77,24 @@ export const SocketProvider = ({ children }) => {
     }));
   }, []);
 
-  // 🔥 ESTÁNDAR INDUSTRIA: Join/Leave rooms por mesa
+  // 🔥 ESTÁNDAR INDUSTRIA: Join/Leave rooms por mesa con tracking
   const joinMesa = useCallback((mesaId) => {
     if (socket && connected) {
       socket.emit('join-mesa', mesaId);
+      if (trackRoom) trackRoom(mesaId);
       console.log(`📌 [MOZOS] Uniéndose a room mesa-${mesaId}`);
     } else {
       console.warn('⚠️ [MOZOS] Socket no conectado, no se puede unir a mesa');
     }
-  }, [socket, connected]);
+  }, [socket, connected, trackRoom]);
 
   const leaveMesa = useCallback((mesaId) => {
     if (socket && connected) {
       socket.emit('leave-mesa', mesaId);
+      if (untrackRoom) untrackRoom(mesaId);
       console.log(`📌 [MOZOS] Saliendo de room mesa-${mesaId}`);
     }
-  }, [socket, connected]);
+  }, [socket, connected, untrackRoom]);
 
   return (
     <SocketContext.Provider value={{
