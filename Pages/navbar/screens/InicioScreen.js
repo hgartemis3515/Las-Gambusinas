@@ -12,7 +12,7 @@ import {
   useWindowDimensions,
   ActivityIndicator,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 // 🔥 Usar axios configurado globalmente (timeout 10s, anti-bloqueo)
@@ -43,6 +43,7 @@ import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MotiPressable } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { slideInRightDelay, springConfig } from "../../../constants/animations";
+import { LinearGradient } from 'expo-linear-gradient';
 
 // Componente de Loading con Verificaciones Paso a Paso
 const LoadingVerificacionEliminar = ({ visible, mensaje, pasos = [] }) => {
@@ -291,6 +292,7 @@ const MesaAnimada = React.memo(({
   mozo, 
   isSelected, 
   mesaSize, 
+  zoomLevel,
   theme, 
   styles,
   onPress,
@@ -426,14 +428,22 @@ const MesaAnimada = React.memo(({
           borderAnimatedStyle,
         ]}
       >
-        <Text style={styles.mesaNumber}>M{mesa.nummesa}</Text>
-        <Text style={styles.mesaMozo}>{mozo !== "N/A" ? mozo.split(' ')[0] : ""}</Text>
-        <MaterialCommunityIcons 
-          name="circle" 
-          size={8} 
-          color={theme.colors.text.white} 
-          style={styles.mesaIcon}
-        />
+        <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25 }]}>M{mesa.nummesa}</Text>
+        {/* Mostrar mozo solo si zoom level >= 1 (small) */}
+        {zoomLevel >= 1 && (
+          <Text style={[styles.mesaMozo, { fontSize: mesaSize * 0.15 }]}>
+            {mozo !== "N/A" ? mozo.split(' ')[0] : ""}
+          </Text>
+        )}
+        {/* Mostrar icono solo si zoom level >= 0 (extraSmall) */}
+        {zoomLevel >= 0 && (
+          <MaterialCommunityIcons 
+            name="circle" 
+            size={Math.max(6, mesaSize * 0.1)} 
+            color={theme.colors.text.white} 
+            style={styles.mesaIcon}
+          />
+        )}
       </Animated.View>
     </GestureDetector>
   );
@@ -469,6 +479,16 @@ const InicioScreen = () => {
   const [mensajeCargaVerificacion, setMensajeCargaVerificacion] = useState("");
   const [eliminandoPlatos, setEliminandoPlatos] = useState(false);
   const [mensajeCargaEliminacionPlatos, setMensajeCargaEliminacionPlatos] = useState("");
+  const [mesaZoomLevel, setMesaZoomLevel] = useState(2); // 0-4: extraSmall, small, medium, large, extraLarge
+  
+  // Refs y estado para scroll de tabs áreas
+  const tabsScrollViewRef = useRef(null);
+  const tabPositionsRef = useRef({}); // { "areaId": xPosition }
+  const [scrollX, setScrollX] = useState(0);
+  const [contentWidth, setContentWidth] = useState(0);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [showLeftGradient, setShowLeftGradient] = useState(false);
+  const [showRightGradient, setShowRightGradient] = useState(false);
 
   // 🔥 FUNCIÓN CRÍTICA: Verificar y cargar todas las comandas y platos antes de permitir pago
   const verificarYRecargarComandas = async (mesa, comandasActuales) => {
@@ -825,12 +845,97 @@ const InicioScreen = () => {
 
   // Detectar si es móvil
   const isMobile = width < 400 || adaptMobile;
-  const mesaSize = isMobile ? 70 : 100;
+  
+  // Calcular tamaño de mesa basado en zoom level
+  const getMesaSizeFromZoom = useCallback((zoomLevel, isMobileDevice) => {
+    const baseSizes = {
+      0: 60,  // extraSmall
+      1: 80,  // small
+      2: 100, // medium (default)
+      3: 130, // large
+      4: 160  // extraLarge
+    };
+    const mobileSizes = {
+      0: 50,  // extraSmall
+      1: 65,  // small
+      2: 70,  // medium (default)
+      3: 90,  // large
+      4: 110  // extraLarge
+    };
+    
+    const sizes = isMobileDevice ? mobileSizes : baseSizes;
+    return sizes[zoomLevel] || sizes[2]; // Default a medium si nivel inválido
+  }, []);
+  
+  const mesaSize = getMesaSizeFromZoom(mesaZoomLevel, isMobile);
   const canvasWidth = isMobile ? "95%" : "90%";
   const barraWidth = isMobile ? "20%" : "25%";
   const fontSize = isMobile ? 14 : 16;
+  // Tamaño de fuente más pequeño para el sidebar, adaptable a celular/tablet
+  const isTablet = width >= 600; // Tablets generalmente tienen ancho >= 600px
+  const fontSizeSidebar = isMobile ? (isTablet ? 12 : 11) : 13; // Más pequeño que fontSize general
+  const iconSizeSidebar = fontSizeSidebar + 5; // Iconos ligeramente más grandes que el texto
 
-  const styles = InicioScreenStyles(theme, isMobile, mesaSize, canvasWidth, barraWidth, fontSize);
+  const styles = InicioScreenStyles(theme, isMobile, mesaSize, canvasWidth, barraWidth, fontSize, fontSizeSidebar, iconSizeSidebar);
+
+  // Cargar preferencia de zoom desde AsyncStorage
+  useEffect(() => {
+    const loadZoomPreference = async () => {
+      try {
+        const savedZoom = await AsyncStorage.getItem('mesaZoomPreference');
+        if (savedZoom !== null) {
+          const zoomLevel = parseInt(savedZoom, 10);
+          if (zoomLevel >= 0 && zoomLevel <= 4) {
+            setMesaZoomLevel(zoomLevel);
+          }
+        }
+      } catch (error) {
+        console.error('Error cargando preferencia de zoom:', error);
+      }
+    };
+    loadZoomPreference();
+  }, []);
+
+  // Guardar preferencia de zoom cuando cambia
+  useEffect(() => {
+    const saveZoomPreference = async () => {
+      try {
+        await AsyncStorage.setItem('mesaZoomPreference', mesaZoomLevel.toString());
+      } catch (error) {
+        console.error('Error guardando preferencia de zoom:', error);
+      }
+    };
+    saveZoomPreference();
+  }, [mesaZoomLevel]);
+
+  // Funciones para manejar zoom
+  const handleZoomOut = useCallback(() => {
+    if (mesaZoomLevel > 0) {
+      setMesaZoomLevel(prev => prev - 1);
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch (e) {
+        // Silenciar errores de haptic
+      }
+    }
+  }, [mesaZoomLevel]);
+
+  const handleZoomIn = useCallback(() => {
+    if (mesaZoomLevel < 4) {
+      setMesaZoomLevel(prev => prev + 1);
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch (e) {
+        // Silenciar errores de haptic
+      }
+    }
+  }, [mesaZoomLevel]);
+
+  // Obtener nombre del nivel de zoom
+  const getZoomLevelName = useCallback((level) => {
+    const names = ['Muy Pequeño', 'Pequeño', 'Mediano', 'Grande', 'Muy Grande'];
+    return names[level] || 'Mediano';
+  }, []);
 
   // Cargar configuración de adaptación móvil
   useEffect(() => {
@@ -867,10 +972,12 @@ const InicioScreen = () => {
           console.log(`🎨 [ANIMACION] Mesa ${mesa.nummesa} cambiará animación: "${estadoAnterior}" → "${nuevoEstado}"`);
         }
         
-        return nuevas;
+        // Re-ordenar después de actualizar para mantener orden numérico
+        return ordenarMesasPorNumero(nuevas);
       }
-      // Si no existe, agregarla
-      return [...prev, mesa];
+      // Si no se encuentra la mesa, agregarla y ordenar
+      const nuevasConMesa = [...prev, mesa];
+      return ordenarMesasPorNumero(nuevasConMesa);
     });
     
     // Actualizar AsyncStorage
@@ -894,7 +1001,7 @@ const InicioScreen = () => {
     } catch (error) {
       console.error('⚠️ Error actualizando AsyncStorage:', error);
     }
-  }, []);
+  }, [ordenarMesasPorNumero]);
 
   const handleComandaActualizada = useCallback(async (comanda) => {
     console.log('📥 [MOZOS] Comanda actualizada vía WebSocket:', comanda._id, 'Status:', comanda.status);
@@ -970,7 +1077,7 @@ const InicioScreen = () => {
     if (comanda.mesas) {
       handleMesaActualizada(comanda.mesas);
     }
-  }, [handleMesaActualizada]);
+  }, [handleMesaActualizada, ordenarMesasPorNumero]);
 
   // 🔥 ESTÁNDAR INDUSTRIA: Unirse a rooms de todas las mesas activas
   useEffect(() => {
@@ -1052,17 +1159,71 @@ const InicioScreen = () => {
     }
   };
 
+  // Función para ordenar mesas numéricamente
+  const ordenarMesasPorNumero = useCallback((mesas) => {
+    if (!mesas || mesas.length === 0) return mesas;
+    
+    return [...mesas].sort((a, b) => {
+      // Extraer número de mesa
+      const getNumeroMesa = (mesa) => {
+        // Si tiene campo nummesa tipo Number, usarlo directamente
+        if (typeof mesa.nummesa === 'number') {
+          return mesa.nummesa;
+        }
+        // Si es string, intentar extraer número
+        if (typeof mesa.nummesa === 'string') {
+          const match = mesa.nummesa.match(/\d+/);
+          if (match) {
+            return parseInt(match[0], 10);
+          }
+        }
+        // Si tiene campo nombre, intentar extraer número
+        if (mesa.nombre) {
+          const match = mesa.nombre.match(/\d+/);
+          if (match) {
+            return parseInt(match[0], 10);
+          }
+        }
+        // Si no se puede extraer número válido, retornar Infinity para ponerlo al final
+        return Infinity;
+      };
+      
+      const numA = getNumeroMesa(a);
+      const numB = getNumeroMesa(b);
+      
+      // Si ambos tienen números válidos, comparar numéricamente
+      if (numA !== Infinity && numB !== Infinity) {
+        if (numA !== numB) {
+          return numA - numB;
+        }
+        // Si números iguales, ordenar por ID o fecha creación
+        return (a._id || '').localeCompare(b._id || '');
+      }
+      
+      // Si uno no tiene número válido, ponerlo al final
+      if (numA === Infinity && numB !== Infinity) return 1;
+      if (numA !== Infinity && numB === Infinity) return -1;
+      
+      // Si ambos no tienen número, ordenar alfabéticamente por nombre
+      const nombreA = (a.nombre || a.nummesa || '').toString();
+      const nombreB = (b.nombre || b.nummesa || '').toString();
+      return nombreA.localeCompare(nombreB);
+    });
+  }, []);
+
   const obtenerMesas = useCallback(async () => {
     try {
       const mesasURL = apiConfig.isConfigured 
         ? apiConfig.getEndpoint('/mesas')
         : SELECTABLE_API_GET;
       const response = await axios.get(mesasURL, { timeout: 5000 });
-      setMesas(response.data);
+      // Aplicar ordenamiento numérico después de recibir datos
+      const mesasOrdenadas = ordenarMesasPorNumero(response.data);
+      setMesas(mesasOrdenadas);
     } catch (error) {
       console.error("Error al obtener las mesas:", error.message);
     }
-  }, []);
+  }, [ordenarMesasPorNumero]);
 
   const obtenerComandasHoy = useCallback(async () => {
     try {
@@ -1095,7 +1256,15 @@ const InicioScreen = () => {
         ? apiConfig.getEndpoint('/areas')
         : AREAS_API;
       const response = await axios.get(areasURL, { timeout: 5000 });
-      setAreas(response.data.filter(area => area.isActive !== false));
+      const areasActivas = response.data.filter(area => area.isActive !== false);
+      
+      // Console logs para debugging
+      console.log('[ZONAS] Response backend:', response.data);
+      console.log('[ZONAS] Total áreas recibidas:', response.data.length);
+      console.log('[ZONAS] Áreas activas:', areasActivas.length);
+      console.log('[ZONAS] Nombres áreas activas:', areasActivas.map(a => a.nombre));
+      
+      setAreas(areasActivas);
     } catch (error) {
       console.error("Error al obtener las áreas:", error.message);
     }
@@ -3429,22 +3598,108 @@ const InicioScreen = () => {
     );
   };
 
-  // Obtener mesas por área/sección
-  const getMesasPorArea = (areaId) => {
-    if (areaId === "All") return mesas;
-    return mesas.filter(mesa => {
-      const mesaAreaId = mesa.area?._id || mesa.area;
-      return mesaAreaId === areaId;
-    });
-  };
+  // Obtener mesas por área/sección (mantiene ordenamiento numérico)
+  const getMesasPorArea = useCallback((areaId) => {
+    let mesasFiltradas;
+    if (areaId === "All") {
+      mesasFiltradas = mesas;
+    } else {
+      mesasFiltradas = mesas.filter(mesa => {
+        const mesaAreaId = mesa.area?._id || mesa.area;
+        return mesaAreaId === areaId;
+      });
+    }
+    // Aplicar ordenamiento numérico a las mesas filtradas
+    return ordenarMesasPorNumero(mesasFiltradas);
+  }, [mesas, ordenarMesasPorNumero]);
 
-  // Obtener todas las áreas únicas de las mesas
-  const areasConMesas = areas.filter(area => 
-    mesas.some(mesa => {
-      const mesaAreaId = mesa.area?._id || mesa.area;
-      return mesaAreaId === area._id;
-    })
-  );
+  // Obtener TODAS las áreas activas (no solo las que tienen mesas)
+  // Esto permite mostrar áreas vacías como "Don" y "JUGOS"
+  const areasConMesas = useMemo(() => {
+    // Mostrar todas las áreas activas, no solo las que tienen mesas
+    const todasLasAreas = areas;
+    
+    console.log('[TABS] Total áreas disponibles:', todasLasAreas.length);
+    console.log('[TABS] Nombres áreas:', todasLasAreas.map(a => a.nombre));
+    console.log('[TABS] Renderizando tabs para:', todasLasAreas.length, 'áreas');
+    
+    return todasLasAreas;
+  }, [areas]);
+
+  // Función para scroll automático al seleccionar tab
+  const scrollToTab = useCallback((areaId) => {
+    if (!tabsScrollViewRef.current) return;
+    
+    const position = tabPositionsRef.current[areaId || 'default'];
+    if (position !== undefined) {
+      // Calcular posición para centrar el tab
+      const scrollPosition = Math.max(0, position - (containerWidth / 2) + 60); // 60 es aproximadamente la mitad del ancho de un tab
+      
+      tabsScrollViewRef.current.scrollTo({
+        x: scrollPosition,
+        animated: true,
+      });
+    }
+  }, [containerWidth]);
+
+  // Handler para cambio de sección activa con scroll automático
+  const handleSeccionActivaChange = useCallback((newSeccionId) => {
+    setSeccionActiva(newSeccionId);
+    // Scroll automático después de un pequeño delay para permitir render
+    setTimeout(() => {
+      scrollToTab(newSeccionId);
+    }, 100);
+    
+    // Haptic feedback
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (e) {
+      // Silenciar errores de haptic
+    }
+  }, [scrollToTab]);
+
+  // Handler para scroll events - actualizar gradientes
+  const handleScroll = useCallback((event) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const currentScrollX = contentOffset.x;
+    const currentContentWidth = contentSize.width;
+    const currentContainerWidth = layoutMeasurement.width;
+    
+    setScrollX(currentScrollX);
+    setContentWidth(currentContentWidth);
+    setContainerWidth(currentContainerWidth);
+    
+    // Mostrar/ocultar gradientes según posición
+    setShowLeftGradient(currentScrollX > 10);
+    setShowRightGradient(currentScrollX < (currentContentWidth - currentContainerWidth - 10));
+  }, []);
+
+  // Efecto para actualizar gradientes cuando cambia contenido
+  useEffect(() => {
+    if (contentWidth > 0 && containerWidth > 0) {
+      setShowLeftGradient(scrollX > 10);
+      setShowRightGradient(scrollX < (contentWidth - containerWidth - 10));
+    }
+  }, [scrollX, contentWidth, containerWidth]);
+
+  // Animación hint inicial para sugerir scroll (solo primera vez)
+  useEffect(() => {
+    if (tabsScrollViewRef.current && contentWidth > containerWidth && scrollX === 0) {
+      // Esperar un momento para que el layout se estabilice
+      const timer = setTimeout(() => {
+        if (tabsScrollViewRef.current && contentWidth > containerWidth) {
+          // Scroll suave hacia la derecha y volver
+          tabsScrollViewRef.current.scrollTo({ x: 30, animated: true });
+          setTimeout(() => {
+            if (tabsScrollViewRef.current) {
+              tabsScrollViewRef.current.scrollTo({ x: 0, animated: true });
+            }
+          }, 600);
+        }
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [contentWidth, containerWidth, scrollX]);
 
   return (
     <SafeAreaView style={styles.container} edges={[]}>
@@ -3465,45 +3720,82 @@ const InicioScreen = () => {
         </View>
       </View>
 
-      {/* Barra de Tabs de Áreas */}
+      {/* Barra de Tabs de Áreas - Fila 1: Tabs Scrollables */}
       <View style={styles.tabsContainer}>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabsContent}
-        >
-          <TouchableOpacity
-            style={[
-              styles.tabButton,
-              seccionActiva === null && styles.tabButtonActive
-            ]}
-            onPress={() => setSeccionActiva(null)}
+        <View style={styles.tabsScrollContainer}>
+          {/* Gradiente izquierdo */}
+          {showLeftGradient && (
+            <LinearGradient
+              colors={[theme.colors.surface, 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.scrollGradientLeft}
+              pointerEvents="none"
+            />
+          )}
+          
+          <ScrollView 
+            ref={tabsScrollViewRef}
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabsContent}
+            style={styles.tabsScrollView}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            decelerationRate="fast"
           >
-            <Text style={[
-              styles.tabButtonText,
-              seccionActiva === null && styles.tabButtonTextActive
-            ]}>
-              Default
-            </Text>
-          </TouchableOpacity>
-          {areasConMesas.map((area) => (
             <TouchableOpacity
-              key={area._id}
               style={[
                 styles.tabButton,
-                seccionActiva === area._id && styles.tabButtonActive
+                seccionActiva === null && styles.tabButtonActive
               ]}
-              onPress={() => setSeccionActiva(seccionActiva === area._id ? null : area._id)}
+              onPress={() => handleSeccionActivaChange(null)}
+              onLayout={(event) => {
+                const { x } = event.nativeEvent.layout;
+                tabPositionsRef.current['default'] = x;
+              }}
             >
               <Text style={[
                 styles.tabButtonText,
-                seccionActiva === area._id && styles.tabButtonTextActive
+                seccionActiva === null && styles.tabButtonTextActive
               ]}>
-                {seccionActiva === area._id ? "☆ " : ""}{area.nombre.toUpperCase()}
+                Default
               </Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
+            {areasConMesas.map((area) => (
+              <TouchableOpacity
+                key={area._id}
+                style={[
+                  styles.tabButton,
+                  seccionActiva === area._id && styles.tabButtonActive
+                ]}
+                onPress={() => handleSeccionActivaChange(seccionActiva === area._id ? null : area._id)}
+                onLayout={(event) => {
+                  const { x } = event.nativeEvent.layout;
+                  tabPositionsRef.current[area._id] = x;
+                }}
+              >
+                <Text style={[
+                  styles.tabButtonText,
+                  seccionActiva === area._id && styles.tabButtonTextActive
+                ]}>
+                  {seccionActiva === area._id ? "☆ " : ""}{area.nombre.toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          
+          {/* Gradiente derecho */}
+          {showRightGradient && (
+            <LinearGradient
+              colors={['transparent', theme.colors.surface]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.scrollGradientRight}
+              pointerEvents="none"
+            />
+          )}
+        </View>
       </View>
 
       {/* Contenido Principal */}
@@ -3530,6 +3822,7 @@ const InicioScreen = () => {
                     mozo={mozo}
                     isSelected={isSelected}
                     mesaSize={mesaSize}
+                    zoomLevel={mesaZoomLevel}
                     theme={theme}
                     styles={styles}
                     onPress={handleSelectMesa}
@@ -3553,6 +3846,7 @@ const InicioScreen = () => {
                     mozo={mozo}
                     isSelected={isSelected}
                     mesaSize={mesaSize}
+                    zoomLevel={mesaZoomLevel}
                     theme={theme}
                     styles={styles}
                     onPress={handleSelectMesa}
@@ -3568,6 +3862,61 @@ const InicioScreen = () => {
         <View style={[styles.barraDerecha, { width: barraWidth }]}>
           <ScrollView style={styles.barraScroll} showsVerticalScrollIndicator={false}>
             {/* Funciones */}
+            {/* ============================================ */}
+            {/* SECCIÓN ZOOM - NUEVA                        */}
+            {/* ============================================ */}
+            <View style={styles.zoomSection}>
+              {/* Título sección */}
+              <Text style={styles.zoomSectionTitle}>
+                🔍 Tamaño
+              </Text>
+              
+              {/* Botón aumentar zoom */}
+              <TouchableOpacity 
+                style={[
+                  styles.zoomButton,
+                  mesaZoomLevel >= 4 && styles.zoomButtonDisabled
+                ]}
+                onPress={handleZoomIn}
+                disabled={mesaZoomLevel >= 4}
+              >
+                <Text style={styles.zoomButtonText}>+</Text>
+              </TouchableOpacity>
+              
+              {/* Indicador nivel zoom */}
+              <View style={styles.zoomIndicatorContainer}>
+                {Array.from({ length: 5 }, (_, i) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.zoomDot,
+                      i <= mesaZoomLevel 
+                        ? styles.zoomDotActive 
+                        : styles.zoomDotInactive
+                    ]}
+                  />
+                ))}
+              </View>
+              
+              {/* Botón reducir zoom */}
+              <TouchableOpacity 
+                style={[
+                  styles.zoomButton,
+                  mesaZoomLevel <= 0 && styles.zoomButtonDisabled
+                ]}
+                onPress={handleZoomOut}
+                disabled={mesaZoomLevel <= 0}
+              >
+                <Text style={styles.zoomButtonText}>−</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Separador visual */}
+            <View style={styles.sectionDivider} />
+
+            {/* ============================================ */}
+            {/* ACCIONES CONSERVADAS                        */}
+            {/* ============================================ */}
             <TouchableOpacity
               style={styles.barraItem}
               onPress={async () => {
@@ -3586,20 +3935,10 @@ const InicioScreen = () => {
                 }
               }}
             >
-              <Text style={styles.barraItemText}>➕ NUEVA ORDEN</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.barraItem}
-              onPress={() => {
-                const comandasAbiertas = comandas.filter(c => 
-                  c.status?.toLowerCase() !== "pagado" && 
-                  c.status?.toLowerCase() !== "completado"
-                );
-                Alert.alert("Cerrar Cuenta", `${comandasAbiertas.length} comandas abiertas`);
-              }}
-            >
-              <Text style={styles.barraItemText}>💰 Cerrar Cuenta</Text>
+              <View style={styles.barraItemContent}>
+                <MaterialCommunityIcons name="plus-circle" size={iconSizeSidebar || 16} color={theme.colors.text.primary} />
+                <Text style={styles.barraItemText}>NUEVA ORDEN</Text>
+              </View>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -3610,16 +3949,10 @@ const InicioScreen = () => {
                 Alert.alert("Recargar", "Datos actualizados");
               }}
             >
-              <Text style={styles.barraItemText}>🔄 Recargar</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.barraItem}
-              onPress={() => {
-                Alert.alert("Pedidos", "Ver pedidos pendientes");
-              }}
-            >
-              <Text style={styles.barraItemText}>🛵 Pedidos</Text>
+              <View style={styles.barraItemContent}>
+                <MaterialCommunityIcons name="refresh" size={iconSizeSidebar || 16} color={theme.colors.text.primary} />
+                <Text style={styles.barraItemText}>Recargar</Text>
+              </View>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -3628,7 +3961,10 @@ const InicioScreen = () => {
                 Alert.alert("Juntar Mesas", "Selecciona las mesas a juntar");
               }}
             >
-              <Text style={styles.barraItemText}>🔗 Juntar Mesas</Text>
+              <View style={styles.barraItemContent}>
+                <MaterialCommunityIcons name="link-variant" size={iconSizeSidebar || 16} color={theme.colors.text.primary} />
+                <Text style={styles.barraItemText}>Juntar Mesas</Text>
+              </View>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -3637,7 +3973,10 @@ const InicioScreen = () => {
                 Alert.alert("Reservar", "Crear una reserva");
               }}
             >
-              <Text style={styles.barraItemText}>📅 Reservar</Text>
+              <View style={styles.barraItemContent}>
+                <MaterialCommunityIcons name="calendar" size={iconSizeSidebar || 16} color={theme.colors.text.primary} />
+                <Text style={styles.barraItemText}>Reservar</Text>
+              </View>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -3646,7 +3985,10 @@ const InicioScreen = () => {
                 Alert.alert("Agregar Mesa", "Agregar una nueva mesa");
               }}
             >
-              <Text style={styles.barraItemText}>➕ Agregar Mesa</Text>
+              <View style={styles.barraItemContent}>
+                <MaterialCommunityIcons name="table-plus" size={iconSizeSidebar || 16} color={theme.colors.text.primary} />
+                <Text style={styles.barraItemText}>Agregar Mesa</Text>
+              </View>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -3665,15 +4007,6 @@ const InicioScreen = () => {
               }}
             >
               <Text style={styles.barraItemText}>➖ Quitar Mesa</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.barraItem}
-              onPress={() => {
-                Alert.alert("Nombre", "Editar nombre");
-              }}
-            >
-              <Text style={styles.barraItemText}>✏️ Nombre</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -4796,11 +5129,13 @@ const InicioScreen = () => {
         <OverlayEliminacion mensaje={mensajeCargaEliminacionPlatos} />
       )}
 
+
     </SafeAreaView>
   );
 };
 
-const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, fontSize) => StyleSheet.create({
+
+const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, fontSize, fontSizeSidebar, iconSizeSidebar) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
@@ -4874,11 +5209,65 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
     ...theme.shadows.small,
+    flexDirection: "column",
+  },
+  tabsScrollContainer: {
+    position: "relative",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  tabsScrollView: {
+    flex: 1,
   },
   tabsContent: {
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
     gap: theme.spacing.sm,
+    alignItems: "center",
+  },
+  scrollGradientLeft: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 30,
+    zIndex: 1,
+  },
+  scrollGradientRight: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 30,
+    zIndex: 1,
+  },
+  zoomButton: {
+    width: 36,
+    height: 36,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    ...theme.shadows.small,
+  },
+  zoomButtonDisabled: {
+    backgroundColor: theme.colors.border,
+    opacity: 0.5,
+  },
+  zoomIndicator: {
+    minWidth: 60,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  zoomDot: {
+    color: theme.colors.border,
+    fontSize: fontSize * 0.6,
+  },
+  zoomDotActive: {
+    color: theme.colors.primary,
+    fontSize: fontSize * 0.6,
   },
   tabButton: {
     paddingHorizontal: theme.spacing.lg,
@@ -4888,10 +5277,15 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
     borderWidth: 1,
     borderColor: theme.colors.border,
     marginRight: theme.spacing.sm,
+    minWidth: 80,
+    maxWidth: 180,
+    alignItems: "center",
+    justifyContent: "center",
   },
   tabButtonActive: {
     backgroundColor: theme.colors.primary,
     borderColor: theme.colors.primary,
+    ...theme.shadows.small,
   },
   tabButtonText: {
     fontSize: fontSize,
@@ -4901,6 +5295,79 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
   tabButtonTextActive: {
     color: theme.colors.text.white,
     fontWeight: "700",
+  },
+  // ============================================
+  // ESTILOS SECCIÓN ZOOM
+  // ============================================
+  zoomSection: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    marginBottom: 8,
+  },
+  zoomSectionTitle: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: theme.colors.text.secondary,
+    marginBottom: 8,
+    textAlign: "center",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  zoomButton: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginBottom: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 32,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  zoomButtonDisabled: {
+    backgroundColor: "#666",
+    opacity: 0.5,
+  },
+  zoomButtonText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: theme.colors.text.white,
+  },
+  zoomIndicatorContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 6,
+    marginBottom: 6,
+    gap: 4,
+  },
+  zoomDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  zoomDotActive: {
+    backgroundColor: theme.colors.text.white,
+    opacity: 1,
+  },
+  zoomDotInactive: {
+    backgroundColor: theme.colors.text.white,
+    opacity: 0.2,
+  },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: theme.colors.border,
+    marginVertical: 8,
+    marginHorizontal: 12,
   },
   barraDerecha: {
     backgroundColor: theme.colors.surface,
@@ -4916,10 +5383,17 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
+  barraItemContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    gap: 8,
+  },
   barraItemText: {
-    fontSize: fontSize,
+    fontSize: fontSizeSidebar || 11,
     color: theme.colors.text.primary,
     fontWeight: "500",
+    flex: 1,
   },
   barraItemSalir: {
     marginTop: "auto",
