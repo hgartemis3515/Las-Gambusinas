@@ -89,6 +89,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   const [modalEliminarComandaVisible, setModalEliminarComandaVisible] = useState(false);
   const [motivoEliminacionComanda, setMotivoEliminacionComanda] = useState('');
+  const [platosEliminablesComanda, setPlatosEliminablesComanda] = useState([]);
+  const [hayPlatosEnRecogerComanda, setHayPlatosEnRecogerComanda] = useState(false);
   
   // Estados para modal de edición
   const [modalEditarVisible, setModalEditarVisible] = useState(false);
@@ -772,21 +774,46 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }
     
     const comandaAEliminar = comandas[0];
-    const hayPlatosPreparados = todosLosPlatos.some(p => p.estado === 'recoger');
-    const hayPlatosEntregados = todosLosPlatos.some(p => p.estado === 'entregado');
+    
+    // Filtrar solo platos eliminables (pedido y recoger)
+    const platosEliminables = todosLosPlatos.filter(p => {
+      const estado = p.estado || 'pedido';
+      return (estado === 'pedido' || estado === 'recoger') && !p.eliminado;
+    });
+    
+    // Detectar platos entregados
+    const hayPlatosEntregados = todosLosPlatos.some(p => 
+      (p.estado === 'entregado' || p.estado === 'pagado') && !p.eliminado
+    );
+    
+    // Detectar platos en recoger
+    const hayPlatosEnRecoger = platosEliminables.some(p => p.estado === 'recoger');
     
     if (hayPlatosEntregados) {
       Alert.alert(
         'No se puede eliminar',
-        'Esta comanda tiene platos entregados. No se puede eliminar completamente.',
+        'Esta comanda tiene platos entregados. Solo puedes eliminar platos individuales que no hayan sido entregados.',
         [{ text: 'Entendido' }]
       );
       return;
     }
     
+    if (platosEliminables.length === 0) {
+      Alert.alert(
+        'Sin platos para eliminar',
+        'Todos los platos de esta comanda ya fueron entregados o eliminados.',
+        [{ text: 'Entendido' }]
+      );
+      return;
+    }
+    
+    // Preparar datos para el modal
+    setPlatosEliminablesComanda(platosEliminables);
+    setHayPlatosEnRecogerComanda(hayPlatosEnRecoger);
+    
     Alert.alert(
       'Eliminar Comanda',
-      hayPlatosPreparados
+      hayPlatosEnRecoger
         ? '⚠️ Hay platos preparados que se desperdiciarán. ¿Estás seguro de eliminar esta comanda?'
         : '¿Estás seguro de eliminar esta comanda?',
       [
@@ -848,6 +875,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       Alert.alert('✓ Comanda Eliminada', 'La comanda fue eliminada correctamente.');
       setModalEliminarComandaVisible(false);
       setMotivoEliminacionComanda('');
+      setPlatosEliminablesComanda([]);
+      setHayPlatosEnRecogerComanda(false);
       
       // Navegar de regreso
       if (onRefresh) onRefresh();
@@ -1012,28 +1041,38 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               <View style={[
                 styles.totalesContainer,
                 {
-                  backgroundColor: themeColors.colors?.card || themeColors.card || '#FFFFFF',
-                  borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                  backgroundColor: isDark ? '#FFFFFF' : (themeColors.colors?.card || themeColors.card || '#FFFFFF'), // Blanco en modo oscuro para que el texto negro se vea
+                  borderColor: isDark ? '#E5E7EB' : (themeColors.colors?.border || themeColors.border || '#E5E7EB'),
                 }
               ]}>
-                <View style={[styles.totalRow, { borderBottomColor: themeColors.colors?.border || themeColors.border || '#E5E7EB' }]}>
-                  <Text style={[styles.totalLabel, { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }]}>
+                <View style={[styles.totalRow]}>
+                  <Text style={[
+                    styles.totalLabel, 
+                    { 
+                      color: isDark ? '#000000' : (themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280')
+                    }
+                  ]}>
                     Subtotal:
                   </Text>
                   <Text style={[styles.totalValue, { color: isDark ? '#6EE7B7' : '#059669' }]}>
                     S/. {totales.subtotal}
                   </Text>
                 </View>
-                <View style={[styles.totalRow, { borderBottomColor: themeColors.colors?.border || themeColors.border || '#E5E7EB' }]}>
-                  <Text style={[styles.totalLabel, { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }]}>
+                <View style={[styles.totalRow, { borderBottomWidth: 0 }]}>
+                  <Text style={[
+                    styles.totalLabel, 
+                    { 
+                      color: isDark ? '#000000' : (themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280')
+                    }
+                  ]}>
                     IGV (18%):
                   </Text>
                   <Text style={[styles.totalValue, { color: isDark ? '#6EE7B7' : '#059669' }]}>
                     S/. {totales.igv}
                   </Text>
                 </View>
-                <View style={[styles.totalRow, styles.totalRowFinal, { borderTopColor: themeColors.colors?.border || themeColors.border || '#E5E7EB' }]}>
-                  <Text style={[styles.totalLabel, styles.totalLabelFinal, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+                <View style={[styles.totalRow, styles.totalRowFinal, { borderTopColor: isDark ? '#374151' : (themeColors.colors?.border || themeColors.border || '#E5E7EB') }]}>
+                  <Text style={[styles.totalLabel, styles.totalLabelFinal, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937') }]}>
                     TOTAL:
                   </Text>
                   <Text style={[styles.totalValue, styles.totalValueFinal, { color: isDark ? '#6EE7B7' : '#059669' }]}>
@@ -1152,7 +1191,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           <View style={[
             styles.modalContent, 
             { 
-              backgroundColor: themeColors.colors?.surface || themeColors.colors?.card || themeColors.card || '#FFFFFF',
+              backgroundColor: isDark ? '#000000' : (themeColors.colors?.surface || themeColors.colors?.card || themeColors.card || '#FFFFFF'), // Negro puro en modo oscuro
               shadowColor: '#000',
               shadowOffset: { width: 0, height: 4 },
               shadowOpacity: isDark ? 0.5 : 0.25,
@@ -1160,10 +1199,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               elevation: 10,
             }
           ]}>
-            <Text style={[styles.modalTitle, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+            <Text style={[styles.modalTitle, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937') }]}>
               Eliminar Platos
             </Text>
-            <Text style={[styles.modalSubtitle, { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }]}>
+            <Text style={[styles.modalSubtitle, { color: isDark ? '#D1D5DB' : (themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280') }]}>
               Selecciona los platos a eliminar:
             </Text>
             
@@ -1179,20 +1218,28 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                       key={`${plato.comandaId}-${plato.platoId}-${index}`}
                       style={[
                         styles.modalPlatoItem,
-                        seleccionado && {
-                          borderColor: '#EF4444',
-                          backgroundColor: isDark ? 'rgba(254, 242, 242, 0.3)' : '#FEF2F2',
-                          borderWidth: 2,
-                        },
-                        { 
-                          backgroundColor: isDark 
-                            ? (estilos.fondo === '#DBEAFE' ? 'rgba(219, 234, 254, 0.3)' : 
-                               estilos.fondo === '#FEF3C7' ? 'rgba(254, 243, 199, 0.3)' :
-                               estilos.fondo === '#D1FAE5' ? 'rgba(209, 250, 229, 0.3)' :
-                               estilos.fondo)
-                            : estilos.fondo,
-                          borderColor: estilos.borde,
+                        {
+                          // Fondo SATURADO directo según estado
+                          backgroundColor: isDark
+                            ? (plato.estado === 'pedido' 
+                                ? '#1E40AF' // Azul saturado
+                                : plato.estado === 'recoger'
+                                ? '#D97706' // Naranja saturado
+                                : plato.estado === 'entregado'
+                                ? '#047857' // Verde saturado
+                                : '#4B5563') // Gris para otros estados
+                            : estilos.fondo, // En modo claro usar color pastel
+                          borderColor: seleccionado ? '#EF4444' : (isDark 
+                            ? (plato.estado === 'pedido' ? '#3B82F6' : 
+                               plato.estado === 'recoger' ? '#F59E0B' : 
+                               plato.estado === 'entregado' ? '#10B981' : '#6B7280')
+                            : estilos.borde),
                           borderWidth: seleccionado ? 2 : 1,
+                        },
+                        seleccionado && {
+                          backgroundColor: isDark 
+                            ? 'rgba(239, 68, 68, 0.3)' // Rojo con opacity para selección
+                            : '#FEF2F2',
                         }
                       ]}
                       onPress={() => toggleSeleccionarPlatoEliminar(plato)}
@@ -1200,19 +1247,79 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                     <MaterialCommunityIcons
                       name={seleccionado ? 'checkbox-marked' : 'checkbox-blank-outline'}
                       size={24}
-                      color={seleccionado ? '#EF4444' : '#9CA3AF'}
+                      color={seleccionado 
+                        ? (isDark ? '#F87171' : '#EF4444')
+                        : (themeColors.colors?.border || themeColors.border || '#9CA3AF')
+                      }
                     />
                     <View style={styles.modalPlatoInfo}>
-                      <Text style={[styles.modalPlatoNombre, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
-                        {plato.plato.nombre}
-                      </Text>
-                      <Text style={[styles.modalPlatoCantidad, { color: isDark ? '#6EE7B7' : '#059669' }]}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={[
+                          styles.modalPlatoNombre, 
+                          { 
+                            color: isDark ? '#FFFFFF' : estilos.textColor || '#1F2937', // Blanco en modo oscuro
+                            flex: 1,
+                          }
+                        ]}>
+                          {plato.plato.nombre}
+                        </Text>
+                        <View style={[
+                          styles.badgeEstado,
+                          {
+                            backgroundColor: isDark
+                              ? (plato.estado === 'pedido' ? '#60A5FA' :
+                                 plato.estado === 'recoger' ? '#FBBF24' :
+                                 plato.estado === 'entregado' ? '#34D399' :
+                                 '#9CA3AF')
+                              : estilos.badgeFondo,
+                            paddingHorizontal: 6,
+                            paddingVertical: 2,
+                            borderRadius: 8,
+                          }
+                        ]}>
+                          <Text style={[
+                            styles.badgeEstadoText,
+                            { 
+                              color: isDark
+                                ? (plato.estado === 'pedido' ? '#1E3A8A' :
+                                   plato.estado === 'recoger' ? '#78350F' :
+                                   plato.estado === 'entregado' ? '#064E3B' :
+                                   '#1F2937')
+                                : estilos.badgeTexto
+                            }
+                          ]}>
+                            {estilos.textoEstado}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={[
+                        styles.modalPlatoCantidad, 
+                        { 
+                          color: isDark ? '#6EE7B7' : '#059669', // Verde claro en oscuro, verde normal en claro
+                          marginTop: 4,
+                        }
+                      ]}>
                         x{plato.cantidad} - S/. {(plato.precio * plato.cantidad).toFixed(2)}
                       </Text>
                       {plato.estado === 'recoger' && (
-                        <Text style={[styles.modalPlatoAdvertencia, { color: '#F59E0B' }]}>
-                          ⚠️ Plato preparado
-                        </Text>
+                        <View style={{
+                          marginTop: 6,
+                          padding: 8,
+                          borderRadius: 6,
+                          backgroundColor: isDark ? 'rgba(251, 146, 60, 0.15)' : '#FEF3C7',
+                          borderWidth: 1,
+                          borderColor: isDark ? '#FB923C' : '#F59E0B',
+                        }}>
+                          <Text style={[
+                            styles.modalPlatoAdvertencia, 
+                            { 
+                              color: isDark ? '#FED7AA' : '#92400E',
+                              fontSize: 12,
+                            }
+                          ]}>
+                            ⚠️ Plato preparado
+                          </Text>
+                        </View>
                       )}
                     </View>
                   </TouchableOpacity>
@@ -1224,13 +1331,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               style={[
                 styles.modalInput,
                 {
-                  backgroundColor: themeColors.colors?.card || themeColors.card || '#F9FAFB',
+                  backgroundColor: isDark ? '#1F2937' : (themeColors.colors?.card || themeColors.card || '#F9FAFB'), // Gris oscuro en modo oscuro
                   borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
-                  color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937',
+                  color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937'),
                 }
               ]}
               placeholder="Motivo de eliminación (obligatorio)"
-              placeholderTextColor={themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280'}
+              placeholderTextColor={isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280')}
               value={motivoEliminacion}
               onChangeText={setMotivoEliminacion}
               multiline
@@ -1296,7 +1403,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           <View style={[
             styles.modalContentEditar, 
             { 
-              backgroundColor: themeColors.colors?.surface || themeColors.colors?.card || themeColors.card || '#FFFFFF',
+              backgroundColor: isDark ? '#000000' : (themeColors.colors?.surface || themeColors.colors?.card || themeColors.card || '#FFFFFF'), // Negro puro en modo oscuro
               shadowColor: '#000',
               shadowOffset: { width: 0, height: 4 },
               shadowOpacity: isDark ? 0.5 : 0.25,
@@ -1305,7 +1412,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             }
           ]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+              <Text style={[styles.modalTitle, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937') }]}>
                 Editar Comanda #{comandaEditando?.comandaNumber || 'N/A'}
               </Text>
               <TouchableOpacity onPress={() => {
@@ -1315,7 +1422,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 setSearchPlato('');
                 setCategoriaFiltro(null);
               }}>
-                <MaterialCommunityIcons name="close" size={24} color={themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937'} />
+                <MaterialCommunityIcons name="close" size={24} color={isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937')} />
               </TouchableOpacity>
             </View>
             
@@ -1326,14 +1433,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 backgroundColor: isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.1)',
               }
             ]}>
-              <Text style={[styles.leyendaText, { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }]}>
+              <Text style={[styles.leyendaText, { color: isDark ? '#D1D5DB' : (themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280') }]}>
                 🔵 Celeste: Pedido | 🟡 Amarillo: Listo para recoger | 🟢 Verde: Entregado
               </Text>
             </View>
             
             <ScrollView style={styles.modalScrollView}>
               <View style={styles.editSection}>
-                <Text style={[styles.editLabel, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+                <Text style={[styles.editLabel, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937') }]}>
                   Mesa: {mesa?.nummesa || 'N/A'}
                 </Text>
               </View>
@@ -1341,7 +1448,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               {/* Platos Editables */}
               {platosEditables.length > 0 && (
                 <View style={styles.editSection}>
-                  <Text style={[styles.editLabel, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+                  <Text style={[styles.editLabel, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937') }]}>
                     Platos Editables:
                   </Text>
                   {platosEditados.map((plato, index) => {
@@ -1363,16 +1470,23 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                         style={[
                           styles.platoEditItem,
                           {
+                            // Fondo SATURADO directo (sin overlay, sin opacity)
                             backgroundColor: coloresEstado.backgroundColor,
                             borderLeftWidth: 4,
                             borderLeftColor: coloresEstado.borderColor,
-                            borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                            borderColor: coloresEstado.borderColor,
+                            opacity: coloresEstado.opacity || 1, // Solo para no editables
                           }
                         ]}
                       >
                         <View style={styles.platoEditInfo}>
                           <View style={styles.platoEditNombreContainer}>
-                            <Text style={[styles.platoEditNombre, { color: coloresEstado.textColor }]}>
+                            <Text style={[
+                              styles.platoEditNombre, 
+                              { 
+                                color: coloresEstado.textColor // Color específico del estado
+                              }
+                            ]}>
                               {plato.nombre}
                             </Text>
                             <View style={[styles.badgeEstado, { backgroundColor: coloresEstado.badgeColor }]}>
@@ -1381,25 +1495,50 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                               </Text>
                             </View>
                           </View>
-                          <Text style={[styles.platoEditPrecio, { color: isDark ? '#6EE7B7' : '#059669' }]}>
+                          <Text style={[styles.platoEditPrecio, { color: coloresEstado.priceColor }]}>
                             S/. {((plato.precio || 0) * (plato.cantidad || 1)).toFixed(2)}
                           </Text>
                         </View>
                         <View style={styles.platoEditActions}>
                           <TouchableOpacity
-                            style={[styles.cantidadButton, { backgroundColor: themeColors.colors?.border || themeColors.border || '#E5E7EB' }]}
+                            style={[
+                              styles.cantidadButton, 
+                              { 
+                                backgroundColor: isDark ? '#4B5563' : '#E5E7EB'
+                              }
+                            ]}
                             onPress={() => handleCambiarCantidad(index, -1)}
                           >
-                            <Text style={[styles.cantidadButtonText, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>-</Text>
+                            <Text style={[
+                              styles.cantidadButtonText, 
+                              { 
+                                color: isDark ? '#F9FAFB' : '#374151'
+                              }
+                            ]}>-</Text>
                           </TouchableOpacity>
-                          <Text style={[styles.cantidadText, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+                          <Text style={[
+                            styles.cantidadText, 
+                            { 
+                              color: coloresEstado.textColor // Color específico del estado
+                            }
+                          ]}>
                             {plato.cantidad || 1}
                           </Text>
                           <TouchableOpacity
-                            style={[styles.cantidadButton, { backgroundColor: themeColors.colors?.border || themeColors.border || '#E5E7EB' }]}
+                            style={[
+                              styles.cantidadButton, 
+                              { 
+                                backgroundColor: isDark ? '#4B5563' : '#E5E7EB'
+                              }
+                            ]}
                             onPress={() => handleCambiarCantidad(index, 1)}
                           >
-                            <Text style={[styles.cantidadButtonText, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>+</Text>
+                            <Text style={[
+                              styles.cantidadButtonText, 
+                              { 
+                                color: isDark ? '#F9FAFB' : '#374151'
+                              }
+                            ]}>+</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.removeButton}
@@ -1421,7 +1560,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               {/* Platos No Editables */}
               {platosNoEditables.length > 0 && (
                 <View style={styles.editSection}>
-                  <Text style={[styles.editLabel, styles.editLabelNoEditable, { color: '#10B981' }]}>
+                  <Text style={[styles.editLabel, styles.editLabelNoEditable, { color: isDark ? '#34D399' : '#10B981' }]}>
                     ✓ Platos entregados (no editables):
                   </Text>
                   {platosNoEditables.map((plato, index) => {
@@ -1435,17 +1574,24 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                           styles.platoEditItem, 
                           styles.platoEditItemNoEditable,
                           {
+                            // Fondo SATURADO directo (sin overlay)
                             backgroundColor: coloresEstado.backgroundColor,
                             borderLeftWidth: 4,
                             borderLeftColor: coloresEstado.borderColor,
-                            borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
-                            opacity: 0.6,
+                            borderColor: coloresEstado.borderColor,
+                            opacity: coloresEstado.opacity || 0.6, // Opacity global para no editables
                           }
                         ]}
                       >
                         <View style={styles.platoEditInfo}>
                           <View style={styles.platoEditNombreContainer}>
-                            <Text style={[styles.platoEditNombre, styles.platoEditNombreNoEditable, { color: coloresEstado.textColor }]}>
+                            <Text style={[
+                              styles.platoEditNombre, 
+                              styles.platoEditNombreNoEditable, 
+                              { 
+                                color: coloresEstado.textColor // Color específico del estado
+                              }
+                            ]}>
                               {plato.nombre}
                             </Text>
                             <View style={[styles.badgeEstado, { backgroundColor: coloresEstado.badgeColor }]}>
@@ -1454,11 +1600,15 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                               </Text>
                             </View>
                           </View>
-                          <Text style={[styles.platoEditPrecio, { color: isDark ? '#6EE7B7' : '#059669' }]}>
+                          <Text style={[styles.platoEditPrecio, { color: coloresEstado.priceColor }]}>
                             S/. {((plato.precio || 0) * (plato.cantidad || 1)).toFixed(2)}
                           </Text>
                         </View>
-                        <MaterialCommunityIcons name="lock" size={20} color={coloresEstado.textColor} />
+                        <MaterialCommunityIcons 
+                          name="lock" 
+                          size={20} 
+                          color={coloresEstado.textColor} 
+                        />
                       </View>
                     );
                   })}
@@ -1513,20 +1663,52 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                     />
                     <ScrollView horizontal style={styles.categoriasContainer} showsHorizontalScrollIndicator={false}>
                       <TouchableOpacity
-                        style={[styles.categoriaChip, !categoriaFiltro && styles.categoriaChipActive]}
+                        style={[
+                          styles.categoriaChip, 
+                          {
+                            backgroundColor: !categoriaFiltro 
+                              ? (isDark ? '#60A5FA' : '#3B82F6')
+                              : (themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB')),
+                            borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                          },
+                          !categoriaFiltro && styles.categoriaChipActive
+                        ]}
                         onPress={() => setCategoriaFiltro(null)}
                       >
-                        <Text style={[styles.categoriaChipText, !categoriaFiltro && styles.categoriaChipTextActive]}>
+                        <Text style={[
+                          styles.categoriaChipText, 
+                          {
+                            color: !categoriaFiltro 
+                              ? '#FFFFFF'
+                              : (themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937'))
+                          }
+                        ]}>
                           Todos
                         </Text>
                       </TouchableOpacity>
                       {categorias.map((cat) => (
                         <TouchableOpacity
                           key={cat}
-                          style={[styles.categoriaChip, categoriaFiltro === cat && styles.categoriaChipActive]}
+                          style={[
+                            styles.categoriaChip, 
+                            {
+                              backgroundColor: categoriaFiltro === cat
+                                ? (isDark ? '#60A5FA' : '#3B82F6')
+                                : (themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB')),
+                              borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                            },
+                            categoriaFiltro === cat && styles.categoriaChipActive
+                          ]}
                           onPress={() => setCategoriaFiltro(cat)}
                         >
-                          <Text style={[styles.categoriaChipText, categoriaFiltro === cat && styles.categoriaChipTextActive]}>
+                          <Text style={[
+                            styles.categoriaChipText,
+                            {
+                              color: categoriaFiltro === cat
+                                ? '#FFFFFF'
+                                : (themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937'))
+                            }
+                          ]}>
                             {cat}
                           </Text>
                         </TouchableOpacity>
@@ -1534,7 +1716,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                     </ScrollView>
                     <ScrollView style={styles.platosScrollView} nestedScrollEnabled={true}>
                       {platosFiltrados.length === 0 ? (
-                        <Text style={styles.emptyPlatosText}>No hay platos disponibles</Text>
+                        <Text style={[
+                          styles.emptyPlatosText,
+                          { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }
+                        ]}>
+                          No hay platos disponibles
+                        </Text>
                       ) : (
                         platosFiltrados.map((plato) => {
                           const cantidadEnComanda = platosEditados.find(
@@ -1544,16 +1731,37 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                           return (
                             <TouchableOpacity
                               key={plato._id}
-                              style={styles.platoSelectItem}
+                              style={[
+                                styles.platoSelectItem,
+                                {
+                                  backgroundColor: themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB'),
+                                  borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                                }
+                              ]}
                               onPress={() => handleAgregarPlato(plato)}
                             >
                               <View style={styles.platoSelectInfo}>
-                                <Text style={styles.platoSelectNombre}>{plato.nombre}</Text>
-                                <Text style={styles.platoSelectPrecio}>S/. {plato.precio.toFixed(2)}</Text>
+                                <Text style={[
+                                  styles.platoSelectNombre,
+                                  { color: themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937') }
+                                ]}>
+                                  {plato.nombre}
+                                </Text>
+                                <Text style={[
+                                  styles.platoSelectPrecio,
+                                  { color: isDark ? '#6EE7B7' : '#059669' }
+                                ]}>
+                                  S/. {plato.precio.toFixed(2)}
+                                </Text>
                               </View>
                               {cantidadEnComanda > 0 && (
-                                <View style={styles.cantidadBadge}>
-                                  <Text style={styles.cantidadBadgeText}>x{cantidadEnComanda}</Text>
+                                <View style={[
+                                  styles.cantidadBadge,
+                                  { backgroundColor: isDark ? '#60A5FA' : '#3B82F6' }
+                                ]}>
+                                  <Text style={[styles.cantidadBadgeText, { color: '#FFFFFF' }]}>
+                                    x{cantidadEnComanda}
+                                  </Text>
                                 </View>
                               )}
                             </TouchableOpacity>
@@ -1566,20 +1774,20 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               </View>
               
               <View style={styles.editSection}>
-                <Text style={[styles.editLabel, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+                <Text style={[styles.editLabel, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937') }]}>
                   Observaciones:
                 </Text>
                 <TextInput
                   style={[
                     styles.observacionesInput,
                     {
-                      backgroundColor: themeColors.colors?.card || themeColors.card || '#F9FAFB',
+                      backgroundColor: isDark ? '#1F2937' : (themeColors.colors?.card || themeColors.card || '#F9FAFB'), // Gris oscuro en modo oscuro
                       borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
-                      color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937',
+                      color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937'),
                     }
                   ]}
                   placeholder="Sin observaciones..."
-                  placeholderTextColor={themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280'}
+                  placeholderTextColor={isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280')}
                   value={observacionesEditadas}
                   onChangeText={setObservacionesEditadas}
                   multiline
@@ -1588,7 +1796,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               </View>
               
               <View style={styles.editSection}>
-                <Text style={[styles.totalText, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+                <Text style={[styles.totalText, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937') }]}>
                   TOTAL: S/. {calcularTotalEdicion().toFixed(2)}
                 </Text>
               </View>
@@ -1604,12 +1812,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 style={[
                   styles.saveButton,
                   {
-                    backgroundColor: isDark ? '#60A5FA' : '#3B82F6',
+                    backgroundColor: isDark ? '#10B981' : '#059669', // Verde
                   }
                 ]}
                 onPress={handleGuardarEdicion}
               >
-                <Text style={[styles.saveButtonText, { color: '#FFFFFF' }]}>💾 Guardar Cambios</Text>
+                <MaterialCommunityIcons name="content-save" size={20} color="#FFFFFF" />
+                <Text style={[styles.saveButtonText, { color: '#FFFFFF', marginLeft: 8 }]}>Guardar Cambios</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -1651,7 +1860,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           <View style={[
             styles.modalContent, 
             { 
-              backgroundColor: themeColors.colors?.surface || themeColors.colors?.card || themeColors.card || '#FFFFFF',
+              backgroundColor: isDark ? '#000000' : (themeColors.colors?.surface || themeColors.colors?.card || themeColors.card || '#FFFFFF'), // Negro puro en modo oscuro
               shadowColor: '#000',
               shadowOffset: { width: 0, height: 4 },
               shadowOpacity: isDark ? 0.5 : 0.25,
@@ -1659,7 +1868,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               elevation: 10,
             }
           ]}>
-            <Text style={[styles.modalTitle, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+            <Text style={[styles.modalTitle, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937') }]}>
               Eliminar Comanda
             </Text>
             <Text style={[
@@ -1667,22 +1876,191 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               { 
                 color: isDark ? '#FCA5A5' : '#DC2626',
                 fontWeight: '500',
+                marginBottom: 16,
               }
             ]}>
               Esta acción eliminará la comanda #{comandaPrincipal.comandaNumber || 'N/A'} permanentemente.
             </Text>
             
+            {/* Advertencia si hay platos en recoger */}
+            {hayPlatosEnRecogerComanda && (
+              <View style={{
+                padding: 12,
+                borderRadius: 8,
+                marginBottom: 16,
+                backgroundColor: isDark ? 'rgba(251, 146, 60, 0.15)' : '#FEF3C7',
+                borderWidth: 1,
+                borderColor: isDark ? '#FB923C' : '#F59E0B',
+              }}>
+                <Text style={{
+                  color: isDark ? '#FED7AA' : '#92400E',
+                  fontSize: 14,
+                  fontWeight: '600',
+                }}>
+                  ⚠️ Algunos platos ya están preparados en cocina y se desperdiciarán
+                </Text>
+              </View>
+            )}
+            
+            {/* Lista de platos a eliminar */}
+            {platosEliminablesComanda.length > 0 && (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={[
+                  styles.editLabel,
+                  { 
+                    color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937'),
+                    marginBottom: 12,
+                  }
+                ]}>
+                  ⚠️ Platos a eliminar:
+                </Text>
+                <ScrollView style={{ maxHeight: 200, marginBottom: 12 }}>
+                  {platosEliminablesComanda.map((plato, index) => {
+                    const estilos = obtenerEstilosPorEstado(plato.estado);
+                    return (
+                      <View
+                        key={`${plato.comandaId}-${plato.platoId}-${index}`}
+                        style={[
+                          styles.modalPlatoItem,
+                          {
+                            // Fondo SATURADO directo según estado
+                            backgroundColor: isDark
+                              ? (plato.estado === 'pedido' 
+                                  ? '#1E40AF' // Azul saturado
+                                  : plato.estado === 'recoger'
+                                  ? '#D97706' // Naranja saturado
+                                  : plato.estado === 'entregado'
+                                  ? '#047857' // Verde saturado
+                                  : '#4B5563') // Gris para otros estados
+                              : estilos.fondo, // En modo claro usar color pastel
+                            borderColor: isDark
+                              ? (plato.estado === 'pedido' ? '#3B82F6' : 
+                                 plato.estado === 'recoger' ? '#F59E0B' : 
+                                 plato.estado === 'entregado' ? '#10B981' : '#6B7280')
+                              : estilos.borde,
+                            borderWidth: 1,
+                            marginBottom: 8,
+                          }
+                        ]}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <Text style={[
+                              styles.modalPlatoNombre,
+                              { 
+                                color: isDark ? '#FFFFFF' : estilos.textColor || '#1F2937', // Blanco en modo oscuro
+                                flex: 1,
+                              }
+                            ]}>
+                              {plato.plato?.nombre || 'Plato desconocido'}
+                            </Text>
+                            <View style={[
+                              styles.badgeEstado,
+                              {
+                                backgroundColor: isDark
+                                  ? (plato.estado === 'pedido' ? '#60A5FA' :
+                                     plato.estado === 'recoger' ? '#FBBF24' :
+                                     plato.estado === 'entregado' ? '#34D399' :
+                                     '#9CA3AF')
+                                  : estilos.badgeFondo,
+                                paddingHorizontal: 6,
+                                paddingVertical: 2,
+                                borderRadius: 8,
+                                marginLeft: 8,
+                              }
+                            ]}>
+                              <Text style={[
+                                styles.badgeEstadoText,
+                                { 
+                                  color: isDark
+                                    ? (plato.estado === 'pedido' ? '#1E3A8A' :
+                                       plato.estado === 'recoger' ? '#78350F' :
+                                       plato.estado === 'entregado' ? '#064E3B' :
+                                       '#1F2937')
+                                    : estilos.badgeTexto
+                                }
+                              ]}>
+                                {estilos.textoEstado}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={[
+                            styles.modalPlatoCantidad,
+                            { 
+                              color: isDark ? '#6EE7B7' : '#059669', // Verde claro en oscuro
+                            }
+                          ]}>
+                            x{plato.cantidad} - S/. {(plato.precio * plato.cantidad).toFixed(2)}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+                
+                {/* Totales */}
+                <View style={{
+                  paddingTop: 12,
+                  borderTopWidth: 1,
+                  borderTopColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                  marginTop: 8,
+                }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text style={{
+                      color: isDark ? '#D1D5DB' : (themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280'),
+                      fontSize: 14,
+                    }}>
+                      Subtotal:
+                    </Text>
+                    <Text style={{
+                      color: isDark ? '#FCA5A5' : '#DC2626',
+                      fontSize: 14,
+                      fontWeight: '600',
+                    }}>
+                      S/. {platosEliminablesComanda.reduce((sum, p) => sum + (p.precio * p.cantidad), 0).toFixed(2)}
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={{
+                      color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937'),
+                      fontSize: 16,
+                      fontWeight: 'bold',
+                    }}>
+                      TOTAL GENERAL:
+                    </Text>
+                    <Text style={{
+                      color: isDark ? '#FCA5A5' : '#DC2626',
+                      fontSize: 16,
+                      fontWeight: 'bold',
+                    }}>
+                      S/. {platosEliminablesComanda.reduce((sum, p) => sum + (p.precio * p.cantidad), 0).toFixed(2)}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+            
+            <Text style={[
+              styles.editLabel,
+              { 
+                color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937'),
+                marginBottom: 8,
+                fontSize: 14,
+              }
+            ]}>
+              Motivo de eliminación de todas las comandas: *
+            </Text>
             <TextInput
               style={[
                 styles.modalInput,
                 {
-                  backgroundColor: themeColors.colors?.card || themeColors.card || '#F9FAFB',
+                  backgroundColor: isDark ? '#1F2937' : (themeColors.colors?.card || themeColors.card || '#F9FAFB'), // Gris oscuro en modo oscuro
                   borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
-                  color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937',
+                  color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937'),
                 }
               ]}
-              placeholder="Motivo de eliminación (obligatorio)"
-              placeholderTextColor={themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280'}
+              placeholder="Ej: Cliente canceló todo el pedido, error en todas las comandas, cambio de mesa..."
+              placeholderTextColor={isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280')}
               value={motivoEliminacionComanda}
               onChangeText={setMotivoEliminacionComanda}
               multiline
@@ -1701,6 +2079,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 onPress={() => {
                   setModalEliminarComandaVisible(false);
                   setMotivoEliminacionComanda('');
+                  setPlatosEliminablesComanda([]);
+                  setHayPlatosEnRecogerComanda(false);
                 }}
               >
                 <Text style={[
@@ -2060,7 +2440,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#10B981', // Verde
     padding: 12,
     borderRadius: 8,
     marginBottom: 12,
@@ -2166,9 +2546,11 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     flex: 1,
+    flexDirection: 'row',
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   saveButtonText: {
     fontSize: 16,

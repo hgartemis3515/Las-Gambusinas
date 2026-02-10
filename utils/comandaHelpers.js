@@ -252,28 +252,122 @@ export const obtenerColoresPorEstado = (estado, isDark = false) => {
 
 /**
  * Obtiene colores de estado adaptados según el tema
+ * En modo oscuro: usa colores SATURADOS y VIVOS (no pastel)
+ * En modo claro: usa colores pastel tradicionales
  * @param {string} estado - Estado del plato
  * @param {boolean} isDark - Si está en modo oscuro
  * @param {boolean} esEditable - Si el plato es editable
  * @returns {Object} Colores adaptados
  */
 export const obtenerColoresEstadoAdaptados = (estado, isDark = false, esEditable = true) => {
-  const colores = obtenerColoresPorEstado(estado, isDark);
+  const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado;
   
-  // Si no es editable, reducir más la opacidad
-  if (!esEditable) {
-    // Extraer valores RGB del rgba
-    const rgbaMatch = colores.backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
-    if (rgbaMatch) {
-      const r = rgbaMatch[1];
-      const g = rgbaMatch[2];
-      const b = rgbaMatch[3];
-      const newAlpha = isDark ? 0.2 : 0.4; // Menos opacidad para no editables
+  // ============================================
+  // MODO CLARO - Colores pastel con texto oscuro
+  // ============================================
+  if (!isDark) {
+    const coloresClaro = {
+      pedido: {
+        backgroundColor: '#DBEAFE', // Celeste pastel
+        textColor: '#1E40AF', // Azul oscuro
+        borderColor: '#93C5FD', // Azul claro
+        badgeColor: '#3B82F6', // Azul medio
+        badgeTextColor: '#FFFFFF', // Blanco
+        textoEstado: 'PEDIDO',
+        priceColor: '#10B981', // Verde
+      },
+      recoger: {
+        backgroundColor: '#FEF3C7', // Amarillo pastel
+        textColor: '#92400E', // Marrón oscuro
+        borderColor: '#FCD34D', // Amarillo claro
+        badgeColor: '#F59E0B', // Naranja
+        badgeTextColor: '#FFFFFF', // Blanco
+        textoEstado: 'RECOGER',
+        priceColor: '#10B981', // Verde
+      },
+      entregado: {
+        backgroundColor: '#D1FAE5', // Verde pastel
+        textColor: '#065F46', // Verde oscuro
+        borderColor: '#6EE7B7', // Verde claro
+        badgeColor: '#10B981', // Verde
+        badgeTextColor: '#FFFFFF', // Blanco
+        textoEstado: 'ENTREGADO',
+        priceColor: '#10B981', // Verde
+      },
+      pagado: {
+        backgroundColor: '#F3F4F6', // Gris claro
+        textColor: '#374151', // Gris oscuro
+        borderColor: '#D1D5DB', // Gris medio
+        badgeColor: '#6B7280', // Gris
+        badgeTextColor: '#FFFFFF', // Blanco
+        textoEstado: 'PAGADO',
+        priceColor: '#6B7280', // Gris
+      },
+    };
+    
+    const colores = coloresClaro[estadoNormalizado] || coloresClaro.pedido;
+    
+    // Si no es editable, aplicar opacity global al card
+    if (!esEditable) {
       return {
         ...colores,
-        backgroundColor: `rgba(${r}, ${g}, ${b}, ${newAlpha})`,
+        opacity: 0.6, // Opacity global para indicar no editable
       };
     }
+    
+    return colores;
+  }
+  
+  // ============================================
+  // MODO OSCURO - Colores SATURADOS con texto blanco
+  // ============================================
+  const coloresOscuro = {
+    pedido: {
+      backgroundColor: '#1E40AF', // Azul saturado intenso
+      textColor: '#FFFFFF', // Blanco puro para máximo contraste
+      borderColor: '#3B82F6', // Azul brillante para borde
+      badgeColor: '#60A5FA', // Azul brillante
+      badgeTextColor: '#1E3A8A', // Azul muy oscuro para contraste
+      textoEstado: 'PEDIDO',
+      priceColor: '#6EE7B7', // Verde claro brillante
+    },
+    recoger: {
+      backgroundColor: '#D97706', // Naranja saturado vibrante
+      textColor: '#FFFFFF', // Blanco puro
+      borderColor: '#F59E0B', // Naranja brillante
+      badgeColor: '#FBBF24', // Amarillo brillante
+      badgeTextColor: '#78350F', // Marrón oscuro para contraste
+      textoEstado: 'RECOGER',
+      priceColor: '#6EE7B7', // Verde claro brillante
+    },
+    entregado: {
+      backgroundColor: '#047857', // Verde esmeralda saturado
+      textColor: '#FFFFFF', // Blanco puro
+      borderColor: '#10B981', // Verde brillante
+      badgeColor: '#34D399', // Verde brillante
+      badgeTextColor: '#064E3B', // Verde muy oscuro para contraste
+      textoEstado: 'ENTREGADO',
+      priceColor: '#6EE7B7', // Verde claro brillante
+    },
+    pagado: {
+      backgroundColor: '#4B5563', // Gris medio saturado
+      textColor: '#F9FAFB', // Casi blanco
+      borderColor: '#6B7280', // Gris medio
+      badgeColor: '#9CA3AF', // Gris claro
+      badgeTextColor: '#1F2937', // Gris muy oscuro
+      textoEstado: 'PAGADO',
+      priceColor: '#9CA3AF', // Gris claro
+    },
+  };
+  
+  const colores = coloresOscuro[estadoNormalizado] || coloresOscuro.pedido;
+  
+  // Si no es editable, aplicar opacity global al card
+  if (!esEditable) {
+    return {
+      ...colores,
+      opacity: 0.5, // Opacity global para indicar no editable
+    };
   }
   
   return colores;
