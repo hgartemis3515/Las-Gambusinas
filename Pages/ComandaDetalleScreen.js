@@ -21,7 +21,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useSocket } from '../context/SocketContext';
 import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
-import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta } from '../utils/comandaHelpers';
+import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados } from '../utils/comandaHelpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -68,7 +68,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const { mesa, comandas: comandasIniciales, onRefresh } = route.params || {};
   
   // Hooks
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const themeColors = theme || themeLight;
   const { socket, connected } = useSocket();
   
@@ -117,15 +117,49 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // Preparar todos los platos ordenados por prioridad
   const prepararPlatosOrdenados = useCallback(() => {
+    console.log('=== PREPARANDO PLATOS ORDENADOS ===');
+    console.log('Comandas recibidas:', comandas.length);
+    
     const platos = [];
     
-    comandas.forEach(comanda => {
-      if (!comanda.platos || !Array.isArray(comanda.platos)) return;
+    comandas.forEach((comanda, comandaIndex) => {
+      console.log(`\nComanda ${comandaIndex + 1}:`, {
+        _id: comanda._id?.slice(-6),
+        comandaNumber: comanda.comandaNumber,
+        platosCount: comanda.platos?.length || 0,
+        platosIsArray: Array.isArray(comanda.platos)
+      });
+      
+      if (!comanda.platos || !Array.isArray(comanda.platos)) {
+        console.warn(`⚠️ Comanda ${comandaIndex + 1} no tiene platos o no es array`);
+        return;
+      }
       
       comanda.platos.forEach((platoItem, index) => {
+        console.log(`  Plato ${index + 1}:`, {
+          platoId: platoItem.platoId,
+          platoType: typeof platoItem.plato,
+          platoIsObject: typeof platoItem.plato === 'object' && platoItem.plato !== null,
+          platoNombre: platoItem.plato?.nombre || 'SIN NOMBRE',
+          estado: platoItem.estado,
+          eliminado: platoItem.eliminado
+        });
+        
+        // Validar que el plato tiene la estructura correcta
+        if (!platoItem.plato || typeof platoItem.plato !== 'object') {
+          console.warn(`⚠️ Plato ${index + 1} de comanda ${comandaIndex + 1} no tiene objeto plato válido:`, platoItem);
+          // Intentar obtener el plato del ID si está disponible
+          if (platoItem.platoId && typeof platoItem.plato === 'string') {
+            console.warn('  ⚠️ Plato es solo un ID, falta populate en backend');
+          }
+        }
+        
         const cantidad = comanda.cantidades?.[index] || 1;
         const estado = platoItem.estado || 'pedido';
         const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado;
+        
+        // Verificar si el plato está eliminado (solo excluir si explícitamente true)
+        const platoEliminado = platoItem.eliminado === true;
         
         const platoObj = {
           platoId: platoItem.platoId || platoItem.plato?._id || platoItem.plato,
@@ -135,15 +169,20 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           precio: platoItem.plato?.precio || 0,
           comandaId: comanda._id,
           comandaNumber: comanda.comandaNumber,
-          eliminado: platoItem.eliminado || false,
+          eliminado: platoEliminado,
           index: index // Índice en la comanda original
         };
         
-        if (!platoObj.eliminado) {
+        if (!platoEliminado) {
           platos.push(platoObj);
+          console.log(`  ✓ Plato ${index + 1} agregado a lista`);
+        } else {
+          console.log(`  ✗ Plato ${index + 1} excluido (eliminado: true)`);
         }
       });
     });
+    
+    console.log(`\nTotal de platos activos: ${platos.length}`);
     
     // Ordenar: recoger → pedido → entregado → pagado
     const ordenPrioridad = { recoger: 1, pedido: 2, entregado: 3, pagado: 4 };
@@ -152,6 +191,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       const prioridadB = ordenPrioridad[b.estado] || 99;
       return prioridadA - prioridadB;
     });
+    
+    console.log('Platos ordenados por estado:', platos.map(p => ({ nombre: p.plato?.nombre, estado: p.estado })));
+    console.log('===================================\n');
     
     setTodosLosPlatos(platos);
   }, [comandas]);
@@ -165,19 +207,59 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     try {
       setRefreshing(true);
       
+      console.log('🔄 Refrescando comandas...');
+      console.log('Mesa ID:', mesa._id);
+      console.log('Mesa número:', mesa.nummesa);
+      
       const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
       const comandasURL = apiConfig.isConfigured 
         ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
         : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
       
+      console.log('URL de comandas:', comandasURL);
+      
       const response = await axios.get(comandasURL, { timeout: 10000 });
       const todasLasComandas = response.data || [];
+      
+      console.log('📦 Total de comandas recibidas:', todasLasComandas.length);
       
       // Filtrar comandas de esta mesa
       const comandasMesa = todasLasComandas.filter(c => {
         const mesaId = c.mesas?._id || c.mesas;
-        return mesaId === mesa._id || c.mesas?.nummesa === mesa.nummesa;
+        const coincideId = mesaId === mesa._id;
+        const coincideNumero = c.mesas?.nummesa === mesa.nummesa;
+        
+        if (coincideId || coincideNumero) {
+          console.log('✓ Comanda encontrada para esta mesa:', {
+            comandaNumber: c.comandaNumber,
+            platosCount: c.platos?.length || 0,
+            mesaId: typeof mesaId === 'object' ? mesaId?._id : mesaId,
+            mesaNumero: c.mesas?.nummesa
+          });
+          
+          // Verificar estructura de platos
+          if (c.platos && Array.isArray(c.platos) && c.platos.length > 0) {
+            const primerPlato = c.platos[0];
+            console.log('  Primer plato:', {
+              tienePlato: !!primerPlato.plato,
+              platoType: typeof primerPlato.plato,
+              platoNombre: primerPlato.plato?.nombre || 'SIN NOMBRE',
+              platoId: primerPlato.platoId,
+              estado: primerPlato.estado
+            });
+            
+            if (typeof primerPlato.plato === 'string') {
+              console.warn('  ⚠️ ADVERTENCIA: plato.plato es un string (ID), falta populate en backend');
+            }
+          } else {
+            console.warn('  ⚠️ Comanda sin platos o platos no es array');
+          }
+        }
+        
+        return coincideId || coincideNumero;
       });
+      
+      console.log('📋 Comandas filtradas para esta mesa:', comandasMesa.length);
       
       setComandasState(comandasMesa);
       
@@ -186,7 +268,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         onRefresh();
       }
     } catch (error) {
-      console.error('Error al refrescar comandas:', error);
+      console.error('❌ Error al refrescar comandas:', error);
+      console.error('Error response:', error.response?.data);
+      console.error('Error message:', error.message);
       Alert.alert('Error', 'No se pudieron actualizar las comandas.');
     } finally {
       setRefreshing(false);
@@ -240,11 +324,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Integración WebSocket
   useEffect(() => {
     if (socket && connected && mesa?._id) {
+      console.log('🔌 Conectando WebSocket a mesa:', mesa._id);
       socket.emit('join-mesa', mesa._id);
       
       socket.on('plato-actualizado', (data) => {
+        console.log('📡 Evento plato-actualizado recibido:', data);
         const esNuestraComanda = comandas.some(c => c._id === data.comandaId);
         if (esNuestraComanda) {
+          console.log('✓ Evento corresponde a nuestra comanda, refrescando...');
           refrescarComandas();
           if (data.estadoNuevo === 'recoger') {
             Alert.alert(
@@ -253,15 +340,39 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               [{ text: 'Entendido' }]
             );
           }
+        } else {
+          console.log('✗ Evento no corresponde a nuestras comandas');
         }
       });
       
-      socket.on('plato-entregado', () => refrescarComandas());
-      socket.on('comanda-actualizada', () => refrescarComandas());
+      socket.on('plato-agregado', (data) => {
+        console.log('📡 Evento plato-agregado recibido:', data);
+        const esNuestraComanda = comandas.some(c => c._id === data.comandaId);
+        if (esNuestraComanda || data.mesaId === mesa._id) {
+          console.log('✓ Plato agregado a nuestra comanda/mesa, refrescando...');
+          refrescarComandas();
+        }
+      });
+      
+      socket.on('plato-entregado', (data) => {
+        console.log('📡 Evento plato-entregado recibido:', data);
+        refrescarComandas();
+      });
+      
+      socket.on('comanda-actualizada', (data) => {
+        console.log('📡 Evento comanda-actualizada recibido:', data);
+        const esNuestraComanda = comandas.some(c => c._id === data.comandaId);
+        if (esNuestraComanda || data.mesaId === mesa._id) {
+          console.log('✓ Comanda actualizada, refrescando...');
+          refrescarComandas();
+        }
+      });
       
       return () => {
+        console.log('🔌 Desconectando WebSocket de mesa:', mesa._id);
         socket.emit('leave-mesa', mesa._id);
         socket.off('plato-actualizado');
+        socket.off('plato-agregado');
         socket.off('plato-entregado');
         socket.off('comanda-actualizada');
       };
@@ -556,22 +667,65 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       return;
     }
     
+    if (!userInfo?._id) {
+      Alert.alert('Error', 'No se pudo identificar al usuario. Por favor, inicia sesión nuevamente.');
+      return;
+    }
+    
+    if (!comandas || comandas.length === 0 || !comandas[0]._id) {
+      Alert.alert('Error', 'No se encontró la comanda.');
+      return;
+    }
+    
     try {
       setLoading(true);
       
-      // Obtener índices de platos a eliminar
-      const indicesAEliminar = platosSeleccionadosEliminar.map(p => p.index);
-      const comandaId = comandas[0]._id;
-      
-      const endpoint = apiConfig.isConfigured
-        ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}/eliminar-platos`
-        : `${COMANDA_API}/${comandaId}/eliminar-platos`;
-      
-      await axios.put(endpoint, {
-        platosAEliminar: indicesAEliminar,
-        motivo: motivoEliminacion.trim(),
-        mozoId: userInfo?._id
+      const platosPorComanda = {};
+      platosSeleccionadosEliminar.forEach(plato => {
+        if (!platosPorComanda[plato.comandaId]) {
+          platosPorComanda[plato.comandaId] = [];
+        }
+        const comanda = comandas.find(c => c._id === plato.comandaId);
+        if (comanda && comanda.platos) {
+          const platoIndex = comanda.platos.findIndex((p, idx) => {
+            const pId = p.platoId || p.plato?._id || p.plato;
+            return pId?.toString() === plato.platoId?.toString() && !p.eliminado;
+          });
+          if (platoIndex !== -1) {
+            platosPorComanda[plato.comandaId].push(platoIndex);
+          }
+        }
       });
+      
+      for (const [comandaId, indices] of Object.entries(platosPorComanda)) {
+        if (indices.length === 0) continue;
+        
+        const endpoint = apiConfig.isConfigured
+          ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}/eliminar-platos`
+          : `${COMANDA_API}/${comandaId}/eliminar-platos`;
+        
+        const dataAEnviar = {
+          platosAEliminar: indices,
+          motivo: motivoEliminacion.trim(),
+          mozoId: userInfo._id,
+          usuarioId: userInfo._id
+        };
+        
+        console.log('🗑️ Eliminando platos:', {
+          endpoint,
+          comandaId: comandaId?.slice(-6),
+          indices,
+          motivo: motivoEliminacion.trim().substring(0, 20) + '...',
+          mozoId: userInfo._id
+        });
+        
+        await axios.put(endpoint, dataAEnviar, {
+          timeout: 15000,
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+      }
       
       await refrescarComandas();
       Alert.alert('✓ Platos Eliminados', 'Los platos fueron eliminados correctamente.');
@@ -580,95 +734,35 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       setPlatosSeleccionadosEliminar([]);
       
     } catch (error) {
-      console.error('Error al eliminar platos:', error);
-      const errorMsg = error.response?.data?.message || error.response?.data?.error || error.message;
-      Alert.alert('Error', `No se pudieron eliminar los platos: ${errorMsg}`);
+      console.error('❌ Error completo al eliminar platos:', error);
+      console.error('Error response:', error.response);
+      console.error('Error request:', error.request);
+      console.error('Error message:', error.message);
+      
+      let errorMsg = 'No se pudieron eliminar los platos.';
+      
+      if (error.response) {
+        // El servidor respondió con un código de estado fuera del rango 2xx
+        console.error('Status:', error.response.status);
+        console.error('Data:', error.response.data);
+        errorMsg = error.response.data?.message || error.response.data?.error || `Error del servidor (${error.response.status})`;
+        Alert.alert('Error del Servidor', errorMsg);
+      } else if (error.request) {
+        // La petición fue hecha pero no se recibió respuesta
+        console.error('Request hecho pero sin respuesta');
+        Alert.alert(
+          'Error de Conexión',
+          'No se pudo conectar con el servidor. Verifica tu conexión a internet y que el servidor esté activo.'
+        );
+      } else {
+        // Algo pasó al configurar la petición
+        console.error('Error en configuración:', error.message);
+        errorMsg = error.message || 'Error desconocido';
+        Alert.alert('Error', errorMsg);
+      }
     } finally {
       setLoading(false);
     }
-  };
-  
-  const confirmarEliminacionPlatosOriginal = async () => {
-    if (platosSeleccionadosEliminar.length === 0) {
-      Alert.alert('Error', 'Selecciona al menos un plato para eliminar.');
-      return;
-    }
-    
-    if (platosSeleccionadosEliminar.length >= todosLosPlatos.length) {
-      Alert.alert('Error', 'No puedes eliminar todos los platos. Debe quedar al menos uno.');
-      return;
-    }
-    
-    if (!motivoEliminacion || motivoEliminacion.trim() === '') {
-      Alert.alert('Error', 'Debes indicar un motivo para la eliminación.');
-      return;
-    }
-    
-    const hayPlatosPreparados = platosSeleccionadosEliminar.some(p => p.estado === 'recoger');
-    
-    Alert.alert(
-      'Confirmar Eliminación',
-      hayPlatosPreparados
-        ? '⚠️ Algunos platos ya están preparados en cocina. ¿Estás seguro de eliminarlos?'
-        : '¿Confirmas la eliminación de los platos seleccionados?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setLoading(true);
-              
-              const platosPorComanda = {};
-              platosSeleccionadosEliminar.forEach(plato => {
-                if (!platosPorComanda[plato.comandaId]) {
-                  platosPorComanda[plato.comandaId] = [];
-                }
-                const comanda = comandas.find(c => c._id === plato.comandaId);
-                if (comanda && comanda.platos) {
-                  const platoIndex = comanda.platos.findIndex((p, idx) => {
-                    const pId = p.platoId || p.plato?._id || p.plato;
-                    return pId?.toString() === plato.platoId?.toString() && !p.eliminado;
-                  });
-                  if (platoIndex !== -1) {
-                    platosPorComanda[plato.comandaId].push(platoIndex);
-                  }
-                }
-              });
-              
-              for (const [comandaId, indices] of Object.entries(platosPorComanda)) {
-                if (indices.length === 0) continue;
-                
-                const endpoint = apiConfig.isConfigured
-                  ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}/eliminar-platos`
-                  : `http://192.168.18.11:3000/api/comanda/${comandaId}/eliminar-platos`;
-                
-                await axios.put(endpoint, {
-                  platosAEliminar: indices,
-                  motivo: motivoEliminacion,
-                  mozoId: userInfo?._id,
-                  usuarioId: userInfo?._id
-                });
-              }
-              
-              await refrescarComandas();
-              Alert.alert('✓ Platos Eliminados', 'Los platos fueron eliminados correctamente.');
-              setModalEliminarVisible(false);
-              setMotivoEliminacion('');
-              setPlatosSeleccionadosEliminar([]);
-              
-            } catch (error) {
-              console.error('Error al eliminar platos:', error);
-              const errorMsg = error.response?.data?.message || error.response?.data?.error || error.message;
-              Alert.alert('Error', `No se pudieron eliminar los platos: ${errorMsg}`);
-            } finally {
-              setLoading(false);
-            }
-          }
-        }
-      ]
-    );
   };
   
   const handleEliminarComanda = () => {
@@ -713,6 +807,16 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       return;
     }
     
+    if (!userInfo?._id) {
+      Alert.alert('Error', 'No se pudo identificar al usuario. Por favor, inicia sesión nuevamente.');
+      return;
+    }
+    
+    if (!comandas || comandas.length === 0 || !comandas[0]._id) {
+      Alert.alert('Error', 'No se encontró la comanda a eliminar.');
+      return;
+    }
+    
     try {
       setLoading(true);
       
@@ -721,9 +825,24 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}/eliminar`
         : `${COMANDA_API}/${comandaId}/eliminar`;
       
-      await axios.put(endpoint, {
-        motivo: motivoEliminacionComanda,
-        usuarioId: userInfo?._id
+      const dataAEnviar = {
+        motivo: motivoEliminacionComanda.trim(),
+        usuarioId: userInfo._id,
+        mozoId: userInfo._id
+      };
+      
+      console.log('🗑️ Eliminando comanda:', {
+        endpoint,
+        comandaId: comandaId?.slice(-6),
+        motivo: motivoEliminacionComanda.trim().substring(0, 20) + '...',
+        usuarioId: userInfo._id
+      });
+      
+      await axios.put(endpoint, dataAEnviar, {
+        timeout: 15000,
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
       
       Alert.alert('✓ Comanda Eliminada', 'La comanda fue eliminada correctamente.');
@@ -735,9 +854,32 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       navigation.goBack();
       
     } catch (error) {
-      console.error('Error al eliminar comanda:', error);
-      const errorMsg = error.response?.data?.message || error.response?.data?.error || error.message;
-      Alert.alert('Error', `No se pudo eliminar la comanda: ${errorMsg}`);
+      console.error('❌ Error completo al eliminar comanda:', error);
+      console.error('Error response:', error.response);
+      console.error('Error request:', error.request);
+      console.error('Error message:', error.message);
+      
+      let errorMsg = 'No se pudo eliminar la comanda.';
+      
+      if (error.response) {
+        // El servidor respondió con un código de estado fuera del rango 2xx
+        console.error('Status:', error.response.status);
+        console.error('Data:', error.response.data);
+        errorMsg = error.response.data?.message || error.response.data?.error || `Error del servidor (${error.response.status})`;
+        Alert.alert('Error del Servidor', errorMsg);
+      } else if (error.request) {
+        // La petición fue hecha pero no se recibió respuesta
+        console.error('Request hecho pero sin respuesta');
+        Alert.alert(
+          'Error de Conexión',
+          'No se pudo conectar con el servidor. Verifica tu conexión a internet y que el servidor esté activo.'
+        );
+      } else {
+        // Algo pasó al configurar la petición
+        console.error('Error en configuración:', error.message);
+        errorMsg = error.message || 'Error desconocido';
+        Alert.alert('Error', errorMsg);
+      }
     } finally {
       setLoading(false);
     }
@@ -823,7 +965,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const keyExtractor = (item, index) => `${item.comandaId}-${item.platoId}-${index}`;
   
   return (
-    <View style={[styles.container, { backgroundColor: themeColors.colors.background }]}>
+        <View style={[styles.container, { backgroundColor: themeColors.colors?.background || themeColors.background || '#FFFFFF' }]}>
       {/* Header Personalizado */}
       <HeaderComandaDetalle
         mesa={mesa}
@@ -838,8 +980,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         <View style={styles.leftColumn}>
           {todosLosPlatos.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="silverware-fork-knife" size={48} color={themeColors.colors.text.light} />
-              <Text style={styles.emptyText}>No hay platos en esta comanda</Text>
+              <MaterialCommunityIcons 
+                name="silverware-fork-knife" 
+                size={48} 
+                color={themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280'} 
+              />
+              <Text style={[styles.emptyText, { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }]}>
+                No hay platos en esta comanda
+              </Text>
             </View>
           ) : (
             <>
@@ -861,18 +1009,36 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               />
               
               {/* Totales */}
-              <View style={styles.totalesContainer}>
-                <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Subtotal:</Text>
-                  <Text style={styles.totalValue}>S/. {totales.subtotal}</Text>
+              <View style={[
+                styles.totalesContainer,
+                {
+                  backgroundColor: themeColors.colors?.card || themeColors.card || '#FFFFFF',
+                  borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                }
+              ]}>
+                <View style={[styles.totalRow, { borderBottomColor: themeColors.colors?.border || themeColors.border || '#E5E7EB' }]}>
+                  <Text style={[styles.totalLabel, { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }]}>
+                    Subtotal:
+                  </Text>
+                  <Text style={[styles.totalValue, { color: isDark ? '#6EE7B7' : '#059669' }]}>
+                    S/. {totales.subtotal}
+                  </Text>
                 </View>
-                <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>IGV (18%):</Text>
-                  <Text style={styles.totalValue}>S/. {totales.igv}</Text>
+                <View style={[styles.totalRow, { borderBottomColor: themeColors.colors?.border || themeColors.border || '#E5E7EB' }]}>
+                  <Text style={[styles.totalLabel, { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }]}>
+                    IGV (18%):
+                  </Text>
+                  <Text style={[styles.totalValue, { color: isDark ? '#6EE7B7' : '#059669' }]}>
+                    S/. {totales.igv}
+                  </Text>
                 </View>
-                <View style={[styles.totalRow, styles.totalRowFinal]}>
-                  <Text style={[styles.totalLabel, styles.totalLabelFinal]}>TOTAL:</Text>
-                  <Text style={[styles.totalValue, styles.totalValueFinal]}>S/. {totales.total}</Text>
+                <View style={[styles.totalRow, styles.totalRowFinal, { borderTopColor: themeColors.colors?.border || themeColors.border || '#E5E7EB' }]}>
+                  <Text style={[styles.totalLabel, styles.totalLabelFinal, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+                    TOTAL:
+                  </Text>
+                  <Text style={[styles.totalValue, styles.totalValueFinal, { color: isDark ? '#6EE7B7' : '#059669' }]}>
+                    S/. {totales.total}
+                  </Text>
                 </View>
               </View>
             </>
@@ -880,10 +1046,20 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         </View>
         
         {/* Columna Derecha: Opciones (30%) */}
-        <View style={styles.rightColumn}>
+        <View style={[
+          styles.rightColumn,
+          {
+            backgroundColor: themeColors.colors?.background || themeColors.background || '#F9FAFB',
+            borderRightColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+          }
+        ]}>
           <ScrollView style={styles.optionsScrollView}>
             <TouchableOpacity
-              style={[styles.actionButton, styles.actionButtonEdit, !puedeEditar && styles.actionButtonDisabled]}
+              style={[
+                styles.actionButton, 
+                { backgroundColor: isDark ? '#60A5FA' : '#3B82F6' },
+                !puedeEditar && styles.actionButtonDisabled
+              ]}
               onPress={handleEditarComanda}
               disabled={!puedeEditar}
             >
@@ -892,7 +1068,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={[styles.actionButton, styles.actionButtonDelete, !puedeEliminarPlatos && styles.actionButtonDisabled]}
+              style={[
+                styles.actionButton, 
+                { backgroundColor: isDark ? '#F87171' : '#EF4444' },
+                !puedeEliminarPlatos && styles.actionButtonDisabled
+              ]}
               onPress={handleEliminarPlatos}
               disabled={!puedeEliminarPlatos}
             >
@@ -901,7 +1081,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={[styles.actionButton, styles.actionButtonDelete, !puedeEliminarComanda && styles.actionButtonDisabled]}
+              style={[
+                styles.actionButton, 
+                { backgroundColor: isDark ? '#F87171' : '#EF4444' },
+                !puedeEliminarComanda && styles.actionButtonDisabled
+              ]}
               onPress={handleEliminarComanda}
               disabled={!puedeEliminarComanda}
             >
@@ -910,7 +1094,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={[styles.actionButton, styles.actionButtonAdd, !puedeNuevaComanda && styles.actionButtonDisabled]}
+              style={[
+                styles.actionButton, 
+                { backgroundColor: isDark ? '#6EE7B7' : '#10B981' },
+                !puedeNuevaComanda && styles.actionButtonDisabled
+              ]}
               onPress={handleNuevaComanda}
               disabled={!puedeNuevaComanda}
             >
@@ -919,7 +1107,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={[styles.actionButton, styles.actionButtonPay, !puedePagar && styles.actionButtonDisabled]}
+              style={[
+                styles.actionButton, 
+                { backgroundColor: isDark ? '#6EE7B7' : '#059669' },
+                !puedePagar && styles.actionButtonDisabled
+              ]}
               onPress={handlePagar}
               disabled={!puedePagar}
             >
@@ -928,7 +1120,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={[styles.actionButton, styles.actionButtonCancel]}
+              style={[
+                styles.actionButton, 
+                { backgroundColor: themeColors.colors?.text?.secondary || '#6B7280' }
+              ]}
               onPress={() => navigation.goBack()}
             >
               <MaterialCommunityIcons name="close" size={20} color="#fff" />
@@ -953,10 +1148,24 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         animationType="slide"
         onRequestClose={() => setModalEliminarVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Eliminar Platos</Text>
-            <Text style={styles.modalSubtitle}>Selecciona los platos a eliminar:</Text>
+        <View style={[styles.modalOverlay, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.85)' : 'rgba(0, 0, 0, 0.5)' }]}>
+          <View style={[
+            styles.modalContent, 
+            { 
+              backgroundColor: themeColors.colors?.surface || themeColors.colors?.card || themeColors.card || '#FFFFFF',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: isDark ? 0.5 : 0.25,
+              shadowRadius: 8,
+              elevation: 10,
+            }
+          ]}>
+            <Text style={[styles.modalTitle, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+              Eliminar Platos
+            </Text>
+            <Text style={[styles.modalSubtitle, { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }]}>
+              Selecciona los platos a eliminar:
+            </Text>
             
             <ScrollView style={styles.modalPlatosList}>
               {platosParaEliminar.map((plato, index) => {
@@ -966,25 +1175,44 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 const estilos = obtenerEstilosPorEstado(plato.estado);
                 
                 return (
-                  <TouchableOpacity
-                    key={`${plato.comandaId}-${plato.platoId}-${index}`}
-                    style={[
-                      styles.modalPlatoItem,
-                      seleccionado && styles.modalPlatoItemSelected,
-                      { backgroundColor: estilos.fondo, borderColor: estilos.borde }
-                    ]}
-                    onPress={() => toggleSeleccionarPlatoEliminar(plato)}
-                  >
+                    <TouchableOpacity
+                      key={`${plato.comandaId}-${plato.platoId}-${index}`}
+                      style={[
+                        styles.modalPlatoItem,
+                        seleccionado && {
+                          borderColor: '#EF4444',
+                          backgroundColor: isDark ? 'rgba(254, 242, 242, 0.3)' : '#FEF2F2',
+                          borderWidth: 2,
+                        },
+                        { 
+                          backgroundColor: isDark 
+                            ? (estilos.fondo === '#DBEAFE' ? 'rgba(219, 234, 254, 0.3)' : 
+                               estilos.fondo === '#FEF3C7' ? 'rgba(254, 243, 199, 0.3)' :
+                               estilos.fondo === '#D1FAE5' ? 'rgba(209, 250, 229, 0.3)' :
+                               estilos.fondo)
+                            : estilos.fondo,
+                          borderColor: estilos.borde,
+                          borderWidth: seleccionado ? 2 : 1,
+                        }
+                      ]}
+                      onPress={() => toggleSeleccionarPlatoEliminar(plato)}
+                    >
                     <MaterialCommunityIcons
                       name={seleccionado ? 'checkbox-marked' : 'checkbox-blank-outline'}
                       size={24}
                       color={seleccionado ? '#EF4444' : '#9CA3AF'}
                     />
                     <View style={styles.modalPlatoInfo}>
-                      <Text style={styles.modalPlatoNombre}>{plato.plato.nombre}</Text>
-                      <Text style={styles.modalPlatoCantidad}>x{plato.cantidad} - S/. {(plato.precio * plato.cantidad).toFixed(2)}</Text>
+                      <Text style={[styles.modalPlatoNombre, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+                        {plato.plato.nombre}
+                      </Text>
+                      <Text style={[styles.modalPlatoCantidad, { color: isDark ? '#6EE7B7' : '#059669' }]}>
+                        x{plato.cantidad} - S/. {(plato.precio * plato.cantidad).toFixed(2)}
+                      </Text>
                       {plato.estado === 'recoger' && (
-                        <Text style={styles.modalPlatoAdvertencia}>⚠️ Plato preparado</Text>
+                        <Text style={[styles.modalPlatoAdvertencia, { color: '#F59E0B' }]}>
+                          ⚠️ Plato preparado
+                        </Text>
                       )}
                     </View>
                   </TouchableOpacity>
@@ -993,8 +1221,16 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             </ScrollView>
             
             <TextInput
-              style={styles.modalInput}
+              style={[
+                styles.modalInput,
+                {
+                  backgroundColor: themeColors.colors?.card || themeColors.card || '#F9FAFB',
+                  borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                  color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937',
+                }
+              ]}
               placeholder="Motivo de eliminación (obligatorio)"
+              placeholderTextColor={themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280'}
               value={motivoEliminacion}
               onChangeText={setMotivoEliminacion}
               multiline
@@ -1003,21 +1239,38 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             
             <View style={styles.modalActions}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel]}
+                style={[
+                  styles.modalButton, 
+                  styles.modalButtonCancel,
+                  {
+                    backgroundColor: isDark ? '#4B5563' : '#E5E7EB',
+                  }
+                ]}
                 onPress={() => {
                   setModalEliminarVisible(false);
                   setMotivoEliminacion('');
                   setPlatosSeleccionadosEliminar([]);
                 }}
               >
-                <Text style={styles.modalButtonText}>Cancelar</Text>
+                <Text style={[
+                  styles.modalButtonText,
+                  { color: isDark ? '#F9FAFB' : '#374151' }
+                ]}>
+                  Cancelar
+                </Text>
               </TouchableOpacity>
               
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonConfirm]}
+                style={[
+                  styles.modalButton, 
+                  styles.modalButtonConfirm,
+                  {
+                    backgroundColor: isDark ? '#F87171' : '#EF4444',
+                  }
+                ]}
                 onPress={confirmarEliminacionPlatos}
               >
-                <Text style={[styles.modalButtonText, styles.modalButtonTextConfirm]}>
+                <Text style={[styles.modalButtonText, styles.modalButtonTextConfirm, { color: '#FFFFFF' }]}>
                   Eliminar ({platosSeleccionadosEliminar.length})
                 </Text>
               </TouchableOpacity>
@@ -1039,10 +1292,20 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           setCategoriaFiltro(null);
         }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContentEditar}>
+        <View style={[styles.modalOverlay, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.85)' : 'rgba(0, 0, 0, 0.5)' }]}>
+          <View style={[
+            styles.modalContentEditar, 
+            { 
+              backgroundColor: themeColors.colors?.surface || themeColors.colors?.card || themeColors.card || '#FFFFFF',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: isDark ? 0.5 : 0.25,
+              shadowRadius: 8,
+              elevation: 10,
+            }
+          ]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
+              <Text style={[styles.modalTitle, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
                 Editar Comanda #{comandaEditando?.comandaNumber || 'N/A'}
               </Text>
               <TouchableOpacity onPress={() => {
@@ -1052,19 +1315,35 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 setSearchPlato('');
                 setCategoriaFiltro(null);
               }}>
-                <MaterialCommunityIcons name="close" size={24} color={themeColors.colors.text.primary} />
+                <MaterialCommunityIcons name="close" size={24} color={themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937'} />
               </TouchableOpacity>
+            </View>
+            
+            {/* Leyenda de colores */}
+            <View style={[
+              styles.leyendaColores,
+              {
+                backgroundColor: isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.1)',
+              }
+            ]}>
+              <Text style={[styles.leyendaText, { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }]}>
+                🔵 Celeste: Pedido | 🟡 Amarillo: Listo para recoger | 🟢 Verde: Entregado
+              </Text>
             </View>
             
             <ScrollView style={styles.modalScrollView}>
               <View style={styles.editSection}>
-                <Text style={styles.editLabel}>Mesa: {mesa?.nummesa || 'N/A'}</Text>
+                <Text style={[styles.editLabel, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+                  Mesa: {mesa?.nummesa || 'N/A'}
+                </Text>
               </View>
               
               {/* Platos Editables */}
               {platosEditables.length > 0 && (
                 <View style={styles.editSection}>
-                  <Text style={styles.editLabel}>Platos Editables:</Text>
+                  <Text style={[styles.editLabel, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+                    Platos Editables:
+                  </Text>
                   {platosEditados.map((plato, index) => {
                     // Verificar si este plato es editable
                     const esEditable = platosEditables.some(e => {
@@ -1075,33 +1354,62 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                     
                     if (!esEditable) return null;
                     
+                    // Obtener colores según estado
+                    const coloresEstado = obtenerColoresEstadoAdaptados(plato.estado || 'pedido', isDark, true);
+                    
                     return (
-                      <View key={index} style={styles.platoEditItem}>
+                      <View 
+                        key={index} 
+                        style={[
+                          styles.platoEditItem,
+                          {
+                            backgroundColor: coloresEstado.backgroundColor,
+                            borderLeftWidth: 4,
+                            borderLeftColor: coloresEstado.borderColor,
+                            borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                          }
+                        ]}
+                      >
                         <View style={styles.platoEditInfo}>
-                          <Text style={styles.platoEditNombre}>{plato.nombre}</Text>
-                          <Text style={styles.platoEditPrecio}>
+                          <View style={styles.platoEditNombreContainer}>
+                            <Text style={[styles.platoEditNombre, { color: coloresEstado.textColor }]}>
+                              {plato.nombre}
+                            </Text>
+                            <View style={[styles.badgeEstado, { backgroundColor: coloresEstado.badgeColor }]}>
+                              <Text style={[styles.badgeEstadoText, { color: coloresEstado.badgeTextColor }]}>
+                                {coloresEstado.textoEstado}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={[styles.platoEditPrecio, { color: isDark ? '#6EE7B7' : '#059669' }]}>
                             S/. {((plato.precio || 0) * (plato.cantidad || 1)).toFixed(2)}
                           </Text>
                         </View>
                         <View style={styles.platoEditActions}>
                           <TouchableOpacity
-                            style={styles.cantidadButton}
+                            style={[styles.cantidadButton, { backgroundColor: themeColors.colors?.border || themeColors.border || '#E5E7EB' }]}
                             onPress={() => handleCambiarCantidad(index, -1)}
                           >
-                            <Text style={styles.cantidadButtonText}>-</Text>
+                            <Text style={[styles.cantidadButtonText, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>-</Text>
                           </TouchableOpacity>
-                          <Text style={styles.cantidadText}>{plato.cantidad || 1}</Text>
+                          <Text style={[styles.cantidadText, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+                            {plato.cantidad || 1}
+                          </Text>
                           <TouchableOpacity
-                            style={styles.cantidadButton}
+                            style={[styles.cantidadButton, { backgroundColor: themeColors.colors?.border || themeColors.border || '#E5E7EB' }]}
                             onPress={() => handleCambiarCantidad(index, 1)}
                           >
-                            <Text style={styles.cantidadButtonText}>+</Text>
+                            <Text style={[styles.cantidadButtonText, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>+</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.removeButton}
                             onPress={() => handleRemoverPlato(index)}
                           >
-                            <MaterialCommunityIcons name="delete" size={20} color={themeColors.colors.primary} />
+                            <MaterialCommunityIcons 
+                              name="delete" 
+                              size={20} 
+                              color={isDark ? '#F87171' : '#EF4444'} 
+                            />
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -1113,22 +1421,47 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               {/* Platos No Editables */}
               {platosNoEditables.length > 0 && (
                 <View style={styles.editSection}>
-                  <Text style={[styles.editLabel, styles.editLabelNoEditable]}>
+                  <Text style={[styles.editLabel, styles.editLabelNoEditable, { color: '#10B981' }]}>
                     ✓ Platos entregados (no editables):
                   </Text>
-                  {platosNoEditables.map((plato, index) => (
-                    <View key={index} style={[styles.platoEditItem, styles.platoEditItemNoEditable]}>
-                      <View style={styles.platoEditInfo}>
-                        <Text style={[styles.platoEditNombre, styles.platoEditNombreNoEditable]}>
-                          {plato.nombre}
-                        </Text>
-                        <Text style={styles.platoEditPrecio}>
-                          S/. {((plato.precio || 0) * (plato.cantidad || 1)).toFixed(2)}
-                        </Text>
+                  {platosNoEditables.map((plato, index) => {
+                    // Obtener colores según estado (no editable)
+                    const coloresEstado = obtenerColoresEstadoAdaptados(plato.estado || 'entregado', isDark, false);
+                    
+                    return (
+                      <View 
+                        key={index} 
+                        style={[
+                          styles.platoEditItem, 
+                          styles.platoEditItemNoEditable,
+                          {
+                            backgroundColor: coloresEstado.backgroundColor,
+                            borderLeftWidth: 4,
+                            borderLeftColor: coloresEstado.borderColor,
+                            borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                            opacity: 0.6,
+                          }
+                        ]}
+                      >
+                        <View style={styles.platoEditInfo}>
+                          <View style={styles.platoEditNombreContainer}>
+                            <Text style={[styles.platoEditNombre, styles.platoEditNombreNoEditable, { color: coloresEstado.textColor }]}>
+                              {plato.nombre}
+                            </Text>
+                            <View style={[styles.badgeEstado, { backgroundColor: coloresEstado.badgeColor }]}>
+                              <Text style={[styles.badgeEstadoText, { color: coloresEstado.badgeTextColor }]}>
+                                {coloresEstado.textoEstado}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={[styles.platoEditPrecio, { color: isDark ? '#6EE7B7' : '#059669' }]}>
+                            S/. {((plato.precio || 0) * (plato.cantidad || 1)).toFixed(2)}
+                          </Text>
+                        </View>
+                        <MaterialCommunityIcons name="lock" size={20} color={coloresEstado.textColor} />
                       </View>
-                      <BadgeEstadoPlato estado={plato.estado} />
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               )}
               
@@ -1165,9 +1498,16 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 {tipoPlatoFiltro && (
                   <>
                     <TextInput
-                      style={styles.searchInput}
+                      style={[
+                        styles.searchInput,
+                        {
+                          backgroundColor: themeColors.colors?.card || themeColors.card || '#F9FAFB',
+                          borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                          color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937',
+                        }
+                      ]}
                       placeholder="Buscar plato..."
-                      placeholderTextColor={themeColors.colors.text.light}
+                      placeholderTextColor={themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280'}
                       value={searchPlato}
                       onChangeText={setSearchPlato}
                     />
@@ -1226,11 +1566,20 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               </View>
               
               <View style={styles.editSection}>
-                <Text style={styles.editLabel}>Observaciones:</Text>
+                <Text style={[styles.editLabel, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+                  Observaciones:
+                </Text>
                 <TextInput
-                  style={styles.observacionesInput}
+                  style={[
+                    styles.observacionesInput,
+                    {
+                      backgroundColor: themeColors.colors?.card || themeColors.card || '#F9FAFB',
+                      borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                      color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937',
+                    }
+                  ]}
                   placeholder="Sin observaciones..."
-                  placeholderTextColor={themeColors.colors.text.light}
+                  placeholderTextColor={themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280'}
                   value={observacionesEditadas}
                   onChangeText={setObservacionesEditadas}
                   multiline
@@ -1239,19 +1588,36 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               </View>
               
               <View style={styles.editSection}>
-                <Text style={styles.totalText}>TOTAL: S/. {calcularTotalEdicion().toFixed(2)}</Text>
+                <Text style={[styles.totalText, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+                  TOTAL: S/. {calcularTotalEdicion().toFixed(2)}
+                </Text>
               </View>
             </ScrollView>
             
-            <View style={styles.modalButtons}>
+            <View style={[
+              styles.modalButtons,
+              {
+                borderTopColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+              }
+            ]}>
               <TouchableOpacity
-                style={styles.saveButton}
+                style={[
+                  styles.saveButton,
+                  {
+                    backgroundColor: isDark ? '#60A5FA' : '#3B82F6',
+                  }
+                ]}
                 onPress={handleGuardarEdicion}
               >
-                <Text style={styles.saveButtonText}>💾 Guardar Cambios</Text>
+                <Text style={[styles.saveButtonText, { color: '#FFFFFF' }]}>💾 Guardar Cambios</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[
+                  styles.cancelButton,
+                  {
+                    backgroundColor: isDark ? '#4B5563' : '#E5E7EB',
+                  }
+                ]}
                 onPress={() => {
                   setModalEditarVisible(false);
                   setComandaEditando(null);
@@ -1262,7 +1628,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   setObservacionesEditadas('');
                 }}
               >
-                <Text style={styles.cancelButtonText}>Cancelar</Text>
+                <Text style={[
+                  styles.cancelButtonText,
+                  { color: isDark ? '#F9FAFB' : '#1F2937' }
+                ]}>
+                  Cancelar
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1276,16 +1647,42 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         animationType="slide"
         onRequestClose={() => setModalEliminarComandaVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Eliminar Comanda</Text>
-            <Text style={styles.modalSubtitle}>
+        <View style={[styles.modalOverlay, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.85)' : 'rgba(0, 0, 0, 0.5)' }]}>
+          <View style={[
+            styles.modalContent, 
+            { 
+              backgroundColor: themeColors.colors?.surface || themeColors.colors?.card || themeColors.card || '#FFFFFF',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: isDark ? 0.5 : 0.25,
+              shadowRadius: 8,
+              elevation: 10,
+            }
+          ]}>
+            <Text style={[styles.modalTitle, { color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937' }]}>
+              Eliminar Comanda
+            </Text>
+            <Text style={[
+              styles.modalSubtitle, 
+              { 
+                color: isDark ? '#FCA5A5' : '#DC2626',
+                fontWeight: '500',
+              }
+            ]}>
               Esta acción eliminará la comanda #{comandaPrincipal.comandaNumber || 'N/A'} permanentemente.
             </Text>
             
             <TextInput
-              style={styles.modalInput}
+              style={[
+                styles.modalInput,
+                {
+                  backgroundColor: themeColors.colors?.card || themeColors.card || '#F9FAFB',
+                  borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                  color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937',
+                }
+              ]}
               placeholder="Motivo de eliminación (obligatorio)"
+              placeholderTextColor={themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280'}
               value={motivoEliminacionComanda}
               onChangeText={setMotivoEliminacionComanda}
               multiline
@@ -1294,20 +1691,37 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             
             <View style={styles.modalActions}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel]}
+                style={[
+                  styles.modalButton, 
+                  styles.modalButtonCancel,
+                  {
+                    backgroundColor: isDark ? '#4B5563' : '#E5E7EB',
+                  }
+                ]}
                 onPress={() => {
                   setModalEliminarComandaVisible(false);
                   setMotivoEliminacionComanda('');
                 }}
               >
-                <Text style={styles.modalButtonText}>Cancelar</Text>
+                <Text style={[
+                  styles.modalButtonText,
+                  { color: isDark ? '#F9FAFB' : '#374151' }
+                ]}>
+                  Cancelar
+                </Text>
               </TouchableOpacity>
               
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonConfirm]}
+                style={[
+                  styles.modalButton, 
+                  styles.modalButtonConfirm,
+                  {
+                    backgroundColor: isDark ? '#F87171' : '#EF4444',
+                  }
+                ]}
                 onPress={confirmarEliminacionComanda}
               >
-                <Text style={[styles.modalButtonText, styles.modalButtonTextConfirm]}>
+                <Text style={[styles.modalButtonText, styles.modalButtonTextConfirm, { color: '#FFFFFF' }]}>
                   Eliminar Comanda
                 </Text>
               </TouchableOpacity>
@@ -1330,11 +1744,9 @@ const styles = StyleSheet.create({
   leftColumn: {
     width: '70%',
     borderRightWidth: 1,
-    borderRightColor: '#E5E7EB',
   },
   rightColumn: {
     width: '30%',
-    backgroundColor: '#F9FAFB',
   },
   platosList: {
     flex: 1,
@@ -1354,50 +1766,41 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#6B7280',
     marginTop: 16,
     textAlign: 'center',
   },
   totalesContainer: {
     margin: 12,
     padding: 16,
-    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
   },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
   },
   totalRowFinal: {
     borderBottomWidth: 0,
     marginTop: 8,
     paddingTop: 12,
     borderTopWidth: 2,
-    borderTopColor: '#E5E7EB',
   },
   totalLabel: {
     fontSize: 16,
-    color: '#6B7280',
   },
   totalLabelFinal: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1F2937',
   },
   totalValue: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#059669',
   },
   totalValueFinal: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#059669',
   },
   actionButton: {
     flexDirection: 'row',
@@ -1419,19 +1822,19 @@ const styles = StyleSheet.create({
     elevation: 0,
   },
   actionButtonEdit: {
-    backgroundColor: '#3B82F6',
+    // Se aplica dinámicamente según isDark
   },
   actionButtonDelete: {
-    backgroundColor: '#EF4444',
+    // Se aplica dinámicamente según isDark
   },
   actionButtonAdd: {
-    backgroundColor: '#10B981',
+    // Se aplica dinámicamente según isDark
   },
   actionButtonPay: {
-    backgroundColor: '#059669',
+    // Se aplica dinámicamente según isDark
   },
   actionButtonCancel: {
-    backgroundColor: '#6B7280',
+    // Se aplica dinámicamente según isDark
   },
   actionButtonText: {
     color: '#fff',
@@ -1459,7 +1862,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
@@ -1490,8 +1892,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   modalPlatoItemSelected: {
-    borderColor: '#EF4444',
-    backgroundColor: '#FEF2F2',
+    // Se aplica dinámicamente según isDark
   },
   modalPlatoInfo: {
     flex: 1,
@@ -1533,26 +1934,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalButtonCancel: {
-    backgroundColor: '#E5E7EB',
+    // Se aplica dinámicamente según isDark
   },
   modalButtonConfirm: {
-    backgroundColor: '#EF4444',
+    // Se aplica dinámicamente según isDark
   },
   modalButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1F2937',
   },
   modalButtonTextConfirm: {
-    color: '#fff',
+    // Se aplica dinámicamente
   },
   // Estilos para modal de edición
   modalContentEditar: {
-    backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
     maxHeight: '90%',
+  },
+  leyendaColores: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  leyendaText: {
+    fontSize: 11,
+    textAlign: 'center',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1570,18 +1980,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 8,
-    color: '#1F2937',
   },
   editLabelNoEditable: {
     color: '#10B981',
   },
   platoEditItem: {
-    backgroundColor: '#F9FAFB',
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+  },
+  platoEditNombreContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flex: 1,
+    marginRight: 8,
+  },
+  badgeEstado: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  badgeEstadoText: {
+    fontSize: 9,
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
   platoEditItemNoEditable: {
     backgroundColor: '#F3F4F6',
@@ -1596,7 +2021,6 @@ const styles = StyleSheet.create({
   platoEditNombre: {
     fontSize: 15,
     fontWeight: '500',
-    color: '#1F2937',
     flex: 1,
   },
   platoEditNombreNoEditable: {
@@ -1616,19 +2040,16 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#E5E7EB',
     justifyContent: 'center',
     alignItems: 'center',
   },
   cantidadButtonText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1F2937',
   },
   cantidadText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1F2937',
     minWidth: 30,
     textAlign: 'center',
   },
@@ -1651,14 +2072,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   searchInput: {
-    backgroundColor: '#F9FAFB',
     padding: 12,
     borderRadius: 8,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
     fontSize: 14,
-    color: '#1F2937',
   },
   categoriasContainer: {
     marginBottom: 12,
@@ -1726,13 +2144,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   observacionesInput: {
-    backgroundColor: '#F9FAFB',
     padding: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
     fontSize: 14,
-    color: '#1F2937',
     minHeight: 80,
     textAlignVertical: 'top',
   },
@@ -1748,29 +2163,24 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
   },
   saveButton: {
     flex: 1,
-    backgroundColor: '#3B82F6',
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
   },
   saveButtonText: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: '#E5E7EB',
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
   },
   cancelButtonText: {
-    color: '#1F2937',
     fontSize: 16,
     fontWeight: '600',
   },

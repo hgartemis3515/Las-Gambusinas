@@ -172,3 +172,110 @@ export const obtenerEstadoMesa = (mesa, comandas) => {
   return mesa?.estado || 'libre';
 };
 
+/**
+ * Obtiene colores por estado del plato
+ * @param {string} estado - Estado del plato ('pedido', 'recoger', 'entregado', 'pagado')
+ * @param {boolean} isDark - Si está en modo oscuro
+ * @returns {Object} Objeto con colores adaptados
+ */
+export const obtenerColoresPorEstado = (estado, isDark = false) => {
+  const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado;
+  
+  const coloresBase = {
+    pedido: {
+      backgroundColor: '#DBEAFE',
+      textColor: '#1E40AF',
+      borderColor: '#3B82F6',
+      badgeColor: '#3B82F6',
+      badgeTextColor: '#FFFFFF',
+      textoEstado: 'PEDIDO'
+    },
+    recoger: {
+      backgroundColor: '#FEF3C7',
+      textColor: '#92400E',
+      borderColor: '#F59E0B',
+      badgeColor: '#F59E0B',
+      badgeTextColor: '#FFFFFF',
+      textoEstado: 'RECOGER'
+    },
+    entregado: {
+      backgroundColor: '#D1FAE5',
+      textColor: '#065F46',
+      borderColor: '#10B981',
+      badgeColor: '#10B981',
+      badgeTextColor: '#FFFFFF',
+      textoEstado: 'ENTREGADO'
+    },
+    pagado: {
+      backgroundColor: '#F3F4F6',
+      textColor: '#374151',
+      borderColor: '#6B7280',
+      badgeColor: '#6B7280',
+      badgeTextColor: '#FFFFFF',
+      textoEstado: 'PAGADO'
+    }
+  };
+  
+  const colores = coloresBase[estadoNormalizado] || coloresBase.pedido;
+  
+  // Ajustar para modo oscuro
+  if (isDark) {
+    // Convertir hex a rgba con opacidad
+    const hexToRgba = (hex, alpha) => {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    };
+    
+    return {
+      ...colores,
+      backgroundColor: hexToRgba(colores.backgroundColor, 0.3), // 30% opacidad en modo oscuro
+      textColor: '#FFFFFF', // Texto blanco para mejor contraste
+      borderColor: hexToRgba(colores.borderColor, 0.6), // Borde con 60% opacidad
+    };
+  }
+  
+  // Convertir hex a rgba con opacidad para modo claro
+  const hexToRgba = (hex, alpha) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+  
+  return {
+    ...colores,
+    backgroundColor: hexToRgba(colores.backgroundColor, 0.8), // 80% opacidad en modo claro
+  };
+};
+
+/**
+ * Obtiene colores de estado adaptados según el tema
+ * @param {string} estado - Estado del plato
+ * @param {boolean} isDark - Si está en modo oscuro
+ * @param {boolean} esEditable - Si el plato es editable
+ * @returns {Object} Colores adaptados
+ */
+export const obtenerColoresEstadoAdaptados = (estado, isDark = false, esEditable = true) => {
+  const colores = obtenerColoresPorEstado(estado, isDark);
+  
+  // Si no es editable, reducir más la opacidad
+  if (!esEditable) {
+    // Extraer valores RGB del rgba
+    const rgbaMatch = colores.backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+    if (rgbaMatch) {
+      const r = rgbaMatch[1];
+      const g = rgbaMatch[2];
+      const b = rgbaMatch[3];
+      const newAlpha = isDark ? 0.2 : 0.4; // Menos opacidad para no editables
+      return {
+        ...colores,
+        backgroundColor: `rgba(${r}, ${g}, ${b}, ${newAlpha})`,
+      };
+    }
+  }
+  
+  return colores;
+};
+
