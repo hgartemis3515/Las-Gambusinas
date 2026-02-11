@@ -68,7 +68,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const { mesa, comandas: comandasIniciales, onRefresh } = route.params || {};
   
   // Hooks
-  const { theme, isDark } = useTheme();
+  const { theme, isDarkMode } = useTheme();
+  const isDark = isDarkMode; // Alias para compatibilidad
   const themeColors = theme || themeLight;
   const { socket, connected } = useSocket();
   
@@ -1054,7 +1055,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   ]}>
                     Subtotal:
                   </Text>
-                  <Text style={[styles.totalValue, { color: isDark ? '#6EE7B7' : '#059669' }]}>
+                  <Text style={[styles.totalValue, { color: '#059669' }]}>
                     S/. {totales.subtotal}
                   </Text>
                 </View>
@@ -1067,7 +1068,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   ]}>
                     IGV (18%):
                   </Text>
-                  <Text style={[styles.totalValue, { color: isDark ? '#6EE7B7' : '#059669' }]}>
+                  <Text style={[styles.totalValue, { color: '#059669' }]}>
                     S/. {totales.igv}
                   </Text>
                 </View>
@@ -1075,7 +1076,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   <Text style={[styles.totalLabel, styles.totalLabelFinal, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937') }]}>
                     TOTAL:
                   </Text>
-                  <Text style={[styles.totalValue, styles.totalValueFinal, { color: isDark ? '#6EE7B7' : '#059669' }]}>
+                  <Text style={[styles.totalValue, styles.totalValueFinal, { color: '#059669' }]}>
                     S/. {totales.total}
                   </Text>
                 </View>
@@ -1096,7 +1097,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             <TouchableOpacity
               style={[
                 styles.actionButton, 
-                { backgroundColor: isDark ? '#60A5FA' : '#3B82F6' },
+                { backgroundColor: '#3B82F6' }, // Azul intenso en ambos modos
                 !puedeEditar && styles.actionButtonDisabled
               ]}
               onPress={handleEditarComanda}
@@ -1109,7 +1110,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             <TouchableOpacity
               style={[
                 styles.actionButton, 
-                { backgroundColor: isDark ? '#F87171' : '#EF4444' },
+                { backgroundColor: '#EF4444' }, // Rojo intenso en ambos modos
                 !puedeEliminarPlatos && styles.actionButtonDisabled
               ]}
               onPress={handleEliminarPlatos}
@@ -1122,7 +1123,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             <TouchableOpacity
               style={[
                 styles.actionButton, 
-                { backgroundColor: isDark ? '#F87171' : '#EF4444' },
+                { backgroundColor: '#EF4444' }, // Rojo intenso en ambos modos
                 !puedeEliminarComanda && styles.actionButtonDisabled
               ]}
               onPress={handleEliminarComanda}
@@ -1135,7 +1136,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             <TouchableOpacity
               style={[
                 styles.actionButton, 
-                { backgroundColor: isDark ? '#6EE7B7' : '#10B981' },
+                { backgroundColor: '#10B981' }, // Verde intenso en ambos modos
                 !puedeNuevaComanda && styles.actionButtonDisabled
               ]}
               onPress={handleNuevaComanda}
@@ -1148,7 +1149,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             <TouchableOpacity
               style={[
                 styles.actionButton, 
-                { backgroundColor: isDark ? '#6EE7B7' : '#059669' },
+                { backgroundColor: '#059669' }, // Verde intenso en ambos modos
                 !puedePagar && styles.actionButtonDisabled
               ]}
               onPress={handlePagar}
@@ -1248,7 +1249,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                       name={seleccionado ? 'checkbox-marked' : 'checkbox-blank-outline'}
                       size={24}
                       color={seleccionado 
-                        ? (isDark ? '#F87171' : '#EF4444')
+                        ? '#EF4444' // Rojo intenso en ambos modos
                         : (themeColors.colors?.border || themeColors.border || '#9CA3AF')
                       }
                     />
@@ -1295,7 +1296,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                       <Text style={[
                         styles.modalPlatoCantidad, 
                         { 
-                          color: isDark ? '#6EE7B7' : '#059669', // Verde claro en oscuro, verde normal en claro
+                          color: '#059669', // Verde intenso en ambos modos
                           marginTop: 4,
                         }
                       ]}>
@@ -1329,15 +1330,21 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             
             <TextInput
               style={[
-                styles.modalInput,
                 {
-                  backgroundColor: isDark ? '#1F2937' : (themeColors.colors?.card || themeColors.card || '#F9FAFB'), // Gris oscuro en modo oscuro
-                  borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
-                  color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937'),
+                  borderWidth: 1,
+                  borderRadius: 8,
+                  padding: 12,
+                  fontSize: 14,
+                  textAlignVertical: 'top',
+                  marginBottom: 16,
+                  minHeight: 80,
+                  backgroundColor: isDark ? '#000000' : '#FFFFFF', // Negro puro en modo oscuro
+                  borderColor: isDark ? '#4B5563' : '#D1D5DB', // Gris medio en modo oscuro para visibilidad
+                  color: isDark ? '#FFFFFF' : '#111827', // Blanco en modo oscuro, gris muy oscuro en claro
                 }
               ]}
-              placeholder="Motivo de eliminación (obligatorio)"
-              placeholderTextColor={isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280')}
+              placeholder="Ej: Cliente cambió de opinión, error en el pedido, plato no disponible..."
+              placeholderTextColor={isDark ? '#9CA3AF' : '#6B7280'} // Gris medio claro en oscuro, gris medio en claro
               value={motivoEliminacion}
               onChangeText={setMotivoEliminacion}
               multiline
@@ -1372,7 +1379,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   styles.modalButton, 
                   styles.modalButtonConfirm,
                   {
-                    backgroundColor: isDark ? '#F87171' : '#EF4444',
+                    backgroundColor: '#EF4444', // Rojo intenso en ambos modos
                   }
                 ]}
                 onPress={confirmarEliminacionPlatos}
@@ -1547,7 +1554,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                             <MaterialCommunityIcons 
                               name="delete" 
                               size={20} 
-                              color={isDark ? '#F87171' : '#EF4444'} 
+                              color="#EF4444" 
                             />
                           </TouchableOpacity>
                         </View>
@@ -1560,7 +1567,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               {/* Platos No Editables */}
               {platosNoEditables.length > 0 && (
                 <View style={styles.editSection}>
-                  <Text style={[styles.editLabel, styles.editLabelNoEditable, { color: isDark ? '#34D399' : '#10B981' }]}>
+                  <Text style={[styles.editLabel, styles.editLabelNoEditable, { color: '#10B981' }]}>
                     ✓ Platos entregados (no editables):
                   </Text>
                   {platosNoEditables.map((plato, index) => {
@@ -1667,7 +1674,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                           styles.categoriaChip, 
                           {
                             backgroundColor: !categoriaFiltro 
-                              ? (isDark ? '#60A5FA' : '#3B82F6')
+                              ? '#3B82F6' // Azul intenso en ambos modos
                               : (themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB')),
                             borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
                           },
@@ -1693,7 +1700,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                             styles.categoriaChip, 
                             {
                               backgroundColor: categoriaFiltro === cat
-                                ? (isDark ? '#60A5FA' : '#3B82F6')
+                                ? '#3B82F6' // Azul intenso en ambos modos
                                 : (themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB')),
                               borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
                             },
@@ -1749,7 +1756,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                                 </Text>
                                 <Text style={[
                                   styles.platoSelectPrecio,
-                                  { color: isDark ? '#6EE7B7' : '#059669' }
+                                  { color: '#059669' }
                                 ]}>
                                   S/. {plato.precio.toFixed(2)}
                                 </Text>
@@ -1757,7 +1764,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                               {cantidadEnComanda > 0 && (
                                 <View style={[
                                   styles.cantidadBadge,
-                                  { backgroundColor: isDark ? '#60A5FA' : '#3B82F6' }
+                                  { backgroundColor: '#3B82F6' } // Azul intenso en ambos modos
                                 ]}>
                                   <Text style={[styles.cantidadBadgeText, { color: '#FFFFFF' }]}>
                                     x{cantidadEnComanda}
@@ -1779,15 +1786,20 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 </Text>
                 <TextInput
                   style={[
-                    styles.observacionesInput,
                     {
-                      backgroundColor: isDark ? '#1F2937' : (themeColors.colors?.card || themeColors.card || '#F9FAFB'), // Gris oscuro en modo oscuro
-                      borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
-                      color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937'),
+                      padding: 12,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      fontSize: 14,
+                      minHeight: 80,
+                      textAlignVertical: 'top',
+                      backgroundColor: isDark ? '#000000' : '#FFFFFF', // Negro puro en modo oscuro
+                      borderColor: isDark ? '#4B5563' : '#D1D5DB', // Gris medio en modo oscuro para visibilidad
+                      color: isDark ? '#FFFFFF' : '#111827', // Blanco en modo oscuro, gris muy oscuro en claro
                     }
                   ]}
                   placeholder="Sin observaciones..."
-                  placeholderTextColor={isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280')}
+                  placeholderTextColor={isDark ? '#9CA3AF' : '#6B7280'} // Gris medio claro en oscuro, gris medio en claro
                   value={observacionesEditadas}
                   onChangeText={setObservacionesEditadas}
                   multiline
@@ -1812,7 +1824,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 style={[
                   styles.saveButton,
                   {
-                    backgroundColor: isDark ? '#10B981' : '#059669', // Verde
+                    backgroundColor: '#059669', // Verde intenso en ambos modos
                   }
                 ]}
                 onPress={handleGuardarEdicion}
@@ -1987,7 +1999,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                           <Text style={[
                             styles.modalPlatoCantidad,
                             { 
-                              color: isDark ? '#6EE7B7' : '#059669', // Verde claro en oscuro
+                              color: '#059669', // Verde intenso en ambos modos
                             }
                           ]}>
                             x{plato.cantidad} - S/. {(plato.precio * plato.cantidad).toFixed(2)}
@@ -2052,15 +2064,21 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             </Text>
             <TextInput
               style={[
-                styles.modalInput,
                 {
-                  backgroundColor: isDark ? '#1F2937' : (themeColors.colors?.card || themeColors.card || '#F9FAFB'), // Gris oscuro en modo oscuro
-                  borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
-                  color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937'),
+                  borderWidth: 1,
+                  borderRadius: 8,
+                  padding: 12,
+                  fontSize: 14,
+                  textAlignVertical: 'top',
+                  marginBottom: 16,
+                  minHeight: 80,
+                  backgroundColor: isDark ? '#000000' : '#FFFFFF', // Negro puro en modo oscuro
+                  borderColor: isDark ? '#4B5563' : '#D1D5DB', // Gris medio en modo oscuro para visibilidad
+                  color: isDark ? '#FFFFFF' : '#111827', // Blanco en modo oscuro, gris muy oscuro en claro
                 }
               ]}
               placeholder="Ej: Cliente canceló todo el pedido, error en todas las comandas, cambio de mesa..."
-              placeholderTextColor={isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280')}
+              placeholderTextColor={isDark ? '#9CA3AF' : '#6B7280'} // Gris medio claro en oscuro, gris medio en claro
               value={motivoEliminacionComanda}
               onChangeText={setMotivoEliminacionComanda}
               multiline
@@ -2096,7 +2114,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   styles.modalButton, 
                   styles.modalButtonConfirm,
                   {
-                    backgroundColor: isDark ? '#F87171' : '#EF4444',
+                    backgroundColor: '#EF4444', // Rojo intenso en ambos modos
                   }
                 ]}
                 onPress={confirmarEliminacionComanda}
