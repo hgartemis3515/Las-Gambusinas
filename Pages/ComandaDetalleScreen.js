@@ -72,7 +72,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const { theme, isDarkMode } = useTheme();
   const isDark = isDarkMode; // Alias para compatibilidad
   const themeColors = theme || themeLight;
-  const { socket, connected, joinMesa, leaveMesa } = useSocket();
+  const { socket, connected, connectionStatus, reconnectAttempts, joinMesa, leaveMesa } = useSocket();
+  
+  // FASE 4.1: Estado para indicador online-active cuando recibe actualizaciones
+  const [localConnectionStatus, setLocalConnectionStatus] = React.useState(connectionStatus || 'desconectado');
   
   // Estados
   const [comandas, setComandasState] = useState(comandasIniciales || []);
@@ -328,6 +331,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // FASE 4: Integración WebSocket con manejo mejorado de rooms
   const mesaId = mesa?._id || null; // Extraer mesaId fuera del useEffect para evitar problemas con optional chaining en dependencies
   
+  // FASE 4.1: Sincronizar estado de conexión local con el del contexto
+  useEffect(() => {
+    setLocalConnectionStatus(connectionStatus || 'desconectado');
+  }, [connectionStatus]);
+  
   useEffect(() => {
     if (!socket || !connected || !mesaId) {
       return;
@@ -352,6 +360,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         estadoAnterior: data.estadoAnterior,
         mesaId: data.mesaId
       });
+      
+      // FASE 4.1: Cambiar estado a 'online-active' para parpadeo del indicador
+      setLocalConnectionStatus('online-active');
+      setTimeout(() => {
+        setLocalConnectionStatus(connectionStatus || 'conectado');
+      }, 2000);
       
       // Verificar que el evento es para nuestra mesa
       const esNuestraMesa = data.mesaId && mesaId && (
@@ -1115,12 +1129,15 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   return (
         <View style={[styles.container, { backgroundColor: themeColors.colors?.background || themeColors.background || '#FFFFFF' }]}>
-      {/* Header Personalizado */}
+      {/* Header Personalizado - FASE 4.1: Con indicador online/offline */}
       <HeaderComandaDetalle
         mesa={mesa}
         comanda={comandaPrincipal}
         onSync={refrescarComandas}
         navigation={navigation}
+        connectionStatus={localConnectionStatus}
+        isConnected={connected}
+        reconnectAttempts={reconnectAttempts}
       />
       
       {/* Layout de dos columnas */}
