@@ -15,9 +15,10 @@ export default function SocketStatus({
 }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Animación de pulso cuando está conectando
+  // FASE 4: Animación de pulso cuando está conectando o recibiendo actualizaciones
   useEffect(() => {
     if (connectionStatus === 'reconectando') {
+      // Pulso lento cuando está reconectando
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
@@ -32,13 +33,38 @@ export default function SocketStatus({
           }),
         ])
       ).start();
+    } else if (connectionStatus === 'online-active') {
+      // FASE 4: Pulso rápido cuando recibe actualizaciones (parpadeo)
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.3,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+        ]),
+        { iterations: 4 } // Parpadear 4 veces (2 segundos)
+      ).start();
     } else {
       pulseAnim.setValue(1);
     }
   }, [connectionStatus, pulseAnim]);
 
   const getStatusConfig = () => {
-    if (isConnected && connectionStatus === 'conectado') {
+    // FASE 4: Estado 'online-active' para parpadeo cuando recibe actualizaciones
+    if (isConnected && connectionStatus === 'online-active') {
+      return {
+        color: '#10B981', // Verde más suave
+        bgColor: 'rgba(16, 185, 129, 0.25)', // Más intenso cuando está activo
+        text: '✨ LIVE',
+        indicator: '#10B981'
+      };
+    } else if (isConnected && connectionStatus === 'conectado') {
       return {
         color: '#10B981', // Verde más suave
         bgColor: 'rgba(16, 185, 129, 0.15)',

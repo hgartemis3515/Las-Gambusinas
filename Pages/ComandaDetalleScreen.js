@@ -10,6 +10,7 @@ import axios from '../config/axiosConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import moment from 'moment-timezone';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 
 // Componentes
 import BadgeEstadoPlato from '../Components/BadgeEstadoPlato';
@@ -71,7 +72,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const { theme, isDarkMode } = useTheme();
   const isDark = isDarkMode; // Alias para compatibilidad
   const themeColors = theme || themeLight;
-  const { socket, connected } = useSocket();
+  const { socket, connected, joinMesa, leaveMesa } = useSocket();
   
   // Estados
   const [comandas, setComandasState] = useState(comandasIniciales || []);
@@ -324,63 +325,181 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     );
   };
   
-  // Integración WebSocket
+  // FASE 4: Integración WebSocket con manejo mejorado de rooms
+  const mesaId = mesa?._id || null; // Extraer mesaId fuera del useEffect para evitar problemas con optional chaining en dependencies
+  
   useEffect(() => {
-    if (socket && connected && mesa?._id) {
-      console.log('🔌 Conectando WebSocket a mesa:', mesa._id);
-      socket.emit('join-mesa', mesa._id);
+    if (!socket || !connected || !mesaId) {
+      return;
+    }
+    
+    console.log('🔌 FASE4: Conectando WebSocket a mesa:', mesaId);
+    
+    // FASE 4: Usar funciones del contexto para join/leave (mejor manejo de rooms)
+    if (joinMesa) {
+      joinMesa(mesaId);
+    } else {
+      // Fallback si no está disponible en el contexto
+      socket.emit('join-mesa', mesaId);
+    }
+    
+    // FASE 4: Listener granular de plato-actualizado (actualiza solo 1 plato)
+    socket.on('plato-actualizado', (data) => {
+      console.log('📡 FASE4: Evento plato-actualizado granular recibido:', {
+        comandaId: data.comandaId,
+        platoId: data.platoId,
+        nuevoEstado: data.nuevoEstado,
+        estadoAnterior: data.estadoAnterior,
+        mesaId: data.mesaId
+      });
       
-      socket.on('plato-actualizado', (data) => {
-        console.log('📡 Evento plato-actualizado recibido:', data);
-        const esNuestraComanda = comandas.some(c => c._id === data.comandaId);
-        if (esNuestraComanda) {
-          console.log('✓ Evento corresponde a nuestra comanda, refrescando...');
-          refrescarComandas();
-          if (data.estadoNuevo === 'recoger') {
+      // Verificar que el evento es para nuestra mesa
+      const esNuestraMesa = data.mesaId && mesaId && (
+        data.mesaId.toString() === mesaId.toString() || 
+        data.mesaId === mesaId
+      );
+      
+      // Verificar que es nuestra comanda
+      const comandaIndex = comandas.findIndex(c => {
+        const cId = c._id?.toString ? c._id.toString() : c._id;
+        const dataComandaId = data.comandaId?.toString ? data.comandaId.toString() : data.comandaId;
+        return cId === dataComandaId;
+      });
+      
+      if (comandaIndex === -1 && !esNuestraMesa) {
+        console.log('✗ FASE4: Evento no corresponde a nuestras comandas/mesa');
+        return;
+      }
+      
+      // FASE 4: Actualización GRANULAR - Solo actualizar el plato específico
+      if (comandaIndex !== -1 && data.platoId && data.nuevoEstado) {
+        console.log('✓ FASE4: Actualizando plato granularmente (sin refrescar comanda completa)');
+        
+        setComandasState(prev => {
+          const nuevasComandas = [...prev];
+          const comanda = nuevasComandas[comandaIndex];
+          
+          if (!comanda || !comanda.platos) {
+            console.warn('⚠️ FASE4: Comanda no encontrada o sin platos, refrescando completa');
+            setTimeout(() => refrescarComandas(), 100);
+            return prev;
+          }
+          
+          // Buscar el plato por platoId
+          const platoIdStr = data.platoId?.toString ? data.platoId.toString() : data.platoId;
+          const platoIndex = comanda.platos.findIndex(p => {
+            const pId = p.plato?._id?.toString ? p.plato._id.toString() : 
+                        p.plato?.toString ? p.plato.toString() : 
+                        p.platoId?.toString ? p.platoId.toString() : 
+                        p.plato;
+            return pId === platoIdStr;
+          });
+          
+          if (platoIndex === -1) {
+            console.warn('⚠️ FASE4: Plato no encontrado en comanda, refrescando completa');
+            setTimeout(() => refrescarComandas(), 100);
+            return prev;
+          }
+          
+          // FASE 4: Actualizar SOLO el estado del plato específico (inmutable)
+          const nuevaComanda = { ...comanda };
+          const nuevosPlatos = [...nuevaComanda.platos];
+          const platoActualizado = { ...nuevosPlatos[platoIndex] };
+          
+          // Actualizar estado del plato
+          platoActualizado.estado = data.nuevoEstado;
+          
+          // Actualizar timestamp si existe
+          if (!platoActualizado.tiempos) {
+            platoActualizado.tiempos = {};
+          }
+          platoActualizado.tiempos[data.nuevoEstado] = data.timestamp || new Date();
+          
+          nuevosPlatos[platoIndex] = platoActualizado;
+          nuevaComanda.platos = nuevosPlatos;
+          nuevasComandas[comandaIndex] = nuevaComanda;
+          
+          // FASE 4: Haptic feedback cuando el plato cambia de estado
+          try {
+            if (data.nuevoEstado === 'recoger') {
+              // Vibración más fuerte cuando el plato está listo
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } else if (data.nuevoEstado === 'entregado') {
+              // Vibración suave cuando se entrega
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            } else {
+              // Vibración muy suave para otros cambios
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }
+          } catch (error) {
+            console.log('⚠️ Haptic feedback no disponible:', error);
+          }
+          
+          // Mostrar alerta solo si el plato está listo para recoger
+          if (data.nuevoEstado === 'recoger') {
+            // Obtener nombre del plato para el alert
+            const nombrePlato = platoActualizado.plato?.nombre || 
+                                platoActualizado.nombre || 
+                                'Un plato';
+            
             Alert.alert(
               '🍽️ Plato Listo',
-              `${data.platoNombre || 'Un plato'} está listo para recoger de cocina.`,
+              `${nombrePlato} está listo para recoger de cocina.`,
               [{ text: 'Entendido' }]
             );
           }
-        } else {
-          console.log('✗ Evento no corresponde a nuestras comandas');
-        }
-      });
-      
-      socket.on('plato-agregado', (data) => {
-        console.log('📡 Evento plato-agregado recibido:', data);
-        const esNuestraComanda = comandas.some(c => c._id === data.comandaId);
-        if (esNuestraComanda || data.mesaId === mesa._id) {
-          console.log('✓ Plato agregado a nuestra comanda/mesa, refrescando...');
-          refrescarComandas();
-        }
-      });
-      
-      socket.on('plato-entregado', (data) => {
-        console.log('📡 Evento plato-entregado recibido:', data);
+          
+          console.log(`✅ FASE4: Plato ${data.platoId} actualizado a "${data.nuevoEstado}" (sin refrescar comanda completa)`);
+          
+          return nuevasComandas;
+        });
+      } else {
+        // Fallback: si no podemos actualizar granularmente, refrescar completa
+        console.log('⚠️ FASE4: No se pudo actualizar granularmente, refrescando completa');
         refrescarComandas();
-      });
+      }
+    });
+    
+    socket.on('plato-agregado', (data) => {
+      console.log('📡 Evento plato-agregado recibido:', data);
+      const esNuestraComanda = comandas.some(c => c._id === data.comandaId);
+      if (esNuestraComanda || (data.mesaId && mesaId && (data.mesaId.toString() === mesaId.toString() || data.mesaId === mesaId))) {
+        console.log('✓ Plato agregado a nuestra comanda/mesa, refrescando...');
+        refrescarComandas();
+      }
+    });
+    
+    socket.on('plato-entregado', (data) => {
+      console.log('📡 Evento plato-entregado recibido:', data);
+      refrescarComandas();
+    });
+    
+    socket.on('comanda-actualizada', (data) => {
+      console.log('📡 Evento comanda-actualizada recibido:', data);
+      const esNuestraComanda = comandas.some(c => c._id === data.comandaId);
+      if (esNuestraComanda || (data.mesaId && mesaId && (data.mesaId.toString() === mesaId.toString() || data.mesaId === mesaId))) {
+        console.log('✓ Comanda actualizada, refrescando...');
+        refrescarComandas();
+      }
+    });
+    
+    return () => {
+      console.log('🔌 FASE4: Desconectando WebSocket de mesa:', mesaId);
       
-      socket.on('comanda-actualizada', (data) => {
-        console.log('📡 Evento comanda-actualizada recibido:', data);
-        const esNuestraComanda = comandas.some(c => c._id === data.comandaId);
-        if (esNuestraComanda || data.mesaId === mesa._id) {
-          console.log('✓ Comanda actualizada, refrescando...');
-          refrescarComandas();
-        }
-      });
+      // FASE 4: Usar función del contexto para leave (mejor manejo de rooms)
+      if (leaveMesa) {
+        leaveMesa(mesaId);
+      } else {
+        // Fallback si no está disponible en el contexto
+        socket.emit('leave-mesa', mesaId);
+      }
       
-      return () => {
-        console.log('🔌 Desconectando WebSocket de mesa:', mesa._id);
-        socket.emit('leave-mesa', mesa._id);
-        socket.off('plato-actualizado');
-        socket.off('plato-agregado');
-        socket.off('plato-entregado');
-        socket.off('comanda-actualizada');
-      };
-    }
-  }, [socket, connected, mesa?._id, comandas]);
+      socket.off('plato-actualizado');
+      socket.off('plato-agregado');
+      socket.off('plato-entregado');
+      socket.off('comanda-actualizada');
+    };
+  }, [socket, connected, mesaId, comandas, joinMesa, leaveMesa]);
   
   useFocusEffect(
     useCallback(() => {

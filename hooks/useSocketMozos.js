@@ -307,6 +307,44 @@ const useSocketMozos = ({
       }
     });
 
+    // FASE 4: Evento granular de plato actualizado (solo datos mínimos)
+    socket.on('plato-actualizado', (data) => {
+      console.log('📥 FASE4: [MOZOS] Plato actualizado granular recibido:', {
+        comandaId: data.comandaId,
+        platoId: data.platoId,
+        nuevoEstado: data.nuevoEstado,
+        estadoAnterior: data.estadoAnterior,
+        mesaId: data.mesaId
+      });
+      
+      // FASE 4: Notificar cambio de estado para parpadeo del indicador
+      if (onSocketStatus) {
+        // Cambiar temporalmente a 'online-active' para parpadeo
+        setConnectionStatus('online-active');
+        onSocketStatus({ connected: true, status: 'online-active' });
+        
+        // Volver a 'conectado' después de 2 segundos
+        setTimeout(() => {
+          setConnectionStatus('conectado');
+          onSocketStatus({ connected: true, status: 'conectado' });
+        }, 2000);
+      }
+      
+      // Pasar el evento al handler si existe (para actualización granular)
+      if (onComandaActualizada) {
+        // Pasar datos granulares para actualización selectiva
+        onComandaActualizada({
+          tipo: 'plato-actualizado-granular',
+          comandaId: data.comandaId,
+          platoId: data.platoId,
+          nuevoEstado: data.nuevoEstado,
+          estadoAnterior: data.estadoAnterior,
+          mesaId: data.mesaId,
+          timestamp: data.timestamp
+        });
+      }
+    });
+
     // Evento: Estado de socket (heartbeat del servidor)
     socket.on('socket-status', (data) => {
       if (data.connected !== undefined) {
