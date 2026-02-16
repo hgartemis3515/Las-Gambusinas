@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 // 🔥 Usar axios configurado globalmente (timeout 10s, anti-bloqueo)
 import axios from "../../../config/axiosConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -453,6 +453,7 @@ const MesaAnimada = React.memo(({
 
 const InicioScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const { width, height } = useWindowDimensions();
@@ -486,6 +487,13 @@ const InicioScreen = () => {
   // Refs y estado para scroll de tabs áreas
   const tabsScrollViewRef = useRef(null);
   const tabPositionsRef = useRef({}); // { "areaId": xPosition }
+  // Ref para leer params sin provocar re-ejecución de useFocusEffect (anti-loop)
+  const routeParamsRef = useRef(route.params);
+  routeParamsRef.current = route.params;
+  // Ref para ejecutar flujo post-pago solo una vez por navegación
+  const postPagoHandledRef = useRef(false);
+  // Ref para Liberar Mesa en Alert post-pago (evita dep en handleLiberarMesa que cambia cada render)
+  const handleLiberarMesaRef = useRef(null);
   const [scrollX, setScrollX] = useState(0);
   const [contentWidth, setContentWidth] = useState(0);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -1095,22 +1103,86 @@ const InicioScreen = () => {
     }
   }, [socketConnected, mesas, joinMesa]);
 
-  // Suscribirse a eventos WebSocket y cargar datos cuando la pantalla está enfocada
+  // Flujo post-pago: useEffect aislado para evitar loop (no usar useFocusEffect + route.params aquí)
+  const mostrarMensajePago = route.params?.mostrarMensajePago === true;
+  const postPagoMesaId = route.params?.mesaId;
+  useEffect(() => {
+    if (!mostrarMensajePago || !postPagoMesaId) {
+      postPagoHandledRef.current = false;
+      return;
+    }
+    if (postPagoHandledRef.current) return;
+    postPagoHandledRef.current = true;
+
+    const params = route.params || {};
+    const mesaPagada = params.mesaPagada || {};
+    const boucherFromParams = params.boucher;
+    const nummesa = mesaPagada.nummesa ?? "?";
+
+    let cancelled = false;
+    joinMesa(postPagoMesaId);
+    (async () => {
+      try {
+        await Promise.all([obtenerMesas(), obtenerComandasHoy()]);
+        if (cancelled) return;
+        await new Promise((r) => setTimeout(r, 450));
+      } catch (e) {
+        if (!cancelled) console.warn("⚠️ [Inicio] Error refresh post-pago:", e?.message);
+      }
+      if (cancelled) return;
+      navigation.setParams({
+        mostrarMensajePago: false,
+        mesaId: undefined,
+        mesaPagada: undefined,
+        boucher: undefined,
+        refresh: undefined
+      });
+      Alert.alert(
+        "✅ Pago confirmado",
+        `Mesa ${nummesa} pagada (verde). Opciones:`,
+        [
+          {
+            text: "📄 Imprimir Boucher",
+            onPress: () => {
+              if (boucherFromParams) {
+                navigation.navigate("Pagos", { boucher: boucherFromParams });
+              } else {
+                AsyncStorage.getItem("ultimoBoucher").then((s) => {
+                  const b = s ? JSON.parse(s) : null;
+                  if (b) navigation.navigate("Pagos", { boucher: b });
+                  else Alert.alert("Error", "No hay boucher disponible para imprimir.");
+                });
+              }
+            }
+          },
+          {
+            text: "🔄 Liberar Mesa",
+            onPress: () => {
+              const mesaMin = { _id: mesaPagada._id, nummesa: mesaPagada.nummesa };
+              if (mesaMin._id && handleLiberarMesaRef.current) handleLiberarMesaRef.current(mesaMin);
+              else if (!mesaMin._id) Alert.alert("Error", "No se pudo obtener la mesa para liberar.");
+            }
+          },
+          { text: "Continuar", style: "cancel" }
+        ]
+      );
+    })();
+    return () => { cancelled = true; };
+  }, [mostrarMensajePago, postPagoMesaId, joinMesa, obtenerMesas, obtenerComandasHoy, navigation]);
+
+  // Suscribirse a eventos WebSocket y cargar datos cuando la pantalla está enfocada (sin deps que cambien cada render)
   useFocusEffect(
     useCallback(() => {
-      // Suscribirse a eventos WebSocket
       subscribeToEvents({
         onMesaActualizada: handleMesaActualizada,
         onComandaActualizada: handleComandaActualizada,
         onNuevaComanda: handleNuevaComanda
       });
-
-      // Cargar datos iniciales
-      obtenerMesas();
-      obtenerComandasHoy();
-      // NO más polling - WebSocket actualiza en tiempo real
-
-      // Cleanup: desuscribirse cuando la pantalla pierde el foco
+      // Refresh solo si no viene del flujo post-pago (ese useEffect ya hace el refresh)
+      if (!routeParamsRef.current?.mostrarMensajePago) {
+        obtenerMesas();
+        obtenerComandasHoy();
+      }
       return () => {
         subscribeToEvents({
           onMesaActualizada: null,
@@ -1118,7 +1190,7 @@ const InicioScreen = () => {
           onNuevaComanda: null
         });
       };
-    }, [handleMesaActualizada, handleComandaActualizada, handleNuevaComanda, subscribeToEvents, obtenerMesas, obtenerComandasHoy])
+    }, [subscribeToEvents, handleMesaActualizada, handleComandaActualizada, handleNuevaComanda, obtenerMesas, obtenerComandasHoy])
   );
 
   // Actualizar hora cada segundo
@@ -1326,6 +1398,11 @@ const InicioScreen = () => {
   };
 
   const getEstadoMesa = (mesa) => {
+    // Prioridad: si el backend marcó la mesa como "pagado", mostrarla verde aunque no haya comandas activas
+    if (mesa.estado && (mesa.estado.toLowerCase() === "pagado" || mesa.estado.toLowerCase() === "pagando")) {
+      return mesa.estado.charAt(0).toUpperCase() + mesa.estado.slice(1).toLowerCase();
+    }
+
     // Fuente única: comandas activas de la mesa. Si no hay comandas activas, la mesa está libre.
     const comandasMesa = getComandasPorMesa(mesa.nummesa);
     if (comandasMesa.length === 0) return "Libre";
@@ -2212,9 +2289,10 @@ const InicioScreen = () => {
               );
               
               console.log("✅ Mesa liberada:", mesa.nummesa);
-              
+              try {
+                await AsyncStorage.multiRemove(["ultimoBoucher", "mesaPagada"]);
+              } catch (e) { /* ignorar */ }
               Alert.alert("✅", `Mesa ${mesa.nummesa} liberada exitosamente.\n\nLa mesa está ahora disponible para otros mozos.`);
-              
               // Actualizar datos
               obtenerComandasHoy();
               obtenerMesas();
@@ -2235,6 +2313,10 @@ const InicioScreen = () => {
       ]
     );
   };
+
+  useEffect(() => {
+    handleLiberarMesaRef.current = handleLiberarMesa;
+  }, [handleLiberarMesa]);
 
   // Función para abrir modal de eliminar todas las comandas
   const handleEliminarTodasComandasMesa = async (mesa, comandasMesa) => {

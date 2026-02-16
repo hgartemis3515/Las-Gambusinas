@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import axios from "axios";
@@ -1347,24 +1348,39 @@ const PagosScreen = () => {
         // No bloquear el flujo si falla la generación del PDF
       }
 
+      // ✅ Guardar boucher y mesa para InicioScreen (mensaje post-pago, imprimir, liberar)
+      const mesaIdStr = mesaFinal._id?.toString?.() || mesaFinal._id;
+      const mesaPagadaPayload = { _id: mesaFinal._id, nummesa: mesaFinal.nummesa };
+      try {
+        await AsyncStorage.setItem("ultimoBoucher", JSON.stringify(boucherCreado));
+        await AsyncStorage.setItem("mesaPagada", JSON.stringify(mesaPagadaPayload));
+      } catch (e) {
+        console.warn("⚠️ [PAGO] No se pudo guardar ultimoBoucher/mesaPagada:", e?.message);
+      }
+
       // ✅ Cerrar overlay de carga ANTES del Alert
       setProcesandoPago(false);
       setMensajeCarga("Procesando pago...");
 
-      // ✅ Mostrar alerta de éxito
+      // ✅ Mostrar alerta de éxito y navegar a Inicio con params para refresh + mensaje verde
       Alert.alert(
-        "✅ Pago Exitoso", 
-        `Pago procesado y voucher generado.\n\nCliente: ${cliente.nombre || "Invitado"}\nVoucher ID: ${boucherCreado.voucherId}\n\nLa mesa ahora está en estado 'Pagado'.`,
+        "✅ Pago Exitoso",
+        `Pago procesado y voucher generado.\n\nCliente: ${cliente.nombre || "Invitado"}\nVoucher ID: ${boucherCreado.voucherId}\n\nLa mesa ${mesaFinal.nummesa} está en estado 'Pagado'. Serás redirigido al inicio.`,
         [
           {
             text: "OK",
             onPress: () => {
-              // Limpiar estado y volver a Inicio
               setComandas([]);
               setMesa(null);
               setClienteSeleccionado(null);
               setBoucherData(null);
-              navigation.navigate("Inicio");
+              navigation.navigate("Inicio", {
+                refresh: true,
+                mesaId: mesaIdStr,
+                mostrarMensajePago: true,
+                mesaPagada: mesaPagadaPayload,
+                boucher: boucherCreado,
+              });
             }
           }
         ]
