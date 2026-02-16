@@ -55,8 +55,23 @@ export const filtrarComandasActivas = (comandas) => {
 
 /**
  * Filtra platos según estados permitidos
+ * 
+ * REGLA DE NEGOCIO - DIFERENCIA ENTRE ELIMINACIÓN Y EDICIÓN:
+ * 
+ * - PARA ELIMINACIÓN: Usar SOLO ['pedido'] como estadosPermitidos.
+ *   Los platos en estado 'recoger' ya están preparados y NO deben eliminarse.
+ *   Esta función se usa en:
+ *   - handleEliminarPlatos() → Solo muestra platos "Pedido"
+ *   - handleEliminarComanda() → Solo permite eliminar si hay platos "Pedido"
+ *   - confirmarEliminacionComanda() → Re-valida antes de enviar al backend
+ * 
+ * - PARA EDICIÓN DE CANTIDADES: Puede usar ['pedido', 'recoger'] para permitir
+ *   cambiar cantidades de platos que aún no fueron entregados.
+ *   Sin embargo, la REMOCIÓN de platos desde edición sigue la misma regla:
+ *   solo se pueden remover platos en estado "Pedido".
+ * 
  * @param {Array} comandas - Array de comandas
- * @param {Array} estadosPermitidos - Estados permitidos (ej: ['pedido', 'recoger'])
+ * @param {Array} estadosPermitidos - Estados permitidos (ej: ['pedido'] para eliminación, ['pedido', 'recoger'] para edición de cantidades)
  * @returns {Array} Array de platos filtrados con información de comanda
  */
 export const filtrarPlatosPorEstado = (comandas, estadosPermitidos) => {
@@ -91,6 +106,17 @@ export const filtrarPlatosPorEstado = (comandas, estadosPermitidos) => {
 
 /**
  * Separa platos en editables y no editables según su estado
+ * 
+ * IMPORTANTE - Diferencia entre EDITABLES y ELIMINABLES:
+ * - PLATOS EDITABLES: Incluyen estados 'pedido' y 'recoger' (pueden modificarse antes de entrega)
+ * - PLATOS ELIMINABLES: Solo incluyen estado 'pedido' (no pueden eliminarse si ya están preparados/listos)
+ * 
+ * Esta función se usa para la funcionalidad de EDITAR comandas, donde se permite
+ * modificar platos que aún no han sido entregados (pedido o recoger).
+ * 
+ * Para ELIMINAR platos, usar filtrarPlatosPorEstado(comandas, ['pedido']) que solo
+ * incluye platos en estado 'pedido'.
+ * 
  * @param {Array} comandas - Array de comandas
  * @returns {Object} { editables: [], noEditables: [] }
  */

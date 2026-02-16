@@ -590,7 +590,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const platosPagados = todosLosPlatos.filter(p => p.estado === 'pagado');
   
   const puedeEditar = platosEnPedido.length > 0;
-  const puedeEliminarPlatos = platosEnPedido.length > 0 || platosEnRecoger.length > 0;
+  // IMPORTANTE: Solo se pueden eliminar platos en estado "Pedido"
+  // Los platos en estado "Recoger" ya están listos y no deben eliminarse
+  const puedeEliminarPlatos = platosEnPedido.length > 0;
   const puedeEliminarComanda = comandas.length > 0 && comandas[0].status !== 'pagado';
   const puedeNuevaComanda = mesa?.estado === 'pedido' || mesa?.estado === 'preparado' || mesa?.estado === 'recoger';
   const puedePagar = todosLosPlatos.length > 0 && todosLosPlatos.every(p => p.estado === 'entregado' || p.estado === 'pagado');
@@ -621,6 +623,34 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
   
   const handleRemoverPlato = (index) => {
+    // REGLA DE NEGOCIO: Solo se pueden remover platos en estado "Pedido"
+    // Los platos en estado "Recoger" ya están preparados y no deben eliminarse
+    const platoARemover = platosEditados[index];
+    
+    if (!platoARemover) return;
+    
+    const estado = (platoARemover.estado || 'pedido').toLowerCase();
+    const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado;
+    
+    if (estadoNormalizado === 'recoger') {
+      Alert.alert(
+        'No se puede eliminar',
+        'No se pueden eliminar platos en estado Recoger desde edición. Los platos ya están preparados y listos para entrega. Solo puedes cambiar cantidades.',
+        [{ text: 'Entendido' }]
+      );
+      return;
+    }
+    
+    // Solo permitir remover si está en estado "Pedido"
+    if (estadoNormalizado !== 'pedido') {
+      Alert.alert(
+        'No se puede eliminar',
+        'Solo se pueden eliminar platos en estado Pedido.',
+        [{ text: 'Entendido' }]
+      );
+      return;
+    }
+    
     const nuevosPlatos = [...platosEditados];
     nuevosPlatos.splice(index, 1);
     setPlatosEditados(nuevosPlatos);
@@ -659,21 +689,67 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }, 0);
   };
   
+  // Función de normalización de tipos (igual que en OrdenesScreen)
+  const tipoNormalizado = (t) => (t || '').trim().toLowerCase();
+  
   // Filtrar platos para el modal de edición
+  // Usa normalización para comparar tipos de manera flexible
   const platosFiltrados = platos.filter(p => {
     if (!tipoPlatoFiltro) return false;
-    if (p.tipo !== tipoPlatoFiltro) return false;
+    // Normalizar ambos tipos para comparación flexible
+    if (tipoNormalizado(p.tipo) !== tipoNormalizado(tipoPlatoFiltro)) return false;
+    // Verificar stock disponible
+    const disponible = (p.stock == null || p.stock === undefined || Number(p.stock) > 0);
+    if (!disponible) return false;
+    // Filtrar por búsqueda
     if (searchPlato && !p.nombre.toLowerCase().includes(searchPlato.toLowerCase())) return false;
+    // Filtrar por categoría
     if (categoriaFiltro && p.categoria !== categoriaFiltro) return false;
     return true;
   });
   
-  const categorias = [...new Set(platos.filter(p => p.tipo === tipoPlatoFiltro).map(p => p.categoria))];
+  const categorias = [...new Set(platos.filter(p => tipoNormalizado(p.tipo) === tipoNormalizado(tipoPlatoFiltro)).map(p => p.categoria))].filter(Boolean);
   
   // Guardar edición
   const handleGuardarEdicion = async () => {
     if (!comandaEditando || platosEditados.length === 0) {
       Alert.alert('Error', 'Debe haber al menos un plato en la comanda');
+      return;
+    }
+    
+    // VALIDACIÓN DE SEGURIDAD: Detectar si se removieron platos en estado "Recoger"
+    // Comparar platos originales (editables) con platos actuales (editados)
+    const platosOriginales = platosEditables || [];
+    const platosRemovidos = platosOriginales.filter(original => {
+      // Buscar si el plato original ya no está en platosEditados
+      return !platosEditados.some(editado => {
+        const originalId = original.plato?.toString() || original.platoId?.toString();
+        const editadoId = editado.plato?.toString() || editado.platoId?.toString();
+        return originalId === editadoId;
+      });
+    });
+    
+    // Verificar si algún plato removido estaba en estado "Recoger"
+    const platosRecogerRemovidos = platosRemovidos.filter(p => {
+      const estado = (p.estado || 'pedido').toLowerCase();
+      const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado;
+      return estadoNormalizado === 'recoger';
+    });
+    
+    if (platosRecogerRemovidos.length > 0) {
+      Alert.alert(
+        'Error de validación',
+        'No se pueden eliminar platos en estado Recoger desde edición. Los platos ya están preparados. Por favor, refresca la comanda y solo cambia cantidades.',
+        [
+          {
+            text: 'Refrescar',
+            onPress: async () => {
+              await refrescarComandas();
+              setModalEditarVisible(false);
+            }
+          }
+        ]
+      );
       return;
     }
     
@@ -725,7 +801,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // Funciones de acciones
   const handleEditarComanda = async () => {
-    // Usar función de utilidad para separar platos
+    // NOTA: Los platos EDITABLES incluyen estados 'pedido' y 'recoger'
+    // Esto permite editar platos que aún no han sido entregados
+    // Ver separarPlatosEditables() en utils/comandaHelpers.js
     const { editables, noEditables } = separarPlatosEditables(comandas);
     
     if (editables.length === 0) {
@@ -737,7 +815,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       return;
     }
     
+    // Cargar todos los platos disponibles antes de abrir el modal
+    // Esto permite que el selector de tipo funcione correctamente
     await obtenerPlatos();
+    
+    // Limpiar filtros al abrir modal
+    setTipoPlatoFiltro(null);
+    setSearchPlato('');
+    setCategoriaFiltro(null);
     
     // Preparar platos editados (solo editables) con datos completos
     const platosEditadosPreparados = editables.map(e => {
@@ -770,12 +855,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   const handleEliminarPlatos = () => {
     // Usar función de utilidad para filtrar platos eliminables
-    const platosEliminables = filtrarPlatosPorEstado(comandas, ['pedido', 'recoger']);
+    // IMPORTANTE: Solo se pueden eliminar platos en estado "Pedido"
+    // Los platos en estado "Recoger" ya están listos para retiro/entrega y no deben eliminarse
+    const platosEliminables = filtrarPlatosPorEstado(comandas, ['pedido']);
     
     if (platosEliminables.length === 0) {
       Alert.alert(
         'Sin Platos Eliminables',
-        'No hay platos que puedan eliminarse. Los platos entregados no pueden modificarse.'
+        'No hay platos en estado Pedido para eliminar. Solo se pueden eliminar platos que aún no han sido preparados.'
       );
       return;
     }
@@ -971,33 +1058,33 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     
     const comandaAEliminar = comandas[0];
     
-    // Filtrar solo platos eliminables (pedido y recoger)
-    const platosEliminables = todosLosPlatos.filter(p => {
-      const estado = p.estado || 'pedido';
-      return (estado === 'pedido' || estado === 'recoger') && !p.eliminado;
-    });
+    // REGLA DE NEGOCIO: Solo se pueden eliminar comandas con platos exclusivamente en estado "Pedido"
+    // Los platos en estado "Recoger" o "Entregado" ya están preparados/entregados y NO deben eliminarse
+    const platosEliminables = filtrarPlatosPorEstado(comandas, ['pedido']);
     
-    // Detectar platos entregados
+    // Detectar platos en estados que bloquean eliminación: Recoger, Entregado, Pagado
+    const hayPlatosEnRecoger = todosLosPlatos.some(p => 
+      p.estado === 'recoger' && !p.eliminado
+    );
     const hayPlatosEntregados = todosLosPlatos.some(p => 
       (p.estado === 'entregado' || p.estado === 'pagado') && !p.eliminado
     );
     
-    // Detectar platos en recoger
-    const hayPlatosEnRecoger = platosEliminables.some(p => p.estado === 'recoger');
-    
-    if (hayPlatosEntregados) {
+    // Regla: No eliminar comandas con platos Recoger/Entregado (igual que Entregado existente)
+    if (hayPlatosEnRecoger || hayPlatosEntregados) {
       Alert.alert(
-        'No se puede eliminar',
-        'Esta comanda tiene platos entregados. Solo puedes eliminar platos individuales que no hayan sido entregados.',
+        'No se puede eliminar esta comanda',
+        'Contiene platos en estado Recoger o Entregado. Solo se pueden eliminar comandas con platos exclusivamente en estado Pedido.',
         [{ text: 'Entendido' }]
       );
       return;
     }
     
+    // Validar que haya al menos un plato en estado "Pedido"
     if (platosEliminables.length === 0) {
       Alert.alert(
-        'Sin platos para eliminar',
-        'Todos los platos de esta comanda ya fueron entregados o eliminados.',
+        'No se puede eliminar esta comanda',
+        'Todos los platos ya están en estado Recoger o posterior. Solo se pueden eliminar comandas con platos en estado Pedido.',
         [{ text: 'Entendido' }]
       );
       return;
@@ -1005,13 +1092,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     
     // Preparar datos para el modal
     setPlatosEliminablesComanda(platosEliminables);
-    setHayPlatosEnRecogerComanda(hayPlatosEnRecoger);
+    setHayPlatosEnRecogerComanda(false); // Ya no hay platos en recoger en eliminables
     
     Alert.alert(
       'Eliminar Comanda',
-      hayPlatosEnRecoger
-        ? '⚠️ Hay platos preparados que se desperdiciarán. ¿Estás seguro de eliminar esta comanda?'
-        : '¿Estás seguro de eliminar esta comanda?',
+      '¿Estás seguro de eliminar esta comanda?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -1037,6 +1122,36 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     
     if (!comandas || comandas.length === 0 || !comandas[0]._id) {
       Alert.alert('Error', 'No se encontró la comanda a eliminar.');
+      return;
+    }
+    
+    // VALIDACIÓN DE SEGURIDAD: Re-verificar antes de enviar al backend
+    // Por si algún plato cambió de estado vía Socket mientras el usuario completaba el formulario
+    const platosEliminablesActualizados = filtrarPlatosPorEstado(comandas, ['pedido']);
+    
+    // Detectar si hay platos en estados que bloquean eliminación
+    const hayPlatosEnRecogerActualizados = todosLosPlatos.some(p => 
+      p.estado === 'recoger' && !p.eliminado
+    );
+    const hayPlatosEntregadosActualizados = todosLosPlatos.some(p => 
+      (p.estado === 'entregado' || p.estado === 'pagado') && !p.eliminado
+    );
+    
+    // Bloquear si no hay platos eliminables O si hay platos en Recoger/Entregado
+    if (platosEliminablesActualizados.length === 0 || hayPlatosEnRecogerActualizados || hayPlatosEntregadosActualizados) {
+      Alert.alert(
+        'Error',
+        'La comanda cambió. Contiene platos Recoger/Entregado. No se puede eliminar.',
+        [
+          {
+            text: 'OK',
+            onPress: async () => {
+              await refrescarComandas();
+              setModalEliminarComandaVisible(false);
+            }
+          }
+        ]
+      );
       return;
     }
     
@@ -1708,6 +1823,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                                 {coloresEstado.textoEstado}
                               </Text>
                             </View>
+                            {/* Badge indicando que platos en "Recoger" no son eliminables */}
+                            {(plato.estado || 'pedido').toLowerCase() === 'recoger' && (
+                              <View style={[styles.badgeEstado, { backgroundColor: '#9CA3AF', marginLeft: 6 }]}>
+                                <Text style={[styles.badgeEstadoText, { color: '#FFFFFF' }]}>
+                                  NO ELIMINABLE
+                                </Text>
+                              </View>
+                            )}
                           </View>
                           <Text style={[styles.platoEditPrecio, { color: coloresEstado.priceColor }]}>
                             S/. {((plato.precio || 0) * (plato.cantidad || 1)).toFixed(2)}
@@ -1755,13 +1878,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                             ]}>+</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
-                            style={styles.removeButton}
+                            style={[
+                              styles.removeButton,
+                              (plato.estado || 'pedido').toLowerCase() === 'recoger' && styles.removeButtonDisabled
+                            ]}
                             onPress={() => handleRemoverPlato(index)}
+                            disabled={(plato.estado || 'pedido').toLowerCase() === 'recoger'}
                           >
                             <MaterialCommunityIcons 
-                              name="delete" 
+                              name={(plato.estado || 'pedido').toLowerCase() === 'recoger' ? "lock" : "delete"} 
                               size={20} 
-                              color="#EF4444" 
+                              color={(plato.estado || 'pedido').toLowerCase() === 'recoger' ? "#9CA3AF" : "#EF4444"} 
                             />
                           </TouchableOpacity>
                         </View>
@@ -1849,7 +1976,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                         },
                         {
                           text: 'Carta Normal',
-                          onPress: () => setTipoPlatoFiltro('carta-normal'),
+                          onPress: () => setTipoPlatoFiltro('plato-carta normal'),
                         },
                       ]
                     );
@@ -1934,7 +2061,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                           styles.emptyPlatosText,
                           { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }
                         ]}>
-                          No hay platos disponibles
+                          {tipoPlatoFiltro 
+                            ? `No hay platos disponibles en ${tipoPlatoFiltro === 'platos-desayuno' ? 'Desayuno' : 'Carta Normal'}`
+                            : 'No hay platos disponibles'}
                         </Text>
                       ) : (
                         platosFiltrados.map((plato) => {
@@ -2660,6 +2789,9 @@ const styles = StyleSheet.create({
   },
   removeButton: {
     padding: 8,
+  },
+  removeButtonDisabled: {
+    opacity: 0.5,
   },
   addPlatoButton: {
     flexDirection: 'row',
