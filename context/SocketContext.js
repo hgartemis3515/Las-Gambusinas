@@ -41,16 +41,18 @@ export const SocketProvider = ({ children }) => {
 
   const handleSocketStatus = useCallback((status) => {
     setSocketStatus(status);
-    
-    // Si se reconectó, procesar queue offline si existe
+
+    // Si se reconectó, procesar queue offline solo si wsURL usa IP/host válida (no demo)
     if (status.connected && status.status === 'conectado') {
-      // Importar dinámicamente para evitar problemas de circular dependencies
-      import('../utils/offlineQueue').then(module => {
-        const offlineQueue = module.default;
-        offlineQueue.processQueue({
-          'comanda-actualizada': handleComandaActualizada,
-          'mesa-actualizada': handleMesaActualizada,
-          'nueva-comanda': handleNuevaComanda
+      import('../apiConfig').then(({ isWsUrlValidForOfflineQueue }) => {
+        if (!isWsUrlValidForOfflineQueue()) return;
+        return import('../utils/offlineQueue').then(module => {
+          const offlineQueue = module.default;
+          return offlineQueue.processQueue({
+            'comanda-actualizada': handleComandaActualizada,
+            'mesa-actualizada': handleMesaActualizada,
+            'nueva-comanda': handleNuevaComanda
+          });
         }).catch(error => {
           console.error('Error procesando queue offline:', error);
         });

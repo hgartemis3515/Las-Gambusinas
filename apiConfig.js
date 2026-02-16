@@ -63,23 +63,39 @@ export const getClientesAPI = () => getDynamicEndpoint('/clientes');
 export { default as apiConfig } from './config/apiConfig';
 
 // Función helper para obtener la URL base del servidor (sin /api)
-// Útil para Socket.io
+// Útil para Socket.io (con try-catch para no romper flujos)
 export const getServerBaseURL = () => {
-  if (apiConfig.isConfigured && apiConfig.baseURL) {
-    try {
+  try {
+    if (apiConfig.isConfigured && apiConfig.baseURL) {
       const url = new URL(apiConfig.baseURL);
       return `${url.protocol}//${url.host}`;
-    } catch (error) {
-      console.warn('[apiConfig] Error parseando URL:', error);
     }
+  } catch (error) {
+    console.warn('[apiConfig] Error parseando baseURL:', error);
   }
   return 'http://192.168.18.11:3000';
 };
 
-// Función helper para obtener WebSocket URL
+// Función helper para obtener WebSocket URL (con try-catch para reintentos estables)
 export const getWebSocketURL = () => {
-  if (apiConfig.isConfigured && apiConfig.wsURL) {
-    return apiConfig.wsURL;
+  try {
+    if (apiConfig.isConfigured && apiConfig.wsURL) {
+      return apiConfig.wsURL;
+    }
+  } catch (error) {
+    console.warn('[apiConfig] Error obteniendo wsURL:', error);
   }
   return 'http://192.168.18.11:3000';
+};
+
+// Indica si la URL actual es válida para procesar cola offline (no demo, IP/host real)
+export const isWsUrlValidForOfflineQueue = () => {
+  try {
+    if (!apiConfig.isConfigured || !apiConfig.wsURL) return false;
+    const u = apiConfig.wsURL;
+    if (u.includes('demo.') || u.includes('wss://demo')) return false;
+    return true;
+  } catch (_) {
+    return false;
+  }
 };

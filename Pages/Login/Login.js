@@ -431,8 +431,20 @@ const Login = () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
+      // Test de conexión antes de guardar y navegar (evita guardar con IP incorrecta)
+      const baseForLogin = apiConfig.baseURL || 'http://192.168.18.11:3000/api';
+      const testResult = await apiConfig.testConnection(baseForLogin);
+      if (!testResult.success) {
+        Alert.alert(
+          'Error de Conexión',
+          testResult.message || 'No se pudo conectar con el servidor. Revisa la IP en Ajustes.'
+        );
+        setLoading(false);
+        return;
+      }
+
       // Usar endpoint dinámico desde apiConfig
-      const loginURL = apiConfig.isConfigured 
+      const loginURL = apiConfig.isConfigured
         ? apiConfig.getEndpoint('/mozos/auth')
         : LOGIN_AUTH_API;
 

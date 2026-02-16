@@ -363,9 +363,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     if (!socket || !connected || !mesaId) {
       return;
     }
-    
+
     console.log('🔌 FASE4: Conectando WebSocket a mesa:', mesaId);
-    
+
+    // Re-fetch comandas al conectar/reconectar para evitar desincronización
+    refrescarComandas().catch(err => console.warn('Refrescar comandas al conectar:', err));
+
     // FASE 4: Usar funciones del contexto para join/leave (mejor manejo de rooms)
     if (joinMesa) {
       joinMesa(mesaId);
@@ -556,8 +559,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       socket.off('comanda-actualizada');
       socket.off('comanda-eliminada');
     };
-  }, [socket, connected, mesaId, comandas, joinMesa, leaveMesa, navigation, onRefresh]);
-  
+  }, [socket, connected, mesaId, comandas, joinMesa, leaveMesa, navigation, onRefresh, refrescarComandas]);
+
   useFocusEffect(
     useCallback(() => {
       refrescarComandas();

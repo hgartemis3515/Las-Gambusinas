@@ -1383,6 +1383,17 @@ const InicioScreen = () => {
     }
   }, [socketConnected, obtenerMesas, obtenerComandasHoy]);
 
+  // Re-fetch al reconectar: cuando socket pasa de desconectado a conectado
+  const prevSocketConnectedRef = useRef(socketConnected);
+  useEffect(() => {
+    if (socketConnected && !prevSocketConnectedRef.current) {
+      console.log('✅ [MOZOS] Reconectado — re-fetch mesas y comandas');
+      obtenerMesas().catch(err => console.warn('obtenerMesas al reconectar:', err));
+      obtenerComandasHoy().catch(err => console.warn('obtenerComandasHoy al reconectar:', err));
+    }
+    prevSocketConnectedRef.current = socketConnected;
+  }, [socketConnected, obtenerMesas, obtenerComandasHoy]);
+
   // Obtener comandas de la mesa: solo activas (sin boucher, no pagadas, no eliminadas)
   // Mesa liberada = solo servicio actual; misma lógica que ComandaDetalleScreen
   const getTodasComandasPorMesa = (mesaNum) => {
