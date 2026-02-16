@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   View, Text, StyleSheet, ScrollView, TouchableOpacity, 
   Alert, RefreshControl, ActivityIndicator, Modal, TextInput,
@@ -123,45 +123,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     loadUser();
   }, []);
   
-  // Preparar todos los platos ordenados por prioridad
+  // Preparar todos los platos ordenados por prioridad (sin logs en bucle para evitar loops)
   const prepararPlatosOrdenados = useCallback(() => {
-    console.log('=== PREPARANDO PLATOS ORDENADOS ===');
-    console.log('Comandas recibidas:', comandas.length);
-    
     const platos = [];
-    
+
     comandas.forEach((comanda, comandaIndex) => {
-      console.log(`\nComanda ${comandaIndex + 1}:`, {
-        _id: comanda._id?.slice(-6),
-        comandaNumber: comanda.comandaNumber,
-        platosCount: comanda.platos?.length || 0,
-        platosIsArray: Array.isArray(comanda.platos)
-      });
-      
-      if (!comanda.platos || !Array.isArray(comanda.platos)) {
-        console.warn(`⚠️ Comanda ${comandaIndex + 1} no tiene platos o no es array`);
-        return;
-      }
-      
+      if (!comanda.platos || !Array.isArray(comanda.platos)) return;
+
       comanda.platos.forEach((platoItem, index) => {
-        console.log(`  Plato ${index + 1}:`, {
-          platoId: platoItem.platoId,
-          platoType: typeof platoItem.plato,
-          platoIsObject: typeof platoItem.plato === 'object' && platoItem.plato !== null,
-          platoNombre: platoItem.plato?.nombre || 'SIN NOMBRE',
-          estado: platoItem.estado,
-          eliminado: platoItem.eliminado
-        });
-        
         // Validar que el plato tiene la estructura correcta
-        if (!platoItem.plato || typeof platoItem.plato !== 'object') {
-          console.warn(`⚠️ Plato ${index + 1} de comanda ${comandaIndex + 1} no tiene objeto plato válido:`, platoItem);
-          // Intentar obtener el plato del ID si está disponible
-          if (platoItem.platoId && typeof platoItem.plato === 'string') {
-            console.warn('  ⚠️ Plato es solo un ID, falta populate en backend');
-          }
-        }
-        
+        if (!platoItem.plato || typeof platoItem.plato !== 'object') return;
+
         const cantidad = comanda.cantidades?.[index] || 1;
         const estado = platoItem.estado || 'pedido';
         const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado;
@@ -181,28 +153,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           index: index // Índice en la comanda original
         };
         
-        if (!platoEliminado) {
-          platos.push(platoObj);
-          console.log(`  ✓ Plato ${index + 1} agregado a lista`);
-        } else {
-          console.log(`  ✗ Plato ${index + 1} excluido (eliminado: true)`);
-        }
+        if (!platoEliminado) platos.push(platoObj);
       });
     });
-    
-    console.log(`\nTotal de platos activos: ${platos.length}`);
-    
-    // Ordenar: recoger → pedido → entregado → pagado
+
     const ordenPrioridad = { recoger: 1, pedido: 2, entregado: 3, pagado: 4 };
     platos.sort((a, b) => {
       const prioridadA = ordenPrioridad[a.estado] || 99;
       const prioridadB = ordenPrioridad[b.estado] || 99;
       return prioridadA - prioridadB;
     });
-    
-    console.log('Platos ordenados por estado:', platos.map(p => ({ nombre: p.plato?.nombre, estado: p.estado })));
-    console.log('===================================\n');
-    
+
     setTodosLosPlatos(platos);
   }, [comandas]);
   
@@ -210,68 +171,29 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     prepararPlatosOrdenados();
   }, [comandas, prepararPlatosOrdenados]);
   
-  // Refrescar comandas desde el servidor
-  const refrescarComandas = async () => {
+  // Refrescar comandas desde el servidor (estable para evitar loops; logs solo en error)
+  const refrescarComandas = useCallback(async () => {
+    if (!mesa?._id) return [];
     try {
       setRefreshing(true);
-      
-      console.log('🔄 Refrescando comandas...');
-      console.log('Mesa ID:', mesa._id);
-      console.log('Mesa número:', mesa.nummesa);
-      
+
       const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-      const comandasURL = apiConfig.isConfigured 
+      const comandasURL = apiConfig.isConfigured
         ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
         : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
-      
-      console.log('URL de comandas:', comandasURL);
-      
+
       const response = await axios.get(comandasURL, { timeout: 10000 });
       const todasLasComandas = response.data || [];
-      
-      console.log('📦 Total de comandas recibidas:', todasLasComandas.length);
-      
-      // Filtrar comandas de esta mesa
+
       const comandasMesa = todasLasComandas.filter(c => {
         const mesaId = c.mesas?._id || c.mesas;
         const coincideId = mesaId === mesa._id;
         const coincideNumero = c.mesas?.nummesa === mesa.nummesa;
-        
-        if (coincideId || coincideNumero) {
-          console.log('✓ Comanda encontrada para esta mesa:', {
-            comandaNumber: c.comandaNumber,
-            platosCount: c.platos?.length || 0,
-            mesaId: typeof mesaId === 'object' ? mesaId?._id : mesaId,
-            mesaNumero: c.mesas?.nummesa
-          });
-          
-          // Verificar estructura de platos
-          if (c.platos && Array.isArray(c.platos) && c.platos.length > 0) {
-            const primerPlato = c.platos[0];
-            console.log('  Primer plato:', {
-              tienePlato: !!primerPlato.plato,
-              platoType: typeof primerPlato.plato,
-              platoNombre: primerPlato.plato?.nombre || 'SIN NOMBRE',
-              platoId: primerPlato.platoId,
-              estado: primerPlato.estado
-            });
-            
-            if (typeof primerPlato.plato === 'string') {
-              console.warn('  ⚠️ ADVERTENCIA: plato.plato es un string (ID), falta populate en backend');
-            }
-          } else {
-            console.warn('  ⚠️ Comanda sin platos o platos no es array');
-          }
-        }
-        
         return coincideId || coincideNumero;
       });
 
-      // Solo comandas activas (sin boucher, no eliminadas, no pagadas) — mesa liberada = solo servicio actual
       let comandasFinales = filtrarComandasActivas(comandasMesa);
-      console.log('📋 Comandas activas para esta mesa (sin pagado/boucher):', comandasFinales.length);
 
-      // Filtro opcional por cliente (ej. al crear comanda para Cliente B en mesa liberada)
       if ((filterByCliente || clienteId) && comandasFinales.length > 0 && clienteId) {
         const idStr = typeof clienteId === 'string' ? clienteId : clienteId?.toString?.() || '';
         comandasFinales = comandasFinales.filter(c => {
@@ -279,9 +201,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           const cidStr = cid != null ? (typeof cid === 'string' ? cid : cid.toString?.() || '') : '';
           return cidStr === idStr;
         });
-        console.log('📋 Comandas filtradas por cliente:', comandasFinales.length);
       }
-      
+
       setComandasState(comandasFinales);
 
       // Corrección automática de status: si todas las comandas de la mesa tienen todos los platos entregados pero status distinto de recoger/entregado, actualizar en backend (workaround).
@@ -294,16 +215,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
       return comandasFinales;
     } catch (error) {
-      console.error('❌ Error al refrescar comandas:', error);
-      console.error('Error response:', error.response?.data);
-      console.error('Error message:', error.message);
+      if (__DEV__) console.error('Error al refrescar comandas:', error?.message);
       Alert.alert('Error', 'No se pudieron actualizar las comandas.');
       return [];
     } finally {
       setRefreshing(false);
     }
-  };
-  
+  }, [mesa?._id, mesa?.nummesa, filterByCliente, clienteId]);
+
   // Marcar plato como entregado
   const handleMarcarPlatoEntregado = async (platoObj) => {
     if (platoObj.estado !== 'recoger' && platoObj.estado !== 'pedido') {
@@ -352,219 +271,153 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
   
   // FASE 4: Integración WebSocket con manejo mejorado de rooms
-  const mesaId = mesa?._id || null; // Extraer mesaId fuera del useEffect para evitar problemas con optional chaining en dependencies
-  
+  const mesaId = mesa?._id || null;
+
+  // Refs para evitar loops: listeners leen estado actual sin estar en deps del effect
+  const comandasRef = useRef(comandas);
+  const refrescarComandasRef = useRef(refrescarComandas);
+  const prevConnectedRef = useRef(connected);
+
+  useEffect(() => {
+    comandasRef.current = comandas;
+  }, [comandas]);
+  useEffect(() => {
+    refrescarComandasRef.current = refrescarComandas;
+  }, [refrescarComandas]);
+
+  // Re-fetch SOLO al reconectar (transición desconectado → conectado), no en cada mount
+  useEffect(() => {
+    const wasDisconnected = !prevConnectedRef.current;
+    if (connected && wasDisconnected) {
+      refrescarComandasRef.current?.().catch(() => {});
+    }
+    prevConnectedRef.current = connected;
+  }, [connected]);
+
   // FASE 4.1: Sincronizar estado de conexión local con el del contexto
   useEffect(() => {
     setLocalConnectionStatus(connectionStatus || 'desconectado');
   }, [connectionStatus]);
-  
+
+  // Effect único: join/leave room + listeners. Sin comandas/refrescarComandas en deps para evitar loop
   useEffect(() => {
-    if (!socket || !connected || !mesaId) {
-      return;
-    }
+    if (!socket || !connected || !mesaId) return;
 
-    console.log('🔌 FASE4: Conectando WebSocket a mesa:', mesaId);
-
-    // Re-fetch comandas al conectar/reconectar para evitar desincronización
-    refrescarComandas().catch(err => console.warn('Refrescar comandas al conectar:', err));
-
-    // FASE 4: Usar funciones del contexto para join/leave (mejor manejo de rooms)
     if (joinMesa) {
       joinMesa(mesaId);
     } else {
-      // Fallback si no está disponible en el contexto
       socket.emit('join-mesa', mesaId);
     }
-    
-    // FASE 4: Listener granular de plato-actualizado (actualiza solo 1 plato)
+
+    // Listeners usan comandasRef.current y refrescarComandasRef.current (siempre actuales)
     socket.on('plato-actualizado', (data) => {
-      console.log('📡 FASE4: Evento plato-actualizado granular recibido:', {
-        comandaId: data.comandaId,
-        platoId: data.platoId,
-        nuevoEstado: data.nuevoEstado,
-        estadoAnterior: data.estadoAnterior,
-        mesaId: data.mesaId
-      });
-      
-      // FASE 4.1: Cambiar estado a 'online-active' para parpadeo del indicador
       setLocalConnectionStatus('online-active');
-      setTimeout(() => {
-        setLocalConnectionStatus(connectionStatus || 'conectado');
-      }, 2000);
-      
-      // Verificar que el evento es para nuestra mesa
+      setTimeout(() => setLocalConnectionStatus(connectionStatus || 'conectado'), 2000);
+
       const esNuestraMesa = data.mesaId && mesaId && (
-        data.mesaId.toString() === mesaId.toString() || 
-        data.mesaId === mesaId
+        data.mesaId.toString() === mesaId.toString() || data.mesaId === mesaId
       );
-      
-      // Verificar que es nuestra comanda
-      const comandaIndex = comandas.findIndex(c => {
+      const comandasActuales = comandasRef.current;
+      const comandaIndex = comandasActuales.findIndex(c => {
         const cId = c._id?.toString ? c._id.toString() : c._id;
         const dataComandaId = data.comandaId?.toString ? data.comandaId.toString() : data.comandaId;
         return cId === dataComandaId;
       });
       
-      if (comandaIndex === -1 && !esNuestraMesa) {
-        console.log('✗ FASE4: Evento no corresponde a nuestras comandas/mesa');
-        return;
-      }
-      
-      // FASE 4: Actualización GRANULAR - Solo actualizar el plato específico
+      if (comandaIndex === -1 && !esNuestraMesa) return;
+
       if (comandaIndex !== -1 && data.platoId && data.nuevoEstado) {
-        console.log('✓ FASE4: Actualizando plato granularmente (sin refrescar comanda completa)');
-        
         setComandasState(prev => {
           const nuevasComandas = [...prev];
           const comanda = nuevasComandas[comandaIndex];
-          
           if (!comanda || !comanda.platos) {
-            console.warn('⚠️ FASE4: Comanda no encontrada o sin platos, refrescando completa');
-            setTimeout(() => refrescarComandas(), 100);
+            setTimeout(() => refrescarComandasRef.current?.(), 100);
             return prev;
           }
-          
-          // Buscar el plato por platoId
           const platoIdStr = data.platoId?.toString ? data.platoId.toString() : data.platoId;
           const platoIndex = comanda.platos.findIndex(p => {
-            const pId = p.plato?._id?.toString ? p.plato._id.toString() : 
-                        p.plato?.toString ? p.plato.toString() : 
-                        p.platoId?.toString ? p.platoId.toString() : 
-                        p.plato;
+            const pId = p.plato?._id?.toString ? p.plato._id.toString() : p.plato?.toString ? p.plato.toString() : p.platoId?.toString ? p.platoId.toString() : p.plato;
             return pId === platoIdStr;
           });
-          
           if (platoIndex === -1) {
-            console.warn('⚠️ FASE4: Plato no encontrado en comanda, refrescando completa');
-            setTimeout(() => refrescarComandas(), 100);
+            setTimeout(() => refrescarComandasRef.current?.(), 100);
             return prev;
           }
-          
-          // FASE 4: Actualizar SOLO el estado del plato específico (inmutable)
           const nuevaComanda = { ...comanda };
           const nuevosPlatos = [...nuevaComanda.platos];
           const platoActualizado = { ...nuevosPlatos[platoIndex] };
-          
-          // Actualizar estado del plato
           platoActualizado.estado = data.nuevoEstado;
-          
-          // Actualizar timestamp si existe
-          if (!platoActualizado.tiempos) {
-            platoActualizado.tiempos = {};
-          }
+          if (!platoActualizado.tiempos) platoActualizado.tiempos = {};
           platoActualizado.tiempos[data.nuevoEstado] = data.timestamp || new Date();
-          
           nuevosPlatos[platoIndex] = platoActualizado;
           nuevaComanda.platos = nuevosPlatos;
           nuevasComandas[comandaIndex] = nuevaComanda;
-          
-          // FASE 4: Haptic feedback cuando el plato cambia de estado
           try {
-            if (data.nuevoEstado === 'recoger') {
-              // Vibración más fuerte cuando el plato está listo
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            } else if (data.nuevoEstado === 'entregado') {
-              // Vibración suave cuando se entrega
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            } else {
-              // Vibración muy suave para otros cambios
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            }
-          } catch (error) {
-            console.log('⚠️ Haptic feedback no disponible:', error);
-          }
-          
-          // Mostrar alerta solo si el plato está listo para recoger
+            if (data.nuevoEstado === 'recoger') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          } catch (_) {}
           if (data.nuevoEstado === 'recoger') {
-            // Obtener nombre del plato para el alert
-            const nombrePlato = platoActualizado.plato?.nombre || 
-                                platoActualizado.nombre || 
-                                'Un plato';
-            
-            Alert.alert(
-              '🍽️ Plato Listo',
-              `${nombrePlato} está listo para recoger de cocina.`,
-              [{ text: 'Entendido' }]
-            );
+            const nombrePlato = platoActualizado.plato?.nombre || platoActualizado.nombre || 'Un plato';
+            Alert.alert('🍽️ Plato Listo', `${nombrePlato} está listo para recoger de cocina.`, [{ text: 'Entendido' }]);
           }
-          
-          console.log(`✅ FASE4: Plato ${data.platoId} actualizado a "${data.nuevoEstado}" (sin refrescar comanda completa)`);
-          
           return nuevasComandas;
         });
       } else {
-        // Fallback: si no podemos actualizar granularmente, refrescar completa
-        console.log('⚠️ FASE4: No se pudo actualizar granularmente, refrescando completa');
-        refrescarComandas();
+        refrescarComandasRef.current?.();
       }
     });
-    
+
     socket.on('plato-agregado', (data) => {
-      console.log('📡 Evento plato-agregado recibido:', data);
-      const esNuestraComanda = comandas.some(c => c._id === data.comandaId);
+      const comandasActuales = comandasRef.current;
+      const esNuestraComanda = comandasActuales.some(c => c._id === data.comandaId);
       if (esNuestraComanda || (data.mesaId && mesaId && (data.mesaId.toString() === mesaId.toString() || data.mesaId === mesaId))) {
-        console.log('✓ Plato agregado a nuestra comanda/mesa, refrescando...');
-        refrescarComandas();
+        refrescarComandasRef.current?.();
       }
     });
-    
-    socket.on('plato-entregado', (data) => {
-      console.log('📡 Evento plato-entregado recibido:', data);
-      refrescarComandas();
+
+    socket.on('plato-entregado', () => {
+      refrescarComandasRef.current?.();
     });
-    
+
     socket.on('comanda-actualizada', (data) => {
-      console.log('📡 Evento comanda-actualizada recibido:', data);
       if (data?.comandaId) invalidarCacheComandasVerificadas(data.comandaId);
-      const esNuestraComanda = comandas.some(c => c._id === data.comandaId);
+      const comandasActuales = comandasRef.current;
+      const esNuestraComanda = comandasActuales.some(c => c._id === data.comandaId);
       if (esNuestraComanda || (data.mesaId && mesaId && (data.mesaId.toString() === mesaId.toString() || data.mesaId === mesaId))) {
-        console.log('✓ Comanda actualizada, refrescando...');
-        refrescarComandas();
+        refrescarComandasRef.current?.();
       }
     });
 
     socket.on('comanda-eliminada', (data) => {
-      console.log('📡 Evento comanda-eliminada recibido:', data);
+      const comandasActuales = comandasRef.current;
       const esNuestraMesa = data.mesaId && mesaId && (data.mesaId.toString() === mesaId.toString() || data.mesaId === mesaId);
-      const esNuestraComanda = data.comandaId && comandas.some(c => (c._id || c._id?.toString()) === (data.comandaId?.toString?.() || data.comandaId));
+      const esNuestraComanda = data.comandaId && comandasActuales.some(c => (c._id || c._id?.toString()) === (data.comandaId?.toString?.() || data.comandaId));
       if (esNuestraMesa || esNuestraComanda) {
-        refrescarComandas().then((actualizadas) => {
+        refrescarComandasRef.current?.().then((actualizadas) => {
           if (Array.isArray(actualizadas) && actualizadas.length === 0) {
             if (onRefresh) onRefresh();
-            if (navigation.canGoBack && navigation.canGoBack()) {
-              navigation.goBack();
-            } else {
-              navigation.navigate('Inicio');
-            }
+            if (navigation.canGoBack && navigation.canGoBack()) navigation.goBack();
+            else navigation.navigate('Inicio');
           }
         });
       }
     });
 
     return () => {
-      console.log('🔌 FASE4: Desconectando WebSocket de mesa:', mesaId);
-      
-      // FASE 4: Usar función del contexto para leave (mejor manejo de rooms)
-      if (leaveMesa) {
-        leaveMesa(mesaId);
-      } else {
-        // Fallback si no está disponible en el contexto
-        socket.emit('leave-mesa', mesaId);
-      }
-      
+      if (leaveMesa) leaveMesa(mesaId);
+      else socket.emit('leave-mesa', mesaId);
       socket.off('plato-actualizado');
       socket.off('plato-agregado');
       socket.off('plato-entregado');
       socket.off('comanda-actualizada');
       socket.off('comanda-eliminada');
     };
-  }, [socket, connected, mesaId, comandas, joinMesa, leaveMesa, navigation, onRefresh, refrescarComandas]);
+  }, [socket, connected, mesaId, joinMesa, leaveMesa, connectionStatus, navigation, onRefresh]);
 
   useFocusEffect(
     useCallback(() => {
       refrescarComandas();
-    }, [])
+    }, [refrescarComandas])
   );
   
   // Calcular totales
