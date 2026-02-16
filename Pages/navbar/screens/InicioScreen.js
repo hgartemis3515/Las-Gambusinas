@@ -1326,13 +1326,14 @@ const InicioScreen = () => {
   };
 
   const getEstadoMesa = (mesa) => {
+    // Fuente única: comandas activas de la mesa. Si no hay comandas activas, la mesa está libre.
+    const comandasMesa = getComandasPorMesa(mesa.nummesa);
+    if (comandasMesa.length === 0) return "Libre";
+
     // Si la mesa tiene estado definido, usarlo (prioridad al estado de la mesa)
     // PERO verificar que el estado sea consistente con las comandas actuales
     if (mesa.estado) {
       const estadoLower = mesa.estado.toLowerCase();
-      
-      // Verificar que el estado de la mesa sea consistente con las comandas
-      const comandasMesa = getComandasPorMesa(mesa.nummesa);
       
       if (comandasMesa.length > 0) {
         // Verificar si hay comandas realmente preparadas (todos los platos en "recoger") o listas para pagar (entregado)
@@ -1371,10 +1372,7 @@ const InicioScreen = () => {
       return estadoLower.charAt(0).toUpperCase() + estadoLower.slice(1);
     }
     
-    // Si no tiene estado, determinarlo por las comandas activas
-    const comandasMesa = getComandasPorMesa(mesa.nummesa);
-    if (comandasMesa.length === 0) return "Libre";
-
+    // Sin estado en mesa o ya validado: determinar por comandas activas (comandasMesa ya calculado arriba, length > 0)
     // Verificar si hay comandas con todos los platos en "recoger"
     const hayPreparadas = comandasMesa.some(c => {
       if (!c.platos || c.platos.length === 0) return false;

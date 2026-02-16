@@ -131,21 +131,15 @@ export const separarPlatosEditables = (comandas) => {
 };
 
 /**
- * Valida que no se eliminen todos los platos de una comanda
+ * Validación de eliminación de platos (siempre permite continuar).
+ * Se permite eliminar todos los platos de una comanda. Si todos los platos eliminados
+ * están en estado pedido/en_espera, el backend eliminará automáticamente la comanda
+ * completa (mismo efecto que "Eliminar comanda"). No se bloquea en el frontend.
  * @param {Array} platosActuales - Platos actuales de la comanda
  * @param {Array} platosAEliminar - Platos que se quieren eliminar
  * @returns {Object} { valido: boolean, mensaje: string }
  */
 export const validarEliminacionCompleta = (platosActuales, platosAEliminar) => {
-  const platosRestantes = platosActuales.length - platosAEliminar.length;
-  
-  if (platosRestantes <= 0) {
-    return {
-      valido: false,
-      mensaje: 'No puedes eliminar todos los platos. Debe quedar al menos uno. Si deseas cancelar la comanda completa, usa "Eliminar Comanda".'
-    };
-  }
-  
   return { valido: true, mensaje: '' };
 };
 

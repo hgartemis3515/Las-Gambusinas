@@ -286,16 +286,19 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
       // Corrección automática de status: si todas las comandas de la mesa tienen todos los platos entregados pero status distinto de recoger/entregado, actualizar en backend (workaround).
       verificarComandasEnLote(comandasFinales, axios).catch(() => {});
-      
+
       // Ejecutar callback si existe
       if (onRefresh) {
         onRefresh();
       }
+
+      return comandasFinales;
     } catch (error) {
       console.error('❌ Error al refrescar comandas:', error);
       console.error('Error response:', error.response?.data);
       console.error('Error message:', error.message);
       Alert.alert('Error', 'No se pudieron actualizar las comandas.');
+      return [];
     } finally {
       setRefreshing(false);
     }
@@ -517,7 +520,25 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         refrescarComandas();
       }
     });
-    
+
+    socket.on('comanda-eliminada', (data) => {
+      console.log('📡 Evento comanda-eliminada recibido:', data);
+      const esNuestraMesa = data.mesaId && mesaId && (data.mesaId.toString() === mesaId.toString() || data.mesaId === mesaId);
+      const esNuestraComanda = data.comandaId && comandas.some(c => (c._id || c._id?.toString()) === (data.comandaId?.toString?.() || data.comandaId));
+      if (esNuestraMesa || esNuestraComanda) {
+        refrescarComandas().then((actualizadas) => {
+          if (Array.isArray(actualizadas) && actualizadas.length === 0) {
+            if (onRefresh) onRefresh();
+            if (navigation.canGoBack && navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.navigate('Inicio');
+            }
+          }
+        });
+      }
+    });
+
     return () => {
       console.log('🔌 FASE4: Desconectando WebSocket de mesa:', mesaId);
       
@@ -533,8 +554,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       socket.off('plato-agregado');
       socket.off('plato-entregado');
       socket.off('comanda-actualizada');
+      socket.off('comanda-eliminada');
     };
-  }, [socket, connected, mesaId, comandas, joinMesa, leaveMesa]);
+  }, [socket, connected, mesaId, comandas, joinMesa, leaveMesa, navigation, onRefresh]);
   
   useFocusEffect(
     useCallback(() => {
@@ -856,18 +878,18 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       
       for (const [comandaId, indices] of Object.entries(platosPorComanda)) {
         if (indices.length === 0) continue;
-        
+
         const endpoint = apiConfig.isConfigured
           ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}/eliminar-platos`
           : `${COMANDA_API}/${comandaId}/eliminar-platos`;
-        
+
         const dataAEnviar = {
           platosAEliminar: indices,
           motivo: motivoEliminacion.trim(),
           mozoId: userInfo._id,
           usuarioId: userInfo._id
         };
-        
+
         console.log('🗑️ Eliminando platos:', {
           endpoint,
           comandaId: comandaId?.slice(-6),
@@ -875,7 +897,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           motivo: motivoEliminacion.trim().substring(0, 20) + '...',
           mozoId: userInfo._id
         });
-        
+
         await axios.put(endpoint, dataAEnviar, {
           timeout: 15000,
           headers: {
@@ -883,12 +905,31 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           }
         });
       }
-      
-      await refrescarComandas();
-      Alert.alert('✓ Platos Eliminados', 'Los platos fueron eliminados correctamente.');
-      setModalEliminarVisible(false);
-      setMotivoEliminacion('');
-      setPlatosSeleccionadosEliminar([]);
+
+      const comandasActualizadas = await refrescarComandas();
+      const sinComandasActivas = Array.isArray(comandasActualizadas) && comandasActualizadas.length === 0;
+
+      if (sinComandasActivas) {
+        Alert.alert(
+          '✓ Comanda cancelada',
+          'Todos los platos fueron eliminados. La comanda ha sido cancelada.',
+          [{ text: 'Entendido' }]
+        );
+        setModalEliminarVisible(false);
+        setMotivoEliminacion('');
+        setPlatosSeleccionadosEliminar([]);
+        if (onRefresh) onRefresh();
+        if (navigation.canGoBack && navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.navigate('Inicio');
+        }
+      } else {
+        Alert.alert('✓ Platos Eliminados', 'Los platos fueron eliminados correctamente.');
+        setModalEliminarVisible(false);
+        setMotivoEliminacion('');
+        setPlatosSeleccionadosEliminar([]);
+      }
       
     } catch (error) {
       console.error('❌ Error completo al eliminar platos:', error);
@@ -1033,9 +1074,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       setPlatosEliminablesComanda([]);
       setHayPlatosEnRecogerComanda(false);
       
-      // Navegar de regreso
+      // Refrescar lista de mesas para que la mesa pase a estado libre
       if (onRefresh) onRefresh();
-      navigation.goBack();
+      if (navigation.canGoBack && navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate('Inicio');
+      }
       
     } catch (error) {
       console.error('❌ Error completo al eliminar comanda:', error);
