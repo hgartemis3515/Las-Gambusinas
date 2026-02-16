@@ -852,12 +852,13 @@ const OrdenesScreen = () => {
     }
   }, [modalMesasVisible]);
 
+  const tipoNormalizado = (t) => (t || '').trim().toLowerCase();
   const categorias = tipoPlatoFiltro
-    ? [...new Set(platos.filter(p => p.tipo === tipoPlatoFiltro).map(p => p.categoria))].filter(Boolean)
+    ? [...new Set(platos.filter(p => tipoNormalizado(p.tipo) === tipoNormalizado(tipoPlatoFiltro)).map(p => p.categoria))].filter(Boolean)
     : [];
   
   const platosFiltrados = platos.filter(p => {
-    const matchTipo = !tipoPlatoFiltro || p.tipo === tipoPlatoFiltro;
+    const matchTipo = !tipoPlatoFiltro || tipoNormalizado(p.tipo) === tipoNormalizado(tipoPlatoFiltro);
     const matchSearch = !searchPlato || p.nombre.toLowerCase().includes(searchPlato.toLowerCase());
     const matchCategoria = !categoriaFiltro || p.categoria === categoriaFiltro;
     return matchTipo && matchSearch && matchCategoria;
@@ -1186,7 +1187,7 @@ const OrdenesScreen = () => {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.tipoButton}
-                    onPress={() => setTipoPlatoFiltro("carta-normal")}
+                    onPress={() => setTipoPlatoFiltro("plato-carta normal")}
                   >
                     <MaterialCommunityIcons name="silverware-fork-knife" size={48} color={theme.colors.text.white} />
                     <Text style={styles.tipoButtonText}>CARTA</Text>
