@@ -45,6 +45,7 @@ import * as Haptics from 'expo-haptics';
 import { slideInRightDelay, springConfig } from "../../../constants/animations";
 import { LinearGradient } from 'expo-linear-gradient';
 import { filtrarComandasActivas } from '../../../utils/comandaHelpers';
+import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
 
 // Componente de Loading con Verificaciones Paso a Paso
 const LoadingVerificacionEliminar = ({ visible, mensaje, pasos = [] }) => {
@@ -1234,6 +1235,8 @@ const InicioScreen = () => {
         : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
       const response = await axios.get(comandasURL, { timeout: 5000 });
       setComandas(response.data);
+      // Corrección automática de status: comandas con todos los platos entregados → status recoger (workaround backend).
+      verificarComandasEnLote(response.data || [], axios).catch(() => {});
     } catch (error) {
       console.error("Error al obtener las comandas de hoy:", error.message);
     }
@@ -1275,6 +1278,7 @@ const InicioScreen = () => {
   const sincronizarManual = useCallback(async () => {
     try {
       console.log('🔄 Sincronizando manualmente...');
+      invalidarCacheComandasVerificadas();
       await Promise.all([
         obtenerMesas(),
         obtenerComandasHoy()
@@ -1331,26 +1335,36 @@ const InicioScreen = () => {
       const comandasMesa = getComandasPorMesa(mesa.nummesa);
       
       if (comandasMesa.length > 0) {
-        // Verificar si hay comandas realmente preparadas (todos los platos en "recoger")
+        // Verificar si hay comandas realmente preparadas (todos los platos en "recoger") o listas para pagar (entregado)
         const hayComandasPreparadas = comandasMesa.some(c => {
           if (!c.platos || c.platos.length === 0) return false;
-          return c.platos.every(p => p.estado === "recoger");
+          const activos = c.platos.filter(p => p.eliminado !== true);
+          return activos.length > 0 && activos.every(p => (p.estado || '').toLowerCase() === "recoger");
         });
-        
-        // Si la mesa dice "preparado" pero no hay comandas preparadas, recalcular
-        if (estadoLower === "preparado" && !hayComandasPreparadas) {
-          console.log(`⚠️ Mesa ${mesa.nummesa} tiene estado "preparado" pero no hay comandas preparadas - Recalculando estado`);
-          // Recalcular basándose en las comandas
+        const hayComandasEntregadas = comandasMesa.some(c => {
+          const status = (c.status || '').toLowerCase();
+          if (status === 'entregado') return true;
+          if (!c.platos || c.platos.length === 0) return false;
+          const activos = c.platos.filter(p => p.eliminado !== true);
+          return activos.length > 0 && activos.every(p => (p.estado || '').toLowerCase() === 'entregado');
+        });
+
+        // Si la mesa dice "preparado" pero no hay comandas preparadas ni entregadas, recalcular
+        if (estadoLower === "preparado" && !hayComandasPreparadas && !hayComandasEntregadas) {
+          console.log(`⚠️ Mesa ${mesa.nummesa} tiene estado "preparado" pero no hay comandas preparadas/entregadas - Recalculando estado`);
           const hayComandasActivas = comandasMesa.some(c => {
             const status = (c.status || '').toLowerCase();
-            return status === 'en_espera' || status === 'recoger';
+            return status === 'en_espera' || status === 'recoger' || status === 'entregado';
           });
-          
           if (hayComandasActivas) {
             return "Pedido";
           } else {
             return "Libre";
           }
+        }
+        // Si hay comandas entregadas (listas para pagar), mantener Preparado para que la mesa siga accesible
+        if (hayComandasEntregadas) {
+          return "Preparado";
         }
       }
       
@@ -1360,15 +1374,23 @@ const InicioScreen = () => {
     // Si no tiene estado, determinarlo por las comandas activas
     const comandasMesa = getComandasPorMesa(mesa.nummesa);
     if (comandasMesa.length === 0) return "Libre";
-    
-    // Verificar si hay comandas preparadas (TODOS los platos en "recoger")
+
+    // Verificar si hay comandas con todos los platos en "recoger"
     const hayPreparadas = comandasMesa.some(c => {
       if (!c.platos || c.platos.length === 0) return false;
-      return c.platos.every(p => p.estado === "recoger");
+      const activos = c.platos.filter(p => p.eliminado !== true);
+      return activos.length > 0 && activos.every(p => (p.estado || '').toLowerCase() === "recoger");
     });
-    
-    if (hayPreparadas) return "Preparado";
-    
+    // Verificar si hay comandas listas para pagar (status entregado o todos los platos entregados)
+    const hayEntregadas = comandasMesa.some(c => {
+      const status = (c.status || '').toLowerCase();
+      if (status === 'entregado') return true;
+      if (!c.platos || c.platos.length === 0) return false;
+      const activos = c.platos.filter(p => p.eliminado !== true);
+      return activos.length > 0 && activos.every(p => (p.estado || '').toLowerCase() === 'entregado');
+    });
+
+    if (hayPreparadas || hayEntregadas) return "Preparado";
     return "Pedido";
   };
 
@@ -4775,8 +4797,11 @@ const InicioScreen = () => {
                   setVerificandoComandas(true);
                   
                   try {
+                    // Corrección preventiva: asegurar status recoger en comandas con todos los platos entregados antes de pedir comandas-para-pagar.
+                    if (comandasOpciones?.length) {
+                      await Promise.all(comandasOpciones.map((c) => verificarYActualizarEstadoComanda(c, axios)));
+                    }
                     // ← NUEVO ENDPOINT - datos limpios del backend
-                    // Construir URL correctamente: /api/comanda/comandas-para-pagar/:mesaId
                     const baseURL = apiConfig.isConfigured 
                       ? apiConfig.getEndpoint('/comanda')
                       : COMANDA_API;

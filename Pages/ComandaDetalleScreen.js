@@ -23,6 +23,7 @@ import { useSocket } from '../context/SocketContext';
 import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas } from '../utils/comandaHelpers';
+import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -282,6 +283,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       }
       
       setComandasState(comandasFinales);
+
+      // Corrección automática de status: si todas las comandas de la mesa tienen todos los platos entregados pero status distinto de recoger/entregado, actualizar en backend (workaround).
+      verificarComandasEnLote(comandasFinales, axios).catch(() => {});
       
       // Ejecutar callback si existe
       if (onRefresh) {
@@ -325,6 +329,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               
               await axios.put(endpoint);
               await refrescarComandas();
+
+              // Verificar si todos los platos de la comanda están entregados y corregir status a 'recoger' si aplica (workaround backend).
+              verificarYActualizarEstadoComanda(platoObj.comandaId, axios).catch(() => {});
               
               Alert.alert('✓ Entrega Confirmada', `${platoObj.plato.nombre} marcado como entregado.`);
               
@@ -503,6 +510,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     
     socket.on('comanda-actualizada', (data) => {
       console.log('📡 Evento comanda-actualizada recibido:', data);
+      if (data?.comandaId) invalidarCacheComandasVerificadas(data.comandaId);
       const esNuestraComanda = comandas.some(c => c._id === data.comandaId);
       if (esNuestraComanda || (data.mesaId && mesaId && (data.mesaId.toString() === mesaId.toString() || data.mesaId === mesaId))) {
         console.log('✓ Comanda actualizada, refrescando...');
@@ -1089,6 +1097,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }
     
     try {
+      // Corrección preventiva: asegurar que comandas con todos los platos entregados tengan status recoger/entregado antes de pedir comandas-para-pagar.
+      if (comandas.length > 0) {
+        await Promise.all(comandas.map((c) => verificarYActualizarEstadoComanda(c, axios)));
+      }
+
       // Obtener comandas para pagar desde el backend
       const endpoint = apiConfig.isConfigured
         ? `${apiConfig.getEndpoint('/comanda')}/comandas-para-pagar/${mesa._id}`
