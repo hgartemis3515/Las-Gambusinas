@@ -44,6 +44,7 @@ import { MotiPressable } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { slideInRightDelay, springConfig } from "../../../constants/animations";
 import { LinearGradient } from 'expo-linear-gradient';
+import { filtrarComandasActivas } from '../../../utils/comandaHelpers';
 
 // Componente de Loading con Verificaciones Paso a Paso
 const LoadingVerificacionEliminar = ({ visible, mensaje, pasos = [] }) => {
@@ -1306,24 +1307,18 @@ const InicioScreen = () => {
     }
   }, [socketConnected, obtenerMesas, obtenerComandasHoy]);
 
-  // Obtener todas las comandas de la mesa (incluyendo pagadas) - para mostrar mozo
+  // Obtener comandas de la mesa: solo activas (sin boucher, no pagadas, no eliminadas)
+  // Mesa liberada = solo servicio actual; misma lógica que ComandaDetalleScreen
   const getTodasComandasPorMesa = (mesaNum) => {
-    return comandas.filter(
-      (comanda) => 
-        comanda.mesas?.nummesa === mesaNum && 
-        comanda.IsActive !== false
+    const porMesa = comandas.filter(
+      (c) => c.mesas?.nummesa === mesaNum && c.IsActive !== false
     );
+    return filtrarComandasActivas(porMesa);
   };
 
-  // Obtener solo comandas activas (no pagadas) - para operaciones
+  // Obtener solo comandas activas de la mesa (fuente única: filtrarComandasActivas)
   const getComandasPorMesa = (mesaNum) => {
-    return comandas.filter(
-      (comanda) => 
-        comanda.mesas?.nummesa === mesaNum && 
-        comanda.IsActive !== false &&
-        comanda.status?.toLowerCase() !== "pagado" &&
-        comanda.status?.toLowerCase() !== "completado"
-    );
+    return getTodasComandasPorMesa(mesaNum);
   };
 
   const getEstadoMesa = (mesa) => {

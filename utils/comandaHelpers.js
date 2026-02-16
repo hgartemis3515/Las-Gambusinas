@@ -1,7 +1,57 @@
 /**
  * Funciones de utilidad para gestión de comandas
  * Extraídas de InicioScreen para reutilización
+ *
+ * CICLO DE VIDA: Comandas "activas" = en servicio actual, sin pago/boucher cerrado.
+ * Una comanda se considera cerrada (no activa) si tiene boucher, está eliminada o está pagada.
  */
+
+/** Estados que indican comanda cerrada (fin de ciclo de servicio) */
+const ESTADOS_COMANDA_CERRADA = ['pagado', 'completado', 'cerrado', 'cancelado'];
+
+/**
+ * Determina si una comanda está activa (en ciclo de servicio actual, sin pago/boucher).
+ * Fuente única de verdad para filtrar comandas en toda la app.
+ * @param {Object} comanda - Objeto comanda del backend
+ * @returns {boolean} true si la comanda está activa (no cerrada)
+ */
+export const esComandaActiva = (comanda) => {
+  if (!comanda || typeof comanda !== 'object') return false;
+
+  // Comanda eliminada (soft-delete)
+  if (comanda.IsActive === false) return false;
+  if (comanda.eliminado === true || comanda.eliminada === true) return false;
+  if (comanda.fechaEliminacion) return false;
+
+  // Comanda con boucher asociado (si el backend expone el campo)
+  const boucherId = comanda.boucherId ?? comanda.boucher;
+  if (boucherId != null && boucherId !== '') return false;
+
+  // Estado de comanda indica cierre de ciclo
+  const status = (comanda.status || '').toString().toLowerCase().trim();
+  if (ESTADOS_COMANDA_CERRADA.some((e) => status === e)) return false;
+
+  // Defensivo: comanda muy antigua sin estado claro (opcional, evita comandas huérfanas)
+  const createdAt = comanda.createdAt ? new Date(comanda.createdAt).getTime() : 0;
+  const doceHoras = 12 * 60 * 60 * 1000;
+  if (createdAt > 0 && Date.now() - createdAt > doceHoras && !status) {
+    console.warn('[comandaHelpers] Comanda sin status y >12h antigüedad, excluida como inactiva:', comanda._id);
+    return false;
+  }
+
+  return true;
+};
+
+/**
+ * Filtra un array de comandas y retorna solo las activas (sin boucher, no eliminadas, no pagadas).
+ * Usar en todos los puntos donde se procesen listas de comandas (ComandaDetalle, Inicio, etc.).
+ * @param {Array} comandas - Array de comandas
+ * @returns {Array} Solo comandas activas
+ */
+export const filtrarComandasActivas = (comandas) => {
+  if (!Array.isArray(comandas)) return [];
+  return comandas.filter(esComandaActiva);
+};
 
 /**
  * Filtra platos según estados permitidos

@@ -22,7 +22,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useSocket } from '../context/SocketContext';
 import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
-import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados } from '../utils/comandaHelpers';
+import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas } from '../utils/comandaHelpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -65,8 +65,8 @@ const obtenerEstilosPorEstado = (estado) => {
 };
 
 const ComandaDetalleScreen = ({ route, navigation }) => {
-  // Recibir parámetros de navegación
-  const { mesa, comandas: comandasIniciales, onRefresh } = route.params || {};
+  // Recibir parámetros de navegación (clienteId / filterByCliente para filtrar por cliente)
+  const { mesa, comandas: comandasIniciales, onRefresh, clienteId, filterByCliente } = route.params || {};
   
   // Hooks
   const { theme, isDarkMode } = useTheme();
@@ -265,10 +265,23 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         
         return coincideId || coincideNumero;
       });
+
+      // Solo comandas activas (sin boucher, no eliminadas, no pagadas) — mesa liberada = solo servicio actual
+      let comandasFinales = filtrarComandasActivas(comandasMesa);
+      console.log('📋 Comandas activas para esta mesa (sin pagado/boucher):', comandasFinales.length);
+
+      // Filtro opcional por cliente (ej. al crear comanda para Cliente B en mesa liberada)
+      if ((filterByCliente || clienteId) && comandasFinales.length > 0 && clienteId) {
+        const idStr = typeof clienteId === 'string' ? clienteId : clienteId?.toString?.() || '';
+        comandasFinales = comandasFinales.filter(c => {
+          const cid = c.cliente?._id ?? c.cliente;
+          const cidStr = cid != null ? (typeof cid === 'string' ? cid : cid.toString?.() || '') : '';
+          return cidStr === idStr;
+        });
+        console.log('📋 Comandas filtradas por cliente:', comandasFinales.length);
+      }
       
-      console.log('📋 Comandas filtradas para esta mesa:', comandasMesa.length);
-      
-      setComandasState(comandasMesa);
+      setComandasState(comandasFinales);
       
       // Ejecutar callback si existe
       if (onRefresh) {
