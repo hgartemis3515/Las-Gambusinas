@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Text,
   View,
@@ -21,6 +21,7 @@ import { themeLight } from "../../../constants/theme";
 import { useOrientation } from "../../../hooks/useOrientation";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import moment from "moment-timezone";
+import debounce from "lodash.debounce";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -169,6 +170,16 @@ const OrdenesScreen = () => {
   const [filtroAreaMesa, setFiltroAreaMesa] = useState("All"); // Filtro para el modal de mesas
   const [mostrarOverlayCarga, setMostrarOverlayCarga] = useState(false);
   const [mensajeCarga, setMensajeCarga] = useState("Creando comanda...");
+  const [searchPlatoDebounced, setSearchPlatoDebounced] = useState("");
+
+  // Debounce búsqueda 300ms para no re-filtrar en cada tecla
+  const debouncedSetSearchRef = useRef(
+    debounce((text) => setSearchPlatoDebounced(text), 300)
+  ).current;
+  useEffect(() => {
+    debouncedSetSearchRef(searchPlato);
+    return () => debouncedSetSearchRef.cancel?.();
+  }, [searchPlato, debouncedSetSearchRef]);
 
   useEffect(() => {
     loadUserData();
@@ -856,13 +867,46 @@ const OrdenesScreen = () => {
   const categorias = tipoPlatoFiltro
     ? [...new Set(platos.filter(p => tipoNormalizado(p.tipo) === tipoNormalizado(tipoPlatoFiltro)).map(p => p.categoria))].filter(Boolean)
     : [];
-  
-  const platosFiltrados = platos.filter(p => {
-    const matchTipo = !tipoPlatoFiltro || tipoNormalizado(p.tipo) === tipoNormalizado(tipoPlatoFiltro);
-    const matchSearch = !searchPlato || p.nombre.toLowerCase().includes(searchPlato.toLowerCase());
-    const matchCategoria = !categoriaFiltro || p.categoria === categoriaFiltro;
-    return matchTipo && matchSearch && matchCategoria;
-  });
+
+  // Platos disponibles (tipo + stock > 0)
+  const platosPorTipoDisponibles = useMemo(
+    () =>
+      platos.filter((p) => {
+        const matchTipo = !tipoPlatoFiltro || tipoNormalizado(p.tipo) === tipoNormalizado(tipoPlatoFiltro);
+        const disponible = (p.stock == null || p.stock === undefined || Number(p.stock) > 0);
+        return matchTipo && disponible;
+      }),
+    [platos, tipoPlatoFiltro]
+  );
+
+  // Búsqueda global: si hay texto, filtra por nombre en TODOS (ignora categoría). Si no hay texto, filtra por categoría.
+  const platosFiltrados = useMemo(() => {
+    const base = platosPorTipoDisponibles;
+    const search = (searchPlatoDebounced || "").trim();
+    if (search.length > 0) {
+      return base.filter((p) =>
+        (p.nombre || "").toLowerCase().includes(search.toLowerCase())
+      );
+    }
+    if (!categoriaFiltro) return base;
+    return base.filter((p) => p.categoria === categoriaFiltro);
+  }, [platosPorTipoDisponibles, searchPlatoDebounced, categoriaFiltro]);
+
+  // Al enfocar o escribir en búsqueda → categoría a "Todos" para búsqueda global
+  const handleSearchFocus = useCallback(() => {
+    setCategoriaFiltro(null);
+  }, []);
+  const handleSearchChangeText = useCallback((text) => {
+    setSearchPlato(text);
+    if ((text || "").trim().length > 0) setCategoriaFiltro(null);
+  }, []);
+  // Al elegir categoría: si hay búsqueda activa, limpiar texto y aplicar categoría
+  const handleCategorySelect = useCallback((cat) => {
+    if ((searchPlato || "").trim().length > 0) {
+      setSearchPlato("");
+    }
+    setCategoriaFiltro(cat === "Todos" || cat === null ? null : cat);
+  }, [searchPlato]);
 
   const getCategoriaIcon = (categoria) => {
     if (categoria?.includes("Carnes") || categoria?.includes("CARNE")) return "🥩";
@@ -1210,28 +1254,43 @@ const OrdenesScreen = () => {
                   </Text>
                 </TouchableOpacity>
 
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Buscar plato..."
-                  placeholderTextColor={theme.colors.text.light}
-                  value={searchPlato}
-                  onChangeText={setSearchPlato}
-                />
-                
+                <View style={styles.searchInputWrapper}>
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Buscar plato..."
+                    placeholderTextColor={theme.colors.text.light}
+                    value={searchPlato}
+                    onChangeText={handleSearchChangeText}
+                    onFocus={handleSearchFocus}
+                    accessibilityLabel={searchPlato.trim() ? "Búsqueda en todos los platos" : "Buscar plato"}
+                    accessibilityHint="Al escribir se muestran platos de todas las categorías"
+                  />
+                  {searchPlato.length > 0 && (
+                    <TouchableOpacity
+                      style={styles.searchClearButton}
+                      onPress={() => setSearchPlato("")}
+                      accessibilityLabel="Limpiar búsqueda"
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    >
+                      <MaterialCommunityIcons name="close-circle" size={22} color={theme.colors.text.light} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
                 <ScrollView horizontal style={styles.categoriasContainer} showsHorizontalScrollIndicator={false}>
                   <TouchableOpacity
-                    style={[styles.categoriaChip, !categoriaFiltro && styles.categoriaChipActive]}
+                    style={[styles.categoriaChip, (!categoriaFiltro || (searchPlato || "").trim().length > 0) && styles.categoriaChipActive]}
                     onPress={() => setCategoriaFiltro(null)}
                   >
-                    <Text style={[styles.categoriaChipText, !categoriaFiltro && styles.categoriaChipTextActive]}>Todos</Text>
+                    <Text style={[styles.categoriaChipText, (!categoriaFiltro || (searchPlato || "").trim().length > 0) && styles.categoriaChipTextActive]}>Todos</Text>
                   </TouchableOpacity>
                   {categorias.map((cat) => (
                     <TouchableOpacity
                       key={cat}
-                      style={[styles.categoriaChip, categoriaFiltro === cat && styles.categoriaChipActive]}
-                      onPress={() => setCategoriaFiltro(cat)}
+                      style={[styles.categoriaChip, categoriaFiltro === cat && (searchPlato || "").trim().length === 0 && styles.categoriaChipActive]}
+                      onPress={() => handleCategorySelect(cat)}
                     >
-                      <Text style={[styles.categoriaChipText, categoriaFiltro === cat && styles.categoriaChipTextActive]}>
+                      <Text style={[styles.categoriaChipText, categoriaFiltro === cat && (searchPlato || "").trim().length === 0 && styles.categoriaChipTextActive]}>
                         {getCategoriaIcon(cat)} {cat.split("(")[0].trim()}
                       </Text>
                     </TouchableOpacity>
@@ -1672,15 +1731,26 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
   modalAreaFilterButtonTextActive: {
     color: theme.colors.text.white,
   },
+  searchInputWrapper: {
+    position: "relative",
+    marginBottom: theme.spacing.md,
+  },
   searchInput: {
     backgroundColor: theme.colors.background,
     padding: theme.spacing.md,
+    paddingRight: 44,
     borderRadius: theme.borderRadius.md,
-    marginBottom: theme.spacing.md,
     borderWidth: 2,
     borderColor: theme.colors.border,
     fontSize: 14,
     color: theme.colors.text.primary,
+  },
+  searchClearButton: {
+    position: "absolute",
+    right: theme.spacing.sm,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
   },
   categoriasContainer: {
     marginBottom: theme.spacing.md,
