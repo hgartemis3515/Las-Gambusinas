@@ -22,6 +22,8 @@ import { useOrientation } from "../../../hooks/useOrientation";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import moment from "moment-timezone";
 import debounce from "lodash.debounce";
+// Componente de modal de complementos
+import ModalComplementos from "../../../Components/ModalComplementos";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -172,6 +174,9 @@ const OrdenesScreen = () => {
   const [mensajeCarga, setMensajeCarga] = useState("Creando comanda...");
   const [searchPlatoDebounced, setSearchPlatoDebounced] = useState("");
 
+  // Estado para el modal de complementos
+  const [platoParaComplementar, setPlatoParaComplementar] = useState(null); // Cuando no es null, el modal de complementos está abierto
+
   // Debounce búsqueda 300ms para no re-filtrar en cada tecla
   const debouncedSetSearchRef = useRef(
     debounce((text) => setSearchPlatoDebounced(text), 300)
@@ -319,34 +324,96 @@ const OrdenesScreen = () => {
   };
 
   const handleAddPlato = (plato) => {
-    const exists = selectedPlatos.find(p => p._id === plato._id);
-    if (exists) {
-      const newCant = (cantidades[plato._id] || 1) + 1;
-      setCantidades({ ...cantidades, [plato._id]: newCant });
+    // Verificar si el plato tiene complementos definidos
+    const tieneComplementos = plato.complementos && plato.complementos.length > 0;
+
+    if (tieneComplementos) {
+      // Abrir modal de complementos
+      setPlatoParaComplementar(plato);
     } else {
-      setSelectedPlatos([...selectedPlatos, plato]);
-      setCantidades({ ...cantidades, [plato._id]: 1 });
+      // Agregar directamente (comportamiento actual)
+      agregarPlatoSinComplementos(plato);
     }
   };
 
-  const handleRemovePlato = (platoId) => {
-    const newPlatos = selectedPlatos.filter(p => p._id !== platoId);
+  // Función para agregar un plato sin complementos (comportamiento original)
+  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = "") => {
+    // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
+    const instanceId = `${plato._id}_${Date.now()}`;
+
+    const platoConComplementos = {
+      ...plato,
+      instanceId, // ID único para esta instancia
+      complementosElegidos: complementosSeleccionados,
+      notaEspecial: notaEspecial,
+    };
+
+    // Verificar si ya existe el mismo plato CON LOS MISMOS complementos
+    const existsWithSameComplements = selectedPlatos.find(p => {
+      // Si es el mismo plato base
+      if (p._id !== plato._id) return false;
+
+      // Si ambos NO tienen complementos, son iguales
+      const pComps = p.complementosElegidos || [];
+      const newComps = complementosSeleccionados || [];
+      const pNota = (p.notaEspecial || "").trim();
+      const newNota = notaEspecial.trim();
+
+      if (pComps.length === 0 && newComps.length === 0 && pNota === newNota) {
+        return true;
+      }
+
+      // Si tienen complementos, compararlos
+      if (pComps.length !== newComps.length) return false;
+      if (pNota !== newNota) return false;
+
+      // Comparar cada complemento
+      return pComps.every(pc => 
+        newComps.some(nc => nc.grupo === pc.grupo && nc.opcion === pc.opcion)
+      ) && newComps.every(nc =>
+        pComps.some(pc => pc.grupo === nc.grupo && pc.opcion === nc.opcion)
+      );
+    });
+
+    if (existsWithSameComplements) {
+      // Si existe con los mismos complementos, solo incrementar cantidad
+      const newCant = (cantidades[existsWithSameComplements.instanceId || existsWithSameComplements._id] || 1) + 1;
+      setCantidades({ ...cantidades, [existsWithSameComplements.instanceId || existsWithSameComplements._id]: newCant });
+    } else {
+      // Es un plato nuevo o con complementos diferentes, agregar como item separado
+      setSelectedPlatos([...selectedPlatos, platoConComplementos]);
+      setCantidades({ ...cantidades, [instanceId]: 1 });
+    }
+  };
+
+  // Función para confirmar complementos desde el modal
+  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial }) => {
+    if (platoParaComplementar) {
+      agregarPlatoSinComplementos(platoParaComplementar, complementosSeleccionados, notaEspecial);
+      Alert.alert("✅", `${platoParaComplementar.nombre} agregado`);
+      setPlatoParaComplementar(null); // Cerrar modal
+    }
+  };
+
+  const handleRemovePlato = (platoInstanceId) => {
+    // Buscar por instanceId (que puede ser el _id o el instanceId generado)
+    const newPlatos = selectedPlatos.filter(p => (p.instanceId || p._id) !== platoInstanceId);
     setSelectedPlatos(newPlatos);
     const newCantidades = { ...cantidades };
-    delete newCantidades[platoId];
+    delete newCantidades[platoInstanceId];
     setCantidades(newCantidades);
   };
 
-  const handleUpdateCantidad = (platoId, delta) => {
-    const current = cantidades[platoId] || 1;
+  const handleUpdateCantidad = (platoInstanceId, delta) => {
+    const current = cantidades[platoInstanceId] || 1;
     const newCant = Math.max(1, current + delta);
-    setCantidades({ ...cantidades, [platoId]: newCant });
+    setCantidades({ ...cantidades, [platoInstanceId]: newCant });
   };
 
   const calcularSubtotal = () => {
     let total = 0;
     selectedPlatos.forEach(plato => {
-      const cantidad = cantidades[plato._id] || 1;
+      const cantidad = cantidades[plato.instanceId || plato._id] || 1;
       total += plato.precio * cantidad;
     });
     return total.toFixed(2);
@@ -552,10 +619,12 @@ const OrdenesScreen = () => {
       const platosData = selectedPlatos.map(plato => ({
         plato: plato._id,
         platoId: plato.id || null,
-        estado: "en_espera"
+        estado: "en_espera",
+        complementosSeleccionados: plato.complementosElegidos || [],
+        notaEspecial: plato.notaEspecial || ""
       }));
 
-      const cantidadesArray = selectedPlatos.map(plato => cantidades[plato._id] || 1);
+      const cantidadesArray = selectedPlatos.map(plato => cantidades[plato.instanceId || plato._id] || 1);
 
       // Verificar y loggear el userInfo antes de crear la comanda
       console.log("👤 UserInfo antes de crear comanda:", {
@@ -991,12 +1060,37 @@ const OrdenesScreen = () => {
             </View>
           ) : (
             selectedPlatos.map((plato) => {
-              const cantidad = cantidades[plato._id] || 1;
+              const platoInstanceId = plato.instanceId || plato._id;
+              const cantidad = cantidades[platoInstanceId] || 1;
               const subtotal = plato.precio * cantidad;
+              const tieneComplementos = plato.complementosElegidos && plato.complementosElegidos.length > 0;
+              const tieneNota = plato.notaEspecial && plato.notaEspecial.trim().length > 0;
+              
               return (
-                <View key={plato._id} style={styles.platoItem}>
+                <View key={platoInstanceId} style={styles.platoItem}>
                   <View style={styles.platoInfo}>
                     <Text style={styles.platoNombre}>{plato.nombre}</Text>
+                    
+                    {/* Mostrar complementos si existen */}
+                    {tieneComplementos && (
+                      <View style={styles.complementosContainer}>
+                        {plato.complementosElegidos.map((comp, idx) => (
+                          <View key={idx} style={styles.complementoBadge}>
+                            <MaterialCommunityIcons name="check" size={12} color={theme.colors.secondary} />
+                            <Text style={styles.complementoText}>{comp.opcion}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                    
+                    {/* Mostrar nota especial si existe */}
+                    {tieneNota && (
+                      <View style={styles.notaEspecialContainer}>
+                        <MaterialCommunityIcons name="note-text" size={14} color={theme.colors.warning} />
+                        <Text style={styles.notaEspecialText}>{plato.notaEspecial}</Text>
+                      </View>
+                    )}
+                    
                     <View style={styles.platoDetails}>
                       <Text style={styles.platoCantidad}>x{cantidad}</Text>
                       <Text style={styles.platoPrecio}>S/. {subtotal.toFixed(2)}</Text>
@@ -1005,20 +1099,20 @@ const OrdenesScreen = () => {
                   <View style={styles.platoActions}>
                     <TouchableOpacity
                       style={styles.cantidadButton}
-                      onPress={() => handleUpdateCantidad(plato._id, -1)}
+                      onPress={() => handleUpdateCantidad(platoInstanceId, -1)}
                     >
                       <MaterialCommunityIcons name="minus" size={16} color={theme.colors.text.white} />
                     </TouchableOpacity>
                     <Text style={styles.cantidadText}>{cantidad}</Text>
                     <TouchableOpacity
                       style={styles.cantidadButton}
-                      onPress={() => handleUpdateCantidad(plato._id, 1)}
+                      onPress={() => handleUpdateCantidad(platoInstanceId, 1)}
                     >
                       <MaterialCommunityIcons name="plus" size={16} color={theme.colors.text.white} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.removeButton}
-                      onPress={() => handleRemovePlato(plato._id)}
+                      onPress={() => handleRemovePlato(platoInstanceId)}
                     >
                       <MaterialCommunityIcons name="delete-outline" size={20} color={theme.colors.primary} />
                     </TouchableOpacity>
@@ -1306,28 +1400,56 @@ const OrdenesScreen = () => {
                     </View>
                   ) : (
                     platosFiltrados.map((plato) => {
-                      const cantidad = cantidades[plato._id] || 0;
+                      // Calcular cantidad total de este plato (sumando todas las instancias)
+                      const cantidadTotal = selectedPlatos
+                        .filter(p => p._id === plato._id)
+                        .reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
+                      
                       return (
                         <View key={plato._id} style={styles.platoModalItem}>
                           <View style={styles.platoModalInfo}>
-                            <Text style={styles.platoModalNombre}>{plato.nombre}</Text>
+                            <View style={styles.platoModalNombreContainer}>
+                              <Text style={styles.platoModalNombre}>{plato.nombre}</Text>
+                              {plato.complementos && plato.complementos.length > 0 && (
+                                <View style={styles.tieneComplementosBadge}>
+                                  <MaterialCommunityIcons name="tune-variant" size={12} color={theme.colors.text.white} />
+                                </View>
+                              )}
+                            </View>
                             <Text style={styles.platoModalPrecio}>S/. {plato.precio.toFixed(2)}</Text>
                           </View>
                           <View style={styles.platoModalActions}>
                             <TouchableOpacity
                               style={styles.cantidadButtonSmall}
                               onPress={() => {
-                                if (cantidad > 0) {
-                                  handleUpdateCantidad(plato._id, -1);
+                                // Reducir cantidad de la última instancia agregada de este plato
+                                const instanciasDelPlato = selectedPlatos.filter(p => p._id === plato._id);
+                                if (instanciasDelPlato.length > 0) {
+                                  const ultimaInstancia = instanciasDelPlato[instanciasDelPlato.length - 1];
+                                  const instanceId = ultimaInstancia.instanceId || ultimaInstancia._id;
+                                  const currentCant = cantidades[instanceId] || 1;
+                                  if (currentCant > 1) {
+                                    setCantidades({ ...cantidades, [instanceId]: currentCant - 1 });
+                                  } else if (instanciasDelPlato.length === 1) {
+                                    // Si solo queda 1 de la única instancia, eliminar
+                                    handleRemovePlato(instanceId);
+                                  }
                                 }
                               }}
                             >
                               <MaterialCommunityIcons name="minus" size={14} color={theme.colors.text.white} />
                             </TouchableOpacity>
-                            <Text style={styles.cantidadTextSmall}>{cantidad || 0}</Text>
+                            <Text style={styles.cantidadTextSmall}>{cantidadTotal || 0}</Text>
                             <TouchableOpacity
                               style={styles.cantidadButtonSmall}
-                              onPress={() => handleUpdateCantidad(plato._id, 1)}
+                              onPress={() => {
+                                // Incrementar cantidad de la última instancia si tiene los mismos complementos
+                                // O agregar una nueva instancia
+                                handleAddPlato(plato);
+                                if (!plato.complementos || plato.complementos.length === 0) {
+                                  Alert.alert("✅", `${plato.nombre} agregado`);
+                                }
+                              }}
                             >
                               <MaterialCommunityIcons name="plus" size={14} color={theme.colors.text.white} />
                             </TouchableOpacity>
@@ -1335,7 +1457,10 @@ const OrdenesScreen = () => {
                               style={styles.addPlatoButton}
                               onPress={() => {
                                 handleAddPlato(plato);
-                                Alert.alert("✅", `${plato.nombre} agregado`);
+                                // Solo mostrar alert si no tiene complementos (el alert se muestra después del modal de complementos)
+                                if (!plato.complementos || plato.complementos.length === 0) {
+                                  Alert.alert("✅", `${plato.nombre} agregado`);
+                                }
                               }}
                             >
                               <Text style={styles.addPlatoButtonText}>Agregar</Text>
@@ -1356,6 +1481,14 @@ const OrdenesScreen = () => {
       {mostrarOverlayCarga && (
         <AnimatedOverlay mensaje={mensajeCarga} />
       )}
+
+      {/* Modal de Complementos */}
+      <ModalComplementos
+        visible={platoParaComplementar !== null}
+        plato={platoParaComplementar}
+        onConfirm={handleConfirmarComplementos}
+        onClose={() => setPlatoParaComplementar(null)}
+      />
     </SafeAreaView>
   );
 };
@@ -1503,6 +1636,40 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: theme.colors.primary,
+  },
+  complementosContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing.xs,
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.xs,
+  },
+  complementoBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.secondary + "20",
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 12,
+    gap: 2,
+  },
+  complementoText: {
+    fontSize: 12,
+    color: theme.colors.secondary,
+    fontWeight: "500",
+  },
+  notaEspecialContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.xs,
+    gap: theme.spacing.xs,
+  },
+  notaEspecialText: {
+    fontSize: 12,
+    color: theme.colors.warning,
+    fontStyle: "italic",
+    flex: 1,
   },
   platoActions: {
     flexDirection: "row",
@@ -1788,6 +1955,18 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: theme.spacing.sm,
+  },
+  platoModalNombreContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.xs,
+    flex: 1,
+  },
+  tieneComplementosBadge: {
+    backgroundColor: theme.colors.accent,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
   platoModalNombre: {
     fontSize: 16,
