@@ -476,10 +476,24 @@ const PagosScreen = () => {
         const precio = platoItem.precio || 0;
         const subtotal = platoItem.subtotal || (precio * cantidad);
         const comandaNum = platoItem.comandaNumber || "";
+        
+        // Generar HTML de complementos si existen
+        const complementos = platoItem.complementosSeleccionados || [];
+        const complementosHTML = complementos.length > 0
+          ? `<br/><span style="font-size: 10px; color: #666; font-style: italic;">${
+              complementos.map(c =>
+                `· ${Array.isArray(c.opcion) ? c.opcion.join(', ') : c.opcion}`
+              ).join('<br/>')
+            }</span>`
+          : '';
+        
         itemsHTML += `
           <tr>
             <td style="padding: 8px; border-bottom: 1px solid #ddd;">${cantidad}x</td>
-            <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: left;">${platoItem.nombre || "Plato"} ${comandaNum ? `(C#${comandaNum})` : ''}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: left;">
+              ${platoItem.nombre || "Plato"} ${comandaNum ? `(C#${comandaNum})` : ''}
+              ${complementosHTML}
+            </td>
             <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">S/. ${precio.toFixed(2)}</td>
             <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">S/. ${subtotal.toFixed(2)}</td>
           </tr>
@@ -495,10 +509,24 @@ const PagosScreen = () => {
             const precio = plato.precio || 0;
             const subtotal = precio * cantidad;
             const comandaNum = comanda.comandaNumber || comanda._id.slice(-6);
+            
+            // Generar HTML de complementos si existen
+            const complementos = platoItem.complementosSeleccionados || [];
+            const complementosHTML = complementos.length > 0
+              ? `<br/><span style="font-size: 10px; color: #666; font-style: italic;">${
+                  complementos.map(c =>
+                    `· ${Array.isArray(c.opcion) ? c.opcion.join(', ') : c.opcion}`
+                  ).join('<br/>')
+                }</span>`
+              : '';
+            
             itemsHTML += `
               <tr>
                 <td style="padding: 8px; border-bottom: 1px solid #ddd;">${cantidad}x</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: left;">${plato.nombre || "Plato"} ${comandas.length > 1 ? `(C#${comandaNum})` : ''}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: left;">
+                  ${plato.nombre || "Plato"} ${comandas.length > 1 ? `(C#${comandaNum})` : ''}
+                  ${complementosHTML}
+                </td>
                 <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">S/. ${precio.toFixed(2)}</td>
                 <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">S/. ${subtotal.toFixed(2)}</td>
               </tr>
@@ -1619,7 +1647,26 @@ const PagosScreen = () => {
               return (
                 <View key={index} style={styles.platoItem}>
                   <View style={styles.platoInfo}>
-                    <Text style={styles.platoNombre}>{platoItem.nombre || "Plato"}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.platoNombre}>{platoItem.nombre || "Plato"}</Text>
+                      {platoItem.complementosSeleccionados && platoItem.complementosSeleccionados.length > 0 && (
+                        <View style={{ marginTop: 2 }}>
+                          {platoItem.complementosSeleccionados.map((comp, ci) => (
+                            <Text
+                              key={ci}
+                              style={{
+                                fontSize: 11,
+                                color: theme.colors?.text?.secondary || '#6B7280',
+                                fontStyle: 'italic',
+                                lineHeight: 16,
+                              }}
+                            >
+                              · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion}
+                            </Text>
+                          ))}
+                        </View>
+                      )}
+                    </View>
                     <Text style={styles.platoCantidad}>x{cantidad}</Text>
                   </View>
                   <Text style={styles.platoSubtotal}>S/. {subtotal.toFixed(2)}</Text>
@@ -1703,7 +1750,26 @@ const PagosScreen = () => {
                       return (
                         <View key={`${comandaIndex}-${index}`} style={styles.platoItem}>
                           <View style={styles.platoInfo}>
-                            <Text style={styles.platoNombre}>{nombre}</Text>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.platoNombre}>{nombre}</Text>
+                              {platoItem.complementosSeleccionados && platoItem.complementosSeleccionados.length > 0 && (
+                                <View style={{ marginTop: 2 }}>
+                                  {platoItem.complementosSeleccionados.map((comp, ci) => (
+                                    <Text
+                                      key={ci}
+                                      style={{
+                                        fontSize: 11,
+                                        color: theme.colors?.text?.secondary || '#6B7280',
+                                        fontStyle: 'italic',
+                                        lineHeight: 16,
+                                      }}
+                                    >
+                                      · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion}
+                                    </Text>
+                                  ))}
+                                </View>
+                              )}
+                            </View>
                             <Text style={styles.platoCantidad}>x{cantidad}</Text>
                           </View>
                           <Text style={styles.platoSubtotal}>S/. {subtotal.toFixed(2)}</Text>

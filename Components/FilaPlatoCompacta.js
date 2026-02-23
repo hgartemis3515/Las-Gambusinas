@@ -31,6 +31,24 @@ const FilaPlatoCompacta = ({
         <Text style={styles.nombre} numberOfLines={1}>
           {nombrePlato}
         </Text>
+        {/* Complementos seleccionados */}
+        {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && (
+          <View style={{ marginTop: 2, paddingLeft: 0 }}>
+            {plato.complementosSeleccionados.map((comp, i) => (
+              <Text
+                key={i}
+                style={{
+                  fontSize: 11,
+                  color: '#6B7280',
+                  fontStyle: 'italic',
+                  lineHeight: 16,
+                }}
+              >
+                · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion}
+              </Text>
+            ))}
+          </View>
+        )}
       </View>
       
       {/* Cantidad (10%) */}

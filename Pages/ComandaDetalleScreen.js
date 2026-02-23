@@ -150,7 +150,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           comandaId: comanda._id,
           comandaNumber: comanda.comandaNumber,
           eliminado: platoEliminado,
-          index: index // Índice en la comanda original
+          index: index, // Índice en la comanda original
+          complementosSeleccionados: platoItem.complementosSeleccionados || []
         };
         
         if (!platoEliminado) platos.push(platoObj);
