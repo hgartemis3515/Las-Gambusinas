@@ -16,6 +16,7 @@ import * as Haptics from 'expo-haptics';
 import BadgeEstadoPlato from '../Components/BadgeEstadoPlato';
 import FilaPlatoCompacta from '../Components/FilaPlatoCompacta';
 import HeaderComandaDetalle from '../Components/HeaderComandaDetalle';
+import ModalComplementos from '../Components/ModalComplementos';
 
 // Contextos y configuración
 import { useTheme } from '../context/ThemeContext';
@@ -107,6 +108,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [searchPlato, setSearchPlato] = useState('');
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
+  
+  // Estado para el modal de complementos (edición de comanda)
+  const [platoParaComplementar, setPlatoParaComplementar] = useState(null);
+  const [platosEditados, setPlatosEditados] = useState([]);
   
   // Cargar usuario
   useEffect(() => {
@@ -467,8 +472,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }
   };
   
-  // Estados para edición
-  const [platosEditados, setPlatosEditados] = useState([]);
+  // Estado para observaciones editadas
   const [observacionesEditadas, setObservacionesEditadas] = useState('');
   
   // Funciones de edición
@@ -514,29 +518,72 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
   
   const handleAgregarPlato = (plato) => {
-    const platoExistente = platosEditados.find(
-      p => {
-        const pPlatoStr = p.plato?.toString();
-        const platoIdStr = plato._id?.toString();
-        return pPlatoStr === platoIdStr || p.plato === plato._id;
+    // Verificar si el plato tiene complementos definidos
+    const tieneComplementos = plato.complementos && plato.complementos.length > 0;
+
+    if (tieneComplementos) {
+      // Abrir modal de complementos
+      setPlatoParaComplementar(plato);
+    } else {
+      // Agregar directamente (comportamiento actual)
+      agregarPlatoSinComplementos(plato);
+    }
+  };
+
+  // Función para agregar un plato sin complementos
+  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = '') => {
+    // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
+    const instanceId = `${plato._id}_${Date.now()}`;
+
+    const platoConComplementos = {
+      ...plato,
+      instanceId,
+      plato: plato._id,
+      platoId: plato.id || null,
+      estado: 'pedido',
+      cantidad: 1,
+      nombre: plato.nombre,
+      precio: plato.precio,
+      complementosSeleccionados,
+      notaEspecial,
+    };
+
+    // Verificar si ya existe el mismo plato CON LOS MISMOS complementos
+    const existsWithSameComplements = platosEditados.find(p => {
+      if (p.plato !== plato._id && p.plato?.toString() !== plato._id?.toString()) return false;
+
+      const pComps = p.complementosSeleccionados || [];
+      const newComps = complementosSeleccionados || [];
+      const pNota = (p.notaEspecial || '').trim();
+      const newNota = notaEspecial.trim();
+
+      if (pComps.length === 0 && newComps.length === 0 && pNota === newNota) {
+        return true;
       }
-    );
-    
-    if (platoExistente) {
-      const index = platosEditados.indexOf(platoExistente);
+
+      if (pComps.length !== newComps.length) return false;
+      if (pNota !== newNota) return false;
+
+      return pComps.every(pc => 
+        newComps.some(nc => nc.grupo === pc.grupo && nc.opcion === pc.opcion)
+      ) && newComps.every(nc =>
+        pComps.some(pc => pc.grupo === nc.grupo && pc.opcion === nc.opcion)
+      );
+    });
+
+    if (existsWithSameComplements) {
+      const index = platosEditados.indexOf(existsWithSameComplements);
       handleCambiarCantidad(index, 1);
     } else {
-      setPlatosEditados([
-        ...platosEditados,
-        {
-          plato: plato._id,
-          platoId: plato.id || null,
-          estado: 'pedido',
-          cantidad: 1,
-          nombre: plato.nombre,
-          precio: plato.precio,
-        }
-      ]);
+      setPlatosEditados([...platosEditados, platoConComplementos]);
+    }
+  };
+
+  // Función para confirmar complementos desde el modal
+  const handleConfirmarComplementosEdicion = ({ complementosSeleccionados, notaEspecial }) => {
+    if (platoParaComplementar) {
+      agregarPlatoSinComplementos(platoParaComplementar, complementosSeleccionados, notaEspecial);
+      setPlatoParaComplementar(null);
     }
   };
   
@@ -618,7 +665,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         return {
           plato: p.plato,
           platoId: platoCompleto?.id || p.platoId || null,
-          estado: p.estado || 'pedido'
+          estado: p.estado || 'pedido',
+          complementosSeleccionados: p.complementosSeleccionados || [],
+          notaEspecial: p.notaEspecial || ''
         };
       });
       
@@ -690,7 +739,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       const platoItem = comanda.platos[e.index];
       if (!platoItem) return null;
       
+      // Generar instanceId único para identificar esta instancia
+      const instanceId = `${e.plato?._id || e.plato}_${e.comandaId}_${e.index}`;
+      
       return {
+        instanceId,
         plato: e.plato,
         platoId: e.platoId,
         estado: e.estado,
@@ -698,7 +751,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         nombre: e.nombre,
         precio: e.precio,
         index: e.index,
-        comandaId: e.comandaId
+        comandaId: e.comandaId,
+        complementosSeleccionados: platoItem.complementosSeleccionados || [],
+        notaEspecial: platoItem.notaEspecial || ''
       };
     }).filter(p => p !== null);
     
@@ -1670,11 +1725,42 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                             <Text style={[
                               styles.platoEditNombre, 
                               { 
-                                color: coloresEstado.textColor // Color específico del estado
+                                color: coloresEstado.textColor
                               }
                             ]}>
                               {plato.nombre}
                             </Text>
+                            {/* Mostrar complementos si existen */}
+                            {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && (
+                              <View style={{ marginTop: 2 }}>
+                                {plato.complementosSeleccionados.map((comp, ci) => (
+                                  <Text
+                                    key={ci}
+                                    style={{
+                                      fontSize: 11,
+                                      color: coloresEstado.textColor,
+                                      fontStyle: 'italic',
+                                      lineHeight: 16,
+                                      opacity: 0.8,
+                                    }}
+                                  >
+                                    · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion}
+                                  </Text>
+                                ))}
+                              </View>
+                            )}
+                            {/* Mostrar nota especial si existe */}
+                            {plato.notaEspecial && plato.notaEspecial.trim().length > 0 && (
+                              <Text style={{
+                                fontSize: 11,
+                                color: coloresEstado.textColor,
+                                fontStyle: 'italic',
+                                marginTop: 2,
+                                opacity: 0.7,
+                              }}>
+                                📝 {plato.notaEspecial}
+                              </Text>
+                            )}
                             <View style={[styles.badgeEstado, { backgroundColor: coloresEstado.badgeColor }]}>
                               <Text style={[styles.badgeEstadoText, { color: coloresEstado.badgeTextColor }]}>
                                 {coloresEstado.textoEstado}
@@ -1941,12 +2027,26 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                               onPress={() => handleAgregarPlato(plato)}
                             >
                               <View style={styles.platoSelectInfo}>
-                                <Text style={[
-                                  styles.platoSelectNombre,
-                                  { color: themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937') }
-                                ]}>
-                                  {plato.nombre}
-                                </Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <Text style={[
+                                    styles.platoSelectNombre,
+                                    { color: themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937') }
+                                  ]}>
+                                    {plato.nombre}
+                                  </Text>
+                                  {plato.complementos && plato.complementos.length > 0 && (
+                                    <View style={{
+                                      backgroundColor: '#00D4FF',
+                                      paddingHorizontal: 6,
+                                      paddingVertical: 2,
+                                      borderRadius: 8,
+                                    }}>
+                                      <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '600' }}>
+                                        🍽️
+                                      </Text>
+                                    </View>
+                                  )}
+                                </View>
                                 <Text style={[
                                   styles.platoSelectPrecio,
                                   { color: '#059669' }
@@ -2320,6 +2420,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           </View>
         </View>
       </Modal>
+      
+      {/* Modal de Complementos para Edición de Comanda */}
+      <ModalComplementos
+        visible={platoParaComplementar !== null}
+        plato={platoParaComplementar}
+        onConfirm={handleConfirmarComplementosEdicion}
+        onClose={() => setPlatoParaComplementar(null)}
+      />
     </View>
   );
 };
