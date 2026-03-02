@@ -483,40 +483,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     setPlatosEditados(nuevosPlatos);
   };
   
-  const handleRemoverPlato = (index) => {
-    // REGLA DE NEGOCIO: Solo se pueden remover platos en estado "Pedido"
-    // Los platos en estado "Recoger" ya están preparados y no deben eliminarse
-    const platoARemover = platosEditados[index];
-    
-    if (!platoARemover) return;
-    
-    const estado = (platoARemover.estado || 'pedido').toLowerCase();
-    const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado;
-    
-    if (estadoNormalizado === 'recoger') {
-      Alert.alert(
-        'No se puede eliminar',
-        'No se pueden eliminar platos en estado Recoger desde edición. Los platos ya están preparados y listos para entrega. Solo puedes cambiar cantidades.',
-        [{ text: 'Entendido' }]
-      );
-      return;
-    }
-    
-    // Solo permitir remover si está en estado "Pedido"
-    if (estadoNormalizado !== 'pedido') {
-      Alert.alert(
-        'No se puede eliminar',
-        'Solo se pueden eliminar platos en estado Pedido.',
-        [{ text: 'Entendido' }]
-      );
-      return;
-    }
-    
-    const nuevosPlatos = [...platosEditados];
-    nuevosPlatos.splice(index, 1);
-    setPlatosEditados(nuevosPlatos);
-  };
-  
   const handleAgregarPlato = (plato) => {
     // Verificar si el plato tiene complementos definidos
     const tieneComplementos = plato.complementos && plato.complementos.length > 0;
@@ -1766,14 +1732,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                                 {coloresEstado.textoEstado}
                               </Text>
                             </View>
-                            {/* Badge indicando que platos en "Recoger" no son eliminables */}
-                            {(plato.estado || 'pedido').toLowerCase() === 'recoger' && (
-                              <View style={[styles.badgeEstado, { backgroundColor: '#9CA3AF', marginLeft: 6 }]}>
-                                <Text style={[styles.badgeEstadoText, { color: '#FFFFFF' }]}>
-                                  NO ELIMINABLE
-                                </Text>
-                              </View>
-                            )}
                           </View>
                           <Text style={[styles.platoEditPrecio, { color: coloresEstado.priceColor }]}>
                             S/. {((plato.precio || 0) * (plato.cantidad || 1)).toFixed(2)}
@@ -1819,20 +1777,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                                 color: isDark ? '#F9FAFB' : '#374151'
                               }
                             ]}>+</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[
-                              styles.removeButton,
-                              (plato.estado || 'pedido').toLowerCase() === 'recoger' && styles.removeButtonDisabled
-                            ]}
-                            onPress={() => handleRemoverPlato(index)}
-                            disabled={(plato.estado || 'pedido').toLowerCase() === 'recoger'}
-                          >
-                            <MaterialCommunityIcons 
-                              name={(plato.estado || 'pedido').toLowerCase() === 'recoger' ? "lock" : "delete"} 
-                              size={20} 
-                              color={(plato.estado || 'pedido').toLowerCase() === 'recoger' ? "#9CA3AF" : "#EF4444"} 
-                            />
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -1935,13 +1879,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                       style={[
                         styles.searchInput,
                         {
-                          backgroundColor: themeColors.colors?.card || themeColors.card || '#F9FAFB',
-                          borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
-                          color: themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937',
+                          backgroundColor: isDark ? '#374151' : (themeColors.colors?.surface || '#FFFFFF'),
+                          borderColor: isDark ? '#4B5563' : (themeColors.colors?.border || '#E5E7EB'),
+                          color: isDark ? '#F9FAFB' : (themeColors.colors?.text?.primary || '#1F2937'),
                         }
                       ]}
                       placeholder="Buscar plato..."
-                      placeholderTextColor={themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280'}
+                      placeholderTextColor={isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || '#6B7280')}
                       value={searchPlato}
                       onChangeText={setSearchPlato}
                     />
