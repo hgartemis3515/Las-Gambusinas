@@ -143,8 +143,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         const estado = platoItem.estado || 'pedido';
         const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado;
         
-        // Verificar si el plato está eliminado (solo excluir si explícitamente true)
+        // Verificar si el plato está eliminado o anulado
         const platoEliminado = platoItem.eliminado === true;
+        const platoAnulado = platoItem.anulado === true;
         
         const platoObj = {
           platoId: platoItem.platoId || platoItem.plato?._id || platoItem.plato,
@@ -155,11 +156,15 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           comandaId: comanda._id,
           comandaNumber: comanda.comandaNumber,
           eliminado: platoEliminado,
+          anulado: platoAnulado, // 🔥 NUEVO: Campo para platos anulados
+          anuladoRazon: platoItem.anuladoRazon, // Motivo de anulación
+          anuladoAt: platoItem.anuladoAt, // Fecha de anulación
           index: index, // Índice en la comanda original
           complementosSeleccionados: platoItem.complementosSeleccionados || []
         };
         
-        if (!platoEliminado) platos.push(platoObj);
+        // 🔥 NUEVO: Incluir platos anulados para mostrarlos visualmente (pero marcados)
+        if (!platoEliminado && !platoAnulado) platos.push(platoObj);
       });
     });
 
@@ -409,6 +414,68 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       }
     });
 
+    // 🔥 NUEVO: Evento de plato anulado por cocina
+    socket.on('plato-anulado', (data) => {
+      console.log('❌ [Mozos] Plato anulado por cocina:', data.platoAnulado?.nombre, 'Comanda:', data.comandaId);
+      
+      const comandasActuales = comandasRef.current;
+      const esNuestraComanda = comandasActuales.some(c => c._id === data.comandaId);
+      
+      if (esNuestraComanda) {
+        // Refrescar comandas para mostrar el plato anulado
+        refrescarComandasRef.current?.();
+        
+        // Mostrar alerta al mozo
+        Alert.alert(
+          'Plato Anulado por Cocina',
+          `El plato "${data.platoAnulado?.nombre}" fue anulado.\n\nMotivo: ${data.platoAnulado?.motivo || 'No especificado'}${data.platoAnulado?.observaciones ? `\n\nObservaciones: ${data.platoAnulado.observaciones}` : ''}`,
+          [{ text: 'Entendido', style: 'default' }]
+        );
+        
+        // Vibración para llamar la atención
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      }
+    });
+
+    // 🔥 NUEVO: Evento de comanda completamente anulada por cocina
+    socket.on('comanda-anulada', (data) => {
+      console.log('❌ [Mozos] Comanda anulada por cocina:', data.comandaNumber, 'Total anulado:', data.totalAnulado);
+      
+      const comandasActuales = comandasRef.current;
+      const esNuestraComanda = comandasActuales.some(c => c._id === data.comandaId);
+      
+      if (esNuestraComanda) {
+        // Refrescar comandas
+        refrescarComandasRef.current?.().then((actualizadas) => {
+          // Si no quedan comandas activas, regresar a inicio
+          if (Array.isArray(actualizadas) && actualizadas.length === 0) {
+            Alert.alert(
+              'Comanda Anulada por Cocina',
+              `La comanda #${data.comandaNumber} fue anulada completamente.\n\nMotivo: ${data.motivoGeneral || 'No especificado'}\n\nTotal anulado: S/. ${data.totalAnulado?.toFixed(2) || '0.00'}`,
+              [{ 
+                text: 'Volver al Inicio', 
+                style: 'default',
+                onPress: () => {
+                  if (onRefresh) onRefresh();
+                  if (navigation.canGoBack && navigation.canGoBack()) navigation.goBack();
+                  else navigation.navigate('Inicio');
+                }
+              }]
+            );
+          } else {
+            Alert.alert(
+              'Comanda Anulada por Cocina',
+              `La comanda #${data.comandaNumber} fue anulada.\n\nMotivo: ${data.motivoGeneral || 'No especificado'}\n\nPlatos anulados: ${data.platosAnulados?.length || 0}\nTotal anulado: S/. ${data.totalAnulado?.toFixed(2) || '0.00'}`,
+              [{ text: 'Entendido', style: 'default' }]
+            );
+          }
+        });
+        
+        // Vibración para llamar la atención
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+    });
+
     return () => {
       if (leaveMesa) leaveMesa(mesaId);
       else socket.emit('leave-mesa', mesaId);
@@ -417,6 +484,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       socket.off('plato-entregado');
       socket.off('comanda-actualizada');
       socket.off('comanda-eliminada');
+      socket.off('plato-anulado');
+      socket.off('comanda-anulada');
     };
   }, [socket, connected, mesaId, joinMesa, leaveMesa, connectionStatus, navigation, onRefresh]);
 

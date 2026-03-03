@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 /**
  * Componente para renderizar una fila compacta de plato en la tabla
  * Diseño: Fila continua sin espacios, fondo de color según estado
+ * 🔥 NUEVO: Soporte para platos anulados por cocina
  */
 const FilaPlatoCompacta = ({ 
   plato, 
@@ -12,27 +13,49 @@ const FilaPlatoCompacta = ({
   estilos 
 }) => {
   const subtotal = (plato.precio * plato.cantidad).toFixed(2);
-  const puedeMarcarEntregado = plato.estado === 'recoger';
+  const puedeMarcarEntregado = plato.estado === 'recoger' && !plato.anulado;
   const nombrePlato = plato.plato?.nombre || 'Plato desconocido';
+  
+  // 🔥 NUEVO: Estilos especiales para plato anulado
+  const esAnulado = plato.anulado === true;
+  
+  // Estilos anulados
+  const estilosAnulado = {
+    fondo: '#FEE2E2', // bg-red-100
+    borde: '#EF4444', // border-red-500
+    badgeFondo: '#EF4444',
+    badgeTexto: '#FFFFFF',
+    textoEstado: 'ANULADO'
+  };
+  
+  const estilosAplicar = esAnulado ? estilosAnulado : estilos;
   
   return (
     <View
       style={[
         styles.fila,
         {
-          backgroundColor: estilos.fondo,
+          backgroundColor: estilosAplicar.fondo,
           borderLeftWidth: 4,
-          borderLeftColor: estilos.borde
+          borderLeftColor: estilosAplicar.borde,
+          // 🔥 NUEVO: Opacidad reducida para platos anulados
+          opacity: esAnulado ? 0.6 : 1,
         }
       ]}
     >
       {/* Nombre del plato (40%) */}
       <View style={styles.columnaNombre}>
-        <Text style={styles.nombre} numberOfLines={1}>
+        <Text 
+          style={[
+            styles.nombre, 
+            esAnulado && styles.nombreAnulado
+          ]} 
+          numberOfLines={1}
+        >
           {nombrePlato}
         </Text>
         {/* Complementos seleccionados */}
-        {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && (
+        {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && !esAnulado && (
           <View style={{ marginTop: 2, paddingLeft: 0 }}>
             {plato.complementosSeleccionados.map((comp, i) => (
               <Text
@@ -49,45 +72,65 @@ const FilaPlatoCompacta = ({
             ))}
           </View>
         )}
+        {/* 🔥 NUEVO: Mostrar razón de anulación */}
+        {esAnulado && plato.anuladoRazon && (
+          <Text style={styles.razonAnulacion}>
+            ❌ {plato.anuladoRazon}
+          </Text>
+        )}
       </View>
       
       {/* Cantidad (10%) */}
       <View style={styles.columnaCantidad}>
-        <Text style={styles.cantidad}>x{plato.cantidad || 1}</Text>
+        <Text style={[styles.cantidad, esAnulado && styles.textoTachado]}>
+          x{plato.cantidad || 1}
+        </Text>
       </View>
       
       {/* Precio (25%) */}
       <View style={styles.columnaPrecio}>
-        <Text style={styles.precio}>S/. {subtotal}</Text>
+        <Text style={[styles.precio, esAnulado && styles.textoTachado]}>
+          S/. {subtotal}
+        </Text>
       </View>
       
       {/* Badge y acción (25%) */}
       <View style={styles.columnaAccion}>
-        {puedeMarcarEntregado ? (
+        {/* 🔥 NUEVO: Badge especial para plato anulado */}
+        {esAnulado ? (
+          <View style={styles.anuladoContainer}>
+            <MaterialCommunityIcons name="close-circle" size={18} color="#EF4444" />
+            <View style={[styles.badge, { backgroundColor: estilosAplicar.badgeFondo }]}>
+              <Text style={[styles.badgeText, { color: estilosAplicar.badgeTexto }]}>
+                ANULADO
+              </Text>
+            </View>
+          </View>
+        ) : puedeMarcarEntregado ? (
           <TouchableOpacity
             style={styles.checkboxButton}
             onPress={() => onMarcarEntregado && onMarcarEntregado(plato)}
           >
             <MaterialCommunityIcons name="checkbox-blank-outline" size={20} color="#F59E0B" />
-            <View style={[styles.badge, { backgroundColor: estilos.badgeFondo }]}>
-              <Text style={[styles.badgeText, { color: estilos.badgeTexto }]}>
-                {estilos.textoEstado}
+            <View style={[styles.badge, { backgroundColor: estilosAplicar.badgeFondo }]}>
+              <Text style={[styles.badgeText, { color: estilosAplicar.badgeTexto }]}>
+                {estilosAplicar.textoEstado}
               </Text>
             </View>
           </TouchableOpacity>
         ) : plato.estado === 'entregado' ? (
           <View style={styles.entregadoContainer}>
             <MaterialCommunityIcons name="check-circle" size={18} color="#10B981" />
-            <View style={[styles.badge, { backgroundColor: estilos.badgeFondo }]}>
-              <Text style={[styles.badgeText, { color: estilos.badgeTexto }]}>
-                {estilos.textoEstado}
+            <View style={[styles.badge, { backgroundColor: estilosAplicar.badgeFondo }]}>
+              <Text style={[styles.badgeText, { color: estilosAplicar.badgeTexto }]}>
+                {estilosAplicar.textoEstado}
               </Text>
             </View>
           </View>
         ) : (
-          <View style={[styles.badge, { backgroundColor: estilos.badgeFondo }]}>
-            <Text style={[styles.badgeText, { color: estilos.badgeTexto }]}>
-              {estilos.textoEstado}
+          <View style={[styles.badge, { backgroundColor: estilosAplicar.badgeFondo }]}>
+            <Text style={[styles.badgeText, { color: estilosAplicar.badgeTexto }]}>
+              {estilosAplicar.textoEstado}
             </Text>
           </View>
         )}
@@ -128,6 +171,20 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#1F2937',
   },
+  nombreAnulado: {
+    textDecorationLine: 'line-through',
+    color: '#991B1B',
+  },
+  textoTachado: {
+    textDecorationLine: 'line-through',
+    color: '#9CA3AF',
+  },
+  razonAnulacion: {
+    fontSize: 11,
+    color: '#DC2626',
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
   cantidad: {
     fontSize: 14,
     fontWeight: '500',
@@ -144,6 +201,11 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   entregadoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  anuladoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,

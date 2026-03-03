@@ -345,6 +345,69 @@ const useSocketMozos = ({
       }
     });
 
+    // 🔥 NUEVO: Evento de plato anulado por cocina
+    socket.on('plato-anulado', (data) => {
+      console.log('❌ [MOZOS] Plato anulado por cocina:', data.platoAnulado?.nombre, 'Comanda:', data.comandaId);
+      
+      // Notificar cambio de estado para parpadeo del indicador
+      if (onSocketStatus) {
+        setConnectionStatus('online-active');
+        onSocketStatus({ connected: true, status: 'online-active' });
+        
+        setTimeout(() => {
+          setConnectionStatus('conectado');
+          onSocketStatus({ connected: true, status: 'conectado' });
+        }, 2000);
+      }
+      
+      // Pasar el evento al handler
+      if (onComandaActualizada && data.comanda) {
+        onComandaActualizada({
+          tipo: 'plato-anulado',
+          comandaId: data.comandaId,
+          comanda: data.comanda,
+          platoAnulado: data.platoAnulado,
+          auditoria: data.auditoria,
+          timestamp: data.timestamp
+        });
+      }
+    });
+
+    // 🔥 NUEVO: Evento de comanda completamente anulada por cocina
+    socket.on('comanda-anulada', (data) => {
+      console.log('❌ [MOZOS] Comanda anulada por cocina:', data.comandaNumber, 'Total:', data.totalAnulado);
+      
+      // Notificar cambio de estado
+      if (onSocketStatus) {
+        setConnectionStatus('online-active');
+        onSocketStatus({ connected: true, status: 'online-active' });
+        
+        setTimeout(() => {
+          setConnectionStatus('conectado');
+          onSocketStatus({ connected: true, status: 'conectado' });
+        }, 2000);
+      }
+      
+      // Actualizar comanda
+      if (onComandaActualizada && data.comanda) {
+        onComandaActualizada({
+          tipo: 'comanda-anulada',
+          comandaId: data.comandaId,
+          comanda: data.comanda,
+          platosAnulados: data.platosAnulados,
+          totalAnulado: data.totalAnulado,
+          motivoGeneral: data.motivoGeneral,
+          timestamp: data.timestamp
+        });
+      }
+      
+      // Actualizar mesa si viene el dato
+      if (onMesaActualizada && data.mesaId) {
+        // La mesa debería actualizarse después de refrescar
+        console.log(`✅ [MOZOS] Mesa ${data.numMesa} afectada por anulación de comanda`);
+      }
+    });
+
     // Evento: Estado de socket (heartbeat del servidor)
     socket.on('socket-status', (data) => {
       if (data.connected !== undefined) {
