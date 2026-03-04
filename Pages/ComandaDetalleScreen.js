@@ -113,6 +113,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [platoParaComplementar, setPlatoParaComplementar] = useState(null);
   const [platosEditados, setPlatosEditados] = useState([]);
   
+  // Estados para selección de platos a entregar
+  const [platosSeleccionadosEntregar, setPlatosSeleccionadosEntregar] = useState([]); // Platos seleccionados para entregar
+  
   // Cargar usuario
   useEffect(() => {
     const loadUser = async () => {
@@ -527,6 +530,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const puedeEliminarComanda = comandas.length > 0 && comandas[0].status !== 'pagado';
   const puedeNuevaComanda = mesa?.estado === 'pedido' || mesa?.estado === 'preparado' || mesa?.estado === 'recoger';
   const puedePagar = todosLosPlatos.length > 0 && todosLosPlatos.every(p => p.estado === 'entregado' || p.estado === 'pagado');
+  
+  // Condición para mostrar botón Entregar: hay platos en estado "recoger"
+  const puedeEntregar = platosEnRecoger.length > 0;
   
   // Obtener platos disponibles
   const obtenerPlatos = async () => {
@@ -1235,6 +1241,96 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }
   };
   
+  // ============================================
+  // FUNCIONES PARA ENTREGA DE PLATOS
+  // ============================================
+  
+  // Toggle selección de plato para entrega (desde la lista principal)
+  const toggleSeleccionarPlatoEntregar = (plato) => {
+    setPlatosSeleccionadosEntregar(prev => {
+      const yaSeleccionado = prev.some(
+        p => p.platoId === plato.platoId && p.comandaId === plato.comandaId
+      );
+      
+      if (yaSeleccionado) {
+        return prev.filter(
+          p => !(p.platoId === plato.platoId && p.comandaId === plato.comandaId)
+        );
+      } else {
+        return [...prev, plato];
+      }
+    });
+  };
+  
+  // Confirmar entrega de platos seleccionados
+  const handleEntregarPlatos = async () => {
+    if (platosSeleccionadosEntregar.length === 0) {
+      Alert.alert('Sin Selección', 'Selecciona al menos un plato para entregar haciendo tap en el checkbox.');
+      return;
+    }
+    
+    const cantidadPlatos = platosSeleccionadosEntregar.length;
+    
+    // Siempre pedir confirmación
+    Alert.alert(
+      'Confirmar Entrega',
+      `¿Confirmar la entrega de ${cantidadPlatos} plato(s) seleccionado(s)?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { 
+          text: 'Confirmar Entrega', 
+          onPress: () => ejecutarEntregaPlatos() 
+        }
+      ]
+    );
+  };
+  
+  // Ejecutar las peticiones PUT para entregar platos
+  const ejecutarEntregaPlatos = async () => {
+    // Guardar cantidad antes de limpiar
+    const cantidadPlatos = platosSeleccionadosEntregar.length;
+    
+    try {
+      setLoading(true);
+      
+      // Crear array de promesas para actualizar cada plato
+      // Usar el endpoint /entregar que es el que funciona en el backend
+      const promesas = platosSeleccionadosEntregar.map(plato => {
+        const endpoint = apiConfig.isConfigured
+          ? `${apiConfig.getEndpoint('/comanda')}/${plato.comandaId}/plato/${plato.platoId}/entregar`
+          : `http://192.168.18.11:3000/api/comanda/${plato.comandaId}/plato/${plato.platoId}/entregar`;
+        
+        return axios.put(endpoint);
+      });
+      
+      // Ejecutar todas las peticiones
+      await Promise.all(promesas);
+      
+      // Limpiar selección
+      setPlatosSeleccionadosEntregar([]);
+      
+      // Refrescar comandas
+      await refrescarComandas();
+      
+      // Feedback háptico
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (_) {}
+      
+      Alert.alert(
+        '✓ Entrega Exitosa',
+        `${cantidadPlatos} plato(s) marcado(s) como entregado(s).`
+      );
+      
+    } catch (error) {
+      console.error('Error al entregar platos:', error);
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message;
+      Alert.alert('Error', `No se pudieron entregar los platos: ${errorMsg}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
   // Obtener información de la comanda principal
   const comandaPrincipal = comandas[0] || {};
   const mozoNombre = comandaPrincipal.mozos?.name || 'Desconocido';
@@ -1245,11 +1341,16 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Renderizar fila de plato
   const renderFilaPlato = ({ item: plato, index }) => {
     const estilos = obtenerEstilosPorEstado(plato.estado);
+    const estaSeleccionado = platosSeleccionadosEntregar.some(
+      p => p.platoId === plato.platoId && p.comandaId === plato.comandaId
+    );
     return (
       <FilaPlatoCompacta
         plato={plato}
         estilos={estilos}
         onMarcarEntregado={handleMarcarPlatoEntregado}
+        onToggleSeleccion={toggleSeleccionarPlatoEntregar}
+        seleccionado={estaSeleccionado}
       />
     );
   };
@@ -1427,6 +1528,24 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               <MaterialCommunityIcons name="cash" size={20} color="#fff" />
               <Text style={styles.actionButtonText}>Pagar</Text>
             </TouchableOpacity>
+            
+            {/* Botón Entregar - Solo visible si hay platos en estado "recoger" */}
+            {puedeEntregar && (
+              <TouchableOpacity
+                style={[
+                  styles.actionButton, 
+                  { backgroundColor: platosSeleccionadosEntregar.length > 0 ? '#F59E0B' : '#9CA3AF' }, // Amarillo si hay selección
+                  platosSeleccionadosEntregar.length === 0 && styles.actionButtonDisabled,
+                ]}
+                onPress={handleEntregarPlatos}
+                disabled={platosSeleccionadosEntregar.length === 0}
+              >
+                <MaterialCommunityIcons name="check-circle" size={20} color="#fff" />
+                <Text style={styles.actionButtonText}>
+                  Entregar {platosSeleccionadosEntregar.length > 0 ? `(${platosSeleccionadosEntregar.length})` : ''}
+                </Text>
+              </TouchableOpacity>
+            )}
             
             <TouchableOpacity
               style={[

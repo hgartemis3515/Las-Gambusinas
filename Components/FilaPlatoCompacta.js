@@ -6,10 +6,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
  * Componente para renderizar una fila compacta de plato en la tabla
  * Diseño: Fila continua sin espacios, fondo de color según estado
  * 🔥 NUEVO: Soporte para platos anulados por cocina
+ * 🔥 NUEVO: Soporte para selección de platos a entregar
  */
 const FilaPlatoCompacta = ({ 
   plato, 
   onMarcarEntregado,
+  onToggleSeleccion,
+  seleccionado = false,
   estilos 
 }) => {
   const subtotal = (plato.precio * plato.cantidad).toFixed(2);
@@ -29,6 +32,13 @@ const FilaPlatoCompacta = ({
   };
   
   const estilosAplicar = esAnulado ? estilosAnulado : estilos;
+  
+  // 🔥 NUEVO: Handler para toggle de selección
+  const handleToggle = () => {
+    if (onToggleSeleccion && puedeMarcarEntregado) {
+      onToggleSeleccion(plato);
+    }
+  };
   
   return (
     <View
@@ -109,9 +119,14 @@ const FilaPlatoCompacta = ({
         ) : puedeMarcarEntregado ? (
           <TouchableOpacity
             style={styles.checkboxButton}
-            onPress={() => onMarcarEntregado && onMarcarEntregado(plato)}
+            onPress={handleToggle}
           >
-            <MaterialCommunityIcons name="checkbox-blank-outline" size={20} color="#F59E0B" />
+            {/* 🔥 NUEVO: Checkbox que refleja estado de selección */}
+            <MaterialCommunityIcons 
+              name={seleccionado ? "checkbox-marked" : "checkbox-blank-outline"} 
+              size={20} 
+              color={seleccionado ? "#10B981" : "#F59E0B"} 
+            />
             <View style={[styles.badge, { backgroundColor: estilosAplicar.badgeFondo }]}>
               <Text style={[styles.badgeText, { color: estilosAplicar.badgeTexto }]}>
                 {estilosAplicar.textoEstado}
