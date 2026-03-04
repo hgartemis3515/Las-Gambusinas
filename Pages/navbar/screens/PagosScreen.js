@@ -398,8 +398,9 @@ const PagosScreen = () => {
     comandasACalcular.forEach((comanda) => {
       if (comanda.platos) {
         comanda.platos.forEach((platoItem, index) => {
-          // Solo contar platos no eliminados
-          if (!platoItem.eliminado) {
+          // 🔥 CORREGIDO: Solo contar platos no eliminados NI anulados
+          // Los platos anulados desde cocina tienen eliminado=true Y anulado=true
+          if (!platoItem.eliminado && !platoItem.anulado) {
             const cantidad = comanda.cantidades?.[index] || 1;
             const precio = platoItem.plato?.precio || platoItem.precio || 0;
             totalCalculado += precio * cantidad;
@@ -425,8 +426,9 @@ const PagosScreen = () => {
     comandasParaCalcular.forEach((comanda) => {
       if (comanda.platos) {
         comanda.platos.forEach((platoItem, index) => {
-          // Solo contar platos no eliminados
-          if (!platoItem.eliminado) {
+          // 🔥 CORREGIDO: Solo contar platos no eliminados NI anulados
+          // Los platos anulados desde cocina tienen eliminado=true Y anulado=true
+          if (!platoItem.eliminado && !platoItem.anulado) {
             const cantidad = comanda.cantidades?.[index] || 1;
             const precio = platoItem.plato?.precio || platoItem.precio || 0;
             total += precio * cantidad;
@@ -869,9 +871,11 @@ const PagosScreen = () => {
         const noPagada = c.status?.toLowerCase() !== 'pagado';
         const mismaMesa = comandaMesaId === mesaIdStr;
         const tienePlatos = c.platos && c.platos.length > 0;
-        // 🔥 CRÍTICO: Con HARD DELETE, los platos eliminados ya no están en el array
-        // Por lo tanto, todos los platos en el array son válidos (no hay que verificar eliminado)
-        const tienePlatosNoEliminados = c.platos && c.platos.length > 0; // Todos los platos son válidos si están en el array
+        // 🔥 CORREGIDO: El sistema usa SOFT DELETE (eliminado=true, anulado=true)
+        // Los platos anulados desde cocina tienen eliminado=true y anulado=true
+        // Deben filtrarse para que no cuenten en el pago
+        const platosActivos = c.platos?.filter(p => p.eliminado !== true && p.anulado !== true) || [];
+        const tienePlatosNoEliminados = platosActivos.length > 0;
         
         const esValida = noEliminada && noPagada && mismaMesa && tienePlatos && tienePlatosNoEliminados;
         
@@ -896,8 +900,10 @@ const PagosScreen = () => {
         const noPagada = c.status?.toLowerCase() !== 'pagado';
         const mismaMesa = comandaMesaId === mesaIdStr;
         const tienePlatos = c.platos && c.platos.length > 0;
-        // 🔥 CRÍTICO: Con HARD DELETE, todos los platos en el array son válidos
-        const tienePlatosNoEliminados = c.platos && c.platos.length > 0;
+        // 🔥 CORREGIDO: El sistema usa SOFT DELETE (eliminado=true, anulado=true)
+        // Los platos anulados desde cocina tienen eliminado=true y anulado=true
+        const platosActivos = c.platos?.filter(p => p.eliminado !== true && p.anulado !== true) || [];
+        const tienePlatosNoEliminados = platosActivos.length > 0;
         
         return !(noEliminada && noPagada && mismaMesa && tienePlatos && tienePlatosNoEliminados);
       });
@@ -933,9 +939,11 @@ const PagosScreen = () => {
         const razones = comandasInvalidas.map(c => {
           if (c.eliminada === true) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} eliminada`;
           const status = c.status?.toLowerCase();
-          const tienePlatos = c.platos && c.platos.length > 0; // Con HARD DELETE, todos los platos son válidos
+          // 🔥 CORREGIDO: Verificar platos activos (no eliminados ni anulados)
+          const platosActivos = c.platos?.filter(p => p.eliminado !== true && p.anulado !== true) || [];
+          const tienePlatosValidos = platosActivos.length > 0;
           if (status === 'pagado') return `Comanda #${c.comandaNumber || c._id?.slice(-6)} ya pagada`;
-          if (!tienePlatos) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} sin platos`;
+          if (!tienePlatosValidos) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} sin platos válidos`;
           return `Comanda #${c.comandaNumber || c._id?.slice(-6)} inválida`;
         });
         console.warn(`⚠️ [VALIDACIÓN] Comandas inválidas:`, razones);
@@ -1742,8 +1750,9 @@ const PagosScreen = () => {
                       const nombre = plato?.nombre || platoItem.nombre || "Plato";
                       const subtotal = precio * cantidad;
                       
-                      // Solo mostrar platos no eliminados
-                      if (platoItem.eliminado) {
+                      // 🔥 CORREGIDO: Solo mostrar platos no eliminados NI anulados
+                      // Los platos anulados desde cocina tienen eliminado=true Y anulado=true
+                      if (platoItem.eliminado || platoItem.anulado) {
                         return null;
                       }
                       

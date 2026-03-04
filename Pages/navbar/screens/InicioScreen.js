@@ -1427,14 +1427,16 @@ const InicioScreen = () => {
         // Verificar si hay comandas realmente preparadas (todos los platos en "recoger") o listas para pagar (entregado)
         const hayComandasPreparadas = comandasMesa.some(c => {
           if (!c.platos || c.platos.length === 0) return false;
-          const activos = c.platos.filter(p => p.eliminado !== true);
+          // 🔥 CORREGIDO: Filtrar platos eliminados Y anulados
+          const activos = c.platos.filter(p => p.eliminado !== true && p.anulado !== true);
           return activos.length > 0 && activos.every(p => (p.estado || '').toLowerCase() === "recoger");
         });
         const hayComandasEntregadas = comandasMesa.some(c => {
           const status = (c.status || '').toLowerCase();
           if (status === 'entregado') return true;
           if (!c.platos || c.platos.length === 0) return false;
-          const activos = c.platos.filter(p => p.eliminado !== true);
+          // 🔥 CORREGIDO: Filtrar platos eliminados Y anulados
+          const activos = c.platos.filter(p => p.eliminado !== true && p.anulado !== true);
           return activos.length > 0 && activos.every(p => (p.estado || '').toLowerCase() === 'entregado');
         });
 
@@ -1464,7 +1466,8 @@ const InicioScreen = () => {
     // Verificar si hay comandas con todos los platos en "recoger"
     const hayPreparadas = comandasMesa.some(c => {
       if (!c.platos || c.platos.length === 0) return false;
-      const activos = c.platos.filter(p => p.eliminado !== true);
+      // 🔥 CORREGIDO: Filtrar platos eliminados Y anulados
+      const activos = c.platos.filter(p => p.eliminado !== true && p.anulado !== true);
       return activos.length > 0 && activos.every(p => (p.estado || '').toLowerCase() === "recoger");
     });
     // Verificar si hay comandas listas para pagar (status entregado o todos los platos entregados)
@@ -1472,7 +1475,8 @@ const InicioScreen = () => {
       const status = (c.status || '').toLowerCase();
       if (status === 'entregado') return true;
       if (!c.platos || c.platos.length === 0) return false;
-      const activos = c.platos.filter(p => p.eliminado !== true);
+      // 🔥 CORREGIDO: Filtrar platos eliminados Y anulados
+      const activos = c.platos.filter(p => p.eliminado !== true && p.anulado !== true);
       return activos.length > 0 && activos.every(p => (p.estado || '').toLowerCase() === 'entregado');
     });
 
@@ -2372,9 +2376,10 @@ const InicioScreen = () => {
     const estadoPlatoFiltrar = (estadoMesa === "recoger" || estadoComanda === "recoger") ? "recoger" : "entregado";
     
     // Filtrar platos según el estado de la mesa/comanda
+    // 🔥 CORREGIDO: Excluir platos eliminados Y anulados
     const platosFiltrados = comandaActiva.platos.filter((platoItem, index) => {
       const estado = platoItem.estado?.toLowerCase() || "";
-      return estado === estadoPlatoFiltrar && !platoItem.eliminado;
+      return estado === estadoPlatoFiltrar && !platoItem.eliminado && !platoItem.anulado;
     });
 
     if (platosFiltrados.length === 0) {
@@ -2415,9 +2420,10 @@ const InicioScreen = () => {
 
     // FIX #3: Verificar si se seleccionaron TODOS los platos disponibles
     const estadoFiltro = comandaEliminarPlatos?.estadoFiltro || "entregado";
+    // 🔥 CORREGIDO: Excluir platos eliminados Y anulados
     const platosDisponibles = comandaEliminarPlatos.platos.filter((p, i) => {
       const estado = p.estado?.toLowerCase() || "";
-      return estado === estadoFiltro && !p.eliminado;
+      return estado === estadoFiltro && !p.eliminado && !p.anulado;
     });
     const totalPlatosDisponibles = platosDisponibles.length;
     const totalSeleccionados = platosSeleccionadosEliminar.length;
@@ -4560,8 +4566,8 @@ const InicioScreen = () => {
                     const subtotal = precio * cantidad;
                     const nombre = plato?.nombre || "Plato desconocido";
                     
-                    // Solo mostrar platos no eliminados
-                    if (platoItem.eliminado) {
+                    // 🔥 CORREGIDO: Solo mostrar platos no eliminados NI anulados
+                    if (platoItem.eliminado || platoItem.anulado) {
                       return null;
                     }
                     
@@ -4591,7 +4597,8 @@ const InicioScreen = () => {
                       TOTAL: S/. {(() => {
                         let total = 0;
                         comandaAEliminar.platos.forEach((platoItem, index) => {
-                          if (!platoItem.eliminado) {
+                          // 🔥 CORREGIDO: Solo contar platos no eliminados NI anulados
+                          if (!platoItem.eliminado && !platoItem.anulado) {
                             const plato = platoItem.plato || platoItem;
                             const cantidad = comandaAEliminar.cantidades?.[index] || 1;
                             const precio = plato?.precio || platoItem.precio || 0;
@@ -4703,7 +4710,8 @@ const InicioScreen = () => {
                     const platosComanda = comanda.platos || [];
                     
                     platosComanda.forEach((platoItem, index) => {
-                      if (!platoItem.eliminado) {
+                      // 🔥 CORREGIDO: Solo contar platos no eliminados NI anulados
+                      if (!platoItem.eliminado && !platoItem.anulado) {
                         const plato = platoItem.plato || platoItem;
                         const cantidad = comanda.cantidades?.[index] || 1;
                         const precio = plato?.precio || platoItem.precio || 0;
@@ -4718,7 +4726,8 @@ const InicioScreen = () => {
                         </Text>
                         
                         {platosComanda.map((platoItem, index) => {
-                          if (platoItem.eliminado) return null;
+                          // 🔥 CORREGIDO: Solo mostrar platos no eliminados NI anulados
+                          if (platoItem.eliminado || platoItem.anulado) return null;
                           
                           const plato = platoItem.plato || platoItem;
                           const cantidad = comanda.cantidades?.[index] || 1;
@@ -4762,7 +4771,8 @@ const InicioScreen = () => {
                         comandasAEliminar.forEach(comanda => {
                           const platosComanda = comanda.platos || [];
                           platosComanda.forEach((platoItem, index) => {
-                            if (!platoItem.eliminado) {
+                            // 🔥 CORREGIDO: Solo contar platos no eliminados NI anulados
+                            if (!platoItem.eliminado && !platoItem.anulado) {
                               const plato = platoItem.plato || platoItem;
                               const cantidad = comanda.cantidades?.[index] || 1;
                               const precio = plato?.precio || platoItem.precio || 0;
@@ -5077,7 +5087,8 @@ const InicioScreen = () => {
                       const estado = platoItem.estado?.toLowerCase() || "";
                       
                       // Filtrar según el estado (recoger o entregado)
-                      if (estado !== estadoFiltro || platoItem.eliminado) {
+                      // 🔥 CORREGIDO: Excluir platos eliminados Y anulados
+                      if (estado !== estadoFiltro || platoItem.eliminado || platoItem.anulado) {
                         return null;
                       }
 
@@ -5141,7 +5152,8 @@ const InicioScreen = () => {
                   
                   {comandaEliminarPlatos.platos.filter((p, i) => {
                     const estado = p.estado?.toLowerCase() || "";
-                    return estado === estadoFiltro && !p.eliminado;
+                    // 🔥 CORREGIDO: Excluir platos eliminados Y anulados
+                    return estado === estadoFiltro && !p.eliminado && !p.anulado;
                   }).length === 0 && (
                     <Text style={{ color: colors.danger, fontSize: 14, textAlign: 'center', marginTop: 20 }}>
                       {esRecoger 
