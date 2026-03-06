@@ -825,11 +825,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     setModalEliminarVisible(true);
   };
   
+  // CRÍTICO: Usar (comandaId, platoId, index) para unicidad — el mismo plato puede aparecer
+  // varias veces en una comanda (ej. 2x Ceviche).
   const toggleSeleccionarPlatoEliminar = (plato) => {
     setPlatosSeleccionadosEliminar(prev => {
-      const existe = prev.find(p => p.platoId === plato.platoId && p.comandaId === plato.comandaId);
+      const existe = prev.find(
+        p => p.platoId === plato.platoId && p.comandaId === plato.comandaId && p.index === plato.index
+      );
       if (existe) {
-        return prev.filter(p => !(p.platoId === plato.platoId && p.comandaId === plato.comandaId));
+        return prev.filter(
+          p => !(p.platoId === plato.platoId && p.comandaId === plato.comandaId && p.index === plato.index)
+        );
       } else {
         return [...prev, plato];
       }
@@ -904,13 +910,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         if (!platosPorComanda[plato.comandaId]) {
           platosPorComanda[plato.comandaId] = [];
         }
-        const comanda = comandas.find(c => c._id === plato.comandaId);
-        if (comanda && comanda.platos) {
-          const platoIndex = comanda.platos.findIndex((p, idx) => {
-            const pId = p.platoId || p.plato?._id || p.plato;
-            return pId?.toString() === plato.platoId?.toString() && !p.eliminado;
-          });
-          if (platoIndex !== -1) {
+        // CRÍTICO: Usar plato.index directamente. findIndex por platoId falla cuando
+        // el mismo plato aparece varias veces (ej. 2x Ceviche) — devolvería siempre el primero.
+        const platoIndex = plato.index;
+        if (platoIndex !== undefined && platoIndex >= 0) {
+          const comanda = comandas.find(c => c._id === plato.comandaId);
+          if (comanda?.platos?.[platoIndex] && !comanda.platos[platoIndex].eliminado) {
             platosPorComanda[plato.comandaId].push(platoIndex);
           }
         }
@@ -1246,15 +1251,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // ============================================
   
   // Toggle selección de plato para entrega (desde la lista principal)
+  // CRÍTICO: Usar (comandaId, platoId, index) para unicidad — el mismo plato puede aparecer
+  // varias veces en una comanda (ej. 2x Ceviche) y platoId+comandaId no es único.
   const toggleSeleccionarPlatoEntregar = (plato) => {
     setPlatosSeleccionadosEntregar(prev => {
       const yaSeleccionado = prev.some(
-        p => p.platoId === plato.platoId && p.comandaId === plato.comandaId
+        p => p.platoId === plato.platoId && p.comandaId === plato.comandaId && p.index === plato.index
       );
-      
+
       if (yaSeleccionado) {
         return prev.filter(
-          p => !(p.platoId === plato.platoId && p.comandaId === plato.comandaId)
+          p => !(p.platoId === plato.platoId && p.comandaId === plato.comandaId && p.index === plato.index)
         );
       } else {
         return [...prev, plato];
@@ -1299,7 +1306,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         const endpoint = apiConfig.isConfigured
           ? `${apiConfig.getEndpoint('/comanda')}/${plato.comandaId}/plato/${plato.platoId}/entregar`
           : `http://192.168.18.11:3000/api/comanda/${plato.comandaId}/plato/${plato.platoId}/entregar`;
-        
+
         return axios.put(endpoint);
       });
       
@@ -1342,7 +1349,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const renderFilaPlato = ({ item: plato, index }) => {
     const estilos = obtenerEstilosPorEstado(plato.estado);
     const estaSeleccionado = platosSeleccionadosEntregar.some(
-      p => p.platoId === plato.platoId && p.comandaId === plato.comandaId
+      p => p.platoId === plato.platoId && p.comandaId === plato.comandaId && p.index === plato.index
     );
     return (
       <FilaPlatoCompacta
@@ -1598,7 +1605,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             <ScrollView style={styles.modalPlatosList}>
               {platosParaEliminar.map((plato, index) => {
                 const seleccionado = platosSeleccionadosEliminar.some(
-                  p => p.platoId === plato.platoId && p.comandaId === plato.comandaId
+                  p => p.platoId === plato.platoId && p.comandaId === plato.comandaId && p.index === plato.index
                 );
                 const estilos = obtenerEstilosPorEstado(plato.estado);
                 
