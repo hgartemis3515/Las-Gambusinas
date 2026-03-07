@@ -59,6 +59,15 @@ export const getAreasAPI = () => getDynamicEndpoint('/areas');
 export const getBoucherAPI = () => getDynamicEndpoint('/boucher');
 export const getClientesAPI = () => getDynamicEndpoint('/clientes');
 
+// ==================== FASE A1: ENDPOINTS OPTIMIZADOS ====================
+// Endpoint optimizado para mapa de mesas (reduce payload y usa índices)
+export const getMesasResumenAPI = () => getDynamicEndpoint('/mesas/resumen');
+// Endpoint para mesas con comandas activas (vista rápida)
+export const getMesasConComandasAPI = () => getDynamicEndpoint('/mesas/con-comandas');
+// Endpoint optimizado para cocina
+export const getComandaCocinaAPI = () => getDynamicEndpoint('/comanda/cocina');
+// ==================== FIN FASE A1 ====================
+
 // Exportar apiConfig para uso directo
 export { default as apiConfig } from './config/apiConfig';
 

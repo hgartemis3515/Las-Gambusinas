@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
-import { SELECTABLE_API_GET, COMANDASEARCH_API_GET } from "../../apiConfig";
+import { SELECTABLE_API_GET, COMANDASEARCH_API_GET, getMesasResumenAPI } from "../../apiConfig";
 import moment from "moment-timezone";
 
 const MesasScreen = ({ onSelectTable }) => {
@@ -20,6 +20,21 @@ const MesasScreen = ({ onSelectTable }) => {
 
   const obtenerMesas = async () => {
     try {
+      // 🚀 FASE A1: Intentar usar endpoint optimizado primero
+      const startTime = Date.now();
+      try {
+        const resumenUrl = getMesasResumenAPI();
+        console.log('🔍 [FASE A1] Obteniendo resumen de mesas:', resumenUrl);
+        const response = await axios.get(resumenUrl, { timeout: 5000 });
+        const elapsedMs = Date.now() - startTime;
+        console.log(`✅ [FASE A1] Resumen de mesas en ${elapsedMs}ms: ${response.data.length} mesas`);
+        setMesas(response.data);
+        return;
+      } catch (optimizedError) {
+        console.warn('⚠️ Endpoint optimizado no disponible, usando fallback:', optimizedError.message);
+      }
+      
+      // Fallback al endpoint original
       const response = await axios.get(SELECTABLE_API_GET);
       setMesas(response.data);
     } catch (error) {

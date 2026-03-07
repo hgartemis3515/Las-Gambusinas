@@ -151,6 +151,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         const platoAnulado = platoItem.anulado === true;
         
         const platoObj = {
+          _id: platoItem._id, // 🔥 CRÍTICO: _id del subdocumento (único por instancia de plato)
           platoId: platoItem.platoId || platoItem.plato?._id || platoItem.plato,
           plato: platoItem.plato || { nombre: 'Plato desconocido', precio: 0 },
           cantidad: cantidad,
@@ -259,11 +260,16 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             try {
               setLoading(true);
               
-              const endpoint = apiConfig.isConfigured
-                ? `${apiConfig.getEndpoint('/comanda')}/${platoObj.comandaId}/plato/${platoObj.platoId}/entregar`
-                : `http://192.168.18.11:3000/api/comanda/${platoObj.comandaId}/plato/${platoObj.platoId}/entregar`;
+              // 🔥 CRÍTICO: Usar _id del subdocumento (único por instancia) para distinguir platos duplicados
+              // Prioridad: _id (subdocumento) > platoId (numérico) > plato._id (referencia)
+              const platoIdentifier = platoObj._id || platoObj.platoId || platoObj.plato?._id;
               
-              await axios.put(endpoint);
+              // Usar endpoint /estado (mismo que cocina) en lugar de /entregar
+              const endpoint = apiConfig.isConfigured
+                ? `${apiConfig.getEndpoint('/comanda')}/${platoObj.comandaId}/plato/${platoIdentifier}/estado`
+                : `http://192.168.18.11:3000/api/comanda/${platoObj.comandaId}/plato/${platoIdentifier}/estado`;
+              
+              await axios.put(endpoint, { nuevoEstado: 'entregado' });
               await refrescarComandas();
 
               // Verificar si todos los platos de la comanda están entregados y corregir status a 'recoger' si aplica (workaround backend).
@@ -827,9 +833,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   const toggleSeleccionarPlatoEliminar = (plato) => {
     setPlatosSeleccionadosEliminar(prev => {
-      const existe = prev.find(p => p.platoId === plato.platoId && p.comandaId === plato.comandaId);
+      // Usar _id como identificador único principal, fallback a platoId + index
+      const platoKey = plato._id || `${plato.platoId}-${plato.index}`;
+      const existe = prev.find(p => {
+        const pKey = p._id || `${p.platoId}-${p.index}`;
+        return pKey === platoKey && p.comandaId === plato.comandaId;
+      });
       if (existe) {
-        return prev.filter(p => !(p.platoId === plato.platoId && p.comandaId === plato.comandaId));
+        return prev.filter(p => {
+          const pKey = p._id || `${p.platoId}-${p.index}`;
+          return !(pKey === platoKey && p.comandaId === plato.comandaId);
+        });
       } else {
         return [...prev, plato];
       }
@@ -1246,16 +1260,21 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // ============================================
   
   // Toggle selección de plato para entrega (desde la lista principal)
+  // 🔥 CRÍTICO: Usar _id del subdocumento (único por instancia) para distinguir platos duplicados
   const toggleSeleccionarPlatoEntregar = (plato) => {
     setPlatosSeleccionadosEntregar(prev => {
-      const yaSeleccionado = prev.some(
-        p => p.platoId === plato.platoId && p.comandaId === plato.comandaId
-      );
+      // Usar _id como identificador único principal, fallback a platoId + index
+      const platoKey = plato._id || `${plato.platoId}-${plato.index}`;
+      const yaSeleccionado = prev.some(p => {
+        const pKey = p._id || `${p.platoId}-${p.index}`;
+        return pKey === platoKey && p.comandaId === plato.comandaId;
+      });
       
       if (yaSeleccionado) {
-        return prev.filter(
-          p => !(p.platoId === plato.platoId && p.comandaId === plato.comandaId)
-        );
+        return prev.filter(p => {
+          const pKey = p._id || `${p.platoId}-${p.index}`;
+          return !(pKey === platoKey && p.comandaId === plato.comandaId);
+        });
       } else {
         return [...prev, plato];
       }
@@ -1289,22 +1308,45 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const ejecutarEntregaPlatos = async () => {
     // Guardar cantidad antes de limpiar
     const cantidadPlatos = platosSeleccionadosEntregar.length;
+    const errores = [];
+    let exitosos = 0;
     
     try {
       setLoading(true);
       
-      // Crear array de promesas para actualizar cada plato
-      // Usar el endpoint /entregar que es el que funciona en el backend
-      const promesas = platosSeleccionadosEntregar.map(plato => {
-        const endpoint = apiConfig.isConfigured
-          ? `${apiConfig.getEndpoint('/comanda')}/${plato.comandaId}/plato/${plato.platoId}/entregar`
-          : `http://192.168.18.11:3000/api/comanda/${plato.comandaId}/plato/${plato.platoId}/entregar`;
-        
-        return axios.put(endpoint);
-      });
-      
-      // Ejecutar todas las peticiones
-      await Promise.all(promesas);
+      // Procesar cada plato individualmente para manejar errores por separado
+      for (const plato of platosSeleccionadosEntregar) {
+        try {
+          // 🔥 CRÍTICO: Usar _id del subdocumento (único por instancia) para distinguir platos duplicados
+          // Prioridad: _id (subdocumento) > platoId (numérico) > plato._id (referencia)
+          const platoIdentifier = plato._id || plato.platoId || plato.plato?._id;
+          
+          // Usar endpoint /estado (mismo que cocina) en lugar de /entregar
+          const endpoint = apiConfig.isConfigured
+            ? `${apiConfig.getEndpoint('/comanda')}/${plato.comandaId}/plato/${platoIdentifier}/estado`
+            : `http://192.168.18.11:3000/api/comanda/${plato.comandaId}/plato/${platoIdentifier}/estado`;
+          
+          // Timeout de 5 segundos por plato
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          
+          await axios.put(endpoint, 
+            { nuevoEstado: 'entregado' }, 
+            { signal: controller.signal }
+          );
+          
+          clearTimeout(timeoutId);
+          exitosos++;
+          
+        } catch (error) {
+          const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message;
+          console.error(`❌ Plato ${plato._id || plato.platoId}:`, error.response?.data || error.message);
+          errores.push({
+            plato: plato.plato?.nombre || plato.nombre || `Plato ${plato._id || plato.platoId}`,
+            error: errorMsg
+          });
+        }
+      }
       
       // Limpiar selección
       setPlatosSeleccionadosEntregar([]);
@@ -1317,13 +1359,28 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch (_) {}
       
-      Alert.alert(
-        '✓ Entrega Exitosa',
-        `${cantidadPlatos} plato(s) marcado(s) como entregado(s).`
-      );
+      // Mostrar resultado
+      if (errores.length === 0) {
+        Alert.alert(
+          '✓ Entrega Exitosa',
+          `${exitosos} plato(s) marcado(s) como entregado(s).`
+        );
+      } else if (exitosos > 0) {
+        const listaErrores = errores.map(e => `• ${e.plato}: ${e.error}`).join('\n');
+        Alert.alert(
+          'Entrega Parcial',
+          `${exitosos} plato(s) entregado(s) correctamente.\n\nErrores:\n${listaErrores}`
+        );
+      } else {
+        const listaErrores = errores.map(e => `• ${e.plato}: ${e.error}`).join('\n');
+        Alert.alert(
+          'Error en Entrega',
+          `No se pudieron entregar los platos:\n${listaErrores}`
+        );
+      }
       
     } catch (error) {
-      console.error('Error al entregar platos:', error);
+      console.error('Error general al entregar platos:', error);
       const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message;
       Alert.alert('Error', `No se pudieron entregar los platos: ${errorMsg}`);
     } finally {
@@ -1341,9 +1398,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Renderizar fila de plato
   const renderFilaPlato = ({ item: plato, index }) => {
     const estilos = obtenerEstilosPorEstado(plato.estado);
-    const estaSeleccionado = platosSeleccionadosEntregar.some(
-      p => p.platoId === plato.platoId && p.comandaId === plato.comandaId
-    );
+    // 🔥 CRÍTICO: Usar _id del subdocumento (único por instancia) para distinguir platos duplicados
+    const platoKey = plato._id || `${plato.platoId}-${plato.index}`;
+    const estaSeleccionado = platosSeleccionadosEntregar.some(p => {
+      const pKey = p._id || `${p.platoId}-${p.index}`;
+      return pKey === platoKey && p.comandaId === plato.comandaId;
+    });
     return (
       <FilaPlatoCompacta
         plato={plato}
@@ -1358,8 +1418,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Separador entre filas
   const renderSeparador = () => null; // No mostrar separador, usar borde inferior
   
-  // Key extractor
-  const keyExtractor = (item, index) => `${item.comandaId}-${item.platoId}-${index}`;
+  // Key extractor - usar _id (único por instancia) para diferenciar platos idénticos con diferentes complementos
+  const keyExtractor = (item, index) => item._id || `${item.comandaId}-${item.platoId}-${item.index}`;
   
   return (
         <View style={[styles.container, { backgroundColor: themeColors.colors?.background || themeColors.background || '#FFFFFF' }]}>
@@ -1597,14 +1657,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             
             <ScrollView style={styles.modalPlatosList}>
               {platosParaEliminar.map((plato, index) => {
-                const seleccionado = platosSeleccionadosEliminar.some(
-                  p => p.platoId === plato.platoId && p.comandaId === plato.comandaId
-                );
+                // Usar _id como identificador único principal
+                const platoKey = plato._id || `${plato.platoId}-${plato.index}`;
+                const seleccionado = platosSeleccionadosEliminar.some(p => {
+                  const pKey = p._id || `${p.platoId}-${p.index}`;
+                  return pKey === platoKey && p.comandaId === plato.comandaId;
+                });
                 const estilos = obtenerEstilosPorEstado(plato.estado);
                 
                 return (
                     <TouchableOpacity
-                      key={`${plato.comandaId}-${plato.platoId}-${index}`}
+                      key={plato._id || `${plato.comandaId}-${plato.platoId}-${index}`}
                       style={[
                         styles.modalPlatoItem,
                         {
