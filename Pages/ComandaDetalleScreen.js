@@ -920,11 +920,24 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         }
         const comanda = comandas.find(c => c._id === plato.comandaId);
         if (comanda && comanda.platos) {
-          const platoIndex = comanda.platos.findIndex((p, idx) => {
-            const pId = p.platoId || p.plato?._id || p.plato;
-            return pId?.toString() === plato.platoId?.toString() && !p.eliminado;
-          });
-          if (platoIndex !== -1) {
+          // Usar _id (único por instancia) o index para identificar el plato correcto.
+          // findIndex por platoId devuelve el PRIMERO - incorrecto cuando hay platos duplicados.
+          let platoIndex = -1;
+          if (plato._id) {
+            platoIndex = comanda.platos.findIndex(
+              p => p._id && p._id.toString() === plato._id.toString() && !p.eliminado
+            );
+          }
+          if (platoIndex === -1 && plato.index !== undefined) {
+            const p = comanda.platos[plato.index];
+            if (p && !p.eliminado) {
+              const pId = p.platoId || p.plato?._id || p.plato;
+              if (pId?.toString() === plato.platoId?.toString()) {
+                platoIndex = plato.index;
+              }
+            }
+          }
+          if (platoIndex !== -1 && !platosPorComanda[plato.comandaId].includes(platoIndex)) {
             platosPorComanda[plato.comandaId].push(platoIndex);
           }
         }
@@ -1419,7 +1432,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const renderSeparador = () => null; // No mostrar separador, usar borde inferior
   
   // Key extractor - usar _id (único por instancia) para diferenciar platos idénticos con diferentes complementos
-  const keyExtractor = (item, index) => item._id || `${item.comandaId}-${item.platoId}-${item.index}`;
+  const keyExtractor = (item, index) => item._id || `${item.comandaId}-${item.platoId}-${item.index ?? index}`;
   
   return (
         <View style={[styles.container, { backgroundColor: themeColors.colors?.background || themeColors.background || '#FFFFFF' }]}>
