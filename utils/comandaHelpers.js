@@ -87,6 +87,7 @@ export const filtrarPlatosPorEstado = (comandas, estadosPermitidos) => {
       if (estadosPermitidos.includes(estadoNormalizado) && !platoItem.eliminado) {
         const cantidad = comanda.cantidades?.[index] || 1;
         platos.push({
+          _id: platoItem._id, // Subdocument _id - único por instancia (crítico para platos duplicados)
           platoId: platoItem.platoId || platoItem.plato?._id || platoItem.plato,
           plato: platoItem.plato || { nombre: 'Plato desconocido', precio: 0 },
           cantidad: cantidad,
