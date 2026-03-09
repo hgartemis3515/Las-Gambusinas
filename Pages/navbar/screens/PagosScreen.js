@@ -174,7 +174,7 @@ const PagosScreen = () => {
   // ✅ NUEVO FLUJO: Usar SOLO route.params - Backend = FUENTE ÚNICA DE VERDAD
   // IMPORTANTE: Leer route.params directamente en cada render para Tab Navigator
   const routeParams = route.params || {};
-  const { mesa: mesaParam, comandasParaPagar, totalPendiente, boucher: boucherFromParams } = routeParams;
+  const { mesa: mesaParam, comandasParaPagar, totalPendiente: _totalPendiente, boucher: boucherFromParams } = routeParams;
   
   const [comandas, setComandas] = useState([]);
   const [mesa, setMesa] = useState(null);
@@ -415,8 +415,13 @@ const PagosScreen = () => {
 
     let totalCalculado = 0;
     // Acumular total de todas las comandas
+    // 🔥 FIX: Usar totalCalculado de la comanda si tiene descuento aplicado
+    // IMPORTANTE: totalCalculado puede ser 0 (descuento 100%), no usar como booleano
     comandasACalcular.forEach((comanda) => {
-      if (comanda.platos) {
+      if (comanda.descuento > 0 && comanda.totalCalculado != null) {
+        totalCalculado += comanda.totalCalculado;
+      } else if (comanda.platos) {
+        // Sin descuento: calcular normalmente
         comanda.platos.forEach((platoItem, index) => {
           // 🔥 CORREGIDO: Solo contar platos no eliminados NI anulados
           // Los platos anulados desde cocina tienen eliminado=true Y anulado=true
@@ -443,8 +448,13 @@ const PagosScreen = () => {
       return totalPendienteDeParams || 0;
     }
     let total = 0;
+    // 🔥 FIX: Usar totalCalculado de la comanda si tiene descuento aplicado
+    // IMPORTANTE: totalCalculado puede ser 0 (descuento 100%), no usar como booleano
     comandasParaCalcular.forEach((comanda) => {
-      if (comanda.platos) {
+      if (comanda.descuento > 0 && comanda.totalCalculado != null) {
+        total += comanda.totalCalculado;
+      } else if (comanda.platos) {
+        // Sin descuento: calcular normalmente
         comanda.platos.forEach((platoItem, index) => {
           // 🔥 CORREGIDO: Solo contar platos no eliminados NI anulados
           // Los platos anulados desde cocina tienen eliminado=true Y anulado=true
@@ -456,8 +466,65 @@ const PagosScreen = () => {
         });
       }
     });
-    return total || totalPendienteDeParams || 0;
+    // FIX: No usar || con total porque 0 es falsy (descuento 100%)
+    return total > 0 ? total : (totalPendienteDeParams > 0 ? totalPendienteDeParams : total);
   }, [comandas, route.params]); // ✅ Dependencia: route.params para detectar cambios
+  
+  // 🔥 NUEVO: Calcular información de descuentos
+  const infoDescuentos = useMemo(() => {
+    const paramsParaDesc = route.params || {};
+    const comandasDeParamsParaDesc = paramsParaDesc.comandasParaPagar || [];
+    const comandasParaDesc = comandas.length > 0 ? comandas : comandasDeParamsParaDesc;
+    
+    const descuentos = [];
+    let ahorroTotal = 0;
+    
+    comandasParaDesc.forEach((comanda) => {
+      if (comanda.descuento > 0) {
+        // 🔥 CORREGIDO: Usar montoDescuento del backend si está disponible
+        // Si no, calcular basándose en totalSinDescuento y totalCalculado
+        let montoAhorro = comanda.montoDescuento;
+        
+        if (!montoAhorro || montoAhorro === 0) {
+          // Si no hay montoDescuento, calcularlo
+          const totalSinDesc = comanda.totalSinDescuento || (comanda.precioTotal * 1.18);
+          const totalConDesc = comanda.totalCalculado != null ? comanda.totalCalculado : totalSinDesc;
+          montoAhorro = totalSinDesc - totalConDesc;
+        }
+        
+        descuentos.push({
+          comandaNumber: comanda.comandaNumber,
+          porcentaje: comanda.descuento,
+          motivo: comanda.motivoDescuento,
+          montoAhorro: montoAhorro
+        });
+        ahorroTotal += montoAhorro;
+      }
+    });
+    
+    return { descuentos, ahorroTotal };
+  }, [comandas, route.params]);
+
+  // 🔥 FIX: Subtotal ORIGINAL (pre-descuento) para display correcto de Subtotal/IGV
+  const subtotalOriginal = useMemo(() => {
+    const paramsParaCalc = route.params || {};
+    const comandasDeParams = paramsParaCalc.comandasParaPagar || [];
+    const comandasParaCalc = comandas.length > 0 ? comandas : comandasDeParams;
+    if (!comandasParaCalc || comandasParaCalc.length === 0) return 0;
+    let sub = 0;
+    comandasParaCalc.forEach((comanda) => {
+      if (comanda.platos) {
+        comanda.platos.forEach((platoItem, index) => {
+          if (!platoItem.eliminado && !platoItem.anulado) {
+            const cantidad = comanda.cantidades?.[index] || 1;
+            const precio = platoItem.plato?.precio || platoItem.precio || 0;
+            sub += precio * cantidad;
+          }
+        });
+      }
+    });
+    return sub;
+  }, [comandas, route.params]);
 
   useEffect(() => {
     totalAnim.value = withTiming(totalCalculado, {
@@ -467,7 +534,7 @@ const PagosScreen = () => {
   }, [totalCalculado]);
 
   const animatedTotalStyle = useAnimatedStyle(() => ({
-    opacity: totalAnim.value > 0 ? 1 : 0.5,
+    opacity: totalAnim.value > 0 || infoDescuentos.descuentos.length > 0 ? 1 : 0.5,
   }));
 
   /**
@@ -565,9 +632,30 @@ const PagosScreen = () => {
     }
     
     // Calcular totales: usar del boucher si está disponible, si no calcular localmente
-    const subtotalFinal = boucher?.subtotal || total;
-    const igvFinal = boucher?.igv || (total * (igvPorcentaje / 100));
-    const totalFinal = boucher?.total || (total * (1 + igvPorcentaje / 100));
+    // 🔥 NUEVO: Soporte para descuentos
+    const descuentosComandas = usarBoucherBackend 
+      ? (boucher.descuentos || []) 
+      : comandas.filter(c => c.descuento > 0).map(c => ({
+          comandaNumber: c.comandaNumber,
+          porcentaje: c.descuento,
+          motivo: c.motivoDescuento,
+          monto: c.montoDescuento || 0
+        }));
+    
+    const montoTotalDescuento = usarBoucherBackend 
+      ? (boucher.montoDescuento || 0)
+      : comandas.reduce((sum, c) => sum + (c.montoDescuento || 0), 0);
+    
+    // 🔥 FIX: Usar subtotalOriginal (pre-descuento) para voucher, no total post-descuento
+    const subtotalFinal = boucher?.subtotal || subtotalOriginal || total;
+    const igvFinal = boucher?.igv || (subtotalFinal * (igvPorcentaje / 100));
+    const totalSinDescuento = boucher?.totalSinDescuento || (subtotalFinal + igvFinal);
+
+    // 🔥 FIX: Usar totalConDescuento solo si hay descuento real (montoDescuento > 0)
+    const tieneDescuentoBoucher = (boucher?.montoDescuento || 0) > 0 || (boucher?.descuentos?.length || 0) > 0;
+    const totalFinal = tieneDescuentoBoucher && boucher?.totalConDescuento != null
+      ? boucher.totalConDescuento
+      : (boucher?.total != null ? boucher.total : Math.max(0, totalSinDescuento - montoTotalDescuento));
     
     // Obtener comandas numbers del boucher o de las comandas locales
     const comandasNumbers = boucher?.comandasNumbers || comandas.map(c => c.comandaNumber || c._id.slice(-6));
@@ -718,6 +806,21 @@ const PagosScreen = () => {
               <span>${nombreImpuesto} (${igvPorcentaje}%):</span>
               <span>${simboloMoneda} ${igvFinal.toFixed(decimales)}</span>
             </div>
+            ${descuentosComandas.length > 0 ? `
+            <div class="total-row" style="color: #EF4444;">
+              <span>DESCUENTO ${descuentosComandas.length === 1 ? `(${descuentosComandas[0].porcentaje}%)` : ''}:</span>
+              <span>-${simboloMoneda} ${montoTotalDescuento.toFixed(decimales)}</span>
+            </div>
+            ${descuentosComandas.length > 1 ? `
+            <div style="font-size: 10px; color: #666; margin-top: -5px; margin-bottom: 5px;">
+              ${descuentosComandas.map(d => `C#${d.comandaNumber}: ${d.porcentaje}% - ${d.motivo}`).join('<br>')}
+            </div>
+            ` : `
+            <div style="font-size: 10px; color: #666; margin-top: -5px; margin-bottom: 5px;">
+              ${descuentosComandas[0]?.motivo || ''}
+            </div>
+            `}
+            ` : ''}
             <div class="total-row" style="font-size: 16px; margin-top: 10px;">
               <span>TOTAL:</span>
               <span>${simboloMoneda} ${totalFinal.toFixed(decimales)}</span>
@@ -1011,25 +1114,30 @@ const PagosScreen = () => {
     const paramsParaPago = route.params || {};
     const comandasParaPagar = paramsParaPago.comandasParaPagar || [];
     const mesaParaPago = paramsParaPago.mesa || mesa;
-    const totalPendienteParams = paramsParaPago.totalPendiente || 0;
-    
+    // FIX: No usar || con totalPendiente porque 0 es válido (descuento 100%)
+    const totalPendienteParams = paramsParaPago.totalPendiente != null ? paramsParaPago.totalPendiente : 0;
+
     // Si no hay comandas en params, usar estado local (fallback)
     const comandasFinales = comandasParaPagar.length > 0 ? comandasParaPagar : comandas;
     const mesaFinal = mesaParaPago || mesa;
-    const totalFinal = totalPendienteParams || total;
-    
+    const totalFinal = totalPendienteParams > 0 ? totalPendienteParams : total;
+
+    // FIX: Verificar si hay descuento aplicado (permite total=0 con descuento 100%)
+    const tieneDescuento = comandasFinales.some(c => c.descuento > 0);
+
     // ✅ Validaciones antes de procesar
     if (comandasFinales.length === 0) {
       Alert.alert("Error", "No hay comandas para pagar. Por favor, verifica que la mesa tenga comandas listas.");
       return;
     }
-    
+
     if (!mesaFinal || !mesaFinal._id) {
       Alert.alert("Error", "No se pudo obtener la información de la mesa. Por favor, intenta nuevamente.");
       return;
     }
 
-    if (totalFinal <= 0) {
+    // FIX: Permitir total=0 cuando hay descuento 100% aplicado
+    if (totalFinal < 0 || (totalFinal === 0 && !tieneDescuento)) {
       Alert.alert("Error", "El total a pagar debe ser mayor a cero. Por favor, verifica las comandas.");
       return;
     }
@@ -1501,7 +1609,8 @@ const PagosScreen = () => {
     
     // ✅ Calcular total correctamente (usar route.params si está disponible)
     const paramsParaTotal = route.params || {};
-    const totalParaMostrar = paramsParaTotal.totalPendiente || total || 0;
+    // FIX: No usar || porque 0 es válido (descuento 100%)
+    const totalParaMostrar = (paramsParaTotal.totalPendiente != null ? paramsParaTotal.totalPendiente : null) ?? total ?? 0;
     
     // Usar configuración de moneda para el cálculo
     const igvPorcentaje = configMoneda?.igvPorcentaje || 18;
@@ -1870,19 +1979,17 @@ const PagosScreen = () => {
                 if (boucherData || boucherFromParams) {
                   return ((boucherData || boucherFromParams)?.subtotal || 0).toFixed(configMoneda?.decimales ?? 2);
                 }
-                // Si no hay boucher, calcular según configuración
-                const subtotalBase = total || totalPendiente || 0;
+                // 🔥 FIX: Usar subtotalOriginal (pre-descuento) para mostrar siempre el subtotal real
+                const base = subtotalOriginal > 0 ? subtotalOriginal : (total || 0);
                 const igvPct = configMoneda?.igvPorcentaje || 18;
                 const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
                 const decs = configMoneda?.decimales ?? 2;
-                
+
                 if (incluyeIGV) {
-                  // Los precios ya incluyen IGV - desglosar
-                  const subtotalSinIGV = subtotalBase / (1 + igvPct / 100);
+                  const subtotalSinIGV = base / (1 + igvPct / 100);
                   return subtotalSinIGV.toFixed(decs);
                 } else {
-                  // Los precios NO incluyen IGV
-                  return subtotalBase.toFixed(decs);
+                  return base.toFixed(decs);
                 }
               })()}
             </Text>
@@ -1894,45 +2001,70 @@ const PagosScreen = () => {
                 if (boucherData || boucherFromParams) {
                   return ((boucherData || boucherFromParams)?.igv || 0).toFixed(configMoneda?.decimales ?? 2);
                 }
-                // Si no hay boucher, calcular según configuración
-                const subtotalBase = total || totalPendiente || 0;
+                // 🔥 FIX: Usar subtotalOriginal (pre-descuento) para IGV correcto
+                const base = subtotalOriginal > 0 ? subtotalOriginal : (total || 0);
                 const igvPct = configMoneda?.igvPorcentaje || 18;
                 const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
                 const decs = configMoneda?.decimales ?? 2;
-                
+
                 if (incluyeIGV) {
-                  // Los precios ya incluyen IGV - el IGV está incluido en el precio
-                  const igv = subtotalBase * (igvPct / 100) / (1 + igvPct / 100);
+                  const igv = base * (igvPct / 100) / (1 + igvPct / 100);
                   return igv.toFixed(decs);
                 } else {
-                  // Los precios NO incluyen IGV - agregar
-                  const igv = subtotalBase * igvPct / 100;
+                  const igv = base * igvPct / 100;
                   return igv.toFixed(decs);
                 }
               })()}
             </Text>
           </View>
+          {/* 🔥 FIX: Mostrar información de descuentos si aplica */}
+          {infoDescuentos.descuentos.length > 0 && (
+            <View style={styles.totalRow}>
+              <View style={{ flexDirection: 'column', flex: 1 }}>
+                <Text style={[styles.totalLabel, { color: '#EF4444' }]}>
+                  DESCUENTO:
+                </Text>
+                {infoDescuentos.descuentos.map((desc, idx) => (
+                  <Text key={idx} style={{ fontSize: 11, color: theme.colors?.text?.secondary || '#6B7280' }}>
+                    C#{desc.comandaNumber}: {desc.porcentaje}% - {desc.motivo}
+                  </Text>
+                ))}
+              </View>
+              <Text style={[styles.totalValue, { color: '#EF4444' }]}>
+                - {configMoneda?.simboloMoneda || 'S/.'} {infoDescuentos.ahorroTotal.toFixed(configMoneda?.decimales ?? 2)}
+              </Text>
+            </View>
+          )}
           <View style={[styles.totalRow, styles.totalRowFinal]}>
             <Text style={styles.totalLabelFinal}>TOTAL:</Text>
             <Text style={styles.totalValueFinal}>
               {configMoneda?.simboloMoneda || 'S/.'} {(() => {
                 if (boucherData || boucherFromParams) {
-                  return ((boucherData || boucherFromParams)?.total || 0).toFixed(configMoneda?.decimales ?? 2);
+                  const boucher = boucherData || boucherFromParams;
+                  // FIX: Usar totalConDescuento solo si hay descuento real
+                  const bDescuento = (boucher?.montoDescuento || 0) > 0 || (boucher?.descuentos?.length || 0) > 0;
+                  const bTotal = bDescuento && boucher?.totalConDescuento != null ? boucher.totalConDescuento : (boucher?.total || 0);
+                  return bTotal.toFixed(configMoneda?.decimales ?? 2);
                 }
-                // Si no hay boucher, calcular según configuración
-                const subtotalBase = total || totalPendiente || 0;
+                // 🔥 FIX: Calcular total final usando subtotalOriginal y restando descuento
+                const base = subtotalOriginal > 0 ? subtotalOriginal : (total || 0);
                 const igvPct = configMoneda?.igvPorcentaje || 18;
                 const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
                 const decs = configMoneda?.decimales ?? 2;
-                
+
+                let totalFinal;
                 if (incluyeIGV) {
-                  // Los precios ya incluyen IGV - el total es el precio tal cual
-                  return subtotalBase.toFixed(decs);
+                  totalFinal = base;
                 } else {
-                  // Los precios NO incluyen IGV - sumar IGV
-                  const totalConIGV = subtotalBase * (1 + igvPct / 100);
-                  return totalConIGV.toFixed(decs);
+                  totalFinal = base * (1 + igvPct / 100);
                 }
+
+                // Restar el descuento del total
+                if (infoDescuentos.ahorroTotal > 0) {
+                  totalFinal = totalFinal - infoDescuentos.ahorroTotal;
+                }
+
+                return Math.max(0, totalFinal).toFixed(decs);
               })()}
             </Text>
           </View>

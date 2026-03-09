@@ -120,6 +120,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Estados para selección de platos a entregar
   const [platosSeleccionadosEntregar, setPlatosSeleccionadosEntregar] = useState([]); // Platos seleccionados para entregar
   
+  // Estados para descuento (solo admin/supervisor)
+  const [modalDescuentoVisible, setModalDescuentoVisible] = useState(false);
+  const [descuentoSeleccionado, setDescuentoSeleccionado] = useState(0);
+  const [motivoDescuento, setMotivoDescuento] = useState('');
+  const [aplicandoDescuento, setAplicandoDescuento] = useState(false);
+  
   // Cargar usuario
   useEffect(() => {
     const loadUser = async () => {
@@ -792,6 +798,102 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       setLoading(false);
     }
   };
+  
+  // ==================== FUNCIÓN DE DESCUENTO (SOLO ADMIN/SUPERVISOR) ====================
+  
+  // Verificar si el usuario puede aplicar descuentos
+  const puedeAplicarDescuento = userInfo && (userInfo.rol === 'admin' || userInfo.rol === 'supervisor');
+  
+  // Abrir modal de descuento
+  const handleAbrirDescuento = () => {
+    if (!puedeAplicarDescuento) {
+      Alert.alert('Acceso Denegado', 'Solo administradores o supervisores pueden aplicar descuentos.');
+      return;
+    }
+    
+    if (comandas.length === 0) {
+      Alert.alert('Error', 'No hay comandas para aplicar descuento.');
+      return;
+    }
+    
+    // Verificar que la comanda no esté pagada
+    const comanda = comandas[0];
+    if (comanda.status === 'pagado') {
+      Alert.alert('Error', 'No se puede aplicar descuento a una comanda ya pagada.');
+      return;
+    }
+    
+    // Inicializar con el descuento actual (si existe)
+    setDescuentoSeleccionado(comanda.descuento || 0);
+    setMotivoDescuento(comanda.motivoDescuento || '');
+    setModalDescuentoVisible(true);
+  };
+  
+  // Aplicar descuento
+  const handleAplicarDescuento = async () => {
+    if (!puedeAplicarDescuento) {
+      Alert.alert('Error', 'No tienes permisos para aplicar descuentos.');
+      return;
+    }
+    
+    // Validar motivo si hay descuento
+    if (descuentoSeleccionado > 0 && (!motivoDescuento || motivoDescuento.trim().length < 3)) {
+      Alert.alert('Error', 'Debes ingresar un motivo para el descuento (mínimo 3 caracteres).');
+      return;
+    }
+    
+    const comanda = comandas[0];
+    if (!comanda || !comanda._id) {
+      Alert.alert('Error', 'No se encontró la comanda.');
+      return;
+    }
+    
+    try {
+      setAplicandoDescuento(true);
+      
+      const descuentoURL = apiConfig.isConfigured
+        ? `${apiConfig.getEndpoint('/comanda')}/${comanda._id}/descuento`
+        : `${COMANDA_API}/${comanda._id}/descuento`;
+      
+      const response = await axios.put(descuentoURL, {
+        descuento: descuentoSeleccionado,
+        motivo: motivoDescuento.trim(),
+        usuarioId: userInfo._id,
+        usuarioRol: userInfo.rol
+      }, {
+        timeout: 10000,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('✅ Descuento aplicado:', response.data);
+      
+      // Cerrar modal y refrescar
+      setModalDescuentoVisible(false);
+      setDescuentoSeleccionado(0);
+      setMotivoDescuento('');
+      
+      await refrescarComandas();
+      
+      const ahorro = response.data?.descuentoAplicado?.montoDescuento || 0;
+      const nuevoTotal = response.data?.descuentoAplicado?.totalCalculado || 0;
+      
+      Alert.alert(
+        '✅ Descuento Aplicado',
+        `Descuento del ${descuentoSeleccionado}% aplicado exitosamente.\n\nAhorro: S/. ${ahorro.toFixed(2)}\nNuevo total: S/. ${nuevoTotal.toFixed(2)}`
+      );
+      
+    } catch (error) {
+      console.error('Error aplicando descuento:', error);
+      const errorMsg = error.response?.data?.message || error.message || 'No se pudo aplicar el descuento';
+      Alert.alert('Error', errorMsg);
+    } finally {
+      setAplicandoDescuento(false);
+    }
+  };
+  
+  // ==================== FIN FUNCIÓN DE DESCUENTO ====================
   
   // Funciones de acciones
   const handleEditarComanda = async () => {
@@ -1629,6 +1731,22 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               <MaterialCommunityIcons name="cash" size={20} color="#fff" />
               <Text style={styles.actionButtonText}>Pagar</Text>
             </TouchableOpacity>
+            
+            {/* Botón Descuento - Solo visible para admin/supervisor */}
+            {puedeAplicarDescuento && (
+              <TouchableOpacity
+                style={[
+                  styles.actionButton, 
+                  { backgroundColor: '#8B5CF6' }, // Púrpura para descuento
+                  comandas[0]?.status === 'pagado' && styles.actionButtonDisabled
+                ]}
+                onPress={handleAbrirDescuento}
+                disabled={comandas[0]?.status === 'pagado'}
+              >
+                <MaterialCommunityIcons name="percent" size={20} color="#fff" />
+                <Text style={styles.actionButtonText}>Descuento</Text>
+              </TouchableOpacity>
+            )}
             
             {/* Botón Entregar - Solo visible si hay platos en estado "recoger" */}
             {puedeEntregar && (
@@ -2657,6 +2775,139 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         </View>
       </Modal>
       
+      {/* Modal de Descuento - Solo Admin/Supervisor */}
+      <Modal
+        visible={modalDescuentoVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalDescuentoVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: themeColors.colors?.surface || '#fff' }]}>
+            <View style={[styles.modalHeader, { backgroundColor: '#8B5CF6' }]}>
+              <MaterialCommunityIcons name="percent" size={24} color="#fff" />
+              <Text style={styles.modalTitle}>Aplicar Descuento</Text>
+            </View>
+            
+            <View style={styles.modalContent}>
+              {/* Info de comanda */}
+              <View style={[styles.infoBox, { backgroundColor: themeColors.colors?.background || '#f3f4f6' }]}>
+                <Text style={[styles.infoText, { color: themeColors.colors?.text?.secondary || '#6B7280' }]}>
+                  Comanda #{comandas[0]?.comandaNumber || 'N/A'}
+                </Text>
+                <Text style={[styles.infoTextBold, { color: themeColors.colors?.text?.primary || '#111827' }]}>
+                  Total actual: S/. {((comandas[0]?.totalCalculado != null ? comandas[0].totalCalculado : (comandas[0]?.precioTotal || 0) * 1.18)).toFixed(2)}
+                </Text>
+              </View>
+              
+              {/* Selector de porcentaje */}
+              <Text style={[styles.labelText, { color: themeColors.colors?.text?.primary || '#111827' }]}>
+                Porcentaje de descuento:
+              </Text>
+              <View style={styles.descuentoOptions}>
+                {[0, 50, 80, 100].map(pct => (
+                  <TouchableOpacity
+                    key={pct}
+                    style={[
+                      styles.descuentoOption,
+                      descuentoSeleccionado === pct && styles.descuentoOptionSelected,
+                      { borderColor: descuentoSeleccionado === pct ? '#8B5CF6' : themeColors.colors?.border || '#D1D5DB' }
+                    ]}
+                    onPress={() => setDescuentoSeleccionado(pct)}
+                  >
+                    <Text style={[
+                      styles.descuentoOptionText,
+                      { color: descuentoSeleccionado === pct ? '#8B5CF6' : themeColors.colors?.text?.primary || '#111827' }
+                    ]}>
+                      {pct}%
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              
+              {/* Motivo */}
+              <Text style={[styles.labelText, { color: themeColors.colors?.text?.primary || '#111827' }]}>
+                Motivo del descuento {descuentoSeleccionado > 0 && '(requerido)'}:
+              </Text>
+              <TextInput
+                style={[styles.motivoInput, { 
+                  backgroundColor: themeColors.colors?.background || '#f3f4f6',
+                  borderColor: themeColors.colors?.border || '#D1D5DB',
+                  color: themeColors.colors?.text?.primary || '#111827'
+                }]}
+                placeholder="Ej: Voucher promocional, Cliente VIP..."
+                placeholderTextColor={themeColors.colors?.text?.muted || '#9CA3AF'}
+                value={motivoDescuento}
+                onChangeText={setMotivoDescuento}
+                multiline
+                numberOfLines={3}
+                maxLength={200}
+              />
+              
+              {/* Preview del ahorro */}
+              {descuentoSeleccionado > 0 && (
+                <View style={[styles.ahorroPreview, { backgroundColor: '#ECFDF5' }]}>
+                  <MaterialCommunityIcons name="tag" size={20} color="#059669" />
+                  <View style={styles.ahorroTextContainer}>
+                    <Text style={styles.ahorroLabel}>Ahorro estimado:</Text>
+                    <Text style={styles.ahorroValue}>
+                      S/. {(((comandas[0]?.precioTotal || 0) * 1.18) * (descuentoSeleccionado / 100)).toFixed(2)}
+                    </Text>
+                    <Text style={styles.ahorroTotal}>
+                      Nuevo total: S/. {(((comandas[0]?.precioTotal || 0) * 1.18) * (1 - descuentoSeleccionado / 100)).toFixed(2)}
+                    </Text>
+                  </View>
+                </View>
+              )}
+              
+              {/* Descuento actual si existe */}
+              {comandas[0]?.descuento > 0 && (
+                <View style={[styles.currentDiscount, { backgroundColor: '#FEF3C7' }]}>
+                  <MaterialCommunityIcons name="information" size={16} color="#D97706" />
+                  <Text style={styles.currentDiscountText}>
+                    Descuento actual: {comandas[0].descuento}% - {comandas[0].motivoDescuento}
+                  </Text>
+                </View>
+              )}
+            </View>
+            
+            {/* Botones */}
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setModalDescuentoVisible(false);
+                  setDescuentoSeleccionado(0);
+                  setMotivoDescuento('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.modalButton, 
+                  styles.confirmButton,
+                  { backgroundColor: '#8B5CF6' },
+                  (descuentoSeleccionado > 0 && motivoDescuento.trim().length < 3) && styles.buttonDisabled
+                ]}
+                onPress={handleAplicarDescuento}
+                disabled={aplicandoDescuento || (descuentoSeleccionado > 0 && motivoDescuento.trim().length < 3)}
+              >
+                {aplicandoDescuento ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons name="check" size={18} color="#fff" />
+                    <Text style={styles.confirmButtonText}>Aplicar</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      
       {/* Modal de Complementos para Edición de Comanda */}
       <ModalComplementos
         visible={platoParaComplementar !== null}
@@ -3129,6 +3380,141 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     textAlign: 'center',
     padding: 16,
+  },
+  // Estilos para el modal de descuento
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    borderRadius: 16,
+    width: '100%',
+    maxWidth: 400,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 10,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  modalContent: {
+    padding: 16,
+  },
+  infoBox: {
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  infoText: {
+    fontSize: 14,
+  },
+  infoTextBold: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 4,
+  },
+  labelText: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  descuentoOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  descuentoOption: {
+    flex: 1,
+    paddingVertical: 12,
+    marginHorizontal: 4,
+    borderRadius: 8,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  descuentoOptionSelected: {
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+  },
+  descuentoOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  motivoInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    minHeight: 80,
+    textAlignVertical: 'top',
+    marginBottom: 16,
+  },
+  ahorroPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    gap: 12,
+    marginBottom: 16,
+  },
+  ahorroTextContainer: {
+    flex: 1,
+  },
+  ahorroLabel: {
+    fontSize: 12,
+    color: '#059669',
+  },
+  ahorroValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#059669',
+  },
+  ahorroTotal: {
+    fontSize: 14,
+    color: '#059669',
+    marginTop: 2,
+  },
+  currentDiscount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 8,
+    gap: 8,
+  },
+  currentDiscountText: {
+    fontSize: 13,
+    color: '#D97706',
+    flex: 1,
+  },
+  confirmButton: {
+    flex: 1,
+    flexDirection: 'row',
+    padding: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  confirmButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
 });
 
