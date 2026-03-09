@@ -25,6 +25,7 @@ import IconoBoton from "../../../Components/IconoBoton";
 import { useWindowDimensions } from "react-native";
 import { useSocket } from "../../../context/SocketContext";
 import logger from "../../../utils/logger";
+import configuracionService from "../../../services/configuracionService";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -184,9 +185,28 @@ const PagosScreen = () => {
   const [procesandoPago, setProcesandoPago] = useState(false);
   const [mensajeCarga, setMensajeCarga] = useState("Procesando pago...");
   const [boucherData, setBoucherData] = useState(boucherFromParams || null);
+  const [configMoneda, setConfigMoneda] = useState(null);
 
   // Obtener socket del contexto
   const { subscribeToEvents, connected: socketConnected } = useSocket();
+  
+  // Cargar configuración al iniciar
+  useEffect(() => {
+    const cargarConfiguracion = async () => {
+      try {
+        const config = await configuracionService.obtenerConfigMoneda();
+        setConfigMoneda(config);
+        console.log('✅ Configuración de moneda cargada en PagosScreen:', {
+          igv: config.igvPorcentaje,
+          incluyeIGV: config.preciosIncluyenIGV,
+          simbolo: config.simboloMoneda
+        });
+      } catch (error) {
+        console.error('Error al cargar configuración de moneda:', error);
+      }
+    };
+    cargarConfiguracion();
+  }, []);
 
   // ❌ DESHABILITADO: No actualizar comandas desde WebSocket en PagosScreen
   // Backend = única fuente de verdad. Solo usar route.params
@@ -458,6 +478,12 @@ const PagosScreen = () => {
     // Si hay boucher del backend, usar esos datos; si no, usar datos locales
     const usarBoucherBackend = boucher && boucher.platos && boucher.platos.length > 0;
     
+    // Usar configuración del sistema o del boucher
+    const simboloMoneda = boucher?.configuracionIGV?.simboloMoneda || configMoneda?.simboloMoneda || 'S/.';
+    const decimales = configMoneda?.decimales ?? 2;
+    const nombreImpuesto = boucher?.configuracionIGV?.nombreImpuesto || configMoneda?.nombreImpuestoPrincipal || 'IGV';
+    const igvPorcentaje = boucher?.configuracionIGV?.igvPorcentaje || configMoneda?.igvPorcentaje || 18;
+    
     const fechaActual = boucher?.fechaPagoString || moment().tz("America/Lima").format("DD/MM/YYYY HH:mm:ss");
     const primeraComanda = usarBoucherBackend ? null : comandas[0];
     const fecha = usarBoucherBackend 
@@ -496,8 +522,8 @@ const PagosScreen = () => {
               ${platoItem.nombre || "Plato"} ${comandaNum ? `(C#${comandaNum})` : ''}
               ${complementosHTML}
             </td>
-            <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">S/. ${precio.toFixed(2)}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">S/. ${subtotal.toFixed(2)}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${simboloMoneda} ${precio.toFixed(decimales)}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${simboloMoneda} ${subtotal.toFixed(decimales)}</td>
           </tr>
         `;
       });
@@ -529,8 +555,8 @@ const PagosScreen = () => {
                   ${plato.nombre || "Plato"} ${comandas.length > 1 ? `(C#${comandaNum})` : ''}
                   ${complementosHTML}
                 </td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">S/. ${precio.toFixed(2)}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">S/. ${subtotal.toFixed(2)}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${simboloMoneda} ${precio.toFixed(decimales)}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${simboloMoneda} ${subtotal.toFixed(decimales)}</td>
               </tr>
             `;
           });
@@ -540,8 +566,8 @@ const PagosScreen = () => {
     
     // Calcular totales: usar del boucher si está disponible, si no calcular localmente
     const subtotalFinal = boucher?.subtotal || total;
-    const igvFinal = boucher?.igv || (total * 0.18);
-    const totalFinal = boucher?.total || (total * 1.18);
+    const igvFinal = boucher?.igv || (total * (igvPorcentaje / 100));
+    const totalFinal = boucher?.total || (total * (1 + igvPorcentaje / 100));
     
     // Obtener comandas numbers del boucher o de las comandas locales
     const comandasNumbers = boucher?.comandasNumbers || comandas.map(c => c.comandaNumber || c._id.slice(-6));
@@ -686,15 +712,15 @@ const PagosScreen = () => {
           <div class="total">
             <div class="total-row">
               <span>SUBTOTAL:</span>
-              <span>S/. ${subtotalFinal.toFixed(2)}</span>
+              <span>${simboloMoneda} ${subtotalFinal.toFixed(decimales)}</span>
             </div>
             <div class="total-row">
-              <span>IGV (18%):</span>
-              <span>S/. ${igvFinal.toFixed(2)}</span>
+              <span>${nombreImpuesto} (${igvPorcentaje}%):</span>
+              <span>${simboloMoneda} ${igvFinal.toFixed(decimales)}</span>
             </div>
             <div class="total-row" style="font-size: 16px; margin-top: 10px;">
               <span>TOTAL:</span>
-              <span>S/. ${totalFinal.toFixed(2)}</span>
+              <span>${simboloMoneda} ${totalFinal.toFixed(decimales)}</span>
             </div>
           </div>
 
@@ -1476,12 +1502,16 @@ const PagosScreen = () => {
     // ✅ Calcular total correctamente (usar route.params si está disponible)
     const paramsParaTotal = route.params || {};
     const totalParaMostrar = paramsParaTotal.totalPendiente || total || 0;
-    const totalConIGV = (totalParaMostrar * 1.18).toFixed(2);
+    
+    // Usar configuración de moneda para el cálculo
+    const igvPorcentaje = configMoneda?.igvPorcentaje || 18;
+    const totalConIGV = (totalParaMostrar * (1 + igvPorcentaje / 100)).toFixed(configMoneda?.decimales ?? 2);
+    const simbolo = configMoneda?.simboloMoneda || 'S/.';
     
     // ✅ Mostrar confirmación antes de procesar el pago
     Alert.alert(
       "Confirmar Pago",
-      `¿Deseas continuar con el pago para el cliente ${cliente.nombre || "Invitado"}?\n\nTotal: S/. ${totalConIGV}`,
+      `¿Deseas continuar con el pago para el cliente ${cliente.nombre || "Invitado"}?\n\nTotal: ${simbolo} ${totalConIGV}`,
       [
         {
           text: "NO",
@@ -1677,7 +1707,7 @@ const PagosScreen = () => {
                     </View>
                     <Text style={styles.platoCantidad}>x{cantidad}</Text>
                   </View>
-                  <Text style={styles.platoSubtotal}>S/. {subtotal.toFixed(2)}</Text>
+                  <Text style={styles.platoSubtotal}>{configMoneda?.simboloMoneda || 'S/.'} {subtotal.toFixed(configMoneda?.decimales ?? 2)}</Text>
                 </View>
               );
             })
@@ -1781,7 +1811,7 @@ const PagosScreen = () => {
                             </View>
                             <Text style={styles.platoCantidad}>x{cantidad}</Text>
                           </View>
-                          <Text style={styles.platoSubtotal}>S/. {subtotal.toFixed(2)}</Text>
+                          <Text style={styles.platoSubtotal}>{configMoneda?.simboloMoneda || 'S/.'} {subtotal.toFixed(configMoneda?.decimales ?? 2)}</Text>
                         </View>
                       );
                     })}
@@ -1824,36 +1854,38 @@ const PagosScreen = () => {
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Subtotal:</Text>
             <Text style={styles.totalValue}>
-              S/. {(() => {
+              {configMoneda?.simboloMoneda || 'S/.'} {(() => {
                 if (boucherData || boucherFromParams) {
-                  return ((boucherData || boucherFromParams)?.subtotal || 0).toFixed(2);
+                  return ((boucherData || boucherFromParams)?.subtotal || 0).toFixed(configMoneda?.decimales ?? 2);
                 }
                 const subtotalFinal = total || totalPendiente || 0;
-                return subtotalFinal.toFixed(2);
+                return subtotalFinal.toFixed(configMoneda?.decimales ?? 2);
               })()}
             </Text>
           </View>
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>IGV (18%):</Text>
+            <Text style={styles.totalLabel}>{configMoneda?.nombreImpuestoPrincipal || 'IGV'} ({configMoneda?.igvPorcentaje || 18}%):</Text>
             <Text style={styles.totalValue}>
-              S/. {(() => {
+              {configMoneda?.simboloMoneda || 'S/.'} {(() => {
                 if (boucherData || boucherFromParams) {
-                  return ((boucherData || boucherFromParams)?.igv || 0).toFixed(2);
+                  return ((boucherData || boucherFromParams)?.igv || 0).toFixed(configMoneda?.decimales ?? 2);
                 }
                 const subtotalFinal = total || totalPendiente || 0;
-                return (subtotalFinal * 0.18).toFixed(2);
+                const igvPct = configMoneda?.igvPorcentaje || 18;
+                return (subtotalFinal * igvPct / 100).toFixed(configMoneda?.decimales ?? 2);
               })()}
             </Text>
           </View>
           <View style={[styles.totalRow, styles.totalRowFinal]}>
             <Text style={styles.totalLabelFinal}>TOTAL:</Text>
             <Text style={styles.totalValueFinal}>
-              S/. {(() => {
+              {configMoneda?.simboloMoneda || 'S/.'} {(() => {
                 if (boucherData || boucherFromParams) {
-                  return ((boucherData || boucherFromParams)?.total || 0).toFixed(2);
+                  return ((boucherData || boucherFromParams)?.total || 0).toFixed(configMoneda?.decimales ?? 2);
                 }
                 const subtotalFinal = total || totalPendiente || 0;
-                return (subtotalFinal * 1.18).toFixed(2);
+                const igvPct = configMoneda?.igvPorcentaje || 18;
+                return (subtotalFinal * (1 + igvPct / 100)).toFixed(configMoneda?.decimales ?? 2);
               })()}
             </Text>
           </View>
