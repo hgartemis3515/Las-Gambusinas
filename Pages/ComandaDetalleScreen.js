@@ -25,6 +25,7 @@ import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas } from '../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
+import configuracionService from '../services/configuracionService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -88,6 +89,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Estados para todos los platos (ordenados)
   const [todosLosPlatos, setTodosLosPlatos] = useState([]);
   
+  // Estado para configuración de moneda
+  const [configMoneda, setConfigMoneda] = useState(null);
+  
   // Estados para modales
   const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
   const [platosParaEliminar, setPlatosParaEliminar] = useState([]);
@@ -129,6 +133,24 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       }
     };
     loadUser();
+  }, []);
+  
+  // Cargar configuración de moneda
+  useEffect(() => {
+    const loadConfiguracion = async () => {
+      try {
+        const config = await configuracionService.obtenerConfigMoneda();
+        setConfigMoneda(config);
+        console.log('✅ Configuración de moneda cargada en ComandaDetalle:', {
+          igv: config.igvPorcentaje,
+          incluyeIGV: config.preciosIncluyenIGV,
+          simbolo: config.simboloMoneda
+        });
+      } catch (error) {
+        console.error('Error cargando configuración de moneda:', error);
+      }
+    };
+    loadConfiguracion();
   }, []);
   
   // Preparar todos los platos ordenados por prioridad (sin logs en bucle para evitar loops)
@@ -504,20 +526,39 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }, [refrescarComandas])
   );
   
-  // Calcular totales
+  // Calcular totales usando configuración
   const calcularTotales = () => {
     let subtotal = 0;
     todosLosPlatos.forEach(plato => {
       subtotal += (plato.precio * plato.cantidad);
     });
     
-    const igv = subtotal * 0.18;
-    const total = subtotal + igv;
+    const igvPorcentaje = configMoneda?.igvPorcentaje || 18;
+    const decimales = configMoneda?.decimales ?? 2;
+    const preciosIncluyenIGV = configMoneda?.preciosIncluyenIGV || false;
+    
+    let igv, total, subtotalSinIGV;
+    
+    if (preciosIncluyenIGV) {
+      // Los precios YA incluyen IGV - hay que desglosarlo
+      // IGV = Precio * (tasa / (1 + tasa))
+      total = subtotal;
+      igv = subtotal * (igvPorcentaje / 100) / (1 + igvPorcentaje / 100);
+      subtotalSinIGV = subtotal - igv;
+    } else {
+      // Los precios NO incluyen IGV - modo clásico
+      subtotalSinIGV = subtotal;
+      igv = subtotal * (igvPorcentaje / 100);
+      total = subtotal + igv;
+    }
     
     return {
-      subtotal: subtotal.toFixed(2),
-      igv: igv.toFixed(2),
-      total: total.toFixed(2)
+      subtotal: subtotalSinIGV.toFixed(decimales),
+      igv: igv.toFixed(decimales),
+      total: total.toFixed(decimales),
+      igvPorcentaje,
+      nombreImpuesto: configMoneda?.nombreImpuestoPrincipal || 'IGV',
+      simboloMoneda: configMoneda?.simboloMoneda || 'S/.'
     };
   };
   
@@ -1486,7 +1527,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                     Subtotal:
                   </Text>
                   <Text style={[styles.totalValue, { color: '#059669' }]}>
-                    S/. {totales.subtotal}
+                    {totales.simboloMoneda} {totales.subtotal}
                   </Text>
                 </View>
                 <View style={[styles.totalRow, { borderBottomWidth: 0 }]}>
@@ -1496,10 +1537,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                       color: isDark ? '#000000' : (themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280')
                     }
                   ]}>
-                    IGV (18%):
+                    {totales.nombreImpuesto} ({totales.igvPorcentaje}%):
                   </Text>
                   <Text style={[styles.totalValue, { color: '#059669' }]}>
-                    S/. {totales.igv}
+                    {totales.simboloMoneda} {totales.igv}
                   </Text>
                 </View>
                 <View style={[styles.totalRow, styles.totalRowFinal, { borderTopColor: isDark ? '#374151' : (themeColors.colors?.border || themeColors.border || '#E5E7EB') }]}>
@@ -1507,7 +1548,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                     TOTAL:
                   </Text>
                   <Text style={[styles.totalValue, styles.totalValueFinal, { color: '#059669' }]}>
-                    S/. {totales.total}
+                    {totales.simboloMoneda} {totales.total}
                   </Text>
                 </View>
               </View>

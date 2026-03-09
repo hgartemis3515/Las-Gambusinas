@@ -1505,13 +1505,25 @@ const PagosScreen = () => {
     
     // Usar configuración de moneda para el cálculo
     const igvPorcentaje = configMoneda?.igvPorcentaje || 18;
-    const totalConIGV = (totalParaMostrar * (1 + igvPorcentaje / 100)).toFixed(configMoneda?.decimales ?? 2);
+    const decimales = configMoneda?.decimales ?? 2;
     const simbolo = configMoneda?.simboloMoneda || 'S/.';
+    const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
+    
+    let totalFinal;
+    if (incluyeIGV) {
+      // Los precios ya incluyen IGV - el total es el precio tal cual
+      totalFinal = totalParaMostrar;
+    } else {
+      // Los precios NO incluyen IGV - sumar IGV
+      totalFinal = totalParaMostrar * (1 + igvPorcentaje / 100);
+    }
+    
+    const totalFormateado = totalFinal.toFixed(decimales);
     
     // ✅ Mostrar confirmación antes de procesar el pago
     Alert.alert(
       "Confirmar Pago",
-      `¿Deseas continuar con el pago para el cliente ${cliente.nombre || "Invitado"}?\n\nTotal: ${simbolo} ${totalConIGV}`,
+      `¿Deseas continuar con el pago para el cliente ${cliente.nombre || "Invitado"}?\n\nTotal: ${simbolo} ${totalFormateado}`,
       [
         {
           text: "NO",
@@ -1858,8 +1870,20 @@ const PagosScreen = () => {
                 if (boucherData || boucherFromParams) {
                   return ((boucherData || boucherFromParams)?.subtotal || 0).toFixed(configMoneda?.decimales ?? 2);
                 }
-                const subtotalFinal = total || totalPendiente || 0;
-                return subtotalFinal.toFixed(configMoneda?.decimales ?? 2);
+                // Si no hay boucher, calcular según configuración
+                const subtotalBase = total || totalPendiente || 0;
+                const igvPct = configMoneda?.igvPorcentaje || 18;
+                const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
+                const decs = configMoneda?.decimales ?? 2;
+                
+                if (incluyeIGV) {
+                  // Los precios ya incluyen IGV - desglosar
+                  const subtotalSinIGV = subtotalBase / (1 + igvPct / 100);
+                  return subtotalSinIGV.toFixed(decs);
+                } else {
+                  // Los precios NO incluyen IGV
+                  return subtotalBase.toFixed(decs);
+                }
               })()}
             </Text>
           </View>
@@ -1870,9 +1894,21 @@ const PagosScreen = () => {
                 if (boucherData || boucherFromParams) {
                   return ((boucherData || boucherFromParams)?.igv || 0).toFixed(configMoneda?.decimales ?? 2);
                 }
-                const subtotalFinal = total || totalPendiente || 0;
+                // Si no hay boucher, calcular según configuración
+                const subtotalBase = total || totalPendiente || 0;
                 const igvPct = configMoneda?.igvPorcentaje || 18;
-                return (subtotalFinal * igvPct / 100).toFixed(configMoneda?.decimales ?? 2);
+                const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
+                const decs = configMoneda?.decimales ?? 2;
+                
+                if (incluyeIGV) {
+                  // Los precios ya incluyen IGV - el IGV está incluido en el precio
+                  const igv = subtotalBase * (igvPct / 100) / (1 + igvPct / 100);
+                  return igv.toFixed(decs);
+                } else {
+                  // Los precios NO incluyen IGV - agregar
+                  const igv = subtotalBase * igvPct / 100;
+                  return igv.toFixed(decs);
+                }
               })()}
             </Text>
           </View>
@@ -1883,9 +1919,20 @@ const PagosScreen = () => {
                 if (boucherData || boucherFromParams) {
                   return ((boucherData || boucherFromParams)?.total || 0).toFixed(configMoneda?.decimales ?? 2);
                 }
-                const subtotalFinal = total || totalPendiente || 0;
+                // Si no hay boucher, calcular según configuración
+                const subtotalBase = total || totalPendiente || 0;
                 const igvPct = configMoneda?.igvPorcentaje || 18;
-                return (subtotalFinal * (1 + igvPct / 100)).toFixed(configMoneda?.decimales ?? 2);
+                const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
+                const decs = configMoneda?.decimales ?? 2;
+                
+                if (incluyeIGV) {
+                  // Los precios ya incluyen IGV - el total es el precio tal cual
+                  return subtotalBase.toFixed(decs);
+                } else {
+                  // Los precios NO incluyen IGV - sumar IGV
+                  const totalConIGV = subtotalBase * (1 + igvPct / 100);
+                  return totalConIGV.toFixed(decs);
+                }
               })()}
             </Text>
           </View>
