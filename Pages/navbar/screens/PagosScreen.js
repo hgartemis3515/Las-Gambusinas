@@ -1316,6 +1316,7 @@ const PagosScreen = () => {
             // Intentar extraer comandas válidas del error
             const comandasValidasDelError = errorData.comandasValidas || errorData.validas || [];
             const comandasInvalidasDelError = errorData.comandasInvalidas || errorData.invalidas || [];
+            let retryExitosoConFrescas = false;
             
             // Si no hay comandas válidas en el error, intentar obtenerlas del backend
             if (comandasValidasDelError.length === 0 && idsInvalidosEnMensaje.length > 0) {
@@ -1355,8 +1356,9 @@ const PagosScreen = () => {
                     boucherNumber: boucherCreado.boucherNumber
                   });
                   
-                  // Continuar con el flujo normal
-                  return; // Salir del catch para continuar con el flujo de éxito
+                  retryExitosoConFrescas = true;
+                  // NO hacer return: eso saldría de procesarPagoConCliente y omitiría
+                  // setBoucherData, actualizar mesa, generar PDF, navegar.
                 }
               } catch (retryError) {
                 console.error("❌ [PAGO] Error en retry con comandas frescas:", retryError);
@@ -1364,7 +1366,7 @@ const PagosScreen = () => {
               }
             }
             
-            if (comandasValidasDelError.length > 0) {
+            if (comandasValidasDelError.length > 0 && !retryExitosoConFrescas) {
               // Hay comandas válidas, retry automático
               console.log(`🔄 [PAGO] Retry automático con ${comandasValidasDelError.length} comanda(s) válida(s)`);
               
@@ -1427,8 +1429,8 @@ const PagosScreen = () => {
                 // Si el retry también falla, mostrar error
                 throw new Error(`No se pudo procesar el pago: ${retryError.message || errorMsg}`);
               }
-            } else {
-              // No hay comandas válidas - construir mensaje detallado
+            } else if (!retryExitosoConFrescas) {
+              // No hay comandas válidas - construir mensaje detallado (salvo si retry con frescas tuvo éxito)
               let mensajeError = "No hay comandas válidas para pagar.";
               
               if (idsInvalidosEnMensaje.length > 0) {
