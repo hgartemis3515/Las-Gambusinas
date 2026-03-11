@@ -4902,11 +4902,15 @@ const InicioScreen = () => {
                     if (comandasOpciones?.length) {
                       await Promise.all(comandasOpciones.map((c) => verificarYActualizarEstadoComanda(c, axios)));
                     }
-                    // ← NUEVO ENDPOINT - datos limpios del backend
+                    // ← NUEVO ENDPOINT - datos limpios del backend.
+                    // Si hay comandasOpciones, pasar solo sus IDs para no incluir comandas de pedidos anteriores.
                     const baseURL = apiConfig.isConfigured 
                       ? apiConfig.getEndpoint('/comanda')
                       : COMANDA_API;
-                    const comandasURL = `${baseURL}/comandas-para-pagar/${mesaOpciones._id}`;
+                    const idsQuery = (comandasOpciones?.length > 0)
+                      ? '?comandaIds=' + comandasOpciones.map((c) => c._id).filter(Boolean).join(',')
+                      : '';
+                    const comandasURL = `${baseURL}/comandas-para-pagar/${mesaOpciones._id}${idsQuery}`;
                     
                     console.log('🔍 [PAGAR] Llamando endpoint:', comandasURL);
                     console.log('🔍 [PAGAR] Mesa ID:', mesaOpciones._id);

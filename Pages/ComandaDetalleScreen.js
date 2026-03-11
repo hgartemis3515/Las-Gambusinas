@@ -1372,10 +1372,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         await Promise.all(comandas.map((c) => verificarYActualizarEstadoComanda(c, axios)));
       }
 
-      // Obtener comandas para pagar desde el backend
+      // Obtener comandas para pagar desde el backend.
+      // Pasar solo los IDs de las comandas actuales para no incluir comandas de pedidos anteriores (mesa reutilizada).
+      const idsQuery = comandas.length > 0
+        ? '?comandaIds=' + comandas.map(c => c._id).filter(Boolean).join(',')
+        : '';
       const endpoint = apiConfig.isConfigured
-        ? `${apiConfig.getEndpoint('/comanda')}/comandas-para-pagar/${mesa._id}`
-        : `http://192.168.18.11:3000/api/comanda/comandas-para-pagar/${mesa._id}`;
+        ? `${apiConfig.getEndpoint('/comanda')}/comandas-para-pagar/${mesa._id}${idsQuery}`
+        : `http://192.168.18.11:3000/api/comanda/comandas-para-pagar/${mesa._id}${idsQuery}`;
       
       const response = await axios.get(endpoint);
       
