@@ -1306,6 +1306,7 @@ const PagosScreen = () => {
           const status = postError.response.status;
           const errorData = postError.response.data || {};
           const errorMsg = errorData.message || postError.message;
+          let retryExitoso = false; // Flag para no re-lanzar postError cuando retry recupera el pago
           
           // 🔥 Manejo especial de error 422/400 con comandas inválidas
           if (status === 422 || (status === 400 && (errorMsg?.includes('no son válidas') || errorMsg?.includes('no válida')))) {
@@ -1355,8 +1356,8 @@ const PagosScreen = () => {
                     boucherNumber: boucherCreado.boucherNumber
                   });
                   
-                  // Continuar con el flujo normal
-                  return; // Salir del catch para continuar con el flujo de éxito
+                  // Marcar retry exitoso para continuar con flujo de éxito (mesa update, PDF, etc.)
+                  retryExitoso = true;
                 }
               } catch (retryError) {
                 console.error("❌ [PAGO] Error en retry con comandas frescas:", retryError);
@@ -1421,13 +1422,13 @@ const PagosScreen = () => {
                   }, 100);
                 }
                 
-                // Continuar con el flujo normal (no lanzar error, continuar después del catch)
-                // El código después del catch se ejecutará normalmente
+                // Marcar retry exitoso para continuar con flujo de éxito (mesa update, PDF, etc.)
+                retryExitoso = true;
               } catch (retryError) {
                 // Si el retry también falla, mostrar error
                 throw new Error(`No se pudo procesar el pago: ${retryError.message || errorMsg}`);
               }
-            } else {
+            } else if (!retryExitoso) {
               // No hay comandas válidas - construir mensaje detallado
               let mensajeError = "No hay comandas válidas para pagar.";
               
@@ -1452,20 +1453,24 @@ const PagosScreen = () => {
             }
           }
           
-          if (status === 404) {
-            throw new Error("Mesa o comandas no encontradas. Por favor, recarga la pantalla.");
-          } else if (status === 400) {
-            // Mejorar mensaje de error 400 con detalles del backend
-            const backendError = errorData.error || errorData.message || errorMsg;
-            const detalles = errorData.details ? `\n\nDetalles: ${JSON.stringify(errorData.details)}` : '';
-            throw new Error(`Datos inválidos: ${backendError}${detalles}`);
-          } else if (status === 500) {
-            throw new Error("Error en el servidor. Por favor, intenta nuevamente o contacta al administrador.");
-          } else {
-            throw new Error(`Error ${status}: ${errorMsg}`);
+          // Solo lanzar errores de status cuando no se recuperó vía retry
+          if (!retryExitoso) {
+            if (status === 404) {
+              throw new Error("Mesa o comandas no encontradas. Por favor, recarga la pantalla.");
+            } else if (status === 400) {
+              const backendError = errorData.error || errorData.message || errorMsg;
+              const detalles = errorData.details ? `\n\nDetalles: ${JSON.stringify(errorData.details)}` : '';
+              throw new Error(`Datos inválidos: ${backendError}${detalles}`);
+            } else if (status === 500) {
+              throw new Error("Error en el servidor. Por favor, intenta nuevamente o contacta al administrador.");
+            } else {
+              throw new Error(`Error ${status}: ${errorMsg}`);
+            }
           }
         }
-        throw postError; // Re-lanzar si no es un error conocido
+        if (!retryExitoso) {
+          throw postError; // Re-lanzar si no es un error conocido
+        }
       }
       
       // 🔥 Si llegamos aquí, el boucher se creó exitosamente (ya sea en el primer intento o en el retry)
