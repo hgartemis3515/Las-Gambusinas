@@ -1479,32 +1479,128 @@ const PagosScreen = () => {
         throw new Error("No se pudo crear el boucher. Por favor, intenta nuevamente.");
       }
 
-      // Actualizar estado de la mesa a "pagado"
+      // ✅ MEJORADO: Actualizar estado de la mesa con verificación activa y reintentos
+      let mesaVerificadaComoPagada = false;
+      
       if (mesaFinal && mesaIdFinal) {
-        try {
-          setMensajeCarga("Actualizando estado de la mesa...");
+        setMensajeCarga("Confirmando pago...");
+        
+        const mesaUpdateURL = apiConfig.isConfigured 
+          ? `${apiConfig.getEndpoint('/mesas')}/${mesaIdFinal}/estado`
+          : `${MESAS_API_UPDATE}/${mesaIdFinal}/estado`;
+        
+        // Usar endpoint /mesas (GET individual por :id usa campo mesasId personalizado, no _id)
+        const mesaGetURL = apiConfig.isConfigured 
+          ? apiConfig.getEndpoint('/mesas')
+          : MESAS_API_UPDATE;
+        
+        // Función helper para verificar el estado de la mesa vía GET directo al backend
+        // IMPORTANTE: GET /mesas/:id busca por campo "mesasId" personalizado, no por "_id" de MongoDB
+        // Por eso usamos GET /mesas y filtramos por _id
+        const verificarEstadoMesa = async () => {
+          try {
+            const response = await axios.get(mesaGetURL, { 
+              timeout: 5000,
+              // Headers para evitar caché
+              headers: {
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+              }
+            });
+            
+            // El endpoint devuelve un array de mesas
+            const mesas = response.data;
+            const mesaIdStr = mesaIdFinal?.toString();
+            
+            // Buscar la mesa por _id
+            const mesaEncontrada = mesas.find(m => 
+              m._id?.toString() === mesaIdStr || m._id === mesaIdFinal
+            );
+            
+            if (!mesaEncontrada) {
+              console.warn(`⚠️ [VERIFICACIÓN] Mesa ${mesaIdStr?.slice(-6)} no encontrada en la lista`);
+              return false;
+            }
+            
+            const estadoActual = mesaEncontrada.estado?.toLowerCase();
+            console.log(`🔍 [VERIFICACIÓN] Estado actual de mesa ${mesaFinal.nummesa}: "${estadoActual}"`);
+            return estadoActual === 'pagado';
+          } catch (error) {
+            console.error(`❌ [VERIFICACIÓN] Error obteniendo estado de mesa:`, error.message);
+            return false;
+          }
+        };
+        
+        // Función helper para actualizar el estado de la mesa
+        const actualizarEstadoMesa = async () => {
+          try {
+            await axios.put(
+              mesaUpdateURL,
+              { estado: "pagado" },
+              { timeout: 5000 }
+            );
+            return true;
+          } catch (error) {
+            console.error(`❌ [ACTUALIZACIÓN] Error actualizando mesa:`, error.message);
+            return false;
+          }
+        };
+        
+        const MAX_REINTENTOS = 3;
+        const DELAY_REINTENTO = 1000; // 1 segundo entre reintentos
+        
+        for (let intento = 1; intento <= MAX_REINTENTOS; intento++) {
+          console.log(`🔄 [MESA] Intento ${intento}/${MAX_REINTENTOS} - Actualizando mesa ${mesaFinal.nummesa} a "pagado"...`);
           
-          console.log(`🔄 Actualizando mesa ${mesaFinal.nummesa} a estado "pagado"...`);
+          // Actualizar mensaje del overlay
+          if (intento === 1) {
+            setMensajeCarga("Confirmando pago...");
+          } else {
+            setMensajeCarga(`Confirmando pago (intento ${intento}/${MAX_REINTENTOS})...`);
+          }
           
-          // Actualizar mesa a "pagado"
-          const mesaUpdateURL = apiConfig.isConfigured 
-            ? `${apiConfig.getEndpoint('/mesas')}/${mesaIdFinal}/estado`
-            : `${MESAS_API_UPDATE}/${mesaIdFinal}/estado`;
+          // 1. Intentar actualizar el estado
+          const actualizacionExitosa = await actualizarEstadoMesa();
           
-          await axios.put(
-            mesaUpdateURL,
-            { estado: "pagado" },
-            { timeout: 5000 }
-          );
+          if (!actualizacionExitosa) {
+            console.warn(`⚠️ [MESA] Falló la actualización en intento ${intento}`);
+            if (intento < MAX_REINTENTOS) {
+              // Esperar antes de reintentar
+              await new Promise(resolve => setTimeout(resolve, DELAY_REINTENTO));
+            }
+            continue;
+          }
           
-          console.log(`✅ Mesa ${mesaFinal.nummesa} actualizada a estado "pagado"`);
+          // 2. Verificar que el estado realmente cambió (GET directo al backend)
+          setMensajeCarga("Verificando estado de mesa...");
+          console.log(`🔍 [MESA] Verificando estado de mesa ${mesaFinal.nummesa}...`);
           
-          // Actualizar estado local de la mesa
-          setMesa(prev => prev ? { ...prev, estado: "pagado" } : null);
-        } catch (error) {
-          console.error(`❌ Error actualizando estado de la mesa:`, error);
-          // No bloquear el flujo si falla la actualización de la mesa
-          // El backend debería haber actualizado la mesa automáticamente
+          // Pequeña pausa para dar tiempo al backend a procesar
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          const estadoVerificado = await verificarEstadoMesa();
+          
+          if (estadoVerificado) {
+            mesaVerificadaComoPagada = true;
+            console.log(`✅ [MESA] Mesa ${mesaFinal.nummesa} verificada como "pagado"`);
+            setMensajeCarga("¡Pago confirmado!");
+            // Actualizar estado local de la mesa
+            setMesa(prev => prev ? { ...prev, estado: "pagado" } : null);
+            break;
+          } else {
+            console.warn(`⚠️ [MESA] Verificación falló en intento ${intento} - Estado no es "pagado"`);
+            if (intento < MAX_REINTENTOS) {
+              console.log(`🔄 [MESA] Reintentando en ${DELAY_REINTENTO}ms...`);
+              await new Promise(resolve => setTimeout(resolve, DELAY_REINTENTO));
+            }
+          }
+        }
+        
+        // Si después de todos los reintentos no se verificó, mostrar advertencia pero continuar
+        if (!mesaVerificadaComoPagada) {
+          console.warn(`⚠️ [MESA] No se pudo verificar el estado "pagado" después de ${MAX_REINTENTOS} intentos`);
+          // Continuar de todas formas para no bloquear al mozo
+          setMensajeCarga("¡Pago procesado!");
         }
       }
 
@@ -1532,10 +1628,15 @@ const PagosScreen = () => {
       setProcesandoPago(false);
       setMensajeCarga("Procesando pago...");
 
+      // ✅ Construir mensaje según estado de verificación
+      const estadoMesaMsg = mesaVerificadaComoPagada 
+        ? `La mesa ${mesaFinal.nummesa} está en estado 'Pagado' (verificado).`
+        : `⚠️ La mesa ${mesaFinal.nummesa} podría tardar unos segundos en actualizarse.`;
+
       // ✅ Mostrar alerta de éxito y navegar a Inicio con params para refresh + mensaje verde
       Alert.alert(
         "✅ Pago Exitoso",
-        `Pago procesado y voucher generado.\n\nCliente: ${cliente.nombre || "Invitado"}\nVoucher ID: ${boucherCreado.voucherId}\n\nLa mesa ${mesaFinal.nummesa} está en estado 'Pagado'. Serás redirigido al inicio.`,
+        `Pago procesado y voucher generado.\n\nCliente: ${cliente.nombre || "Invitado"}\nVoucher ID: ${boucherCreado.voucherId}\n\n${estadoMesaMsg}\n\nSerás redirigido al inicio.`,
         [
           {
             text: "OK",
