@@ -84,7 +84,7 @@ export const filtrarPlatosPorEstado = (comandas, estadosPermitidos) => {
       const estado = platoItem.estado || 'pedido';
       const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado;
       
-      if (estadosPermitidos.includes(estadoNormalizado) && !platoItem.eliminado) {
+      if (estadosPermitidos.includes(estadoNormalizado) && !platoItem.eliminado && !platoItem.anulado) {
         const cantidad = comanda.cantidades?.[index] || 1;
         platos.push({
           platoId: platoItem.platoId || platoItem.plato?._id || platoItem.plato,
@@ -132,7 +132,7 @@ export const separarPlatosEditables = (comandas) => {
       const estado = platoItem.estado || 'pedido';
       const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado;
       
-      if (platoItem.eliminado) return;
+      if (platoItem.eliminado || platoItem.anulado) return;
       
       const platoObj = {
         plato: platoItem.plato?._id || platoItem.plato,
@@ -214,7 +214,7 @@ export const obtenerEstadoMesa = (mesa, comandas) => {
   comandas.forEach(c => {
     if (c.platos && Array.isArray(c.platos)) {
       c.platos.forEach((p, idx) => {
-        if (!p.eliminado) {
+        if (!p.eliminado && !p.anulado) {
           todosLosPlatos.push({
             estado: p.estado || 'pedido',
             cantidad: c.cantidades?.[idx] || 1

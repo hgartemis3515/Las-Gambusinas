@@ -195,8 +195,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           complementosSeleccionados: platoItem.complementosSeleccionados || []
         };
         
-        // 🔥 NUEVO: Incluir platos anulados para mostrarlos visualmente (pero marcados)
-        if (!platoEliminado && !platoAnulado) platos.push(platoObj);
+        // 🔥 Incluir platos anulados para mostrarlos visualmente (FilaPlatoCompacta los muestra con badge ANULADO)
+        // Excluir solo eliminados; anulados se muestran pero no cuentan en totales ni bloquean acciones
+        if (!platoEliminado) platos.push(platoObj);
       });
     });
 
@@ -532,11 +533,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }, [refrescarComandas])
   );
   
-  // Calcular totales usando configuración
+  // Calcular totales usando configuración (excluir platos anulados - no se cobran)
   const calcularTotales = () => {
     let subtotal = 0;
     todosLosPlatos.forEach(plato => {
-      subtotal += (plato.precio * plato.cantidad);
+      if (!plato.anulado) subtotal += (plato.precio * plato.cantidad);
     });
     
     const igvPorcentaje = configMoneda?.igvPorcentaje || 18;
@@ -571,10 +572,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const totales = calcularTotales();
   
   // Validaciones para habilitación de botones
-  const platosEnPedido = todosLosPlatos.filter(p => p.estado === 'pedido');
-  const platosEnRecoger = todosLosPlatos.filter(p => p.estado === 'recoger');
-  const platosEntregados = todosLosPlatos.filter(p => p.estado === 'entregado');
-  const platosPagados = todosLosPlatos.filter(p => p.estado === 'pagado');
+  // Platos activos (no anulados) para acciones - anulados no cuentan
+  const platosActivos = todosLosPlatos.filter(p => !p.anulado);
+  const platosEnPedido = platosActivos.filter(p => p.estado === 'pedido');
+  const platosEnRecoger = platosActivos.filter(p => p.estado === 'recoger');
+  const platosEntregados = platosActivos.filter(p => p.estado === 'entregado');
+  const platosPagados = platosActivos.filter(p => p.estado === 'pagado');
   
   const puedeEditar = platosEnPedido.length > 0;
   // IMPORTANTE: Solo se pueden eliminar platos en estado "Pedido"
@@ -582,7 +585,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const puedeEliminarPlatos = platosEnPedido.length > 0;
   const puedeEliminarComanda = comandas.length > 0 && comandas[0].status !== 'pagado';
   const puedeNuevaComanda = mesa?.estado === 'pedido' || mesa?.estado === 'preparado' || mesa?.estado === 'recoger';
-  const puedePagar = todosLosPlatos.length > 0 && todosLosPlatos.every(p => p.estado === 'entregado' || p.estado === 'pagado');
+  const puedePagar = platosActivos.length > 0 && platosActivos.every(p => p.estado === 'entregado' || p.estado === 'pagado');
   
   // Condición para mostrar botón Entregar: hay platos en estado "recoger"
   const puedeEntregar = platosEnRecoger.length > 0;
@@ -1174,10 +1177,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     
     // Detectar platos en estados que bloquean eliminación: Recoger, Entregado, Pagado
     const hayPlatosEnRecoger = todosLosPlatos.some(p => 
-      p.estado === 'recoger' && !p.eliminado
+      p.estado === 'recoger' && !p.eliminado && !p.anulado
     );
     const hayPlatosEntregados = todosLosPlatos.some(p => 
-      (p.estado === 'entregado' || p.estado === 'pagado') && !p.eliminado
+      (p.estado === 'entregado' || p.estado === 'pagado') && !p.eliminado && !p.anulado
     );
     
     // Regla: No eliminar comandas con platos Recoger/Entregado (igual que Entregado existente)
@@ -1241,10 +1244,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     
     // Detectar si hay platos en estados que bloquean eliminación
     const hayPlatosEnRecogerActualizados = todosLosPlatos.some(p => 
-      p.estado === 'recoger' && !p.eliminado
+      p.estado === 'recoger' && !p.eliminado && !p.anulado
     );
     const hayPlatosEntregadosActualizados = todosLosPlatos.some(p => 
-      (p.estado === 'entregado' || p.estado === 'pagado') && !p.eliminado
+      (p.estado === 'entregado' || p.estado === 'pagado') && !p.eliminado && !p.anulado
     );
     
     // Bloquear si no hay platos eliminables O si hay platos en Recoger/Entregado
@@ -1355,7 +1358,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   const handlePagar = async () => {
     if (!puedePagar) {
-      const hayPlatosPendientes = todosLosPlatos.some(p => p.estado === 'pedido' || p.estado === 'recoger');
+      const hayPlatosPendientes = todosLosPlatos.some(p => !p.anulado && (p.estado === 'pedido' || p.estado === 'recoger'));
       if (hayPlatosPendientes) {
         Alert.alert(
           'Platos Pendientes',
