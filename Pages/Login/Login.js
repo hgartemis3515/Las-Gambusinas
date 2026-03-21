@@ -443,32 +443,38 @@ const Login = () => {
         return;
       }
 
-      // Usar endpoint dinámico desde apiConfig
+      // Usar endpoint que genera JWT: /api/admin/mozos/auth
       const loginURL = apiConfig.isConfigured
-        ? apiConfig.getEndpoint('/mozos/auth')
-        : LOGIN_AUTH_API;
+        ? apiConfig.getEndpoint('/admin/mozos/auth')
+        : apiConfig.baseURL + '/admin/mozos/auth';
 
       const response = await axios.post(
         loginURL,
         {
-          name: nombre.trim(),
-          DNI: dni.trim(),
+          username: nombre.trim(),
+          password: dni.trim(),
         },
         { timeout: 5000 }
       );
 
-      const mozo = response.data.mozo;
-      console.log("✅ Login exitoso, mozo:", mozo);
+      const { token, usuario } = response.data;
+      console.log("✅ Login exitoso, usuario:", usuario.name, "rol:", usuario.rol);
 
+      // Limpiar datos anteriores
       await AsyncStorage.removeItem("user");
+      await AsyncStorage.removeItem("authToken");
 
+      // Guardar usuario Y token JWT
       const userData = {
-        _id: mozo._id,
-        name: mozo.name,
+        _id: usuario.id,
+        name: usuario.name,
+        rol: usuario.rol,
+        permisos: usuario.permisos,
       };
 
       await AsyncStorage.setItem("user", JSON.stringify(userData));
-      console.log("💾 Usuario guardado en AsyncStorage:", userData);
+      await AsyncStorage.setItem("authToken", token);
+      console.log("💾 Usuario y token guardados en AsyncStorage");
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
@@ -479,14 +485,14 @@ const Login = () => {
       );
 
       // Mostrar modal de bienvenida elegante
-      setWelcomeUserName(mozo.name);
+      setWelcomeUserName(usuario.name);
       setShowWelcome(true);
       
       // Auto-cierre y navegación después de 2 segundos
       setTimeout(() => {
         setShowWelcome(false);
         setTimeout(() => {
-          navigation.replace("Navbar", { username: mozo.name });
+          navigation.replace("Navbar", { username: usuario.name });
         }, 300);
       }, 2000);
     } catch (error) {

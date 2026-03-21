@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import useSocketMozos from '../hooks/useSocketMozos';
 
 const SocketContext = createContext(null);
 
 export const SocketProvider = ({ children }) => {
   const [socketStatus, setSocketStatus] = useState({ connected: false, status: 'desconectado' });
+  const [authToken, setAuthToken] = useState(null);
   
   // Callbacks globales para eventos WebSocket
   const [eventHandlers, setEventHandlers] = useState({
@@ -20,6 +22,30 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     eventHandlersRef.current = eventHandlers;
   }, [eventHandlers]);
+
+  // Obtener token de AsyncStorage al iniciar
+  useEffect(() => {
+    const loadToken = async () => {
+      try {
+        const token = await AsyncStorage.getItem('authToken');
+        if (token) {
+          console.log('🔐 [MOZOS] Token JWT cargado desde AsyncStorage');
+          setAuthToken(token);
+        } else {
+          console.log('⚠️ [MOZOS] No hay token JWT guardado');
+        }
+      } catch (error) {
+        console.error('❌ [MOZOS] Error cargando token:', error);
+      }
+    };
+    
+    loadToken();
+    
+    // Escuchar cambios en el token (para cuando se hace login/logout)
+    const checkTokenInterval = setInterval(loadToken, 5000);
+    
+    return () => clearInterval(checkTokenInterval);
+  }, []);
 
   const handleMesaActualizada = useCallback((mesa) => {
     if (eventHandlersRef.current.onMesaActualizada) {
@@ -62,14 +88,16 @@ export const SocketProvider = ({ children }) => {
 
   // Hook WebSocket global - se mantiene activo en todas las pantallas
   // Los callbacks usan useRef para evitar recrear el hook y causar desconexiones
+  // IMPORTANTE: Se pasa el token JWT para autenticación
   const socketHookResult = useSocketMozos({
     onMesaActualizada: handleMesaActualizada,
     onComandaActualizada: handleComandaActualizada,
     onNuevaComanda: handleNuevaComanda,
-    onSocketStatus: handleSocketStatus
+    onSocketStatus: handleSocketStatus,
+    token: authToken // Token JWT para autenticación
   });
   
-  const { connected, connectionStatus, reconnectAttempts, socket, trackRoom, untrackRoom } = socketHookResult;
+  const { connected, connectionStatus, reconnectAttempts, socket, trackRoom, untrackRoom, authError } = socketHookResult;
 
   // Función para suscribirse a eventos desde cualquier pantalla
   const subscribeToEvents = useCallback((handlers) => {
@@ -98,6 +126,11 @@ export const SocketProvider = ({ children }) => {
     }
   }, [socket, connected, untrackRoom]);
 
+  // Función para actualizar el token (llamar desde Login después de autenticar)
+  const updateToken = useCallback((newToken) => {
+    setAuthToken(newToken);
+  }, []);
+
   return (
     <SocketContext.Provider value={{
       connected,
@@ -107,7 +140,10 @@ export const SocketProvider = ({ children }) => {
       socketStatus,
       subscribeToEvents,
       joinMesa,
-      leaveMesa
+      leaveMesa,
+      authError,
+      updateToken,
+      authToken
     }}>
       {children}
     </SocketContext.Provider>
