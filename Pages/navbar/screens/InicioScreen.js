@@ -1409,9 +1409,15 @@ const InicioScreen = () => {
   };
 
   const getEstadoMesa = (mesa) => {
-    // Prioridad: si el backend marcó la mesa como "pagado", mostrarla verde aunque no haya comandas activas
+    // Prioridad 1: si el backend marcó la mesa como "pagado", mostrarla verde aunque no haya comandas activas
     if (mesa.estado && (mesa.estado.toLowerCase() === "pagado" || mesa.estado.toLowerCase() === "pagando")) {
       return mesa.estado.charAt(0).toUpperCase() + mesa.estado.slice(1).toLowerCase();
+    }
+
+    // Prioridad 2: si la mesa está reservada, mostrarla morada aunque no tenga comandas
+    // Esto es importante porque una reserva no crea comanda hasta que el mozo asignado la active
+    if (mesa.estado && mesa.estado.toLowerCase() === "reservado") {
+      return "Reservado";
     }
 
     // Fuente única: comandas activas de la mesa. Si no hay comandas activas, la mesa está libre.
@@ -1569,6 +1575,68 @@ const InicioScreen = () => {
     if (estado === "Libre") {
       // Solo seleccionar la mesa, no navegar automáticamente
       // El usuario puede usar la barra derecha para navegar
+    } else if (estado === "Reservado") {
+      // Mesa reservada - verificar si el mozo actual está asignado a la reserva
+      try {
+        const reservaURL = apiConfig.isConfigured 
+          ? apiConfig.getEndpoint(`/reservas/mesa/${mesa._id}/activa`)
+          : `http://192.168.18.11:3000/api/reservas/mesa/${mesa._id}/activa`;
+        
+        const response = await axios.get(reservaURL, { timeout: 5000 });
+        
+        if (response.data.tieneReservaActiva && response.data.reserva) {
+          const reserva = response.data.reserva;
+          const mozoAsignadoId = reserva.mozo?._id || reserva.mozo;
+          const mozoActualId = userInfo?._id;
+          
+          // Si hay mozo asignado y no es el actual, denegar acceso
+          if (mozoAsignadoId && mozoActualId && mozoAsignadoId.toString() !== mozoActualId.toString()) {
+            Alert.alert(
+              "Acceso Denegado",
+              `Esta mesa está reservada para ${reserva.clienteNombre || 'un cliente'}. Solo el mozo asignado puede atender esta mesa.`,
+              [{ text: "OK" }]
+            );
+            return;
+          }
+          
+          // Si es el mozo asignado o no hay mozo asignado, permitir crear comanda
+          Alert.alert(
+            "Mesa Reservada",
+            `Esta mesa tiene una reserva a nombre de ${reserva.clienteNombre || 'Cliente'}${reserva.numPersonas ? ` para ${reserva.numPersonas} personas` : ''}.\n\n¿Deseas iniciar la atención?`,
+            [
+              { text: "Cancelar", style: "cancel" },
+              { 
+                text: "Iniciar Atención", 
+                onPress: () => {
+                  navigation.navigate('ComandaDetalle', {
+                    mesa: mesa,
+                    comandas: [],
+                    reserva: reserva,
+                    onRefresh: () => {
+                      obtenerMesas();
+                      obtenerComandasHoy();
+                    }
+                  });
+                }
+              }
+            ]
+          );
+        } else {
+          // No hay reserva activa pero la mesa está en estado reservado (inconsistencia)
+          Alert.alert(
+            "Mesa Reservada",
+            "Esta mesa está marcada como reservada. Contacta al administrador.",
+            [{ text: "OK" }]
+          );
+        }
+      } catch (error) {
+        console.error("Error al verificar reserva:", error);
+        Alert.alert(
+          "Error",
+          "No se pudo verificar la información de la reserva.",
+          [{ text: "OK" }]
+        );
+      }
     } else if (estado === "Pedido" || estado?.toLowerCase() === "pedido") {
       const comandasMesa = getComandasPorMesa(mesa.nummesa);
       const comandasActivas = comandasMesa.filter(c => 
