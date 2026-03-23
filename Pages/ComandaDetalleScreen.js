@@ -69,7 +69,7 @@ const obtenerEstilosPorEstado = (estado) => {
 
 const ComandaDetalleScreen = ({ route, navigation }) => {
   // Recibir parámetros de navegación (clienteId / filterByCliente para filtrar por cliente)
-  const { mesa, comandas: comandasIniciales, onRefresh, clienteId, filterByCliente } = route.params || {};
+  const { mesa, comandas: comandasIniciales, onRefresh, clienteId, filterByCliente, reserva } = route.params || {};
   
   // Hooks
   const { theme, isDarkMode } = useTheme();
@@ -581,7 +581,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Los platos en estado "Recoger" ya están listos y no deben eliminarse
   const puedeEliminarPlatos = platosEnPedido.length > 0;
   const puedeEliminarComanda = comandas.length > 0 && comandas[0].status !== 'pagado';
-  const puedeNuevaComanda = mesa?.estado === 'pedido' || mesa?.estado === 'preparado' || mesa?.estado === 'recoger';
+  // Permitir nueva comanda si la mesa está en estados normales O si viene de una reserva
+  const puedeNuevaComanda = mesa?.estado === 'pedido' || mesa?.estado === 'preparado' || mesa?.estado === 'recoger' || mesa?.estado === 'reservado' || reserva;
   const puedePagar = todosLosPlatos.length > 0 && todosLosPlatos.every(p => p.estado === 'entregado' || p.estado === 'pagado');
   
   // Condición para mostrar botón Entregar: hay platos en estado "recoger"
@@ -1347,9 +1348,16 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     
     // Guardar contexto y navegar a OrdenesScreen
     AsyncStorage.setItem('mesaSeleccionada', JSON.stringify(mesa));
+    
+    // Si hay reserva, guardarla también para asociar a la comanda
+    if (reserva) {
+      AsyncStorage.setItem('reservaActiva', JSON.stringify(reserva));
+    }
+    
     navigation.navigate('Ordenes', {
       mesa: mesa,
-      origen: 'ComandaDetalle'
+      origen: 'ComandaDetalle',
+      reserva: reserva || null // Pasar la reserva para asociar a la comanda
     });
   };
   

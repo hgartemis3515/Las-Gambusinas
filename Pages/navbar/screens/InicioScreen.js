@@ -459,6 +459,7 @@ const InicioScreen = () => {
   const { width, height } = useWindowDimensions();
   const [mesas, setMesas] = useState([]);
   const [comandas, setComandas] = useState([]);
+  const [reservas, setReservas] = useState([]); // Reservas activas para mostrar mozo en mesas reservadas
   const [modalEditVisible, setModalEditVisible] = useState(false);
   const [comandaEditando, setComandaEditando] = useState(null);
   const [modalOpcionesMesaVisible, setModalOpcionesMesaVisible] = useState(false);
@@ -1182,6 +1183,7 @@ const InicioScreen = () => {
       if (!routeParamsRef.current?.mostrarMensajePago) {
         obtenerMesas();
         obtenerComandasHoy();
+        obtenerReservasActivas();
       }
       return () => {
         subscribeToEvents({
@@ -1311,6 +1313,19 @@ const InicioScreen = () => {
       verificarComandasEnLote(response.data || [], axios).catch(() => {});
     } catch (error) {
       console.error("Error al obtener las comandas de hoy:", error.message);
+    }
+  }, []);
+
+  // Cargar reservas activas para mostrar mozo en mesas reservadas
+  const obtenerReservasActivas = useCallback(async () => {
+    try {
+      const reservasURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/reservas?estado=pendiente')
+        : 'http://192.168.18.11:3000/api/reservas?estado=pendiente';
+      const response = await axios.get(reservasURL, { timeout: 5000 });
+      setReservas(response.data || []);
+    } catch (error) {
+      console.error("Error al obtener las reservas:", error.message);
     }
   }, []);
 
@@ -1494,6 +1509,18 @@ const InicioScreen = () => {
     // Si la mesa está libre, no mostrar mozo
     if (mesa.estado?.toLowerCase() === "libre") {
       return "N/A";
+    }
+    
+    // Si la mesa está reservada, buscar el mozo en la reserva
+    if (mesa.estado?.toLowerCase() === "reservado") {
+      const reservaActiva = reservas.find(r => {
+        const mesaId = r.mesa?._id?.toString() || r.mesa?.toString();
+        return mesaId === mesa._id?.toString();
+      });
+      if (reservaActiva?.mozo?.name) {
+        return reservaActiva.mozo.name;
+      }
+      return "Sin asignar";
     }
     
     // PRIORIDAD: Primero buscar comandas activas (no pagadas)

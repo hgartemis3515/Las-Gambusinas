@@ -149,12 +149,16 @@ const AnimatedOverlay = ({ mensaje }) => {
   );
 };
 
-const OrdenesScreen = () => {
+const OrdenesScreen = ({ route }) => {
   const navigation = useNavigation();
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const orientation = useOrientation();
   const styles = OrdenesScreenStyles(theme, orientation);
+  
+  // Obtener parámetros de navegación (mesa y reserva desde ComandaDetalle)
+  const { mesa: mesaParam, reserva: reservaParam, origen } = route?.params || {};
+  
   const [userInfo, setUserInfo] = useState(null);
   const [selectedMesa, setSelectedMesa] = useState(null);
   const [mesas, setMesas] = useState([]);
@@ -173,6 +177,7 @@ const OrdenesScreen = () => {
   const [mostrarOverlayCarga, setMostrarOverlayCarga] = useState(false);
   const [mensajeCarga, setMensajeCarga] = useState("Creando comanda...");
   const [searchPlatoDebounced, setSearchPlatoDebounced] = useState("");
+  const [reservaActiva, setReservaActiva] = useState(null); // Reserva activa para asociar a la comanda
 
   // Estado para el modal de complementos
   const [platoParaComplementar, setPlatoParaComplementar] = useState(null); // Cuando no es null, el modal de complementos está abierto
@@ -192,6 +197,21 @@ const OrdenesScreen = () => {
     loadSelectedPlatos();
     obtenerAreas();
   }, []);
+
+  // Manejar parámetros de navegación (mesa y reserva desde ComandaDetalle)
+  useEffect(() => {
+    if (mesaParam) {
+      console.log("📋 Mesa recibida desde parámetros:", mesaParam);
+      setSelectedMesa(mesaParam);
+      // También guardar en AsyncStorage para persistencia
+      AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesaParam));
+    }
+    if (reservaParam) {
+      console.log("📅 Reserva recibida desde parámetros:", reservaParam._id);
+      setReservaActiva(reservaParam);
+      AsyncStorage.setItem("reservaActiva", JSON.stringify(reservaParam));
+    }
+  }, [mesaParam, reservaParam]);
 
   // Recargar mesa y usuario cuando se enfoca la pantalla (por si viene desde InicioScreen con mesa seleccionada)
   useFocusEffect(
@@ -243,6 +263,13 @@ const OrdenesScreen = () => {
       if (mesaData) {
         const parsed = JSON.parse(mesaData);
         setSelectedMesa(parsed);
+      }
+      // Cargar reserva activa si existe
+      const reservaData = await AsyncStorage.getItem("reservaActiva");
+      if (reservaData) {
+        const parsedReserva = JSON.parse(reservaData);
+        setReservaActiva(parsedReserva);
+        console.log("📅 Reserva activa cargada:", parsedReserva._id);
       }
     } catch (error) {
       console.error("Error cargando mesa:", error);
@@ -512,106 +539,144 @@ const OrdenesScreen = () => {
       
       // Si la mesa NO está libre, verificar que sea el mismo mozo que creó la comanda
       if (estadoMesa !== 'libre') {
+        // Si la mesa está reservada, verificar si hay reserva activa y si el mozo está autorizado
         if (estadoMesa === 'reservado') {
-          Alert.alert(
-            "Mesa Reservada",
-            "Esta mesa está reservada. Solo un administrador puede liberarla.",
-            [{ text: "OK" }]
-          );
-          setIsSendingComanda(false);
-          return;
-        }
-        
-        // Para otros estados (pedido, preparado, pagado, esperando), verificar que sea el mismo mozo
-        try {
-          // Obtener comandas de la mesa para verificar el mozo
-          const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-          const comandasURL = apiConfig.isConfigured 
-            ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
-            : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
-          
-          const response = await axios.get(comandasURL, { 
-            timeout: 10000, // Aumentado de 5000 a 10000ms para conexiones lentas
-            validateStatus: (status) => status < 500 // Aceptar errores 4xx sin lanzar excepción
-          });
-          
-          const comandasMesa = response.data?.filter ? response.data.filter(
-            (c) => c.mesas?.nummesa === mesaActualizada.nummesa && 
-                   c.status?.toLowerCase() !== "pagado" && 
-                   c.status?.toLowerCase() !== "completado"
-          ) : [];
-          
-          if (comandasMesa.length > 0) {
-            const primeraComanda = comandasMesa[0];
-            const mozoComandaId = primeraComanda.mozos?._id || primeraComanda.mozos;
-            const mozoActualId = userInfo._id;
+          // Verificar si hay una reserva activa y si el mozo actual está autorizado
+          try {
+            const reservaURL = apiConfig.isConfigured 
+              ? apiConfig.getEndpoint(`/reservas/mesa/${mesaActualizada._id}/activa`)
+              : `http://192.168.18.11:3000/api/reservas/mesa/${mesaActualizada._id}/activa`;
             
-            if (mozoComandaId && mozoActualId && mozoComandaId.toString() !== mozoActualId.toString()) {
-              Alert.alert(
-                "Acceso Denegado",
-                `Solo el mozo que creó la comanda original puede agregar más comandas a esta mesa cuando está en estado '${estadoMesa}'.`,
-                [{ text: "OK" }]
-              );
-              setIsSendingComanda(false);
-              return;
-            }
-            // Si es el mismo mozo, permitir crear nueva comanda
-            // Si la mesa está en "preparado", se creará la nueva comanda y la mesa pasará a "pedido"
-            if (estadoMesa === 'preparado') {
-              console.log(`✅ Creando nueva comanda en mesa ${mesaActualizada.nummesa} (estado: preparado) - Mismo mozo`);
-            }
-          } else {
-            // Si no hay comandas activas pero la mesa está en "preparado", permitir crear comanda
-            // (puede ser un estado inconsistente o la comanda ya fue pagada)
-            if (estadoMesa === 'preparado') {
-              console.log(`✅ Creando nueva comanda en mesa ${mesaActualizada.nummesa} (estado: preparado) - Sin comandas activas`);
-              // Permitir continuar con la creación de la comanda
+            const reservaResponse = await axios.get(reservaURL, { timeout: 5000 });
+            
+            if (reservaResponse.data.tieneReservaActiva && reservaResponse.data.reserva) {
+              const reserva = reservaResponse.data.reserva;
+              const mozoAsignadoId = reserva.mozo?._id || reserva.mozo;
+              const mozoActualId = userInfo._id;
+              
+              // Si hay mozo asignado y no es el actual, denegar acceso
+              if (mozoAsignadoId && mozoActualId && mozoAsignadoId.toString() !== mozoActualId.toString()) {
+                Alert.alert(
+                  "Acceso Denegado",
+                  `Esta mesa está reservada. Solo el mozo asignado puede atenderla.`,
+                  [{ text: "OK" }]
+                );
+                setIsSendingComanda(false);
+                return;
+              }
+              
+              // Mozo autorizado o sin mozo asignado: permitir crear comanda
+              console.log(`✅ Mozo autorizado para mesa reservada ${mesaActualizada.nummesa}`);
+              // Guardar referencia a la reserva para asociarla a la comanda
+              if (!reservaActiva) {
+                setReservaActiva(reserva);
+              }
+              // IMPORTANTE: Continuar directamente a crear la comanda sin verificar comandas existentes
+              // porque una mesa reservada puede no tener comandas previas y el mozo está autorizado
             } else {
-              // Para otros estados sin comandas activas, rechazar
-              Alert.alert(
-                "Mesa No Disponible",
-                `La mesa está en estado "${estadoMesa}". Solo se pueden crear comandas en mesas libres o cuando eres el mozo que creó la comanda original.`,
-                [{ text: "OK" }]
-              );
-              setIsSendingComanda(false);
-              return;
+              // No hay reserva activa, pero la mesa está en estado reservado
+              // Permitir crear comanda (el backend corregirá el estado)
+              console.log(`⚠️ Mesa ${mesaActualizada.nummesa} en estado 'reservado' sin reserva activa. Permitiendo crear comanda.`);
             }
+          } catch (error) {
+            console.error("Error al verificar reserva:", error);
+            // Si hay error, permitir crear comanda (el backend validará)
+            console.log(`⚠️ Error al verificar reserva, permitiendo crear comanda.`);
           }
-        } catch (error) {
-          // Manejo mejorado de errores de red
-          const isNetworkError = error.code === 'ECONNABORTED' || 
-                                 error.message?.includes('Network Error') ||
-                                 error.message?.includes('timeout') ||
-                                 !error.response;
-          
-          if (isNetworkError) {
-            console.warn("⚠️ Error de red al verificar comandas:", error.message);
+          // IMPORTANTE: Saltar la validación de comandas existentes para mesas reservadas
+          // El backend ya validará la autorización del mozo
+        } else if (estadoMesa !== 'libre') {
+          // Para otros estados (pedido, preparado, pagado, esperando), verificar que sea el mismo mozo
+          try {
+            // Obtener comandas de la mesa para verificar el mozo
+            const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
+            const comandasURL = apiConfig.isConfigured 
+              ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
+              : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
             
-            // Si la mesa está en "preparado", permitir crear comanda aunque falle la verificación
-            // (el backend validará y actualizará el estado correctamente)
-            if (estadoMesa === 'preparado') {
-              console.log(`⚠️ [ORDENES] Error de red, pero permitiendo crear comanda en mesa ${mesaActualizada.nummesa} (estado: preparado)`);
-              // Continuar con la creación de la comanda - NO retornar aquí
+            const response = await axios.get(comandasURL, { 
+              timeout: 10000, // Aumentado de 5000 a 10000ms para conexiones lentas
+              validateStatus: (status) => status < 500 // Aceptar errores 4xx sin lanzar excepción
+            });
+            
+            const comandasMesa = response.data?.filter ? response.data.filter(
+              (c) => c.mesas?.nummesa === mesaActualizada.nummesa && 
+                     c.status?.toLowerCase() !== "pagado" && 
+                     c.status?.toLowerCase() !== "completado"
+            ) : [];
+            
+            if (comandasMesa.length > 0) {
+              const primeraComanda = comandasMesa[0];
+              const mozoComandaId = primeraComanda.mozos?._id || primeraComanda.mozos;
+              const mozoActualId = userInfo._id;
+              
+              if (mozoComandaId && mozoActualId && mozoComandaId.toString() !== mozoActualId.toString()) {
+                Alert.alert(
+                  "Acceso Denegado",
+                  `Solo el mozo que creó la comanda original puede agregar más comandas a esta mesa cuando está en estado '${estadoMesa}'.`,
+                  [{ text: "OK" }]
+                );
+                setIsSendingComanda(false);
+                return;
+              }
+              // Si es el mismo mozo, permitir crear nueva comanda
+              // Si la mesa está en "preparado", se creará la nueva comanda y la mesa pasará a "pedido"
+              if (estadoMesa === 'preparado') {
+                console.log(`✅ Creando nueva comanda en mesa ${mesaActualizada.nummesa} (estado: preparado) - Mismo mozo`);
+              }
             } else {
-              // Para otros estados, mostrar error pero más informativo
+              // Si no hay comandas activas pero la mesa está en "preparado", permitir crear comanda
+              // (puede ser un estado inconsistente o la comanda ya fue pagada)
+              if (estadoMesa === 'preparado') {
+                console.log(`✅ Creando nueva comanda en mesa ${mesaActualizada.nummesa} (estado: preparado) - Sin comandas activas`);
+                // Permitir continuar con la creación de la comanda
+              } else {
+                // Para otros estados sin comandas activas, rechazar
+                Alert.alert(
+                  "Mesa No Disponible",
+                  `La mesa está en estado "${estadoMesa}". Solo se pueden crear comandas en mesas libres o cuando eres el mozo que creó la comanda original.`,
+                  [{ text: "OK" }]
+                );
+                setIsSendingComanda(false);
+                return;
+              }
+            }
+          } catch (error) {
+            // Manejo mejorado de errores de red
+            const isNetworkError = error.code === 'ECONNABORTED' || 
+                                   error.message?.includes('Network Error') ||
+                                   error.message?.includes('timeout') ||
+                                   !error.response;
+            
+            if (isNetworkError) {
+              console.warn("⚠️ Error de red al verificar comandas:", error.message);
+              
+              // Si la mesa está en "preparado", permitir crear comanda aunque falle la verificación
+              // (el backend validará y actualizará el estado correctamente)
+              if (estadoMesa === 'preparado') {
+                console.log(`⚠️ [ORDENES] Error de red, pero permitiendo crear comanda en mesa ${mesaActualizada.nummesa} (estado: preparado)`);
+                // Continuar con la creación de la comanda - NO retornar aquí
+              } else {
+                // Para otros estados, mostrar error pero más informativo
+                Alert.alert(
+                  "Error de Conexión",
+                  `No se pudo verificar las comandas de la mesa debido a un error de red. Por favor, verifica tu conexión e intenta nuevamente.\n\nEstado de la mesa: ${estadoMesa}`,
+                  [{ text: "OK" }]
+                );
+                setIsSendingComanda(false);
+                return;
+              }
+            } else {
+              // Error del servidor (no de red)
+              console.error("Error verificando comandas de la mesa:", error);
               Alert.alert(
-                "Error de Conexión",
-                `No se pudo verificar las comandas de la mesa debido a un error de red. Por favor, verifica tu conexión e intenta nuevamente.\n\nEstado de la mesa: ${estadoMesa}`,
+                "Error del Servidor",
+                `No se pudo verificar las comandas de la mesa. Error: ${error.response?.data?.message || error.message}`,
                 [{ text: "OK" }]
               );
               setIsSendingComanda(false);
               return;
             }
-          } else {
-            // Error del servidor (no de red)
-            console.error("Error verificando comandas de la mesa:", error);
-            Alert.alert(
-              "Error del Servidor",
-              `No se pudo verificar las comandas de la mesa. Error: ${error.response?.data?.message || error.message}`,
-              [{ text: "OK" }]
-            );
-            setIsSendingComanda(false);
-            return;
           }
         }
       }
@@ -646,14 +711,17 @@ const OrdenesScreen = () => {
         cantidades: cantidadesArray,
         observaciones: observaciones || "",
         status: "en_espera",
-        IsActive: true
+        IsActive: true,
+        // Si hay reserva activa, incluirla
+        ...(reservaActiva && { origenReserva: reservaActiva._id })
       };
 
       console.log("📤 Datos de comanda a enviar:", {
         mozos: comandaData.mozos,
         mesas: comandaData.mesas,
         numMesa: selectedMesa.nummesa,
-        platosCount: comandaData.platos.length
+        platosCount: comandaData.platos.length,
+        origenReserva: comandaData.origenReserva || null
       });
 
       // Mostrar overlay de carga
@@ -809,12 +877,14 @@ const OrdenesScreen = () => {
       
       // Limpiar datos locales
       await AsyncStorage.removeItem("mesaSeleccionada");
+      await AsyncStorage.removeItem("reservaActiva"); // Limpiar reserva activa
       await AsyncStorage.removeItem("selectedPlates");
       await AsyncStorage.removeItem("selectedPlatesIds");
       await AsyncStorage.removeItem("cantidadesComanda");
       await AsyncStorage.removeItem("additionalDetails");
       
       setSelectedMesa(null);
+      setReservaActiva(null); // Limpiar estado de reserva
       setSelectedPlatos([]);
       setCantidades({});
       setObservaciones("");
@@ -851,12 +921,14 @@ const OrdenesScreen = () => {
         
         // Limpiar datos locales
         await AsyncStorage.removeItem("mesaSeleccionada");
+        await AsyncStorage.removeItem("reservaActiva"); // Limpiar reserva activa
         await AsyncStorage.removeItem("selectedPlates");
         await AsyncStorage.removeItem("selectedPlatesIds");
         await AsyncStorage.removeItem("cantidadesComanda");
         await AsyncStorage.removeItem("additionalDetails");
         
         setSelectedMesa(null);
+        setReservaActiva(null); // Limpiar estado de reserva
         setSelectedPlatos([]);
         setCantidades({});
         setObservaciones("");
