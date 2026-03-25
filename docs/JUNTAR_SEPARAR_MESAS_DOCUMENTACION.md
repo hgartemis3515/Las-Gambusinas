@@ -86,7 +86,7 @@ nombreCombinado: {
     type: String,
     default: null
 }
-// Nombre combinado para mesas juntadas (ej: "Mesa 1 y Mesa 2")
+// Nombre combinado compacto para mesas juntadas (ej: "M1,2" o "M5,6,7,8")
 ```
 
 ### 2.2 Indices Agregados
@@ -178,7 +178,7 @@ POST /api/mesas/juntar
         "nummesa": 5,
         "esMesaPrincipal": true,
         "mesasUnidas": ["ObjectId2", "ObjectId3"],
-        "nombreCombinado": "Mesa 5, 6 y 7",
+        "nombreCombinado": "M5,6,7",
         "estado": "libre"
     },
     "mesasSecundarias": [...],

@@ -487,7 +487,9 @@ const MesaAnimada = React.memo(({
           </View>
         )}
         
-        <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25 }]}>M{mesa.nummesa}</Text>
+        <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25 }]}>
+          {mesa.nombreCombinado || `M${mesa.nummesa}`}
+        </Text>
         {/* Mostrar mozo solo si zoom level >= 1 (small) */}
         {zoomLevel >= 1 && (
           <Text style={[styles.mesaMozo, { fontSize: mesaSize * 0.15 }]}>
@@ -4197,6 +4199,7 @@ const InicioScreen = () => {
   };
 
   // Obtener mesas por área/sección (mantiene ordenamiento numérico)
+  // OCULTA las mesas secundarias (las que están unidas a otra mesa principal)
   const getMesasPorArea = useCallback((areaId) => {
     let mesasFiltradas;
     if (areaId === "All") {
@@ -4207,6 +4210,15 @@ const InicioScreen = () => {
         return mesaAreaId === areaId;
       });
     }
+    
+    // Filtrar mesas secundarias (las que están unidas a otra mesa)
+    // Solo mostrar mesas principales o independientes
+    mesasFiltradas = mesasFiltradas.filter(mesa => {
+      // Si es mesa principal (true) o no tiene mesaPrincipalId, se muestra
+      // Si es mesa secundaria (esMesaPrincipal === false), se oculta
+      return mesa.esMesaPrincipal !== false;
+    });
+    
     // Aplicar ordenamiento numérico a las mesas filtradas
     return ordenarMesasPorNumero(mesasFiltradas);
   }, [mesas, ordenarMesasPorNumero]);
@@ -4439,7 +4451,8 @@ const InicioScreen = () => {
                 );
               })
             ) : (
-              mesas.map((mesa, index) => {
+              // Vista de todas las mesas (sin filtro de área) - excluye mesas secundarias
+              mesas.filter(mesa => mesa.esMesaPrincipal !== false).map((mesa, index) => {
                 const estado = getEstadoMesa(mesa);
                 const estadoColor = getEstadoColor(estado);
                 const mozo = getMozoMesa(mesa);
