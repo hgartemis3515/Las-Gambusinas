@@ -477,6 +477,73 @@ const useSocketMozos = ({
       }
     });
 
+    // ========== EVENTOS DE JUNTAR/SEPARAR MESAS ==========
+
+    // Evento: Mesas juntadas
+    socket.on('mesas-juntadas', (data) => {
+      console.log('🔗 [MOZOS] Mesas juntadas recibido:', {
+        mesaPrincipal: data.mesaPrincipal?.nummesa,
+        totalMesas: data.totalMesas,
+        mozoId: data.mozoId
+      });
+      
+      // Notificar cambio de estado para parpadeo del indicador
+      if (onSocketStatus) {
+        setConnectionStatus('online-active');
+        onSocketStatus({ connected: true, status: 'online-active' });
+        
+        setTimeout(() => {
+          setConnectionStatus('conectado');
+          onSocketStatus({ connected: true, status: 'conectado' });
+        }, 2000);
+      }
+      
+      // Actualizar la mesa principal si el handler existe
+      if (onMesaActualizada && data.mesaPrincipal) {
+        onMesaActualizada(data.mesaPrincipal);
+      }
+      
+      // Actualizar mesas secundarias
+      if (onMesaActualizada && data.mesasSecundarias) {
+        data.mesasSecundarias.forEach(mesa => {
+          onMesaActualizada(mesa);
+        });
+      }
+    });
+
+    // Evento: Mesas separadas
+    socket.on('mesas-separadas', (data) => {
+      console.log('🔗 [MOZOS] Mesas separadas recibido:', {
+        mesaPrincipal: data.mesaPrincipal?.nummesa,
+        mesasLiberadas: data.totalMesasLiberadas,
+        mozoId: data.mozoId
+      });
+      
+      // Notificar cambio de estado
+      if (onSocketStatus) {
+        setConnectionStatus('online-active');
+        onSocketStatus({ connected: true, status: 'online-active' });
+        
+        setTimeout(() => {
+          setConnectionStatus('conectado');
+          onSocketStatus({ connected: true, status: 'conectado' });
+        }, 2000);
+      }
+      
+      // Actualizar todas las mesas afectadas
+      if (onMesaActualizada && data.mesaPrincipal) {
+        onMesaActualizada(data.mesaPrincipal);
+      }
+      
+      if (onMesaActualizada && data.mesasSecundarias) {
+        data.mesasSecundarias.forEach(mesa => {
+          onMesaActualizada(mesa);
+        });
+      }
+    });
+
+    // ========== FIN EVENTOS JUNTAR/SEPARAR ==========
+
     // Cleanup - NO desconectar el socket ya que está en contexto global
     // El socket se mantiene activo en todas las pantallas
     // IMPORTANTE: No hacer cleanup del socket aquí porque está en contexto global

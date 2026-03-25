@@ -298,14 +298,27 @@ const MesaAnimada = React.memo(({
   theme, 
   styles,
   onPress,
-  index 
+  index,
+  // Nuevas props para juntar/separar
+  modoSeleccion = false,
+  estaSeleccionada = false,
+  esMesaPrincipal = true,
+  mesasUnidas = [],
+  mesaPrincipalNum = null,
+  formatearGrupo = ""
 }) => {
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
   const pulseScale = useSharedValue(1);
   const opacity = useSharedValue(1);
   const flashOpacity = useSharedValue(1);
+  const checkScale = useSharedValue(estaSeleccionada ? 1 : 0);
   const prevEstadoRef = useRef(estado);
+  
+  // Animación del checkbox cuando cambia selección
+  useEffect(() => {
+    checkScale.value = withSpring(estaSeleccionada ? 1 : 0, springConfig);
+  }, [estaSeleccionada]);
   
   // Animación según estado + transición cuando cambia (sincronización WebSocket)
   useEffect(() => {
@@ -413,6 +426,25 @@ const MesaAnimada = React.memo(({
   const borderAnimatedStyle = useAnimatedStyle(() => ({
     borderWidth: isSelected ? 3 : 1,
   }));
+  
+  // Animación del checkbox
+  const checkAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: checkScale.value }],
+    opacity: checkScale.value,
+  }));
+
+  // Determinar color de borde según estado de grupo
+  const getBorderColor = () => {
+    if (estaSeleccionada) return theme.colors.secondary || "#FF6B6B";
+    if (!esMesaPrincipal) return "#9C27B0"; // Morado para mesa secundaria
+    if (mesasUnidas && mesasUnidas.length > 0) return "#2196F3"; // Azul para mesa principal con unidas
+    return "transparent";
+  };
+
+  // Determinar si mostrar badge
+  const mostrarBadge = mesasUnidas && mesasUnidas.length > 0 || !esMesaPrincipal;
+  const badgeText = !esMesaPrincipal ? `M${mesaPrincipalNum}` : `+${mesasUnidas.length}`;
+  const badgeColor = !esMesaPrincipal ? "#9C27B0" : "#2196F3";
 
   return (
     <GestureDetector gesture={tapGesture}>
@@ -423,13 +455,38 @@ const MesaAnimada = React.memo(({
           {
             width: mesaSize,
             height: mesaSize,
-            backgroundColor: estadoColor, // Color se actualiza automáticamente cuando cambia estado (WebSocket)
-            borderColor: isSelected ? theme.colors.secondary : "transparent",
+            backgroundColor: estadoColor,
+            borderColor: getBorderColor(),
           },
-          animatedStyle, // Incluye opacity y flashOpacity para transiciones suaves
+          animatedStyle,
           borderAnimatedStyle,
         ]}
       >
+        {/* Checkbox de selección (modo selección) */}
+        {modoSeleccion && (
+          <Animated.View style={[styles.mesaCheckbox, checkAnimatedStyle]}>
+            <View style={[
+              styles.checkboxCircle,
+              { backgroundColor: estaSeleccionada ? (theme.colors.secondary || "#FF6B6B") : "rgba(255,255,255,0.3)" }
+            ]}>
+              {estaSeleccionada && (
+                <MaterialCommunityIcons 
+                  name="check" 
+                  size={Math.max(10, mesaSize * 0.15)} 
+                  color={theme.colors.text.white} 
+                />
+              )}
+            </View>
+          </Animated.View>
+        )}
+        
+        {/* Badge de grupo (principal/secundaria) */}
+        {mostrarBadge && !modoSeleccion && (
+          <View style={[styles.mesaGrupoBadge, { backgroundColor: badgeColor }]}>
+            <Text style={styles.mesaGrupoBadgeText}>{badgeText}</Text>
+          </View>
+        )}
+        
         <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25 }]}>M{mesa.nummesa}</Text>
         {/* Mostrar mozo solo si zoom level >= 1 (small) */}
         {zoomLevel >= 1 && (
@@ -484,6 +541,15 @@ const InicioScreen = () => {
   const [eliminandoPlatos, setEliminandoPlatos] = useState(false);
   const [mensajeCargaEliminacionPlatos, setMensajeCargaEliminacionPlatos] = useState("");
   const [mesaZoomLevel, setMesaZoomLevel] = useState(2); // 0-4: extraSmall, small, medium, large, extraLarge
+  
+  // ========== ESTADOS PARA JUNTAR/SEPARAR MESAS ==========
+  const [modoSeleccion, setModoSeleccion] = useState(false); // Activa modo selección múltiple
+  const [mesasSeleccionadas, setMesasSeleccionadas] = useState([]); // Array de IDs de mesas seleccionadas
+  const [modalJuntarVisible, setModalJuntarVisible] = useState(false); // Modal de confirmación para juntar
+  const [modalSepararVisible, setModalSepararVisible] = useState(false); // Modal de confirmación para separar
+  const [motivoUnion, setMotivoUnion] = useState(""); // Nota opcional para juntar/separar
+  const [procesandoAccion, setProcesandoAccion] = useState(false); // Loading durante operación
+  const [tienePermisoJuntarSeparar, setTienePermisoJuntarSeparar] = useState(false); // Permiso del usuario
   
   // Refs y estado para scroll de tabs áreas
   const tabsScrollViewRef = useRef(null);
@@ -1177,7 +1243,17 @@ const InicioScreen = () => {
       subscribeToEvents({
         onMesaActualizada: handleMesaActualizada,
         onComandaActualizada: handleComandaActualizada,
-        onNuevaComanda: handleNuevaComanda
+        onNuevaComanda: handleNuevaComanda,
+        onMesasJuntadas: (data) => {
+          console.log('🔗 [INICIO] Evento mesas-juntadas recibido:', data);
+          // Recargar mesas para obtener estado actualizado
+          obtenerMesas();
+        },
+        onMesasSeparadas: (data) => {
+          console.log('🔗 [INICIO] Evento mesas-separadas recibido:', data);
+          // Recargar mesas para obtener estado actualizado
+          obtenerMesas();
+        }
       });
       // Refresh solo si no viene del flujo post-pago (ese useEffect ya hace el refresh)
       if (!routeParamsRef.current?.mostrarMensajePago) {
@@ -1189,7 +1265,9 @@ const InicioScreen = () => {
         subscribeToEvents({
           onMesaActualizada: null,
           onComandaActualizada: null,
-          onNuevaComanda: null
+          onNuevaComanda: null,
+          onMesasJuntadas: null,
+          onMesasSeparadas: null
         });
       };
     }, [subscribeToEvents, handleMesaActualizada, handleComandaActualizada, handleNuevaComanda, obtenerMesas, obtenerComandasHoy])
@@ -1899,6 +1977,322 @@ const InicioScreen = () => {
       );
     }
   };
+
+  // ========== FUNCIONES PARA JUNTAR/SEPARAR MESAS ==========
+  
+  // Verificar permisos al cargar userInfo
+  useEffect(() => {
+    if (userInfo && userInfo.permisos) {
+      const tienePermiso = userInfo.permisos.includes('mesas.juntar_separar');
+      setTienePermisoJuntarSeparar(tienePermiso);
+      console.log(`🔐 [JUNTAR/SEPARAR] Permiso mesas.juntar_separar: ${tienePermiso}`);
+    }
+  }, [userInfo]);
+
+  // Helper: Verificar si una mesa está en grupo (es principal o secundaria)
+  const mesaEstaEnGrupo = useCallback((mesa) => {
+    if (!mesa) return false;
+    // Es principal con mesas unidas
+    if (mesa.esMesaPrincipal === true && mesa.mesasUnidas && mesa.mesasUnidas.length > 0) {
+      return true;
+    }
+    // Es secundaria (unida a otra mesa)
+    if (mesa.esMesaPrincipal === false && mesa.mesaPrincipalId) {
+      return true;
+    }
+    return false;
+  }, []);
+
+  // Helper: Obtener el grupo completo de una mesa
+  const obtenerGrupoMesa = useCallback((mesa) => {
+    if (!mesa) return { esPrincipal: false, grupo: [] };
+    
+    // Si es mesa principal
+    if (mesa.esMesaPrincipal === true && mesa.mesasUnidas && mesa.mesasUnidas.length > 0) {
+      const mesasUnidasInfo = mesa.mesasUnidas.map(mesaId => {
+        const mesaEncontrada = mesas.find(m => m._id === mesaId || m._id?.toString() === mesaId?.toString());
+        return mesaEncontrada;
+      }).filter(Boolean);
+      
+      return {
+        esPrincipal: true,
+        grupo: [mesa, ...mesasUnidasInfo],
+        mesaPrincipal: mesa,
+        mesasSecundarias: mesasUnidasInfo
+      };
+    }
+    
+    // Si es mesa secundaria
+    if (mesa.esMesaPrincipal === false && mesa.mesaPrincipalId) {
+      const mesaPrincipal = mesas.find(m => 
+        m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString()
+      );
+      if (mesaPrincipal) {
+        return {
+          esPrincipal: false,
+          grupo: [mesaPrincipal, mesa],
+          mesaPrincipal: mesaPrincipal,
+          mesasSecundarias: [mesa]
+        };
+      }
+    }
+    
+    return { esPrincipal: false, grupo: [] };
+  }, [mesas]);
+
+  // Helper: Formatear grupo de mesas para mostrar
+  const formatearGrupoMesas = useCallback((mesa) => {
+    if (!mesa) return "";
+    
+    // Si es principal con mesas unidas
+    if (mesa.esMesaPrincipal === true && mesa.mesasUnidas && mesa.mesasUnidas.length > 0) {
+      const numerosUnidas = mesa.mesasUnidas.map(mesaId => {
+        const mesaEncontrada = mesas.find(m => m._id === mesaId || m._id?.toString() === mesaId?.toString());
+        return mesaEncontrada?.nummesa;
+      }).filter(Boolean);
+      
+      if (numerosUnidas.length > 0) {
+        return `M${mesa.nummesa} + ${numerosUnidas.map(n => `M${n}`).join(', ')}`;
+      }
+    }
+    
+    // Si es secundaria
+    if (mesa.esMesaPrincipal === false && mesa.mesaPrincipalId) {
+      const mesaPrincipal = mesas.find(m => 
+        m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString()
+      );
+      if (mesaPrincipal) {
+        return `Unida a M${mesaPrincipal.nummesa}`;
+      }
+    }
+    
+    return "";
+  }, [mesas]);
+
+  // Helper: Verificar si se pueden juntar las mesas seleccionadas
+  const puedeJuntarMesas = useCallback(() => {
+    if (mesasSeleccionadas.length < 2) {
+      return { valido: false, mensaje: "Selecciona al menos 2 mesas" };
+    }
+    if (mesasSeleccionadas.length > 6) {
+      return { valido: false, mensaje: "Máximo 6 mesas se pueden juntar" };
+    }
+
+    // Obtener objetos completos de mesas seleccionadas
+    const mesasObj = mesasSeleccionadas.map(id => mesas.find(m => m._id === id)).filter(Boolean);
+    
+    // Verificar que todas están activas
+    const mesasInactivas = mesasObj.filter(m => m.activa === false);
+    if (mesasInactivas.length > 0) {
+      return { valido: false, mensaje: `Las mesas ${mesasInactivas.map(m => m.nummesa).join(', ')} están inactivas` };
+    }
+
+    // Verificar que todas son de la misma área
+    const areas = [...new Set(mesasObj.map(m => m.area?._id || m.area))];
+    if (areas.length > 1) {
+      return { valido: false, mensaje: "Todas las mesas deben ser de la misma área" };
+    }
+
+    // Verificar que ninguna está ya unida
+    const mesasYaUnidas = mesasObj.filter(m => m.esMesaPrincipal === false);
+    if (mesasYaUnidas.length > 0) {
+      return { valido: false, mensaje: `Las mesas ${mesasYaUnidas.map(m => m.nummesa).join(', ')} ya están unidas a otra mesa` };
+    }
+
+    // Verificar que ninguna es principal con mesas unidas (evitar uniones anidadas)
+    const mesasPrincipalesConUnidas = mesasObj.filter(m => 
+      m.esMesaPrincipal === true && m.mesasUnidas && m.mesasUnidas.length > 0
+    );
+    if (mesasPrincipalesConUnidas.length > 0) {
+      return { valido: false, mensaje: `Las mesas ${mesasPrincipalesConUnidas.map(m => m.nummesa).join(', ')} ya tienen mesas unidas` };
+    }
+
+    // Verificar estados permitidos (solo libre o esperando)
+    const estadosInvalidos = mesasObj.filter(m => {
+      const estado = (m.estado || 'libre').toLowerCase();
+      return estado !== 'libre' && estado !== 'esperando';
+    });
+    if (estadosInvalidos.length > 0) {
+      return { valido: false, mensaje: `Las mesas ${estadosInvalidos.map(m => m.nummesa).join(', ')} no están libres o esperando` };
+    }
+
+    // Verificar que no hay pedidos abiertos en ninguna mesa
+    const mesasConPedidos = mesasObj.filter(m => {
+      const comandasMesa = getComandasPorMesa(m.nummesa);
+      return comandasMesa.some(c => c.status?.toLowerCase() !== 'pagado' && c.status?.toLowerCase() !== 'completado');
+    });
+    if (mesasConPedidos.length > 0) {
+      return { valido: false, mensaje: `Las mesas ${mesasConPedidos.map(m => m.nummesa).join(', ')} tienen comandas activas` };
+    }
+
+    return { valido: true, mensaje: "" };
+  }, [mesasSeleccionadas, mesas, getComandasPorMesa]);
+
+  // Toggle selección de mesa (modo selección múltiple)
+  const toggleSeleccionMesa = useCallback((mesa) => {
+    if (!modoSeleccion) {
+      // Si no estamos en modo selección, comportarse como siempre
+      handleSelectMesa(mesa);
+      return;
+    }
+
+    const mesaId = mesa._id;
+    setMesasSeleccionadas(prev => {
+      if (prev.includes(mesaId)) {
+        return prev.filter(id => id !== mesaId);
+      } else {
+        return [...prev, mesaId];
+      }
+    });
+    
+    // Haptic feedback
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (e) {}
+  }, [modoSeleccion, handleSelectMesa]);
+
+  // Activar modo selección para juntar
+  const activarModoJuntar = useCallback(() => {
+    if (!tienePermisoJuntarSeparar) {
+      Alert.alert("Sin permisos", "No tienes permiso para juntar mesas");
+      return;
+    }
+    setModoSeleccion(true);
+    setMesasSeleccionadas([]);
+    console.log("🔗 [JUNTAR] Modo selección activado");
+  }, [tienePermisoJuntarSeparar]);
+
+  // Cancelar modo selección
+  const cancelarModoSeleccion = useCallback(() => {
+    setModoSeleccion(false);
+    setMesasSeleccionadas([]);
+    setMotivoUnion("");
+    console.log("🔗 [JUNTAR] Modo selección cancelado");
+  }, []);
+
+  // API: Juntar mesas
+  const juntarMesas = useCallback(async () => {
+    const validacion = puedeJuntarMesas();
+    if (!validacion.valido) {
+      Alert.alert("No se pueden juntar", validacion.mensaje);
+      return;
+    }
+
+    setProcesandoAccion(true);
+    console.log(`🔗 [JUNTAR] Iniciando unión de ${mesasSeleccionadas.length} mesas`);
+
+    try {
+      const juntarURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/mesas/juntar')
+        : `${MESAS_API_UPDATE}/juntar`;
+      
+      const response = await axios.post(juntarURL, {
+        mesasIds: mesasSeleccionadas,
+        motivo: motivoUnion || null
+      }, { timeout: 15000 });
+
+      console.log("✅ [JUNTAR] Mesas juntadas exitosamente:", response.data);
+      
+      // Cerrar modal y limpiar
+      setModalJuntarVisible(false);
+      setModoSeleccion(false);
+      setMesasSeleccionadas([]);
+      setMotivoUnion("");
+      
+      // Recargar mesas
+      await obtenerMesas();
+      
+      Alert.alert(
+        "Mesas Juntadas",
+        `Se unieron ${mesasSeleccionadas.length} mesas exitosamente. Mesa principal: M${response.data.mesaPrincipal?.nummesa}`
+      );
+      
+    } catch (error) {
+      console.error("❌ [JUNTAR] Error:", error);
+      const errorMsg = error.response?.data?.message || error.message || "Error desconocido";
+      Alert.alert("Error al juntar mesas", errorMsg);
+    } finally {
+      setProcesandoAccion(false);
+    }
+  }, [mesasSeleccionadas, motivoUnion, puedeJuntarMesas, obtenerMesas]);
+
+  // API: Separar mesas
+  const separarMesas = useCallback(async (mesaPrincipalId) => {
+    if (!tienePermisoJuntarSeparar) {
+      Alert.alert("Sin permisos", "No tienes permiso para separar mesas");
+      return;
+    }
+
+    const mesaPrincipal = mesas.find(m => m._id === mesaPrincipalId);
+    if (!mesaPrincipal) {
+      Alert.alert("Error", "Mesa no encontrada");
+      return;
+    }
+
+    if (mesaPrincipal.esMesaPrincipal !== true || !mesaPrincipal.mesasUnidas || mesaPrincipal.mesasUnidas.length === 0) {
+      Alert.alert("Error", "Esta mesa no tiene mesas unidas para separar");
+      return;
+    }
+
+    setProcesandoAccion(true);
+    console.log(`🔗 [SEPARAR] Iniciando separación de mesa M${mesaPrincipal.nummesa}`);
+
+    try {
+      const separarURL = apiConfig.isConfigured 
+        ? apiConfig.getEndpoint('/mesas/separar')
+        : `${MESAS_API_UPDATE}/separar`;
+      
+      const response = await axios.post(separarURL, {
+        mesaPrincipalId: mesaPrincipalId,
+        motivo: motivoUnion || null
+      }, { timeout: 15000 });
+
+      console.log("✅ [SEPARAR] Mesas separadas exitosamente:", response.data);
+      
+      // Cerrar modal y limpiar
+      setModalSepararVisible(false);
+      setMotivoUnion("");
+      
+      // Recargar mesas
+      await obtenerMesas();
+      
+      const mesasLiberadas = response.data.mesasSecundarias?.length || 0;
+      Alert.alert(
+        "Mesas Separadas",
+        `Se separaron ${mesasLiberadas} mesa(s) exitosamente. Mesa M${mesaPrincipal.nummesa} ahora está independiente.`
+      );
+      
+    } catch (error) {
+      console.error("❌ [SEPARAR] Error:", error);
+      const errorMsg = error.response?.data?.message || error.message || "Error desconocido";
+      Alert.alert("Error al separar mesas", errorMsg);
+    } finally {
+      setProcesandoAccion(false);
+    }
+  }, [mesas, tienePermisoJuntarSeparar, motivoUnion, obtenerMesas]);
+
+  // Abrir modal para confirmar juntar
+  const abrirModalJuntar = useCallback(() => {
+    const validacion = puedeJuntarMesas();
+    if (!validacion.valido) {
+      Alert.alert("No se pueden juntar", validacion.mensaje);
+      return;
+    }
+    setModalJuntarVisible(true);
+  }, [puedeJuntarMesas]);
+
+  // Abrir modal para confirmar separar
+  const abrirModalSeparar = useCallback((mesa) => {
+    if (!mesa || mesa.esMesaPrincipal !== true || !mesa.mesasUnidas || mesa.mesasUnidas.length === 0) {
+      Alert.alert("Error", "Esta mesa no tiene mesas unidas");
+      return;
+    }
+    setMesaOpciones(mesa);
+    setMotivoUnion("");
+    setModalSepararVisible(true);
+  }, []);
+
+  // ========== FIN FUNCIONES JUNTAR/SEPARAR ==========
 
   const handleEditarComanda = async (comanda) => {
     await obtenerPlatos();
@@ -4016,10 +4410,11 @@ const InicioScreen = () => {
                 const estadoColor = getEstadoColor(estado);
                 const mozo = getMozoMesa(mesa);
                 const isSelected = mesaSeleccionada?._id === mesa._id;
+                const estaSeleccionada = mesasSeleccionadas.includes(mesa._id);
 
                 return (
                   <MesaAnimada
-                    key={`${mesa._id}-${estado}`} // Key incluye estado para forzar re-render cuando cambia
+                    key={`${mesa._id}-${estado}`}
                     mesa={mesa}
                     estado={estado}
                     estadoColor={estadoColor}
@@ -4029,8 +4424,17 @@ const InicioScreen = () => {
                     zoomLevel={mesaZoomLevel}
                     theme={theme}
                     styles={styles}
-                    onPress={handleSelectMesa}
+                    onPress={modoSeleccion ? toggleSeleccionMesa : handleSelectMesa}
                     index={index}
+                    // Props para juntar/separar
+                    modoSeleccion={modoSeleccion}
+                    estaSeleccionada={estaSeleccionada}
+                    esMesaPrincipal={mesa.esMesaPrincipal !== false}
+                    mesasUnidas={mesa.mesasUnidas || []}
+                    mesaPrincipalNum={mesa.esMesaPrincipal === false ? 
+                      mesas.find(m => m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString())?.nummesa : null
+                    }
+                    formatearGrupo={formatearGrupoMesas(mesa)}
                   />
                 );
               })
@@ -4040,10 +4444,11 @@ const InicioScreen = () => {
                 const estadoColor = getEstadoColor(estado);
                 const mozo = getMozoMesa(mesa);
                 const isSelected = mesaSeleccionada?._id === mesa._id;
+                const estaSeleccionada = mesasSeleccionadas.includes(mesa._id);
 
                 return (
                   <MesaAnimada
-                    key={`${mesa._id}-${estado}`} // Key incluye estado para forzar re-render cuando cambia
+                    key={`${mesa._id}-${estado}`}
                     mesa={mesa}
                     estado={estado}
                     estadoColor={estadoColor}
@@ -4053,8 +4458,17 @@ const InicioScreen = () => {
                     zoomLevel={mesaZoomLevel}
                     theme={theme}
                     styles={styles}
-                    onPress={handleSelectMesa}
+                    onPress={modoSeleccion ? toggleSeleccionMesa : handleSelectMesa}
                     index={index}
+                    // Props para juntar/separar
+                    modoSeleccion={modoSeleccion}
+                    estaSeleccionada={estaSeleccionada}
+                    esMesaPrincipal={mesa.esMesaPrincipal !== false}
+                    mesasUnidas={mesa.mesasUnidas || []}
+                    mesaPrincipalNum={mesa.esMesaPrincipal === false ? 
+                      mesas.find(m => m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString())?.nummesa : null
+                    }
+                    formatearGrupo={formatearGrupoMesas(mesa)}
                   />
                 );
               })
@@ -4160,14 +4574,32 @@ const InicioScreen = () => {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.barraItem}
+              style={[
+                styles.barraItem,
+                modoSeleccion && styles.barraItemActive,
+                !tienePermisoJuntarSeparar && styles.barraItemDisabled
+              ]}
               onPress={() => {
-                Alert.alert("Juntar Mesas", "Selecciona las mesas a juntar");
+                if (modoSeleccion) {
+                  cancelarModoSeleccion();
+                } else {
+                  activarModoJuntar();
+                }
               }}
+              disabled={!tienePermisoJuntarSeparar}
             >
               <View style={styles.barraItemContent}>
-                <MaterialCommunityIcons name="link-variant" size={iconSizeSidebar || 16} color={theme.colors.text.primary} />
-                <Text style={styles.barraItemText}>Juntar Mesas</Text>
+                <MaterialCommunityIcons 
+                  name={modoSeleccion ? "close-circle" : "link-variant"} 
+                  size={iconSizeSidebar || 16} 
+                  color={modoSeleccion ? (theme.colors.error || "#DC3545") : theme.colors.text.primary} 
+                />
+                <Text style={[
+                  styles.barraItemText,
+                  modoSeleccion && { color: theme.colors.error || "#DC3545", fontWeight: "700" }
+                ]}>
+                  {modoSeleccion ? "Cancelar" : "Juntar Mesas"}
+                </Text>
               </View>
             </TouchableOpacity>
 
@@ -4195,14 +4627,48 @@ const InicioScreen = () => {
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.barraItem}
-              onPress={() => {
-                Alert.alert("Separar Mesas", "Separar mesas juntas");
-              }}
-            >
-              <Text style={styles.barraItemText}>✂️ Separar Mesas</Text>
-            </TouchableOpacity>
+            {/* Botón Separar - solo visible si hay mesas agrupadas */}
+            {mesas.some(m => m.esMesaPrincipal === true && m.mesasUnidas && m.mesasUnidas.length > 0) && (
+              <TouchableOpacity
+                style={[
+                  styles.barraItem,
+                  !tienePermisoJuntarSeparar && styles.barraItemDisabled
+                ]}
+                onPress={() => {
+                  // Mostrar lista de mesas que se pueden separar
+                  const mesasConGrupo = mesas.filter(m => 
+                    m.esMesaPrincipal === true && m.mesasUnidas && m.mesasUnidas.length > 0
+                  );
+                  
+                  if (mesasConGrupo.length === 0) {
+                    Alert.alert("Sin mesas agrupadas", "No hay mesas que se puedan separar");
+                    return;
+                  }
+                  
+                  if (mesasConGrupo.length === 1) {
+                    abrirModalSeparar(mesasConGrupo[0]);
+                  } else {
+                    // Mostrar opciones
+                    const opciones = mesasConGrupo.map(m => ({
+                      text: `M${m.nummesa} (+${m.mesasUnidas.length})`,
+                      onPress: () => abrirModalSeparar(m)
+                    }));
+                    
+                    Alert.alert(
+                      "Separar Mesas",
+                      "Selecciona el grupo de mesas a separar:",
+                      [...opciones, { text: "Cancelar", style: "cancel" }]
+                    );
+                  }
+                }}
+                disabled={!tienePermisoJuntarSeparar}
+              >
+                <View style={styles.barraItemContent}>
+                  <MaterialCommunityIcons name="link-variant-off" size={iconSizeSidebar || 16} color={theme.colors.text.primary} />
+                  <Text style={styles.barraItemText}>Separar Mesas</Text>
+                </View>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={styles.barraItem}
@@ -4215,6 +4681,292 @@ const InicioScreen = () => {
           </ScrollView>
         </View>
       </View>
+
+      {/* ========== BARRA FLOTANTE DE ACCIONES (MODO SELECCIÓN) ========== */}
+      {modoSeleccion && (
+        <Animated.View 
+          entering={SlideInRight.springify()}
+          style={styles.barraFlotanteSeleccion}
+        >
+          <View style={styles.barraFlotanteContent}>
+            <View style={styles.barraFlotanteInfo}>
+              <MaterialCommunityIcons name="checkbox-multiple-marked" size={24} color={theme.colors.text.white} />
+              <Text style={styles.barraFlotanteTexto}>
+                {mesasSeleccionadas.length} mesa{mesasSeleccionadas.length !== 1 ? 's' : ''} seleccionada{mesasSeleccionadas.length !== 1 ? 's' : ''}
+              </Text>
+            </View>
+            
+            <View style={styles.barraFlotanteBotones}>
+              {mesasSeleccionadas.length >= 2 && mesasSeleccionadas.length <= 6 && (
+                <TouchableOpacity
+                  style={styles.barraFlotanteBoton}
+                  onPress={abrirModalJuntar}
+                >
+                  <MaterialCommunityIcons name="link-variant" size={20} color={theme.colors.text.white} />
+                  <Text style={styles.barraFlotanteBotonTexto}>Juntar</Text>
+                </TouchableOpacity>
+              )}
+              
+              <TouchableOpacity
+                style={[styles.barraFlotanteBoton, styles.barraFlotanteBotonCancelar]}
+                onPress={cancelarModoSeleccion}
+              >
+                <MaterialCommunityIcons name="close" size={20} color={theme.colors.text.white} />
+                <Text style={styles.barraFlotanteBotonTexto}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Animated.View>
+      )}
+
+      {/* ========== MODAL JUNTAR MESAS ========== */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalJuntarVisible}
+        onRequestClose={() => {
+          setModalJuntarVisible(false);
+          setMotivoUnion("");
+        }}
+      >
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>🔗 Juntar Mesas</Text>
+              <TouchableOpacity onPress={() => {
+                setModalJuntarVisible(false);
+                setMotivoUnion("");
+              }}>
+                <MaterialCommunityIcons name="close" size={24} color={theme.colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalScrollView}>
+              {/* Lista de mesas seleccionadas */}
+              <View style={styles.editSection}>
+                <Text style={[styles.editLabel, { marginBottom: 10 }]}>
+                  Mesas a juntar ({mesasSeleccionadas.length}):
+                </Text>
+                
+                {(() => {
+                  const mesasOrdenadas = [...mesasSeleccionadas]
+                    .map(id => mesas.find(m => m._id === id))
+                    .filter(Boolean)
+                    .sort((a, b) => a.nummesa - b.nummesa);
+                  
+                  const mesaPrincipal = mesasOrdenadas[0];
+                  
+                  return mesasOrdenadas.map((mesa, idx) => (
+                    <View 
+                      key={mesa._id} 
+                      style={[
+                        styles.mesaSeleccionadaItem,
+                        idx === 0 && styles.mesaPrincipalItem
+                      ]}
+                    >
+                      <View style={styles.mesaSeleccionadaInfo}>
+                        <MaterialCommunityIcons 
+                          name={idx === 0 ? "star" : "table"} 
+                          size={20} 
+                          color={idx === 0 ? "#FFD700" : theme.colors.text.primary} 
+                        />
+                        <Text style={styles.mesaSeleccionadaTexto}>
+                          Mesa {mesa.nummesa}
+                        </Text>
+                        {idx === 0 && (
+                          <View style={styles.mesaPrincipalBadge}>
+                            <Text style={styles.mesaPrincipalBadgeTexto}>Principal</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.mesaSeleccionadaEstado}>
+                        {(mesa.estado || 'libre').toUpperCase()}
+                      </Text>
+                    </View>
+                  ));
+                })()}
+              </View>
+
+              {/* Advertencia sobre mesa principal */}
+              <View style={styles.infoBox}>
+                <MaterialCommunityIcons name="information" size={20} color="#2196F3" />
+                <Text style={styles.infoBoxText}>
+                  La mesa con menor número será la principal. Las comandas se asociarán a ella.
+                </Text>
+              </View>
+
+              {/* Campo de motivo/nota */}
+              <View style={styles.editSection}>
+                <Text style={styles.editLabel}>Nota (opcional):</Text>
+                <TextInput
+                  style={styles.observacionesInput}
+                  placeholder="Ej: Grupo familiar grande..."
+                  placeholderTextColor={theme.colors.text.light}
+                  value={motivoUnion}
+                  onChangeText={setMotivoUnion}
+                  multiline
+                  numberOfLines={2}
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.saveButton, procesandoAccion && styles.buttonDisabled]}
+                onPress={juntarMesas}
+                disabled={procesandoAccion}
+              >
+                {procesandoAccion ? (
+                  <ActivityIndicator size="small" color={theme.colors.text.white} />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons name="link-variant" size={20} color={theme.colors.text.white} />
+                    <Text style={styles.saveButtonText}> Confirmar Unión</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setModalJuntarVisible(false);
+                  setMotivoUnion("");
+                }}
+                disabled={procesandoAccion}
+              >
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ========== MODAL SEPARAR MESAS ========== */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalSepararVisible}
+        onRequestClose={() => {
+          setModalSepararVisible(false);
+          setMotivoUnion("");
+          setMesaOpciones(null);
+        }}
+      >
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>✂️ Separar Mesas</Text>
+              <TouchableOpacity onPress={() => {
+                setModalSepararVisible(false);
+                setMotivoUnion("");
+                setMesaOpciones(null);
+              }}>
+                <MaterialCommunityIcons name="close" size={24} color={theme.colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalScrollView}>
+              {mesaOpciones && (
+                <>
+                  {/* Información de la mesa principal */}
+                  <View style={styles.editSection}>
+                    <Text style={[styles.editLabel, { marginBottom: 10 }]}>
+                      Mesa principal: M{mesaOpciones.nummesa}
+                    </Text>
+                    
+                    {/* Estado de la mesa */}
+                    <View style={[styles.infoBox, { backgroundColor: 'rgba(33, 150, 243, 0.1)' }]}>
+                      <MaterialCommunityIcons name="table" size={20} color="#2196F3" />
+                      <Text style={styles.infoBoxText}>
+                        Estado actual: {(mesaOpciones.estado || 'libre').toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Lista de mesas unidas */}
+                  <View style={styles.editSection}>
+                    <Text style={[styles.editLabel, { marginBottom: 10 }]}>
+                      Mesas unidas ({mesaOpciones.mesasUnidas?.length || 0}):
+                    </Text>
+                    
+                    {mesaOpciones.mesasUnidas?.map((mesaId, idx) => {
+                      const mesaUnida = mesas.find(m => 
+                        m._id === mesaId || m._id?.toString() === mesaId?.toString()
+                      );
+                      if (!mesaUnida) return null;
+                      
+                      return (
+                        <View key={mesaId?.toString() || idx} style={styles.mesaSeleccionadaItem}>
+                          <View style={styles.mesaSeleccionadaInfo}>
+                            <MaterialCommunityIcons name="table" size={20} color={theme.colors.text.primary} />
+                            <Text style={styles.mesaSeleccionadaTexto}>
+                              Mesa {mesaUnida.nummesa}
+                            </Text>
+                          </View>
+                          <Text style={styles.mesaSeleccionadaEstado}>
+                            {(mesaUnida.estado || 'libre').toUpperCase()}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+
+                  {/* Advertencia según estado */}
+                  {['pedido', 'preparado'].includes(mesaOpciones.estado?.toLowerCase()) && (
+                    <View style={[styles.infoBox, { backgroundColor: 'rgba(255, 152, 0, 0.1)' }]}>
+                      <MaterialCommunityIcons name="alert" size={20} color="#FF9800" />
+                      <Text style={[styles.infoBoxText, { color: '#FF9800' }]}>
+                        Esta mesa tiene comandas activas. Al separar, las comandas permanecerán en la mesa principal.
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Campo de motivo */}
+                  <View style={styles.editSection}>
+                    <Text style={styles.editLabel}>Motivo (opcional):</Text>
+                    <TextInput
+                      style={styles.observacionesInput}
+                      placeholder="Ej: Clientes diferentes..."
+                      placeholderTextColor={theme.colors.text.light}
+                      value={motivoUnion}
+                      onChangeText={setMotivoUnion}
+                      multiline
+                      numberOfLines={2}
+                    />
+                  </View>
+                </>
+              )}
+            </ScrollView>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.saveButton, { backgroundColor: theme.colors.warning || "#FF9800" }, procesandoAccion && styles.buttonDisabled]}
+                onPress={() => separarMesas(mesaOpciones?._id)}
+                disabled={procesandoAccion}
+              >
+                {procesandoAccion ? (
+                  <ActivityIndicator size="small" color={theme.colors.text.white} />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons name="link-variant-off" size={20} color={theme.colors.text.white} />
+                    <Text style={styles.saveButtonText}> Confirmar Separación</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setModalSepararVisible(false);
+                  setMotivoUnion("");
+                  setMesaOpciones(null);
+                }}
+                disabled={procesandoAccion}
+              >
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Modal de Edición de Comanda */}
       <Modal
@@ -5917,6 +6669,154 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
   },
   modalOpcionesButtonTextCancel: {
     color: theme.colors.text.primary,
+  },
+  // ============================================
+  // ESTILOS PARA JUNTAR/SEPARAR MESAS
+  // ============================================
+  barraItemActive: {
+    backgroundColor: "rgba(220, 53, 69, 0.1)",
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.error || "#DC3545",
+  },
+  barraItemDisabled: {
+    opacity: 0.5,
+  },
+  barraFlotanteSeleccion: {
+    position: "absolute",
+    bottom: 20,
+    left: 20,
+    right: 100,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.md,
+    ...theme.shadows.large,
+    zIndex: 1000,
+  },
+  barraFlotanteContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  barraFlotanteInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  barraFlotanteTexto: {
+    color: theme.colors.text.white,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  barraFlotanteBotones: {
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+  },
+  barraFlotanteBoton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
+    gap: 4,
+  },
+  barraFlotanteBotonCancelar: {
+    backgroundColor: theme.colors.error || "#DC3545",
+  },
+  barraFlotanteBotonTexto: {
+    color: theme.colors.text.white,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  mesaCheckbox: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    zIndex: 10,
+  },
+  checkboxCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.5)",
+  },
+  mesaGrupoBadge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    zIndex: 10,
+  },
+  mesaGrupoBadgeText: {
+    color: theme.colors.text.white,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  mesaSeleccionadaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: theme.colors.background,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  mesaPrincipalItem: {
+    backgroundColor: "rgba(33, 150, 243, 0.1)",
+    borderColor: "#2196F3",
+    borderWidth: 2,
+  },
+  mesaSeleccionadaInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  mesaSeleccionadaTexto: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: theme.colors.text.primary,
+  },
+  mesaSeleccionadaEstado: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: theme.colors.text.secondary,
+    textTransform: "uppercase",
+  },
+  mesaPrincipalBadge: {
+    backgroundColor: "#2196F3",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  mesaPrincipalBadgeTexto: {
+    color: theme.colors.text.white,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  infoBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "rgba(33, 150, 243, 0.1)",
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  infoBoxText: {
+    flex: 1,
+    fontSize: 13,
+    color: theme.colors.text.secondary,
+    lineHeight: 18,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
 });
 

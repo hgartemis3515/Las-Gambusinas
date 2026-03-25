@@ -12,7 +12,9 @@ export const SocketProvider = ({ children }) => {
   const [eventHandlers, setEventHandlers] = useState({
     onMesaActualizada: null,
     onComandaActualizada: null,
-    onNuevaComanda: null
+    onNuevaComanda: null,
+    onMesasJuntadas: null,
+    onMesasSeparadas: null
   });
 
   // Wrapper para manejar múltiples suscriptores
@@ -65,6 +67,18 @@ export const SocketProvider = ({ children }) => {
     }
   }, []);
 
+  const handleMesasJuntadas = useCallback((data) => {
+    if (eventHandlersRef.current.onMesasJuntadas) {
+      eventHandlersRef.current.onMesasJuntadas(data);
+    }
+  }, []);
+
+  const handleMesasSeparadas = useCallback((data) => {
+    if (eventHandlersRef.current.onMesasSeparadas) {
+      eventHandlersRef.current.onMesasSeparadas(data);
+    }
+  }, []);
+
   const handleSocketStatus = useCallback((status) => {
     setSocketStatus(status);
 
@@ -94,6 +108,8 @@ export const SocketProvider = ({ children }) => {
     onComandaActualizada: handleComandaActualizada,
     onNuevaComanda: handleNuevaComanda,
     onSocketStatus: handleSocketStatus,
+    onMesasJuntadas: handleMesasJuntadas,
+    onMesasSeparadas: handleMesasSeparadas,
     token: authToken // Token JWT para autenticación
   });
   
@@ -143,7 +159,9 @@ export const SocketProvider = ({ children }) => {
       leaveMesa,
       authError,
       updateToken,
-      authToken
+      authToken,
+      handleMesasJuntadas,
+      handleMesasSeparadas
     }}>
       {children}
     </SocketContext.Provider>
