@@ -1057,6 +1057,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     try {
       setLoading(true);
       
+      // 🔥 CRÍTICO: Usar index o _id para identificar platos únicos (evitar borrar plato equivocado con duplicados/complementos)
       const platosPorComanda = {};
       platosSeleccionadosEliminar.forEach(plato => {
         if (!platosPorComanda[plato.comandaId]) {
@@ -1064,10 +1065,29 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         }
         const comanda = comandas.find(c => c._id === plato.comandaId);
         if (comanda && comanda.platos) {
-          const platoIndex = comanda.platos.findIndex((p, idx) => {
-            const pId = p.platoId || p.plato?._id || p.plato;
-            return pId?.toString() === plato.platoId?.toString() && !p.eliminado;
-          });
+          let platoIndex = -1;
+          if (plato._id) {
+            // Prioridad: _id del subdocumento (único por instancia)
+            platoIndex = comanda.platos.findIndex(p => {
+              const pId = p._id?.toString ? p._id.toString() : p._id;
+              const selId = plato._id?.toString ? plato._id.toString() : plato._id;
+              return pId === selId && !p.eliminado;
+            });
+          }
+          if (platoIndex === -1 && typeof plato.index === 'number') {
+            // Fallback: index directo (de filtrarPlatosPorEstado)
+            const pAt = comanda.platos[plato.index];
+            if (pAt && !pAt.eliminado) {
+              platoIndex = plato.index;
+            }
+          }
+          if (platoIndex === -1) {
+            // Último fallback: findIndex por platoId (solo si no hay duplicados)
+            platoIndex = comanda.platos.findIndex((p) => {
+              const pId = p.platoId || p.plato?._id || p.plato;
+              return pId?.toString() === plato.platoId?.toString() && !p.eliminado;
+            });
+          }
           if (platoIndex !== -1) {
             platosPorComanda[plato.comandaId].push(platoIndex);
           }
@@ -1077,12 +1097,15 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       for (const [comandaId, indices] of Object.entries(platosPorComanda)) {
         if (indices.length === 0) continue;
 
+        // Deduplicar y ordenar descendente (evitar problemas de shift al eliminar en backend)
+        const indicesUnicos = [...new Set(indices)].sort((a, b) => b - a);
+
         const endpoint = apiConfig.isConfigured
           ? `${apiConfig.getEndpoint('/comanda')}/${comandaId}/eliminar-platos`
           : `${COMANDA_API}/${comandaId}/eliminar-platos`;
 
         const dataAEnviar = {
-          platosAEliminar: indices,
+          platosAEliminar: indicesUnicos,
           motivo: motivoEliminacion.trim(),
           mozoId: userInfo._id,
           usuarioId: userInfo._id
@@ -1091,7 +1114,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         console.log('🗑️ Eliminando platos:', {
           endpoint,
           comandaId: comandaId?.slice(-6),
-          indices,
+          indices: indicesUnicos,
           motivo: motivoEliminacion.trim().substring(0, 20) + '...',
           mozoId: userInfo._id
         });
