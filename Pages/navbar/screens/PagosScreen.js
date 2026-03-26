@@ -841,21 +841,23 @@ const PagosScreen = () => {
   /**
    * Genera el PDF del boucher
    * @param {Object|null} boucher - Datos del boucher del backend (opcional, si viene de "Imprimir Boucher")
+   * @param {boolean} mostrarOpciones - Si es false, solo genera el PDF sin mostrar Alert (para flujo de pago)
+   * @returns {Promise<string|null>} - URI del PDF generado o null si falla
    */
-  const generarPDF = async (boucher = null) => {
+  const generarPDF = async (boucher = null, mostrarOpciones = true) => {
     // Si hay boucher del backend, usarlo directamente; si no, verificar comandas locales
     if (!boucher) {
       // Verificar que haya comandas antes de generar el PDF
       if (!comandas || comandas.length === 0) {
         // No mostrar alerta, simplemente no hacer nada
-        return;
+        return null;
       }
 
       // Verificar que las comandas tengan platos
       const comandasConPlatos = comandas.filter(c => c.platos && c.platos.length > 0);
       if (comandasConPlatos.length === 0) {
         // No mostrar alerta, simplemente no hacer nada
-        return;
+        return null;
       }
     }
 
@@ -867,6 +869,11 @@ const PagosScreen = () => {
         html,
         base64: false,
       });
+
+      // Si no se deben mostrar opciones (flujo de pago), retornar el URI
+      if (!mostrarOpciones) {
+        return uri;
+      }
 
       Alert.alert(
         "✅ PDF Generado",
@@ -904,9 +911,13 @@ const PagosScreen = () => {
           }
         ]
       );
+      return uri;
     } catch (error) {
       console.error("Error generando PDF:", error);
-      Alert.alert("Error", "No se pudo generar el PDF");
+      if (mostrarOpciones) {
+        Alert.alert("Error", "No se pudo generar el PDF");
+      }
+      return null;
     } finally {
       setIsGenerating(false);
     }
@@ -1604,16 +1615,6 @@ const PagosScreen = () => {
         }
       }
 
-      // Generar PDF con el boucher creado
-      setMensajeCarga("Generando voucher...");
-      try {
-        await generarPDF(boucherCreado);
-        console.log("✅ [PAGO] PDF generado exitosamente");
-      } catch (pdfError) {
-        console.error("⚠️ [PAGO] Error generando PDF (continuando de todas formas):", pdfError);
-        // No bloquear el flujo si falla la generación del PDF
-      }
-
       // ✅ Guardar boucher y mesa para InicioScreen (mensaje post-pago, imprimir, liberar)
       const mesaIdStr = mesaFinal._id?.toString?.() || mesaFinal._id;
       const mesaPagadaPayload = { _id: mesaFinal._id, nummesa: mesaFinal.nummesa };
@@ -1624,37 +1625,81 @@ const PagosScreen = () => {
         console.warn("⚠️ [PAGO] No se pudo guardar ultimoBoucher/mesaPagada:", e?.message);
       }
 
-      // ✅ Cerrar overlay de carga ANTES del Alert
+      // ✅ Cerrar overlay de carga ANTES de generar PDF para que el Alert sea visible
       setProcesandoPago(false);
       setMensajeCarga("Procesando pago...");
+
+      // Generar PDF silenciosamente (sin mostrar Alert) para obtener el URI
+      let pdfUri = null;
+      try {
+        console.log("📄 [PAGO] Generando boucher PDF...");
+        pdfUri = await generarPDF(boucherCreado, false); // false = modo silencioso
+        console.log("✅ [PAGO] PDF generado exitosamente:", pdfUri ? "OK" : "falló");
+      } catch (pdfError) {
+        console.error("⚠️ [PAGO] Error generando PDF (continuando de todas formas):", pdfError);
+        // No bloquear el flujo si falla la generación del PDF
+      }
 
       // ✅ Construir mensaje según estado de verificación
       const estadoMesaMsg = mesaVerificadaComoPagada 
         ? `La mesa ${mesaFinal.nummesa} está en estado 'Pagado' (verificado).`
         : `⚠️ La mesa ${mesaFinal.nummesa} podría tardar unos segundos en actualizarse.`;
 
-      // ✅ Mostrar alerta de éxito y navegar a Inicio con params para refresh + mensaje verde
-      Alert.alert(
-        "✅ Pago Exitoso",
-        `Pago procesado y voucher generado.\n\nCliente: ${cliente.nombre || "Invitado"}\nVoucher ID: ${boucherCreado.voucherId}\n\n${estadoMesaMsg}\n\nSerás redirigido al inicio.`,
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              setComandas([]);
-              setMesa(null);
-              setClienteSeleccionado(null);
-              setBoucherData(null);
-              navigation.navigate("Inicio", {
-                refresh: true,
-                mesaId: mesaIdStr,
-                mostrarMensajePago: true,
-                mesaPagada: mesaPagadaPayload,
-                boucher: boucherCreado,
-              });
+      // ✅ Mostrar alerta de éxito con opciones de imprimir si el PDF se generó
+      const alertButtons = [];
+      
+      // Si el PDF se generó, agregar opciones de imprimir/compartir
+      if (pdfUri) {
+        alertButtons.push({
+          text: "Imprimir",
+          onPress: async () => {
+            try {
+              await Print.printAsync({ uri: pdfUri });
+            } catch (error) {
+              console.error("Error imprimiendo:", error);
+              Alert.alert("Error", "No se pudo imprimir el documento");
             }
           }
-        ]
+        });
+        alertButtons.push({
+          text: "Compartir",
+          onPress: async () => {
+            try {
+              if (await Sharing.isAvailableAsync()) {
+                await Sharing.shareAsync(pdfUri);
+              } else {
+                Alert.alert("Error", "La función de compartir no está disponible");
+              }
+            } catch (error) {
+              console.error("Error compartiendo:", error);
+              Alert.alert("Error", "No se pudo compartir el documento");
+            }
+          }
+        });
+      }
+      
+      // Botón OK siempre al final
+      alertButtons.push({
+        text: "OK",
+        onPress: () => {
+          setComandas([]);
+          setMesa(null);
+          setClienteSeleccionado(null);
+          setBoucherData(null);
+          navigation.navigate("Inicio", {
+            refresh: true,
+            mesaId: mesaIdStr,
+            mostrarMensajePago: true,
+            mesaPagada: mesaPagadaPayload,
+            boucher: boucherCreado,
+          });
+        }
+      });
+
+      Alert.alert(
+        "✅ Pago Exitoso",
+        `Pago procesado y boucher generado.\n\nCliente: ${cliente.nombre || "Invitado"}\nBoucher ID: ${boucherCreado.voucherId}\n\n${estadoMesaMsg}\n\nSerás redirigido al inicio.`,
+        alertButtons
       );
       
     } catch (error) {
