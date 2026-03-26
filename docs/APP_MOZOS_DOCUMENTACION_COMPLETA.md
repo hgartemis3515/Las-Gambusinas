@@ -1,6 +1,6 @@
 # Documentación Completa - App de Mozos (Las Gambusinas)
 
-**Version:** 2.2  
+**Version:** 2.3  
 **Ultima Actualizacion:** Marzo 2026  
 **Tecnologia:** React Native + Expo + Socket.io-client + AsyncStorage
 
@@ -60,7 +60,8 @@ Solicitar Pago → Procesar Pago → Generar Boucher → Liberar Mesa
 12. [Problemas Criticos Identificados](#problemas-criticos-identificados)
 13. [Problemas de logica en la funcion de eliminar platos](#problemas-de-logica-en-la-funcion-de-eliminar-platos)
 14. [Propuestas de Mejora](#propuestas-de-mejora)
-15. [Resumen Ejecutivo](#resumen-ejecutivo)
+15. [Actualizacion en Tiempo Real - Arquitectura Completa](#actualización-en-tiempo-real---arquitectura-completa)
+16. [Resumen Ejecutivo](#resumen-ejecutivo)
 
 ---
 
@@ -681,6 +682,472 @@ OrdenesScreen -> POST /api/comanda -> Backend agregarComanda() -> emitNuevaComan
 
 ---
 
+## 🔄 Actualización en Tiempo Real - Arquitectura Completa
+
+### Visión General del Sistema de Tiempo Real
+
+El sistema de actualización en tiempo real conecta tres aplicaciones mediante Socket.io:
+- **App Mozos** (namespace `/mozos`) - Recibe actualizaciones de platos y comandas
+- **App Cocina** (namespace `/cocina`) - Emite cambios de estado de platos
+- **Backend** - Orquesta eventos y mantiene la fuente de verdad
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   App Mozos     │     │    Backend      │     │   App Cocina    │
+│  (React Native) │     │  (Node.js +     │     │   (React Web)   │
+│                 │     │   Socket.io)    │     │                 │
+│  namespace:     │     │                 │     │  namespace:     │
+│  /mozos         │◄────┤  Event Router   ├────►│  /cocina        │
+│                 │     │                 │     │                 │
+│  Rooms:         │     │  Rooms:         │     │  Rooms:         │
+│  - mesa-{id}    │     │  - fecha-{date} │     │  - fecha-{date} │
+│  - broadcast    │     │  - mesa-{id}    │     │  - zona-{id}    │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+```
+
+### Arquitectura de Namespaces y Rooms
+
+#### Namespace `/mozos` (App Mozos)
+
+El namespace `/mozos` está diseñado para que los mozos reciban actualizaciones solo de las mesas que están visualizando.
+
+**Rooms disponibles:**
+| Room | Propósito | Uso |
+|------|-----------|-----|
+| `mesa-{mesaId}` | Actualizaciones de una mesa específica | ComandaDetalleScreen |
+| broadcast (todos) | Novedades globales (nueva comanda) | InicioScreen |
+
+**Autenticación:**
+- JWT obligatorio en handshake (`auth.token`)
+- Middleware `authenticateMozos` valida el token
+- Socket desconectado si auth falla
+
+#### Namespace `/cocina` (App Cocina)
+
+**Rooms disponibles:**
+| Room | Propósito | Uso |
+|------|-----------|-----|
+| `fecha-{YYYY-MM-DD}` | Comandas del día activo | Todas las comandas |
+| `zona-{zonaId}` | Comandas de una zona específica | Cocineros por zona |
+| `cocinero-{id}` | Room personal del cocinero | Configuración individual |
+
+### Flujo Completo: Actualización de Estado de Plato
+
+Cuando cocina cambia el estado de un plato (ej: `en_espera` → `recoger`), el flujo es:
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    1. APP COCINA - Acción del Usuario                    │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Cocinero hace clic en botón "Listo" en un plato                         │
+│  → PUT /api/comanda/:id/plato/:platoId/estado                            │
+│  → Body: { nuevoEstado: "recoger" }                                      │
+└──────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    2. BACKEND - Controller                               │
+├──────────────────────────────────────────────────────────────────────────┤
+│  comandaController.js → cambiarEstadoPlato(id, platoId, nuevoEstado)     │
+│                                                                          │
+│  a) Actualiza el estado del plato en MongoDB                             │
+│  b) Recalcula estado de la comanda según todos los platos                │
+│  c) Actualiza estado de la mesa si es necesario                          │
+│  d) Llama a función de emisión Socket                                    │
+└──────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    3. BACKEND - Emisión Socket.io                        │
+├──────────────────────────────────────────────────────────────────────────┤
+│  events.js → emitPlatoActualizadoGranular(datos)                         │
+│                                                                          │
+│  FASE 5 (Batching): Los eventos se agregan a una cola                    │
+│  Cada 300ms se emiten en batch para optimizar tráfico                    │
+│                                                                          │
+│  Datos del evento:                                                       │
+│  {                                                                       │
+│    comandaId: "67abc123...",                                             │
+│    platoId: 5,                                                           │
+│    nuevoEstado: "recoger",                                               │
+│    estadoAnterior: "en_espera",                                          │
+│    mesaId: "67def456...",                                                │
+│    timestamp: "2026-03-25T14:30:00.000Z"                                 │
+│  }                                                                       │
+└──────────────────────────────────────────────────────────────────────────┘
+                                    │
+                    ┌───────────────┴───────────────┐
+                    ▼                               ▼
+┌───────────────────────────────┐   ┌───────────────────────────────┐
+│  4a. NAMESPACE /COCINA        │   │  4b. NAMESPACE /MOZOS         │
+├───────────────────────────────┤   ├───────────────────────────────┤
+│  Room: fecha-2026-03-25       │   │  Room: mesa-67def456...       │
+│                               │   │  (solo mozos viendo esa mesa) │
+│  cocinaNamespace.to(roomName) │   │                               │
+│    .emit('plato-actualizado') │   │  mozosNamespace.to(roomName)  │
+│                               │   │    .emit('plato-actualizado') │
+│  → Todos los cocineros ven    │   │                               │
+│    el cambio en tiempo real   │   │  → Solo mozos en              │
+│                               │   │    ComandaDetalleScreen       │
+│                               │   │    de esa mesa lo reciben     │
+└───────────────────────────────┘   └───────────────────────────────┘
+                                                    │
+                                                    ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    5. APP MOZOS - Recepción del Evento                   │
+├──────────────────────────────────────────────────────────────────────────┤
+│  ComandaDetalleScreen.js                                                 │
+│                                                                          │
+│  socket.on('plato-actualizado', (data) => {                              │
+│    // 1. Actualizar estado del plato en el state local                   │
+│    // 2. Mostrar animación de cambio                                     │
+│    // 3. Reproducir sonido de notificación                               │
+│    // 4. Actualizar indicador visual SocketStatus a 'live'               │
+│  });                                                                     │
+│                                                                          │
+│  El mozo ve inmediatamente que el plato pasó a "Listo para recoger"      │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Flujo Completo: Actualización de Comanda Entera
+
+Cuando se actualiza toda la comanda (ej: se elimina un plato, se editan cantidades):
+
+```
+App Mozos → PUT /api/comanda/:id/editar-platos → Backend
+                                                    │
+                                                    ▼
+                                    emitComandaActualizada(comandaId)
+                                                    │
+                    ┌───────────────────────────────┼───────────────────┐
+                    ▼                               ▼                   ▼
+            /cocina (fecha)              /mozos (mesa)         /admin (broadcast)
+                    │                               │
+                    ▼                               ▼
+            App Cocina actualiza          App Mozos actualiza
+            la comanda completa           la vista de la mesa
+```
+
+### Optimización FASE 5: Batching de Eventos
+
+El backend implementa un sistema de batching para reducir el tráfico de WebSocket:
+
+**Problema:** Si cocina cambia 10 platos en 2 segundos, se emitían 10 eventos separados.
+
+**Solución FASE 5:**
+```javascript
+// Backend - websocketBatch.js
+const batchQueue = [];
+const BATCH_INTERVAL = 300; // ms
+
+function addPlatoEvent(datos) {
+  batchQueue.push(datos);
+}
+
+setInterval(() => {
+  if (batchQueue.length > 0) {
+    emitPlatoBatch({
+      comandaId: batchQueue[0].comandaId,
+      platos: batchQueue.map(e => ({
+        platoId: e.platoId,
+        nuevoEstado: e.nuevoEstado,
+        estadoAnterior: e.estadoAnterior
+      })),
+      mesaId: batchQueue[0].mesaId
+    }));
+    batchQueue.length = 0;
+  }
+}, BATCH_INTERVAL);
+```
+
+**Resultado:**
+- 10 eventos → 1 evento batch
+- Reducción de payload: ~80%
+- Latencia máxima: 300ms (imperceptible para UX)
+
+### Sistema de Heartbeat y Reconexión
+
+#### Heartbeat (App Mozos)
+
+```javascript
+// useSocketMozos.js
+const heartbeatInterval = 25000; // 25 segundos
+
+// Enviar ping cada 25s
+setInterval(() => {
+  if (socket.connected) {
+    socket.emit('heartbeat-ping', { timestamp: Date.now() });
+  }
+}, heartbeatInterval);
+
+// Esperar pong
+socket.on('heartbeat-pong', (data) => {
+  const latency = Date.now() - lastPingRef.current;
+  console.log(`Latencia: ${latency}ms`);
+});
+```
+
+#### Reconexión Automática con Backoff
+
+```javascript
+// Configuración de Socket.io
+const socket = io(wsURL, {
+  reconnection: true,
+  reconnectionDelay: 1000,      // 1s inicial
+  reconnectionDelayMax: 5000,   // 5s máximo
+  reconnectionAttempts: 10,      // 10 intentos
+  randomizationFactor: 0.5,      // Aleatoriedad para evitar tormentas
+});
+```
+
+#### Rejoin de Rooms tras Reconexión
+
+Cuando el socket se reconecta, debe volver a unirse a las rooms:
+
+```javascript
+// useSocketMozos.js
+const roomsJoinedRef = useRef(new Set());
+
+// Al conectar
+socket.on('connect', () => {
+  // Rejoin rooms
+  roomsJoinedRef.current.forEach(mesaId => {
+    socket.emit('join-mesa', mesaId);
+  });
+});
+
+// Trackear rooms
+const joinMesa = (mesaId) => {
+  socket.emit('join-mesa', mesaId);
+  roomsJoinedRef.current.add(mesaId);  // Guardar para rejoin
+};
+```
+
+### Manejo de Eventos en ComandaDetalleScreen
+
+La pantalla `ComandaDetalleScreen` implementa listeners para todos los eventos relevantes:
+
+```javascript
+// ComandaDetalleScreen.js - Estructura de listeners
+useEffect(() => {
+  if (!socket || !connected || !mesaId) return;
+
+  // 1. Unirse a la room de la mesa
+  joinMesa(mesaId);
+
+  // 2. Listeners de eventos
+  socket.on('plato-actualizado', handlePlatoActualizado);
+  socket.on('plato-agregado', handlePlatoAgregado);
+  socket.on('plato-entregado', handlePlatoEntregado);
+  socket.on('comanda-actualizada', handleComandaActualizada);
+  socket.on('comanda-eliminada', handleComandaEliminada);
+  socket.on('plato-anulado', handlePlatoAnulado);
+  socket.on('comanda-anulada', handleComandaAnulada);
+
+  // 3. Cleanup al desmontar
+  return () => {
+    leaveMesa(mesaId);
+    socket.off('plato-actualizado');
+    socket.off('plato-agregado');
+    socket.off('plato-entregado');
+    socket.off('comanda-actualizada');
+    socket.off('comanda-eliminada');
+    socket.off('plato-anulado');
+    socket.off('comanda-anulada');
+  };
+}, [socket, connected, mesaId]);
+```
+
+#### Handlers de Eventos
+
+**1. plato-actualizado (Actualización granular de un plato)**
+```javascript
+const handlePlatoActualizado = (data) => {
+  const { comandaId, platoId, nuevoEstado, mesaId } = data;
+  
+  // Buscar la comanda en el state
+  setComandas(prevComandas => {
+    return prevComandas.map(comanda => {
+      if (comanda._id === comandaId) {
+        return {
+          ...comanda,
+          platos: comanda.platos.map((plato, index) => {
+            if (index === platoId) {
+              return { ...plato, estado: nuevoEstado };
+            }
+            return plato;
+          })
+        };
+      }
+      return comanda;
+    });
+  });
+  
+  // Feedback visual
+  setConnectionStatus('live');
+  setTimeout(() => setConnectionStatus('conectado'), 2000);
+};
+```
+
+**2. comanda-actualizada (Recarga completa de comanda)**
+```javascript
+const handleComandaActualizada = (data) => {
+  if (data.comanda) {
+    // Reemplazar la comanda en el state
+    setComandas(prevComandas => {
+      const existe = prevComandas.find(c => c._id === data.comanda._id);
+      if (existe) {
+        return prevComandas.map(c => 
+          c._id === data.comanda._id ? data.comanda : c
+        );
+      }
+      return [...prevComandas, data.comanda];
+    });
+  }
+};
+```
+
+**3. plato-anulado (Plato anulado por cocina)**
+```javascript
+const handlePlatoAnulado = (data) => {
+  const { comanda, platoAnulado, auditoria } = data;
+  
+  // Actualizar la comanda
+  handleComandaActualizada({ comanda });
+  
+  // Mostrar alerta al mozo
+  Alert.alert(
+    'Plato Anulado',
+    `El plato "${platoAnulado.nombre}" fue anulado por cocina.\nMotivo: ${platoAnulado.motivo}`
+  );
+};
+```
+
+### Flujo de Eventos: App Cocina → Backend → App Mozos
+
+#### Secuencia de Estados de Plato
+
+```
+ESTADO INICIAL: pedido/en_espera
+       │
+       │  [Cocina toma el plato]
+       ▼
+ESTADO: en_preparacion (si aplica)
+       │
+       │  [Cocina marca como listo]
+       ▼
+ESTADO: recoger  ──────────────────────► EVENTO: plato-actualizado
+       │                                        → App Mozos recibe
+       │  [Mozo recoge y entrega]               → SocketStatus parpadea
+       ▼
+ESTADO: entregado  ────────────────────► EVENTO: plato-entregado
+                                                → App Mozos actualiza
+```
+
+### Indicador Visual de Conexión (SocketStatus)
+
+El componente `SocketStatus` refleja el estado de la conexión en tiempo real:
+
+| Estado | Visual | Condición |
+|--------|--------|-----------|
+| `conectado` | Verde sólido | Socket conectado, sin actividad reciente |
+| `reconectando` | Amarillo parpadeante | Socket intentando reconectar |
+| `desconectado` | Rojo sólido | Sin conexión |
+| `auth_error` | Rojo oscuro | Error de autenticación JWT |
+| `live` / `online-active` | Verde parpadeante | Recibiendo datos en tiempo real |
+
+**Transición a 'live':**
+```javascript
+// Al recibir cualquier evento de actualización
+socket.on('plato-actualizado', (data) => {
+  setConnectionStatus('online-active');
+  
+  // Volver a estado normal después de 2s
+  setTimeout(() => {
+    setConnectionStatus('conectado');
+  }, 2000);
+});
+```
+
+### Cola Offline (offlineQueue)
+
+Cuando el socket está desconectado, los eventos se encolan para procesarse al reconectar:
+
+```javascript
+// utils/offlineQueue.js
+const MAX_QUEUE_SIZE = 100;
+const queue = [];
+
+const offlineQueue = {
+  add: (event, data) => {
+    if (queue.length < MAX_QUEUE_SIZE) {
+      queue.push({ event, data, timestamp: Date.now() });
+    }
+  },
+  
+  processQueue: (handlers) => {
+    while (queue.length > 0) {
+      const { event, data } = queue.shift();
+      if (handlers[event]) {
+        handlers[event](data);
+      }
+    }
+  }
+};
+```
+
+### Diagrama de Secuencia Completo
+
+```
+┌────────┐          ┌────────┐          ┌────────┐          ┌────────┐
+│  Mozos │          │Backend │          │ Socket │          │ Cocina │
+└───┬────┘          └───┬────┘          └───┬────┘          └───┬────┘
+    │                   │                   │                   │
+    │ join-mesa(mesaId) │                   │                   │
+    │──────────────────►│                   │                   │
+    │                   │ joined-mesa       │                   │
+    │◄──────────────────│                   │                   │
+    │                   │                   │                   │
+    │                   │                   │  PUT /plato/estado│
+    │                   │                   │◄──────────────────│
+    │                   │                   │                   │
+    │                   │ emitPlatoActualiz │                   │
+    │                   │◄──────────────────│                   │
+    │                   │                   │                   │
+    │ plato-actualizado │                   │                   │
+    │◄──────────────────│                   │                   │
+    │                   │                   │                   │
+    │ [Actualiza UI]    │                   │                   │
+    │                   │                   │                   │
+```
+
+### Resumen de Eventos por Dirección
+
+#### Backend → App Mozos (Eventos recibidos)
+
+| Evento | Cuándo se emite | Datos |
+|--------|-----------------|-------|
+| `plato-actualizado` | Cocina cambia estado de plato | `{ comandaId, platoId, nuevoEstado, estadoAnterior, mesaId }` |
+| `plato-actualizado-batch` | Batch de múltiples platos | `{ comandaId, platos: [{ platoId, nuevoEstado }] }` |
+| `comanda-actualizada` | Cambios en toda la comanda | `{ comandaId, comanda, platosEliminados }` |
+| `nueva-comanda` | Se crea nueva comanda | `{ comanda }` |
+| `mesa-actualizada` | Cambia estado de mesa | `{ mesaId, mesa }` |
+| `comanda-eliminada` | Se elimina comanda completa | `{ comandaId }` |
+| `plato-anulado` | Cocina anula un plato | `{ comandaId, comanda, platoAnulado, auditoria }` |
+| `comanda-anulada` | Cocina anula toda la comanda | `{ comandaId, comanda, platosAnulados }` |
+| `comanda-revertida` | Cocina revierte comanda | `{ comanda, mesa }` |
+| `comanda-finalizada` | Cocina finaliza comanda completa (v7.5) | `{ comandaId, comanda, tipo: 'comanda-finalizada' }` |
+
+#### App Mozos → Backend (Eventos emitidos)
+
+| Evento | Cuándo se emite | Datos |
+|--------|-----------------|-------|
+| `join-mesa` | Mozo entra a ComandaDetalleScreen | `mesaId` |
+| `leave-mesa` | Mozo sale de ComandaDetalleScreen | `mesaId` |
+| `heartbeat-ping` | Cada 25 segundos | `{ timestamp }` |
+
+---
+
 ## 📁 Almacenamiento Local (AsyncStorage)
 
 ### Claves Utilizadas
@@ -726,6 +1193,7 @@ OrdenesScreen -> POST /api/comanda -> Backend agregarComanda() -> emitNuevaComan
 - **Que es:** App movil (React Native + Expo) para mozos: login, mapa de mesas, comandas, pago y boucher PDF. Se conecta al mismo backend que App Cocina y admin.html.
 - **Estructura:** Stack (Login -> Navbar -> ComandaDetalle), Tabs (Inicio, Ordenes, Pagos, Mas). Singleton apiConfig, ThemeContext, SocketContext. Pantallas criticas: InicioScreen, ComandaDetalleScreen, OrdenesScreen, PagosScreen.
 - **Flujo de datos:** Carga inicial por REST; creacion/edicion/eliminacion comandas y platos via REST (editar-platos, eliminar-plato, eliminar-platos). Tiempo real via Socket.io namespace `/mozos`, rooms por mesa; ComandaDetalleScreen joinMesa y reacciona a eventos. AsyncStorage y offlineQueue para persistencia y eventos pendientes.
+- **Tiempo real:** Sistema de actualizacion en tiempo real bidireccional entre App Mozos y App Cocina via Backend. Namespaces separados (`/mozos`, `/cocina`), rooms por mesa para notificaciones especificas, batching de eventos (FASE 5) para optimizar trafico, heartbeat cada 25s para mantener conexion activa, reconexion automatica con backoff exponencial y rejoin de rooms.
 - **Novedades:** Configuracion dinamica de API, animaciones premium, complementos de platos, indicador de conexion visual mejorado, soporte para orientacion horizontal, overlay de carga animado.
 - **Trabajo con otras apps:** Backend fuente de verdad. App Cocina recibe por `/cocina`; cambios de cocina se reflejan en `/mozos`. admin.html para post-pago y liberacion de mesa.
 - **Mejoras recomendadas:** Alto: optimizar InicioScreen, unificar uso WebSocket y manejo de errores. Medio: JWT, optimizacion, push, logs al backend. Bajo: metodo de pago en boucher, UX.
@@ -1025,6 +1493,6 @@ App Mozos ──► Backend ──► App Cocina
 
 ---
 
-**Version del documento:** 2.2  
+**Version del documento:** 2.3  
 **Ultima actualizacion:** Marzo 2026  
 **Sistema:** Las Gambusinas – App de Mozos
