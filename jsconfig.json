@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "forceConsistentCasingInFileNames": false
+  },
+  "include": ["**/*.js", "**/*.jsx"],
+  "exclude": ["node_modules"]
+}
