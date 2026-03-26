@@ -1122,9 +1122,79 @@ const InicioScreen = () => {
       console.error('⚠️ Error actualizando AsyncStorage:', error);
     }
     
-    // NO hacer polling - el backend ya emite mesa-actualizada si es necesario
-    // Confiar en el backend como fuente única de verdad
-  }, []);
+    // 🔥 FIX: Cuando se actualiza una comanda, también actualizar el estado de la mesa
+    // Esto es necesario porque el backend no siempre emite mesa-actualizada
+    // IMPORTANTE: La mesa debe estar en "preparado" cuando los platos están en "recoger"
+    // y en "pedido" cuando hay platos pendientes
+    if (comanda.mesas) {
+      const mesaId = comanda.mesas._id || comanda.mesas;
+      const mesaNum = comanda.mesas.nummesa;
+      
+      // Calcular el nuevo estado de la mesa basado en los platos de esta comanda actualizada
+      const platosActivos = (comanda.platos || []).filter(p => !p.eliminado && !p.anulado);
+      
+      // Verificar si TODOS los platos activos están en "recoger" (comanda lista para entregar)
+      const todosPlatosRecoger = platosActivos.length > 0 && platosActivos.every(p => 
+        (p.estado || '').toLowerCase() === 'recoger'
+      );
+      
+      // Verificar si hay algún plato en "recoger" (algunos listos)
+      const hayPlatosRecoger = platosActivos.some(p => (p.estado || '').toLowerCase() === 'recoger');
+      
+      // Verificar si hay platos pendientes (pedido o en_espera)
+      const hayPlatosPendientes = platosActivos.some(p => 
+        (p.estado || '').toLowerCase() === 'pedido' || (p.estado || '').toLowerCase() === 'en_espera'
+      );
+      
+      // Verificar si la comanda sigue siendo activa (no pagada, no cancelada)
+      const status = (comanda.status || '').toLowerCase();
+      const comandaActiva = !['pagado', 'completado', 'cerrado', 'cancelado'].includes(status) && 
+                           comanda.IsActive !== false && 
+                           !comanda.eliminado && 
+                           !comanda.boucherId;
+      
+      // Determinar el estado de la mesa:
+      // - Si la comanda está activa y todos los platos están en recoger → "preparado"
+      // - Si la comanda está activa y hay platos en recoger (pero no todos) → "preparado"
+      // - Si la comanda está activa y hay platos pendientes → "pedido"
+      // - Si la comanda ya no está activa → no cambiar el estado
+      let nuevoEstadoMesa = null;
+      
+      if (comandaActiva && platosActivos.length > 0) {
+        // Si hay platos en recoger (todos o algunos), la mesa está "preparado"
+        if (hayPlatosRecoger) {
+          nuevoEstadoMesa = 'preparado';
+        } else if (hayPlatosPendientes) {
+          nuevoEstadoMesa = 'pedido';
+        }
+        
+        console.log(`🔄 [MOZOS] Actualizando mesa ${mesaNum} a estado "${nuevoEstadoMesa}" por actualización de comanda (platosRecoger: ${hayPlatosRecoger}, platosPendientes: ${hayPlatosPendientes}, todosRecoger: ${todosPlatosRecoger})`);
+        
+        // Actualizar la mesa en el estado local
+        setMesas(prev => {
+          const index = prev.findIndex(m => {
+            const mId = m._id?.toString ? m._id.toString() : m._id;
+            return mId === mesaId || m.nummesa === mesaNum;
+          });
+          
+          if (index !== -1) {
+            const nuevas = [...prev];
+            const mesaAnterior = nuevas[index];
+            const estadoAnterior = mesaAnterior.estado;
+            
+            // Solo actualizar si el estado es diferente y no es un estado especial (pagado, pagando, reservado)
+            const estadosEspeciales = ['pagado', 'pagando', 'reservado'];
+            if (nuevoEstadoMesa && estadoAnterior?.toLowerCase() !== nuevoEstadoMesa && !estadosEspeciales.includes(estadoAnterior?.toLowerCase())) {
+              console.log(`🎨 [ANIMACION] Mesa ${mesaNum} cambiará de "${estadoAnterior}" a "${nuevoEstadoMesa}"`);
+              nuevas[index] = { ...mesaAnterior, estado: nuevoEstadoMesa };
+              return ordenarMesasPorNumero(nuevas);
+            }
+          }
+          return prev;
+        });
+      }
+    }
+  }, [ordenarMesasPorNumero]);
 
   const handleNuevaComanda = useCallback(async (comanda) => {
     console.log('📥 [MOZOS] Nueva comanda vía WebSocket:', comanda.comandaNumber);
