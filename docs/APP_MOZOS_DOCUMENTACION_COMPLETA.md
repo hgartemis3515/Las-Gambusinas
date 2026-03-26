@@ -1,10 +1,31 @@
 # Documentación Completa - App de Mozos (Las Gambusinas)
 
-**Version:** 2.3  
+**Version:** 2.4  
 **Ultima Actualizacion:** Marzo 2026  
 **Tecnologia:** React Native + Expo + Socket.io-client + AsyncStorage
 
 **Proposito del documento:** Analisis completo del app de mozos para Las Gambusinas: estructura, flujo de datos, integracion con backend y otras aplicaciones, librerias, funciones principales, problemas y propuestas de mejora. Documento alineado con el codebase actual (marzo 2026).
+
+---
+
+## 📋 Historial de Cambios
+
+### v2.4 (Marzo 2026) - Funcionalidad Juntar/Separar Mesas
+
+- ✅ **Juntar Mesas**: Nueva funcionalidad para combinar múltiples mesas (2-6) en un grupo
+- ✅ **Separar Mesas**: Posibilidad de separar mesas previamente juntadas
+- ✅ **UI de Selección**: Modo selección con checkbox animado y barra flotante
+- ✅ **Modales de Confirmación**: Modal para juntar (con nota opcional) y separar (con motivo)
+- ✅ **Visualización de Grupos**: Badge azul para mesa principal (+N), badge morado para secundaria
+- ✅ **Sistema de Permisos**: Permiso `juntar-separar-mesas` para admin/supervisor
+- ✅ **Eventos Socket.io**: `mesas-juntadas` y `mesas-separadas` para sincronización en tiempo real
+- ✅ **Nombre Combinado**: Visualización correcta en todas las interfaces (ej: "M5,6,7")
+- ✅ **Validaciones**: Mismo área, estados permitidos, sin pedidos abiertos, sin uniones anidadas
+
+### v2.3 (Marzo 2026) - Mejoras de Tiempo Real
+
+- ✅ **Listener `comanda-finalizada`**: Recibe actualización cuando cocina finaliza comanda completa
+- ✅ **Sincronización mejorada**: Actualizaciones en tiempo real entre App Mozos y App Cocina
 
 ---
 
@@ -101,6 +122,8 @@ El **App de Mozos** es una aplicacion movil (React Native con Expo) para que el 
 | Cola offline (offlineQueue) | Implementado |
 | Overlay de carga animado | Implementado |
 | Soporte para orientacion horizontal/vertical | Implementado |
+| **Juntar/Separar Mesas** | Implementado (v2.4) |
+| **Nombre Combinado de Mesas** | Implementado (v2.4) |
 
 ---
 
@@ -1136,7 +1159,9 @@ const offlineQueue = {
 | `plato-anulado` | Cocina anula un plato | `{ comandaId, comanda, platoAnulado, auditoria }` |
 | `comanda-anulada` | Cocina anula toda la comanda | `{ comandaId, comanda, platosAnulados }` |
 | `comanda-revertida` | Cocina revierte comanda | `{ comanda, mesa }` |
-| `comanda-finalizada` | Cocina finaliza comanda completa (v7.5) | `{ comandaId, comanda, tipo: 'comanda-finalizada' }` |
+| `comanda-finalizada` | Cocina finaliza comanda completa (v7.4) | `{ comandaId, comanda, tipo: 'comanda-finalizada' }` |
+| `mesas-juntadas` | Mesas combinadas en grupo (v2.4) | `{ mesaPrincipal, mesasSecundarias, mozoId, totalMesas, timestamp }` |
+| `mesas-separadas` | Mesas separadas de grupo (v2.4) | `{ mesaPrincipal, mesasSecundarias, mozoId, totalMesasLiberadas, timestamp }` |
 
 #### App Mozos → Backend (Eventos emitidos)
 
@@ -1188,13 +1213,93 @@ const offlineQueue = {
 
 ---
 
+## 🔗 Juntar y Separar Mesas (v2.4)
+
+### Descripción General
+
+La funcionalidad de Juntar y Separar Mesas permite combinar múltiples mesas en un grupo para atender grupos grandes de clientes. La mesa de menor número se convierte en la principal y las demás quedan como secundarias.
+
+### Requisitos para Juntar Mesas
+
+- Entre 2 y 6 mesas
+- Todas deben estar activas
+- Todas deben pertenecer a la misma área
+- Estados permitidos: solo 'libre' o 'esperando'
+- Ninguna puede estar ya unida
+- No debe haber Pedidos abiertos en ninguna mesa
+- Permiso: `juntar-separar-mesas` (admin/supervisor)
+
+### Funciones Helper
+
+#### `mesaEstaEnGrupo(mesa)`
+Verifica si una mesa pertenece a un grupo (es principal o secundaria).
+
+#### `obtenerGrupoMesa(mesa)`
+Retorna información completa del grupo:
+```javascript
+{
+  esPrincipal: boolean,
+  grupo: [mesa, ...mesasUnidas],
+  mesaPrincipal: mesa,
+  mesasSecundarias: [...]
+}
+```
+
+#### `formatearGrupoMesas(mesa)`
+Formatea para mostrar en UI: `"M5 + 6, 7"` o `"Unida a M5"`.
+
+#### `puedeJuntarMesas()`
+Valida todas las condiciones y retorna:
+```javascript
+{ valido: boolean, mensaje: string }
+```
+
+### Endpoints Utilizados
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| POST | `/api/mesas/juntar` | Junta varias mesas en un grupo |
+| POST | `/api/mesas/separar` | Separa mesas previamente juntadas |
+| GET | `/api/mesas/grupos` | Lista todas las mesas agrupadas |
+| GET | `/api/mesas/:id/grupo` | Obtiene una mesa con info de su grupo |
+
+### Visualización de Grupos
+
+| Estado | Visualización | Comportamiento |
+|--------|--------------|----------------|
+| Principal con unidas | Badge azul `+N` | Recibe comandas, muestra botón separar |
+| Secundaria | Badge morado `M5` | No recibe comandas, redirige a principal |
+| Independiente | Sin badge | Comportamiento normal |
+
+### Flujo de Uso: Juntar Mesas
+
+```
+1. Mozo presiona "Juntar Mesas" en sidebar
+   ↓
+2. Se activa modoSeleccion=true
+   ↓
+3. Mozo toca las mesas a juntar (2-6 mesas)
+   ↓
+4. Se muestra barra flotante con contador
+   ↓
+5. Mozo presiona "Juntar"
+   ↓
+6. Se abre modal de confirmación
+   ↓
+7. Mozo confirma → POST /api/mesas/juntar
+   ↓
+8. UI se actualiza automáticamente via Socket.io
+```
+
+---
+
 ## Resumen Ejecutivo
 
 - **Que es:** App movil (React Native + Expo) para mozos: login, mapa de mesas, comandas, pago y boucher PDF. Se conecta al mismo backend que App Cocina y admin.html.
 - **Estructura:** Stack (Login -> Navbar -> ComandaDetalle), Tabs (Inicio, Ordenes, Pagos, Mas). Singleton apiConfig, ThemeContext, SocketContext. Pantallas criticas: InicioScreen, ComandaDetalleScreen, OrdenesScreen, PagosScreen.
 - **Flujo de datos:** Carga inicial por REST; creacion/edicion/eliminacion comandas y platos via REST (editar-platos, eliminar-plato, eliminar-platos). Tiempo real via Socket.io namespace `/mozos`, rooms por mesa; ComandaDetalleScreen joinMesa y reacciona a eventos. AsyncStorage y offlineQueue para persistencia y eventos pendientes.
 - **Tiempo real:** Sistema de actualizacion en tiempo real bidireccional entre App Mozos y App Cocina via Backend. Namespaces separados (`/mozos`, `/cocina`), rooms por mesa para notificaciones especificas, batching de eventos (FASE 5) para optimizar trafico, heartbeat cada 25s para mantener conexion activa, reconexion automatica con backoff exponencial y rejoin de rooms.
-- **Novedades:** Configuracion dinamica de API, animaciones premium, complementos de platos, indicador de conexion visual mejorado, soporte para orientacion horizontal, overlay de carga animado.
+- **Novedades:** Configuracion dinamica de API, animaciones premium, complementos de platos, indicador de conexion visual mejorado, soporte para orientacion horizontal, overlay de carga animado, **juntar/separar mesas (v2.4)**, **nombre combinado de mesas**.
 - **Trabajo con otras apps:** Backend fuente de verdad. App Cocina recibe por `/cocina`; cambios de cocina se reflejan en `/mozos`. admin.html para post-pago y liberacion de mesa.
 - **Mejoras recomendadas:** Alto: optimizar InicioScreen, unificar uso WebSocket y manejo de errores. Medio: JWT, optimizacion, push, logs al backend. Bajo: metodo de pago en boucher, UX.
 
@@ -1493,6 +1598,6 @@ App Mozos ──► Backend ──► App Cocina
 
 ---
 
-**Version del documento:** 2.3  
+**Version del documento:** 2.4  
 **Ultima actualizacion:** Marzo 2026  
 **Sistema:** Las Gambusinas – App de Mozos
