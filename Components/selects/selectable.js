@@ -107,6 +107,7 @@ const MesasScreen = ({ onSelectTable }) => {
             padding: 8,
             margin: 2,
           };
+          const nombreMesa = mesa.nombreCombinado || mesa.nummesa;
           return (
             <TouchableOpacity
               key={mesa._id}
@@ -121,7 +122,7 @@ const MesasScreen = ({ onSelectTable }) => {
                   fontSize: 20,
                 }}
               >
-                {mesa.nummesa}
+                {nombreMesa}
               </Text>
               <MaterialCommunityIcons name="table-picnic" size={40} />
           </TouchableOpacity>

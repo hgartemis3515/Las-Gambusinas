@@ -384,13 +384,16 @@ const ThirdScreen = () => {
     const usuarioId = userInfo?._id || userInfo?.id;
     const puedeEditar = comandaMozoId === usuarioId;
     
+    // Helper para obtener nombre de mesa con soporte para mesas juntadas
+    const nombreMesa = item.mesas?.nombreCombinado || (item.mesas?.nummesa ? `M${item.mesas.nummesa}` : "N/A");
+    
     return (
       <View style={styles.comandaCard}>
         <TouchableOpacity
           onPress={() => {
             Alert.alert(
               `Comanda #${item.comandaNumber || item._id.slice(-4)}`,
-              `Mesa: ${item.mesas?.nummesa || "N/A"}\nHora: ${formatTime(item.createdAt || item.fecha)}\nEstado: ${item.status || "N/A"}`,
+              `Mesa: ${nombreMesa}\nHora: ${formatTime(item.createdAt || item.fecha)}\nEstado: ${item.status || "N/A"}`,
               [{ text: "OK" }]
             );
           }}
@@ -400,7 +403,7 @@ const ThirdScreen = () => {
               #{item.comandaNumber || item._id.slice(-4)}
             </Text>
             <Text style={styles.comandaMesa}>
-              Mesa {item.mesas?.nummesa || "N/A"}
+              {nombreMesa}
             </Text>
             <Text style={styles.comandaTime}>
               {formatTime(item.createdAt || item.fecha)}
@@ -484,7 +487,7 @@ const ThirdScreen = () => {
                 >
                   <Text style={styles.mesaSelectText}>
                     {comandaEditando?.mesaSeleccionada?.nummesa
-                      ? `Mesa ${comandaEditando.mesaSeleccionada.nummesa}`
+                      ? (comandaEditando?.mesaSeleccionada?.nombreCombinado || `Mesa ${comandaEditando.mesaSeleccionada.nummesa}`)
                       : "Seleccionar Mesa"}
                   </Text>
                   <MaterialCommunityIcons name="chevron-down" size={20} color="#C41E3A" />
@@ -716,7 +719,7 @@ const ThirdScreen = () => {
                           setModalMesasVisible(false);
                         }}
                       >
-                        <Text style={styles.mesaCardText}>Mesa {mesa.nummesa}</Text>
+                        <Text style={styles.mesaCardText}>{mesa.nombreCombinado || `Mesa ${mesa.nummesa}`}</Text>
                         <Text style={styles.mesaCardAreaText}>{mesaArea}</Text>
                         {comandaEditando?.mesaSeleccionada?._id === mesa._id && (
                           <MaterialCommunityIcons name="check-circle" size={24} color="#00C851" />

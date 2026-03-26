@@ -2048,6 +2048,11 @@ const InicioScreen = () => {
     
     // Si es principal con mesas unidas
     if (mesa.esMesaPrincipal === true && mesa.mesasUnidas && mesa.mesasUnidas.length > 0) {
+      // Si tiene nombreCombinado del backend, usarlo directamente
+      if (mesa.nombreCombinado) {
+        return mesa.nombreCombinado;
+      }
+      
       const numerosUnidas = mesa.mesasUnidas.map(mesaId => {
         const mesaEncontrada = mesas.find(m => m._id === mesaId || m._id?.toString() === mesaId?.toString());
         return mesaEncontrada?.nummesa;
@@ -2064,6 +2069,10 @@ const InicioScreen = () => {
         m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString()
       );
       if (mesaPrincipal) {
+        // Si la mesa principal tiene nombreCombinado, usarlo
+        if (mesaPrincipal.nombreCombinado) {
+          return `Unida a ${mesaPrincipal.nombreCombinado}`;
+        }
         return `Unida a M${mesaPrincipal.nummesa}`;
       }
     }

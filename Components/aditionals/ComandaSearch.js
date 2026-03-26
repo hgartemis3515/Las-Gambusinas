@@ -75,7 +75,7 @@ const ComandaSearch = () => {
             Nro: {item.comandaNumber}
           </Text>
           <Text>
-            Mesa: {item.mesas.nummesa}
+            Mesa: {item.mesas?.nombreCombinado || item.mesas?.nummesa || 'N/A'}
           </Text>
           <Text>
             Mozo: {item.mozos.name}

@@ -570,4 +570,63 @@ motivoUnion: null
 
 ---
 
+## 9. Adaptacion del Nombre de Mesa en Interfaces
+
+Se implemento la funcion `nombreCombinado` en todas las interfaces del sistema para mostrar correctamente el nombre de las mesas juntadas (ej: "M5,6,7" en lugar de solo "M5").
+
+### 9.1 Archivos Modificados
+
+**App de Cocina (React):**
+- `appcocina/src/components/Principal/comandastyle.jsx` - Funcion `obtenerNombreMesa()` y tarjetas de comanda
+- `appcocina/src/components/Principal/ComandastylePerso.jsx` - Funcion `obtenerNombreMesa()` y tarjetas de comanda
+
+**Backend (HTML/Alpine.js):**
+- `Backend-LasGambusinas/public/comandas.html` - Funcion `formatearNombreMesa()` y todos los listados
+- `Backend-LasGambusinas/public/bouchers.html` - Impresion de bouchers
+- `Backend-LasGambusinas/public/clientes.html` - Detalle de bouchers
+- `Backend-LasGambusinas/public/admin.html` - Lista de bouchers
+
+**App de Mozos (React Native):**
+- `Las-Gambusinas/Pages/navbar/screens/PagosScreen.js` - Bouchers y pagos
+- `Las-Gambusinas/Pages/ComandaDetalleScreen.js` - Detalle de comanda
+- `Las-Gambusinas/Components/HeaderComandaDetalle.js` - Header de comanda
+- `Las-Gambusinas/Pages/navbar/screens/ThridScreen.js` - Lista de comandas
+- `Las-Gambusinas/Components/aditionals/ComandaSearch.js` - Busqueda de comandas
+- `Las-Gambusinas/Components/selects/selectable.js` - Selector de mesas
+- `Las-Gambusinas/Pages/navbar/screens/InicioScreen.js` - Funcion `formatearGrupoMesas()` actualizada
+
+### 9.2 Funcion Helper
+
+```javascript
+// React/React Native
+const obtenerNombreMesa = (mesa) => {
+  if (!mesa) return 'N/A';
+  if (mesa.nombreCombinado) {
+    return mesa.nombreCombinado;  // ej: "M5,6,7"
+  }
+  return mesa.nummesa ? `M${mesa.nummesa}` : 'N/A';
+};
+
+// Alpine.js (Backend)
+formatearNombreMesa(mesa) {
+  if (!mesa) return '—';
+  if (mesa.nombreCombinado) return mesa.nombreCombinado;
+  if (mesa.nummesa) return `M${mesa.nummesa}`;
+  if (typeof mesa === 'number') return `M${mesa}`;
+  return mesa || '—';
+}
+```
+
+### 9.3 Normalizacion de Datos
+
+En `comandas.html` se actualizo la funcion `normalizarComanda()` para incluir el campo `nombreCombinado`:
+
+```javascript
+const mesaNorm = mesa && typeof mesa === 'object'
+  ? { nummesa: mesa.nummesa || mesa.numMesa, area: mesa.area?.nombre || mesa.area || '', nombreCombinado: mesa.nombreCombinado || null }
+  : { nummesa: mesa, area: '', nombreCombinado: null };
+```
+
+---
+
 *Documentacion generada automaticamente - Sistema Las Gambusinas v2.8*

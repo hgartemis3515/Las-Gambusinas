@@ -754,7 +754,7 @@ const PagosScreen = () => {
             </div>
             <div class="info-row">
               <span><strong>Mesa:</strong></span>
-              <span>${boucher?.numMesa || mesa?.nummesa || comandas[0]?.mesas?.nummesa || "N/A"}</span>
+              <span>${mesa?.nombreCombinado || boucher?.numMesa || mesa?.nummesa || comandas[0]?.mesas?.nummesa || "N/A"}</span>
             </div>
             <div class="info-row">
               <span><strong>Mozo:</strong></span>
@@ -1852,7 +1852,8 @@ const PagosScreen = () => {
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Mesa:</Text>
             <Text style={styles.infoValue}>
-              {(boucherData || boucherFromParams)?.numMesa || 
+              {mesa?.nombreCombinado || 
+               (boucherData || boucherFromParams)?.numMesa || 
                mesa?.nummesa || 
                mesaParam?.nummesa ||
                (() => {
@@ -1860,7 +1861,7 @@ const PagosScreen = () => {
                  const paramsParaMesa = route.params || {};
                  const comandasDeParamsParaMesa = paramsParaMesa.comandasParaPagar || [];
                  const comandasParaMostrar = comandas.length > 0 ? comandas : comandasDeParamsParaMesa;
-                 return comandasParaMostrar[0]?.mesas?.nummesa || paramsParaMesa.mesa?.nummesa || "N/A";
+                 return comandasParaMostrar[0]?.mesas?.nombreCombinado || comandasParaMostrar[0]?.mesas?.nummesa || paramsParaMesa.mesa?.nummesa || "N/A";
                })()}
             </Text>
           </View>

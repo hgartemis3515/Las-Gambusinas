@@ -2070,7 +2070,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             <ScrollView style={styles.modalScrollView}>
               <View style={styles.editSection}>
                 <Text style={[styles.editLabel, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937') }]}>
-                  Mesa: {mesa?.nummesa || 'N/A'}
+                  Mesa: {mesa?.nombreCombinado || `M${mesa?.nummesa}` || 'N/A'}
                 </Text>
               </View>
               
