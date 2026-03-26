@@ -424,7 +424,7 @@ const MesaAnimada = React.memo(({
   }));
 
   const borderAnimatedStyle = useAnimatedStyle(() => ({
-    borderWidth: isSelected ? 3 : 1,
+    borderWidth: isSelected ? 4 : 1,
   }));
   
   // Animación del checkbox
@@ -433,11 +433,16 @@ const MesaAnimada = React.memo(({
     opacity: checkScale.value,
   }));
 
-  // Determinar color de borde según estado de grupo
+  // Determinar color de borde según estado de grupo y selección
   const getBorderColor = () => {
+    // Selección normal de mesa (tap para ver opciones) - Verde brillante
+    if (isSelected) return "#10B981";
+    // Selección múltiple (modo juntar/separar) - Color secundario
     if (estaSeleccionada) return theme.colors.secondary || "#FF6B6B";
-    if (!esMesaPrincipal) return "#9C27B0"; // Morado para mesa secundaria
-    if (mesasUnidas && mesasUnidas.length > 0) return "#2196F3"; // Azul para mesa principal con unidas
+    // Mesa secundaria (unida a otra) - Morado
+    if (!esMesaPrincipal) return "#9C27B0";
+    // Mesa principal con mesas unidas - Azul
+    if (mesasUnidas && mesasUnidas.length > 0) return "#2196F3";
     return "transparent";
   };
 
