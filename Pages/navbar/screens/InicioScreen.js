@@ -1990,9 +1990,9 @@ const InicioScreen = () => {
   // Verificar permisos al cargar userInfo
   useEffect(() => {
     if (userInfo && userInfo.permisos) {
-      const tienePermiso = userInfo.permisos.includes('mesas.juntar_separar');
+      const tienePermiso = userInfo.permisos.includes('juntar-separar-mesas');
       setTienePermisoJuntarSeparar(tienePermiso);
-      console.log(`🔐 [JUNTAR/SEPARAR] Permiso mesas.juntar_separar: ${tienePermiso}`);
+      console.log(`🔐 [JUNTAR/SEPARAR] Permiso juntar-separar-mesas: ${tienePermiso}`);
     }
   }, [userInfo]);
 
