@@ -21,6 +21,7 @@ import { themeLight, textIconos } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
 import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET, BOUCHER_API, CLIENTES_API, SELECTABLE_API_GET, DISHES_API, apiConfig } from "../../../apiConfig";
 import ModalClientes from "../../../Components/ModalClientes";
+import ModalRegistrarPropina from "./ModalRegistrarPropina";
 import IconoBoton from "../../../Components/IconoBoton";
 import { useWindowDimensions } from "react-native";
 import { useSocket } from "../../../context/SocketContext";
@@ -181,6 +182,7 @@ const PagosScreen = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [total, setTotal] = useState(0);
   const [modalClienteVisible, setModalClienteVisible] = useState(false);
+  const [modalPropinaVisible, setModalPropinaVisible] = useState(false);
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [procesandoPago, setProcesandoPago] = useState(false);
   const [mensajeCarga, setMensajeCarga] = useState("Procesando pago...");
@@ -1678,27 +1680,34 @@ const PagosScreen = () => {
         });
       }
       
-      // Botón OK siempre al final
+      const irAlInicio = () => {
+        setComandas([]);
+        setMesa(null);
+        setClienteSeleccionado(null);
+        setBoucherData(null);
+        navigation.navigate("Inicio", {
+          refresh: true,
+          mesaId: mesaIdStr,
+          mostrarMensajePago: true,
+          mesaPagada: mesaPagadaPayload,
+          boucher: boucherCreado,
+        });
+      };
+
       alertButtons.push({
-        text: "OK",
+        text: "Registrar propina",
         onPress: () => {
-          setComandas([]);
-          setMesa(null);
-          setClienteSeleccionado(null);
-          setBoucherData(null);
-          navigation.navigate("Inicio", {
-            refresh: true,
-            mesaId: mesaIdStr,
-            mostrarMensajePago: true,
-            mesaPagada: mesaPagadaPayload,
-            boucher: boucherCreado,
-          });
-        }
+          setModalPropinaVisible(true);
+        },
+      });
+      alertButtons.push({
+        text: "Ir al inicio",
+        onPress: irAlInicio,
       });
 
       Alert.alert(
         "✅ Pago Exitoso",
-        `Pago procesado y boucher generado.\n\nCliente: ${cliente.nombre || "Invitado"}\nBoucher ID: ${boucherCreado.voucherId}\n\n${estadoMesaMsg}\n\nSerás redirigido al inicio.`,
+        `Pago procesado y boucher generado.\n\nCliente: ${cliente.nombre || "Invitado"}\nBoucher ID: ${boucherCreado.voucherId}\n\n${estadoMesaMsg}\n\nPuedes registrar la propina ahora o ir al inicio.`,
         alertButtons
       );
       
@@ -2263,6 +2272,27 @@ const PagosScreen = () => {
             </View>
           </TouchableOpacity>
         )}
+
+        {/* Botón Registrar Propina - Solo cuando la mesa está pagada */}
+        {(boucherData || boucherFromParams) && mesa?.estado?.toLowerCase() === "pagado" && (
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setModalPropinaVisible(true);
+            }}
+            activeOpacity={0.8}
+            style={{ flex: 1 }}
+          >
+            <View style={[styles.buttonNew, { minHeight: 60 * escala, backgroundColor: "#4ade80" }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 * escala }}>
+                <MaterialCommunityIcons name="cash-plus" size={28 * escala} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontSize: 16 * escala, fontWeight: '700', includeFontPadding: false, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 2 }} numberOfLines={1}>
+                  Registrar Propina
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Modal de Clientes */}
@@ -2270,6 +2300,30 @@ const PagosScreen = () => {
         visible={modalClienteVisible}
         onClose={() => setModalClienteVisible(false)}
         onClienteSeleccionado={handleClienteSeleccionado}
+      />
+
+      {/* Modal de Propinas */}
+      <ModalRegistrarPropina
+        visible={modalPropinaVisible}
+        onClose={() => setModalPropinaVisible(false)}
+        boucherData={boucherData || boucherFromParams}
+        mesaData={mesa}
+        mozoData={(boucherData || boucherFromParams)?.mozo ? { _id: (boucherData || boucherFromParams).mozo } : comandas[0]?.mozos}
+        onPropinaRegistrada={() => {
+          setComandas([]);
+          setMesa(null);
+          setClienteSeleccionado(null);
+          setBoucherData(null);
+          navigation.navigate("Inicio", {
+            refresh: true,
+            mesaId: mesa?._id?.toString?.() || mesa?._id,
+            mostrarMensajePago: true,
+            mesaPagada: mesa
+              ? { _id: mesa._id, nummesa: mesa.nummesa }
+              : undefined,
+            boucher: boucherData || boucherFromParams,
+          });
+        }}
       />
 
       {/* Overlay de Carga Animado - Procesando Pago */}

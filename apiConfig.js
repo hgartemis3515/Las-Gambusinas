@@ -45,6 +45,7 @@ export const COMANDA_API_SEARCH_BY_DATE = getEndpoint('/comanda/fecha');
 export const AREAS_API = getEndpoint('/areas');
 export const BOUCHER_API = getEndpoint('/boucher');
 export const CLIENTES_API = getEndpoint('/clientes');
+export const PROPINAS_API = getEndpoint('/propinas');
 
 // Funciones helper para obtener endpoints dinámicos (se actualizan en tiempo real)
 // Usar estas cuando necesites valores que se actualicen después de cambiar la configuración
@@ -58,6 +59,7 @@ export const getComandaSearchByDateAPI = () => getDynamicEndpoint('/comanda/fech
 export const getAreasAPI = () => getDynamicEndpoint('/areas');
 export const getBoucherAPI = () => getDynamicEndpoint('/boucher');
 export const getClientesAPI = () => getDynamicEndpoint('/clientes');
+export const getPropinasAPI = () => getDynamicEndpoint('/propinas');
 
 // ==================== FASE A1: ENDPOINTS OPTIMIZADOS ====================
 // Endpoint optimizado para mapa de mesas (reduce payload y usa índices)
