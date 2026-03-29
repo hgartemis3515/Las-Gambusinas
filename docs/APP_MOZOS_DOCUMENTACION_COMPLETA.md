@@ -1,14 +1,22 @@
 # Documentación Completa - App de Mozos (Las Gambusinas)
 
-**Version:** 2.4  
+**Version:** 2.5  
 **Ultima Actualizacion:** Marzo 2026  
 **Tecnologia:** React Native + Expo + Socket.io-client + AsyncStorage
 
-**Proposito del documento:** Analisis completo del app de mozos para Las Gambusinas: estructura, flujo de datos, integracion con backend y otras aplicaciones, librerias, funciones principales, problemas y propuestas de mejora. Documento alineado con el codebase actual (marzo 2026).
+**Proposito del documento:** Analisis completo del app de mozos para Las Gambusinas: estructura, flujo de datos, integracion con backend y otras aplicaciones, librerias, funciones principales, problemas y propuestas de mejora. Documento alineado con el codebase actual (marzo 2026). Incluye documentacion detallada de ComandaDetalleScreen.
 
 ---
 
 ## 📋 Historial de Cambios
+
+### v2.5 (Marzo 2026) - Documentación de ComandaDetalleScreen
+
+- ✅ **Documentación detallada de ComandaDetalleScreen**: Cada función documentada con propósito, endpoints, validaciones y flujos
+- ✅ **Relaciones entre pantallas**: Diagramas de navegación y flujo de datos
+- ✅ **Estados de plato**: Ciclo de vida completo desde pedido hasta pagado
+- ✅ **Casos de uso comunes**: Ejemplos prácticos de operaciones típicas
+- ✅ **Notas de implementación**: Consideraciones técnicas críticas
 
 ### v2.4 (Marzo 2026) - Funcionalidad Juntar/Separar Mesas
 
@@ -1598,6 +1606,617 @@ App Mozos ──► Backend ──► App Cocina
 
 ---
 
-**Version del documento:** 2.4  
+## 📄 ComandaDetalleScreen - Documentación Detallada
+
+### Propósito y Objetivo
+
+`ComandaDetalleScreen` es la **pantalla central de operaciones** del App de Mozos. Es el hub principal donde el mozo gestiona todas las operaciones relacionadas con una mesa específica: visualizar platos, editar comandas, eliminar platos, marcar entregas, y procesar pagos.
+
+### Ubicación en la Arquitectura
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        FLUJO DE NAVEGACIÓN                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   InicioScreen ──────► ComandaDetalleScreen ◄───── OrdenesScreen    │
+│        │                      │                           │         │
+│        │                      │                           │         │
+│        │                      ▼                           │         │
+│        │                 PagosScreen  ◄───────────────────┘         │
+│        │                      │                                     │
+│        │                      ▼                                     │
+│        └────────────── Volver a Inicio ◄────────────────────────────┘
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Relación con Otras Pantallas
+
+| Pantalla | Relación | Descripción |
+|----------|----------|-------------|
+| **InicioScreen** | Origen principal | Navega aquí al tocar una mesa con comandas activas. Recibe `mesa` y `comandas` como parámetros. |
+| **OrdenesScreen** | Creación de comandas | Navega aquí para crear nueva comanda (`handleNuevaComanda`). Recibe `mesa` y `reserva` como parámetros. |
+| **PagosScreen** | Procesar pagos | Navega aquí cuando todos los platos están entregados (`handlePagar`). Envía `mesa`, `comandasParaPagar` y `totalPendiente`. |
+
+### Parámetros de Navegación Recibidos
+
+```javascript
+// route.params
+{
+  mesa: Object,           // Datos completos de la mesa
+  comandas: Array,        // Comandas iniciales (opcional, para evitar recarga)
+  onRefresh: Function,    // Callback para refrescar InicioScreen
+  clienteId: String,      // ID de cliente para filtrar (opcional)
+  filterByCliente: Boolean, // Activar filtro por cliente
+  reserva: Object         // Datos de reserva asociada (opcional)
+}
+```
+
+---
+
+### Funciones Principales - Documentación Detallada
+
+#### 1. Funciones de Carga y Actualización de Datos
+
+##### `refrescarComandas()` - Líneas 218-267
+
+**Propósito:** Obtener las comandas actualizadas de la mesa desde el backend.
+
+**Endpoint utilizado:** `GET /api/comanda/fecha/:fecha`
+
+**Flujo:**
+1. Obtiene la fecha actual en zona horaria `America/Lima`
+2. Construye la URL del endpoint según configuración
+3. Filtra las comandas por ID de mesa o número de mesa
+4. Aplica `filtrarComandasActivas()` para excluir comandas pagadas/eliminadas
+5. Aplica filtro opcional por cliente si `filterByCliente` está activo
+6. Actualiza el estado local y ejecuta `verificarComandasEnLote()` para corrección automática de status
+
+**Retorno:** `Promise<Array>` - Array de comandas activas
+
+**Uso:** Se ejecuta al montar el componente, al recibir actualizaciones Socket, y manualmente con pull-to-refresh.
+
+---
+
+##### `prepararPlatosOrdenados()` - Líneas 163-211
+
+**Propósito:** Transformar las comandas en una lista plana de platos ordenados por prioridad de estado.
+
+**Lógica:**
+1. Itera sobre todas las comandas y sus platos
+2. Extrae información relevante de cada plato (cantidad, estado, precio, complementos)
+3. Normaliza el estado `en_espera` → `pedido`
+4. Excluye platos eliminados (`eliminado: true`) y anulados (`anulado: true`)
+5. Ordena por prioridad: `recoger` (1) → `pedido` (2) → `entregado` (3) → `pagado` (4)
+
+**Estado actualizado:** `todosLosPlatos` - Array plano de objetos de plato
+
+---
+
+#### 2. Funciones de Socket.io (Tiempo Real)
+
+##### Listeners de Eventos - Líneas 351-527
+
+**Propósito:** Escuchar actualizaciones en tiempo real del backend para reflejar cambios instantáneamente.
+
+| Evento | Handler | Acción |
+|--------|---------|--------|
+| `plato-actualizado` | Líneas 361-416 | Actualiza estado de un plato específico. Muestra alerta si el plato pasó a `recoger`. |
+| `plato-agregado` | Líneas 418-424 | Refresca comandas si el plato pertenece a nuestra mesa. |
+| `plato-entregado` | Líneas 426-428 | Refresca comandas. |
+| `comanda-actualizada` | Líneas 430-437 | Invalida caché y refresca si es nuestra comanda. |
+| `comanda-eliminada` | Líneas 439-452 | Refresca y navega a Inicio si no quedan comandas activas. |
+| `plato-anulado` | Líneas 455-475 | Muestra alerta al mozo indicando que cocina anuló un plato. |
+| `comanda-anulada` | Líneas 478-514 | Muestra alerta con el total anulado y navega a Inicio si corresponde. |
+
+**Manejo de Rooms:**
+- `joinMesa(mesaId)`: Se une a la room de la mesa al montar el componente
+- `leaveMesa(mesaId)`: Sale de la room al desmontar el componente
+
+**Indicador Visual:**
+- `setLocalConnectionStatus('online-active')`: Parpadea verde al recibir actualizaciones
+- Vuelve a estado normal después de 2 segundos
+
+---
+
+#### 3. Funciones de Edición de Comanda
+
+##### `handleEditarComanda()` - Líneas 900-957
+
+**Propósito:** Abrir el modal de edición para modificar platos de la comanda.
+
+**Validaciones:**
+- Solo platos en estados `pedido` o `recoger` son editables
+- Muestra alerta si no hay platos editables
+
+**Preparación de datos:**
+- Carga catálogo de platos con `obtenerPlatos()`
+- Prepara `platosEditados` con datos completos de cada plato editable
+- Genera `instanceId` único para cada instancia de plato
+
+**Estados modificados:**
+- `platosEditables`: Lista de platos que se pueden editar
+- `platosNoEditables`: Platos que no se pueden modificar (ya entregados)
+- `platosEditados`: Estado temporal de edición
+- `modalEditarVisible`: Abre el modal
+
+---
+
+##### `handleGuardarEdicion()` - Líneas 713-801
+
+**Propósito:** Guardar los cambios realizados en la edición de la comanda.
+
+**Endpoint utilizado:** `PUT /api/comanda/:id`
+
+**Validaciones de Seguridad:**
+- Detecta si se intentaron eliminar platos en estado `recoger` (no permitido desde edición)
+- Muestra error y ofrece refrescar si se detectó manipulación
+
+**Payload enviado:**
+```javascript
+{
+  mesas: mesa._id,
+  platos: [{ plato, platoId, estado, complementosSeleccionados, notaEspecial }],
+  cantidades: [1, 2, 1, ...],
+  observaciones: "Sin cebolla en el segundo..."
+}
+```
+
+---
+
+#### 4. Funciones de Eliminación
+
+##### `handleEliminarPlatos()` - Líneas 959-976
+
+**Propósito:** Abrir el modal para seleccionar platos a eliminar.
+
+**Reglas de Negocio:**
+- **Solo se pueden eliminar platos en estado `pedido`**
+- Los platos en `recoger` ya están preparados y no deben desperdiciarse
+
+**Estados modificados:**
+- `platosParaEliminar`: Lista de platos eliminables
+- `modalEliminarVisible`: Abre el modal
+
+---
+
+##### `confirmarEliminacionPlatos()` - Líneas 997-1029
+
+**Propósito:** Validar y proceder con la eliminación de platos seleccionados.
+
+**Validaciones:**
+- No permitir eliminar todos los platos (usar eliminar comanda)
+- Detectar platos preparados y mostrar advertencia de desperdicio
+
+---
+
+##### `procederConEliminacion()` - Líneas 1031-1162
+
+**Propósito:** Ejecutar la eliminación de platos en el backend.
+
+**Endpoint utilizado:** `PUT /api/comanda/:id/eliminar-platos`
+
+**Payload:**
+```javascript
+{
+  platosAEliminar: [0, 2, 5], // ÍNDICES de platos a eliminar (0-based)
+  motivo: "El cliente cambió de opinión",
+  mozoId: "65abc123...",
+  usuarioId: "65abc123..."
+}
+```
+
+**⚠️ CRÍTICO:** Los índices son posiciones en el array `comanda.platos`, NO IDs de plato.
+
+**Comportamiento post-eliminación:**
+- Si se eliminan todos los platos → La comanda se marca como cancelada
+- Navega automáticamente a InicioScreen
+
+---
+
+##### `handleEliminarComanda()` - Líneas 1164-1221
+
+**Propósito:** Preparar y validar la eliminación de una comanda completa.
+
+**Reglas de Negocio:**
+- Solo se puede eliminar si TODOS los platos están en estado `pedido`
+- Si hay algún plato en `recoger` o `entregado` → Bloquear eliminación
+
+**Validaciones:**
+```javascript
+const hayPlatosEnRecoger = todosLosPlatos.some(p => p.estado === 'recoger' && !p.eliminado);
+const hayPlatosEntregados = todosLosPlatos.some(p => 
+  (p.estado === 'entregado' || p.estado === 'pagado') && !p.eliminado
+);
+
+if (hayPlatosEnRecoger || hayPlatosEntregados) {
+  // Bloquear eliminación
+}
+```
+
+---
+
+##### `confirmarEliminacionComanda()` - Líneas 1223-1341
+
+**Propósito:** Ejecutar la eliminación de la comanda en el backend.
+
+**Endpoint utilizado:** `PUT /api/comanda/:id/eliminar`
+
+**Payload:**
+```javascript
+{
+  motivo: "El cliente se fue sin pagar",
+  usuarioId: "65abc123...",
+  mozoId: "65abc123..."
+}
+```
+
+---
+
+#### 5. Funciones de Entrega de Platos
+
+##### `toggleSeleccionarPlatoEntregar(plato)` - Líneas 1419-1437
+
+**Propósito:** Alternar la selección de un plato para entrega masiva.
+
+**Identificación única:**
+```javascript
+const platoKey = plato._id || `${plato.platoId}-${plato.index}`;
+```
+Usa el `_id` del subdocumento (único por instancia) para distinguir platos duplicados con diferentes complementos.
+
+---
+
+##### `handleEntregarPlatos()` - Líneas 1440-1460
+
+**Propósito:** Confirmar y ejecutar la entrega de platos seleccionados.
+
+**Validación:** Muestra confirmación con cantidad de platos a entregar.
+
+---
+
+##### `ejecutarEntregaPlatos()` - Líneas 1463-1544
+
+**Propósito:** Ejecutar las peticiones PUT para marcar platos como entregados.
+
+**Endpoint utilizado:** `PUT /api/comanda/:id/plato/:platoIdentifier/estado`
+
+**Payload:**
+```javascript
+{ nuevoEstado: 'entregado' }
+```
+
+**Manejo de errores:**
+- Procesa cada plato individualmente
+- Acumula errores sin detener el proceso
+- Muestra resumen de éxitos y errores al finalizar
+
+---
+
+##### `handleMarcarPlatoEntregado(platoObj)` - Líneas 270-319
+
+**Propósito:** Marcar un único plato como entregado (acción individual desde la fila).
+
+**Flujo:**
+1. Valida que el plato esté en estado `recoger` o `pedido`
+2. Muestra confirmación al usuario
+3. Envía PUT al endpoint `/estado`
+4. Refresca comandas y muestra confirmación
+
+---
+
+#### 6. Funciones de Navegación y Acciones
+
+##### `handleNuevaComanda()` - Líneas 1343-1362
+
+**Propósito:** Navegar a OrdenesScreen para crear una nueva comanda.
+
+**Condiciones permitidas:**
+- Mesa en estado `pedido`, `preparado`, `recoger`, o `reservado`
+- Si viene de una reserva, la pasa como parámetro
+
+**Navegación:**
+```javascript
+navigation.navigate('Ordenes', {
+  mesa: mesa,
+  origen: 'ComandaDetalle',
+  reserva: reserva || null
+});
+```
+
+---
+
+##### `handlePagar()` - Líneas 1364-1411
+
+**Propósito:** Navegar a PagosScreen para procesar el pago.
+
+**Validaciones:**
+- Todos los platos deben estar en estado `entregado` o `pagado`
+- Si hay platos pendientes, muestra alerta
+
+**Flujo:**
+1. Ejecuta `verificarYActualizarEstadoComanda()` para corrección preventiva
+2. Obtiene comandas para pagar desde `/api/comanda/comandas-para-pagar/:mesaId`
+3. Navega a PagosScreen con los datos
+
+**Navegación:**
+```javascript
+navigation.navigate('Pagos', {
+  mesa: response.data.mesa,
+  comandasParaPagar: response.data.comandas,
+  totalPendiente: response.data.totalPendiente,
+  origen: 'ComandaDetalle'
+});
+```
+
+---
+
+#### 7. Funciones de Descuento (Admin/Supervisor)
+
+##### `handleAbrirDescuento()` - Líneas 809-831
+
+**Propósito:** Abrir el modal para aplicar un descuento a la comanda.
+
+**Permisos requeridos:** `rol === 'admin'` o `rol === 'supervisor'`
+
+---
+
+##### `handleAplicarDescuento()` - Líneas 834-895
+
+**Propósito:** Aplicar el descuento en el backend.
+
+**Endpoint utilizado:** `PUT /api/comanda/:id/descuento`
+
+**Payload:**
+```javascript
+{
+  descuento: 10, // Porcentaje
+  motivo: "Cliente frecuente",
+  usuarioId: "65abc123...",
+  usuarioRol: "admin"
+}
+```
+
+---
+
+#### 8. Funciones de Cálculo
+
+##### `calcularTotales()` - Líneas 536-569
+
+**Propósito:** Calcular subtotal, IGV y total de la comanda.
+
+**Configuración dinámica:**
+- Obtiene porcentaje de IGV desde `configMoneda`
+- Soporta precios que incluyen o no incluyen IGV
+- Usa decimales configurados
+
+**Lógica:**
+```javascript
+if (preciosIncluyenIGV) {
+  // Desglosar IGV del precio total
+  igv = subtotal * (igvPorcentaje / 100) / (1 + igvPorcentaje / 100);
+  subtotalSinIGV = subtotal - igv;
+} else {
+  // Agregar IGV al precio
+  subtotalSinIGV = subtotal;
+  igv = subtotal * (igvPorcentaje / 100);
+  total = subtotal + igv;
+}
+```
+
+---
+
+### Estados del Componente
+
+| Estado | Tipo | Propósito |
+|--------|------|-----------|
+| `comandas` | Array | Lista de comandas activas de la mesa |
+| `todosLosPlatos` | Array | Lista plana de platos ordenados por prioridad |
+| `refreshing` | Boolean | Indicador de carga para pull-to-refresh |
+| `loading` | Boolean | Indicador de carga para operaciones |
+| `userInfo` | Object | Datos del usuario logueado |
+| `configMoneda` | Object | Configuración de moneda (IGV, símbolo, decimales) |
+| `modalEditarVisible` | Boolean | Controla visibilidad del modal de edición |
+| `modalEliminarVisible` | Boolean | Controla visibilidad del modal de eliminación de platos |
+| `modalEliminarComandaVisible` | Boolean | Controla visibilidad del modal de eliminación de comanda |
+| `modalDescuentoVisible` | Boolean | Controla visibilidad del modal de descuento |
+| `platosEditados` | Array | Estado temporal de platos durante edición |
+| `platosSeleccionadosEliminar` | Array | Platos marcados para eliminar |
+| `platosSeleccionadosEntregar` | Array | Platos marcados para entregar |
+| `localConnectionStatus` | String | Estado local de conexión Socket ('conectado', 'online-active', etc.) |
+
+---
+
+### Validaciones de Botones
+
+| Botón | Condición de Habilitación |
+|-------|---------------------------|
+| **Editar Comanda** | `platosEnPedido.length > 0` |
+| **Eliminar Platos** | `platosEnPedido.length > 0` (solo estado `pedido`) |
+| **Eliminar Comanda** | `comandas.length > 0 && comandas[0].status !== 'pagado'` y sin platos en `recoger`/`entregado` |
+| **Nueva Comanda** | Mesa en estados `pedido`, `preparado`, `recoger`, o `reservado` |
+| **Entregar** | `platosEnRecoger.length > 0` |
+| **Pagar** | Todos los platos en estado `entregado` o `pagado` |
+| **Descuento** | `userInfo.rol === 'admin' \|\| 'supervisor'` |
+
+---
+
+### Diagrama de Flujo de Estados de Plato
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    CICLO DE VIDA DEL PLATO                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   [OrdenesScreen]                                                   │
+│        │                                                            │
+│        │ POST /api/comanda                                          │
+│        ▼                                                            │
+│   ┌─────────┐                                                       │
+│   │ PEDIDO  │ ◄── Estado inicial al crear comanda                   │
+│   │ en_espera│   - Editable ✓                                       │
+│   └────┬────┘   - Eliminable ✓                                      │
+│        │                                                            │
+│        │ [Cocina marca como listo]                                  │
+│        │ Socket: plato-actualizado                                  │
+│        ▼                                                            │
+│   ┌─────────┐                                                       │
+│   │RECOGER │ ◄── Listo para entregar                                │
+│   │        │   - Editable ✓ (con restricciones)                     │
+│   └────┬────┘   - NO eliminable ✗                                   │
+│        │                                                            │
+│        │ [Mozo entrega]                                             │
+│        │ PUT /plato/:id/estado {nuevoEstado: 'entregado'}           │
+│        ▼                                                            │
+│   ┌──────────┐                                                      │
+│   │ENTREGADO │ ◄── En manos del cliente                             │
+│   │          │   - NO editable ✗                                    │
+│   └────┬─────┘   - NO eliminable ✗                                  │
+│        │                                                            │
+│        │ [Mozo procesa pago]                                        │
+│        │ POST /api/boucher                                          │
+│        ▼                                                            │
+│   ┌─────────┐                                                       │
+│   │ PAGADO  │ ◄── Pago completado                                   │
+│   └─────────┘                                                       │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Componentes Utilizados
+
+| Componente | Propósito | Props Recibidas |
+|------------|-----------|-----------------|
+| `HeaderComandaDetalle` | Cabecera con info de mesa y estado de conexión | `mesa`, `comanda`, `onSync`, `navigation`, `connectionStatus`, `isConnected` |
+| `FilaPlatoCompacta` | Renderiza cada fila de plato | `plato`, `estilos`, `onMarcarEntregado`, `onToggleSeleccion`, `seleccionado` |
+| `BadgeEstadoPlato` | Badge con estado del plato | `estado`, `isDark`, `esEditable` |
+| `ModalComplementos` | Modal para seleccionar complementos | `visible`, `plato`, `onConfirm`, `onCancel` |
+
+---
+
+### Helpers Utilizados (utils/comandaHelpers.js)
+
+| Función | Propósito |
+|---------|-----------|
+| `filtrarComandasActivas(comandas)` | Filtra comandas que no están pagadas ni eliminadas |
+| `separarPlatosEditables(comandas)` | Separa platos en editables y no editables |
+| `filtrarPlatosPorEstado(comandas, estados)` | Filtra platos por estados permitidos |
+| `detectarPlatosPreparados(platos)` | Detecta si hay platos ya preparados |
+| `validarEliminacionCompleta(todos, seleccionados)` | Valida que no se eliminen todos los platos |
+| `obtenerColoresEstadoAdaptados(estado, isDark, esEditable)` | Obtiene colores según estado y tema |
+
+---
+
+### Endpoints REST Utilizados
+
+| Método | Endpoint | Uso |
+|--------|----------|-----|
+| GET | `/api/comanda/fecha/:fecha` | Obtener comandas del día |
+| PUT | `/api/comanda/:id` | Actualizar comanda completa |
+| PUT | `/api/comanda/:id/editar-platos` | Editar platos y cantidades |
+| PUT | `/api/comanda/:id/eliminar-platos` | Eliminar platos por índices |
+| PUT | `/api/comanda/:id/eliminar` | Eliminar comanda completa |
+| PUT | `/api/comanda/:id/plato/:platoId/estado` | Cambiar estado de un plato |
+| PUT | `/api/comanda/:id/descuento` | Aplicar descuento (admin/supervisor) |
+| GET | `/api/comanda/comandas-para-pagar/:mesaId` | Obtener comandas listas para pagar |
+| GET | `/api/platos` | Obtener catálogo de platos |
+
+---
+
+### Casos de Uso Comunes
+
+#### Caso 1: Mozo quiere agregar más platos a una mesa existente
+
+```
+1. Mozo está en ComandaDetalleScreen
+2. Presiona "Nueva Comanda"
+3. Navega a OrdenesScreen con mesa preseleccionada
+4. Agrega platos y envía
+5. Vuelve a ComandaDetalleScreen (via Socket o manual)
+```
+
+#### Caso 2: Cliente cambia de opinión sobre un plato
+
+```
+1. Mozo está en ComandaDetalleScreen
+2. Presiona "Eliminar Platos"
+3. Selecciona el plato (debe estar en estado "pedido")
+4. Ingresa motivo (mínimo 5 caracteres)
+5. Confirma eliminación
+6. Backend emite Socket "plato-actualizado" o "comanda-actualizada"
+```
+
+#### Caso 3: Cocina notifica que un plato está listo
+
+```
+1. Backend emite Socket "plato-actualizado" con nuevoEstado: "recoger"
+2. ComandaDetalleScreen recibe el evento
+3. Actualiza estado del plato en el state local
+4. Muestra Alert: "🍽️ Plato Listo - [nombre] está listo para recoger"
+5. SocketStatus parpadea en verde ("online-active")
+```
+
+#### Caso 4: Mozo entrega platos al cliente
+
+```
+1. Mozo ve platos en estado "recoger" (fondo amarillo)
+2. Selecciona los platos a entregar (checkbox)
+3. Presiona "Entregar"
+4. Confirma la acción
+5. Cada plato cambia a estado "entregado"
+6. Al entregar todos, el botón "Pagar" se habilita
+```
+
+#### Caso 5: Procesar pago
+
+```
+1. Todos los platos están en estado "entregado"
+2. Mozo presiona "Pagar"
+3. Se valida que no haya platos pendientes
+4. Se navega a PagosScreen con comandasParaPagar
+5. PagosScreen genera boucher PDF
+```
+
+---
+
+### Notas de Implementación Importantes
+
+#### Identificación Única de Platos
+
+**Problema:** El mismo plato puede aparecer múltiples veces con diferentes complementos.
+
+**Solución:** Usar el `_id` del subdocumento como identificador único:
+```javascript
+const platoKey = plato._id || `${plato.platoId}-${plato.index}`;
+```
+
+#### Prevención de Loops en Socket Listeners
+
+**Problema:** Los listeners de Socket pueden causar loops infinitos si incluyen dependencias inestables.
+
+**Solución:** Usar `useRef` para mantener referencias estables:
+```javascript
+const comandasRef = useRef(comandas);
+const refrescarComandasRef = useRef(refrescarComandas);
+
+// En el listener
+socket.on('plato-actualizado', (data) => {
+  const comandasActuales = comandasRef.current; // Siempre actualizado
+});
+```
+
+#### Validación de Estados para Eliminación
+
+**Regla de negocio crítica:**
+- **Solo platos en estado `pedido` pueden eliminarse**
+- Platos en `recoger` ya están preparados (costo de ingredientes)
+- Platos en `entregado` ya fueron consumidos
+
+---
+
+**Version del documento:** 2.5  
 **Ultima actualizacion:** Marzo 2026  
 **Sistema:** Las Gambusinas – App de Mozos
