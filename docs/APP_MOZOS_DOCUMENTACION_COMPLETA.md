@@ -10,6 +10,15 @@
 
 ## 📋 Historial de Cambios
 
+### v2.6 (Marzo 2026) - Visualización de Complementos en ComandaDetalleScreen
+
+- ✅ **Bug corregido**: Los complementos de los platos no se mostraban en ComandaDetalleScreen ni en los modales de eliminación
+- ✅ **Causa raíz**: La proyección `PROYECCION_RESUMEN_MESA` en el backend NO incluía los campos `platos.complementosSeleccionados` y `platos.notaEspecial`
+- ✅ **Solución backend**: Agregados campos faltantes en la proyección del repository
+- ✅ **Solución frontend**: Actualizados helpers `filtrarPlatosPorEstado()` y `separarPlatosEditables()` para incluir complementos
+- ✅ **Modales actualizados**: Eliminación de platos, eliminación de comanda ahora muestran complementos
+- ✅ **Lección documentada**: Ver sección "🐛 Debugging de Datos - Metodología" para aprender a identificar problemas similares
+
 ### v2.5 (Marzo 2026) - Documentación de ComandaDetalleScreen
 
 - ✅ **Documentación detallada de ComandaDetalleScreen**: Cada función documentada con propósito, endpoints, validaciones y flujos
@@ -2217,6 +2226,141 @@ socket.on('plato-actualizado', (data) => {
 
 ---
 
-**Version del documento:** 2.5  
+## 🐛 Debugging de Datos - Metodología
+
+### Lección Aprendida: Caso de los Complementos Faltantes (Marzo 2026)
+
+#### El Problema
+
+Los complementos seleccionados de los platos no se mostraban en `ComandaDetalleScreen` ni en los modales relacionados. El mozo no podía ver información crítica como término de carne, acompañamientos o salsas elegidas por el cliente.
+
+#### Metodología de Debugging Aplicada
+
+**1. Verificar el flujo completo de datos:**
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   App Mozos     │     │    Backend      │     │   MongoDB       │
+│  (crea comanda) │────►│  (guarda datos) │────►│  (persiste)     │
+│                 │     │                 │     │                 │
+│  ¿Datos ok? ✓   │     │  ¿Datos ok? ✓   │     │  ¿Datos ok? ✓   │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+```
+
+**2. Identificar dónde se pierden los datos:**
+
+| Capa | Verificación | Resultado |
+|------|--------------|-----------|
+| Modelo MongoDB | Revisar schema | ✅ Tiene `complementosSeleccionados` |
+| Endpoint POST | Revisar payload enviado | ✅ Incluye complementos |
+| Endpoint GET | Revisar respuesta del servidor | ❌ NO incluye complementos |
+| Frontend helpers | Revisar mapeo de datos | ✅ Código correcto |
+
+**3. Ubicar el archivo responsable:**
+
+El archivo clave fue `comanda.repository.js` que contiene las **proyecciones** de MongoDB.
+
+**4. El error específico:**
+
+```javascript
+// ANTES - Proyección incompleta
+const PROYECCION_RESUMEN_MESA = {
+    'platos._id': 1,
+    'platos.estado': 1,
+    'platos.eliminado': 1,
+    'platos.anulado': 1
+    // ❌ FALTABAN: complementosSeleccionados, notaEspecial, plato, platoId
+};
+
+// DESPUÉS - Proyección corregida
+const PROYECCION_RESUMEN_MESA = {
+    cantidades: 1,
+    'platos._id': 1,
+    'platos.platoId': 1,
+    'platos.estado': 1,
+    'platos.eliminado': 1,
+    'platos.anulado': 1,
+    'platos.complementosSeleccionados': 1,  // ✅ AGREGADO
+    'platos.notaEspecial': 1,                // ✅ AGREGADO
+    'platos.plato': 1                         // ✅ AGREGADO
+};
+```
+
+### Archivos Clave para Debugging de Datos
+
+#### Backend (Node.js)
+
+| Archivo | Cuándo revisarlo |
+|---------|------------------|
+| `src/database/models/*.model.js` | Cuando faltan campos en los datos recibidos |
+| `src/repository/*.repository.js` | Cuando los datos no llegan completos (PROYECCIONES) |
+| `src/controllers/*.controller.js` | Cuando hay errores en endpoints específicos |
+
+#### Frontend (React Native)
+
+| Archivo | Cuándo revisarlo |
+|---------|------------------|
+| `utils/comandaHelpers.js` | Cuando los helpers no mapean datos correctamente |
+| `Components/FilaPlatoCompacta.js` | Cuando la UI no muestra datos que deberían estar |
+| `Pages/ComandaDetalleScreen.js` | Cuando los modales no muestran información |
+
+### Checklist de Debugging de Datos
+
+```
+□ 1. ¿El modelo de MongoDB tiene el campo?
+   → Revisar src/database/models/*.model.js
+
+□ 2. ¿El endpoint POST guarda el campo?
+   → Revisar payload en la app que crea los datos
+
+□ 3. ¿El endpoint GET retorna el campo?
+   → Usar Postman/curl para verificar respuesta cruda
+   → Si falta, revisar PROYECCIONES en repository
+
+□ 4. ¿El frontend recibe el campo?
+   → Console.log de la respuesta del API
+
+□ 5. ¿El helper mapea el campo?
+   → Revisar funciones en comandaHelpers.js
+
+□ 6. ¿El componente renderiza el campo?
+   → Revisar props y condiciones de renderizado
+```
+
+### Patrón Común: Proyecciones de MongoDB
+
+MongoDB permite usar **proyecciones** para limitar los campos retornados, optimizando rendimiento. Sin embargo, si un campo no está en la proyección, **nunca llegará al frontend**.
+
+```javascript
+// Ubicación típica: src/repository/*.repository.js
+
+// ❌ ERROR COMÚN: Proyección muy restrictiva
+query.select({ 'platos.estado': 1 }); // Solo retorna estado
+
+// ✅ CORRECTO: Incluir todos los campos necesarios
+query.select({
+    'platos._id': 1,
+    'platos.estado': 1,
+    'platos.complementosSeleccionados': 1,
+    'platos.notaEspecial': 1
+});
+```
+
+### Comando Útil: Verificar Datos en el Backend
+
+```bash
+# Hacer petición directa al endpoint
+curl http://localhost:3000/api/comanda/fecha/2026-03-29 | jq '.[0].platos[0]'
+
+# Verificar si el campo existe en la respuesta
+```
+
+### Resumen
+
+**Regla de oro:** Cuando un dato no aparece en el frontend, la causa más probable es que **nunca salió del backend**. Verificar siempre las proyecciones en el repository antes de buscar errores en el frontend.
+
+---
+
+**Version del documento:** 2.6  
 **Ultima actualizacion:** Marzo 2026  
 **Sistema:** Las Gambusinas – App de Mozos
