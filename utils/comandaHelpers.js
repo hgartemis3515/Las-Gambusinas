@@ -87,6 +87,7 @@ export const filtrarPlatosPorEstado = (comandas, estadosPermitidos) => {
       if (estadosPermitidos.includes(estadoNormalizado) && !platoItem.eliminado) {
         const cantidad = comanda.cantidades?.[index] || 1;
         platos.push({
+          _id: platoItem._id, // 🔥 CRÍTICO: _id del subdocumento (único por instancia de plato)
           platoId: platoItem.platoId || platoItem.plato?._id || platoItem.plato,
           plato: platoItem.plato || { nombre: 'Plato desconocido', precio: 0 },
           cantidad: cantidad,
@@ -95,7 +96,9 @@ export const filtrarPlatosPorEstado = (comandas, estadosPermitidos) => {
           comandaId: comanda._id,
           comandaNumber: comanda.comandaNumber,
           index: index,
-          eliminado: false
+          eliminado: false,
+          complementosSeleccionados: platoItem.complementosSeleccionados || [], // 🔥 NUEVO: Complementos del plato
+          notaEspecial: platoItem.notaEspecial || '' // 🔥 NUEVO: Nota especial del plato
         });
       }
     });
@@ -135,6 +138,7 @@ export const separarPlatosEditables = (comandas) => {
       if (platoItem.eliminado) return;
       
       const platoObj = {
+        _id: platoItem._id, // 🔥 CRÍTICO: _id del subdocumento (único por instancia de plato)
         plato: platoItem.plato?._id || platoItem.plato,
         platoId: platoItem.platoId || platoItem.plato?._id,
         estado: estadoNormalizado,
@@ -142,7 +146,9 @@ export const separarPlatosEditables = (comandas) => {
         nombre: platoItem.plato?.nombre || 'Plato desconocido',
         precio: platoItem.plato?.precio || 0,
         index: index,
-        comandaId: comanda._id
+        comandaId: comanda._id,
+        complementosSeleccionados: platoItem.complementosSeleccionados || [], // 🔥 NUEVO: Complementos del plato
+        notaEspecial: platoItem.notaEspecial || '' // 🔥 NUEVO: Nota especial del plato
       };
       
       if (estadoNormalizado === 'pedido' || estadoNormalizado === 'recoger') {
@@ -441,5 +447,65 @@ export const obtenerColoresEstadoAdaptados = (estado, isDark = false, esEditable
   }
   
   return colores;
+};
+
+/**
+ * Formatea los complementos seleccionados en un string legible para UI
+ * Ejemplo: "Término: 3/4 • Acompañamiento: Papas fritas • Salsa: Chimichurri"
+ * @param {Array} complementosSeleccionados - Array de complementos con estructura { tipo, opcion }
+ * @param {number} maxLength - Longitud máxima del string (opcional, por defecto sin límite)
+ * @returns {string} String formateado para mostrar en UI
+ */
+export const formatearComplementos = (complementosSeleccionados, maxLength = null) => {
+  if (!complementosSeleccionados || !Array.isArray(complementosSeleccionados) || complementosSeleccionados.length === 0) {
+    return '';
+  }
+  
+  const partes = complementosSeleccionados.map(comp => {
+    const tipo = comp.tipo || '';
+    const opcion = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : (comp.opcion || '');
+    
+    if (tipo && opcion) {
+      return `${tipo}: ${opcion}`;
+    } else if (opcion) {
+      return opcion;
+    }
+    return null;
+  }).filter(Boolean);
+  
+  let resultado = partes.join(' • ');
+  
+  // Aplicar truncamiento si se especifica maxLength
+  if (maxLength && resultado.length > maxLength) {
+    resultado = resultado.substring(0, maxLength - 3) + '...';
+  }
+  
+  return resultado;
+};
+
+/**
+ * Genera un resumen compacto de complementos para mostrar en una línea
+ * Formato abreviado: "3/4 • Papas • Chimichurri"
+ * @param {Array} complementosSeleccionados - Array de complementos con estructura { tipo, opcion }
+ * @param {number} maxLength - Longitud máxima (por defecto 50 caracteres)
+ * @returns {string} String compacto para UI
+ */
+export const formatearComplementosCompacto = (complementosSeleccionados, maxLength = 50) => {
+  if (!complementosSeleccionados || !Array.isArray(complementosSeleccionados) || complementosSeleccionados.length === 0) {
+    return '';
+  }
+  
+  const partes = complementosSeleccionados.map(comp => {
+    const opcion = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : (comp.opcion || '');
+    return opcion;
+  }).filter(Boolean);
+  
+  let resultado = partes.join(' • ');
+  
+  if (resultado.length > maxLength) {
+    resultado = resultado.substring(0, maxLength - 3) + '...';
+  }
+  
+  return resultado;
 };
 

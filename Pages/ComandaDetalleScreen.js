@@ -1915,6 +1915,35 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                           </Text>
                         </View>
                       </View>
+                      {/* Mostrar complementos si existen */}
+                      {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && (
+                        <View style={{ marginTop: 2 }}>
+                          {plato.complementosSeleccionados.map((comp, ci) => (
+                            <Text
+                              key={ci}
+                              style={{
+                                fontSize: 11,
+                                color: isDark ? '#D1D5DB' : '#6B7280',
+                                fontStyle: 'italic',
+                                lineHeight: 16,
+                              }}
+                            >
+                              · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion}
+                            </Text>
+                          ))}
+                        </View>
+                      )}
+                      {/* Mostrar nota especial si existe */}
+                      {plato.notaEspecial && plato.notaEspecial.trim().length > 0 && (
+                        <Text style={{
+                          fontSize: 11,
+                          color: isDark ? '#FCD34D' : '#D97706',
+                          fontStyle: 'italic',
+                          marginTop: 2,
+                        }}>
+                          📝 {plato.notaEspecial}
+                        </Text>
+                      )}
                       <Text style={[
                         styles.modalPlatoCantidad, 
                         { 
@@ -2655,10 +2684,40 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                               </Text>
                             </View>
                           </View>
+                          {/* Mostrar complementos si existen */}
+                          {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && (
+                            <View style={{ marginTop: 2 }}>
+                              {plato.complementosSeleccionados.map((comp, ci) => (
+                                <Text
+                                  key={ci}
+                                  style={{
+                                    fontSize: 11,
+                                    color: isDark ? '#D1D5DB' : '#6B7280',
+                                    fontStyle: 'italic',
+                                    lineHeight: 16,
+                                  }}
+                                >
+                                  · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion}
+                                </Text>
+                              ))}
+                            </View>
+                          )}
+                          {/* Mostrar nota especial si existe */}
+                          {plato.notaEspecial && plato.notaEspecial.trim().length > 0 && (
+                            <Text style={{
+                              fontSize: 11,
+                              color: isDark ? '#FCD34D' : '#D97706',
+                              fontStyle: 'italic',
+                              marginTop: 2,
+                            }}>
+                              📝 {plato.notaEspecial}
+                            </Text>
+                          )}
                           <Text style={[
                             styles.modalPlatoCantidad,
                             { 
                               color: '#059669', // Verde intenso en ambos modos
+                              marginTop: 4,
                             }
                           ]}>
                             x{plato.cantidad} - S/. {(plato.precio * plato.cantidad).toFixed(2)}
