@@ -1,6 +1,6 @@
 # Documentación Completa - App de Mozos (Las Gambusinas)
 
-**Version:** 2.5  
+**Version:** 2.7  
 **Ultima Actualizacion:** Marzo 2026  
 **Tecnologia:** React Native + Expo + Socket.io-client + AsyncStorage
 
@@ -9,6 +9,19 @@
 ---
 
 ## 📋 Historial de Cambios
+
+### v2.7 (Marzo 2026) - Corrección de Registro de Propinas
+
+- ✅ **Bug corregido**: El modal de propinas fallaba con error 400 al intentar registrar propinas
+- ✅ **Causa raíz**: El campo `mozoId` no se extraía correctamente cuando `boucherData.mozo` venía poblado desde el backend
+- ✅ **Solución frontend**: Función `extraerId()` robusta en `ModalRegistrarPropina.js` que maneja strings, ObjectIds y objetos poblados
+- ✅ **Solución backend**: Función `idsCoinciden()` mejorada en `propinaCalculo.js` para comparar correctamente IDs
+- ✅ **Validación priorizada**: El `mesaId` ahora se extrae de `boucherData.mesa` como prioridad para evitar discrepancias
+- ✅ **Debug mejorado**: Logs detallados de IDs enviados al endpoint para facilitar debugging
+- ✅ **Archivos modificados**:
+  - `Pages/navbar/screens/ModalRegistrarPropina.js` - Extracción robusta de IDs
+  - `Pages/navbar/screens/PagosScreen.js` - Corrección en paso de `mozoData`
+  - `src/utils/propinaCalculo.js` (backend) - Función `idsCoinciden()` mejorada
 
 ### v2.6 (Marzo 2026) - Visualización de Complementos en ComandaDetalleScreen
 
@@ -2361,6 +2374,6 @@ curl http://localhost:3000/api/comanda/fecha/2026-03-29 | jq '.[0].platos[0]'
 
 ---
 
-**Version del documento:** 2.6  
+**Version del documento:** 2.7  
 **Ultima actualizacion:** Marzo 2026  
 **Sistema:** Las Gambusinas – App de Mozos
