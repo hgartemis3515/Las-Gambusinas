@@ -77,7 +77,7 @@ const FilaPlatoCompacta = ({
                   lineHeight: 16,
                 }}
               >
-                · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion}
+                · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion} x{comp.cantidad || 1}
               </Text>
             ))}
           </View>

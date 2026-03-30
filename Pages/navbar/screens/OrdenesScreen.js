@@ -1154,15 +1154,14 @@ const OrdenesScreen = ({ route }) => {
                     {tieneComplementos && (
                       <View style={styles.complementosContainer}>
                         {plato.complementosElegidos.map((comp, idx) => {
-                          // v2.0: Mostrar cantidad si es mayor a 1
+                          // v2.0: Mostrar siempre la cantidad del complemento
                           const cantidadComp = comp.cantidad || 1;
-                          const mostrarCantidad = cantidadComp > 1;
                           
                           return (
                             <View key={idx} style={styles.complementoBadge}>
                               <MaterialCommunityIcons name="check" size={12} color={theme.colors.secondary} />
                               <Text style={styles.complementoText}>
-                                {comp.opcion}{mostrarCantidad ? ` x${cantidadComp}` : ''}
+                                {comp.opcion} x{cantidadComp}
                               </Text>
                             </View>
                           );

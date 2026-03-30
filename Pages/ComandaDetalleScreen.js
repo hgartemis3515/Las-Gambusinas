@@ -1926,19 +1926,25 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                       {/* Mostrar complementos si existen */}
                       {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && (
                         <View style={{ marginTop: 2 }}>
-                          {plato.complementosSeleccionados.map((comp, ci) => (
-                            <Text
-                              key={ci}
-                              style={{
-                                fontSize: 11,
-                                color: isDark ? '#D1D5DB' : '#6B7280',
-                                fontStyle: 'italic',
-                                lineHeight: 16,
-                              }}
-                            >
-                              · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion}
-                            </Text>
-                          ))}
+                          {plato.complementosSeleccionados.map((comp, ci) => {
+                            // v2.0: Mostrar cantidad si es mayor a 1
+                            const cantidadComp = comp.cantidad || 1;
+                            const opcionTexto = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion;
+                            
+                            return (
+                              <Text
+                                key={ci}
+                                style={{
+                                  fontSize: 11,
+                                  color: isDark ? '#D1D5DB' : '#6B7280',
+                                  fontStyle: 'italic',
+                                  lineHeight: 16,
+                                }}
+                              >
+                                · {opcionTexto} x{cantidadComp}
+                              </Text>
+                            );
+                          })}
                         </View>
                       )}
                       {/* Mostrar nota especial si existe */}
@@ -2158,20 +2164,26 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                             {/* Mostrar complementos si existen */}
                             {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && (
                               <View style={{ marginTop: 2 }}>
-                                {plato.complementosSeleccionados.map((comp, ci) => (
-                                  <Text
-                                    key={ci}
-                                    style={{
-                                      fontSize: 11,
-                                      color: coloresEstado.textColor,
-                                      fontStyle: 'italic',
-                                      lineHeight: 16,
-                                      opacity: 0.8,
-                                    }}
-                                  >
-                                    · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion}
-                                  </Text>
-                                ))}
+                                {plato.complementosSeleccionados.map((comp, ci) => {
+                                  // v2.0: Mostrar cantidad si es mayor a 1
+                                  const cantidadComp = comp.cantidad || 1;
+                                  const opcionTexto = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion;
+                                  
+                                  return (
+                                    <Text
+                                      key={ci}
+                                      style={{
+                                        fontSize: 11,
+                                        color: coloresEstado.textColor,
+                                        fontStyle: 'italic',
+                                        lineHeight: 16,
+                                        opacity: 0.8,
+                                      }}
+                                    >
+                                      · {opcionTexto} x{cantidadComp}
+                                    </Text>
+                                  );
+                                })}
                               </View>
                             )}
                             {/* Mostrar nota especial si existe */}
@@ -2695,19 +2707,25 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                           {/* Mostrar complementos si existen */}
                           {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && (
                             <View style={{ marginTop: 2 }}>
-                              {plato.complementosSeleccionados.map((comp, ci) => (
-                                <Text
-                                  key={ci}
-                                  style={{
-                                    fontSize: 11,
-                                    color: isDark ? '#D1D5DB' : '#6B7280',
-                                    fontStyle: 'italic',
-                                    lineHeight: 16,
-                                  }}
-                                >
-                                  · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion}
-                                </Text>
-                              ))}
+                              {plato.complementosSeleccionados.map((comp, ci) => {
+                                // v2.0: Mostrar cantidad si es mayor a 1
+                                const cantidadComp = comp.cantidad || 1;
+                                const opcionTexto = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion;
+                                
+                                return (
+                                  <Text
+                                    key={ci}
+                                    style={{
+                                      fontSize: 11,
+                                      color: isDark ? '#D1D5DB' : '#6B7280',
+                                      fontStyle: 'italic',
+                                      lineHeight: 16,
+                                    }}
+                                  >
+                                    · {opcionTexto} x{cantidadComp}
+                                  </Text>
+                                );
+                              })}
                             </View>
                           )}
                           {/* Mostrar nota especial si existe */}

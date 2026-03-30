@@ -451,8 +451,9 @@ export const obtenerColoresEstadoAdaptados = (estado, isDark = false, esEditable
 
 /**
  * Formatea los complementos seleccionados en un string legible para UI
- * Ejemplo: "Término: 3/4 • Acompañamiento: Papas fritas • Salsa: Chimichurri"
- * @param {Array} complementosSeleccionados - Array de complementos con estructura { tipo, opcion }
+ * v2.0: Ahora incluye cantidades cuando son > 1
+ * Ejemplo: "Término: 3/4 • Acompañamiento: Papas fritas x2 • Salsa: Chimichurri"
+ * @param {Array} complementosSeleccionados - Array de complementos con estructura { grupo/tipo, opcion, cantidad }
  * @param {number} maxLength - Longitud máxima del string (opcional, por defecto sin límite)
  * @returns {string} String formateado para mostrar en UI
  */
@@ -462,13 +463,17 @@ export const formatearComplementos = (complementosSeleccionados, maxLength = nul
   }
   
   const partes = complementosSeleccionados.map(comp => {
-    const tipo = comp.tipo || '';
+    const tipo = comp.tipo || comp.grupo || '';
     const opcion = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : (comp.opcion || '');
+    const cantidad = comp.cantidad || 1;
+    
+    // v2.0: Agregar cantidad si es mayor a 1
+    const opcionConCantidad = cantidad > 1 ? `${opcion} x${cantidad}` : opcion;
     
     if (tipo && opcion) {
-      return `${tipo}: ${opcion}`;
+      return `${tipo}: ${opcionConCantidad}`;
     } else if (opcion) {
-      return opcion;
+      return opcionConCantidad;
     }
     return null;
   }).filter(Boolean);
@@ -485,8 +490,9 @@ export const formatearComplementos = (complementosSeleccionados, maxLength = nul
 
 /**
  * Genera un resumen compacto de complementos para mostrar en una línea
- * Formato abreviado: "3/4 • Papas • Chimichurri"
- * @param {Array} complementosSeleccionados - Array de complementos con estructura { tipo, opcion }
+ * v2.0: Ahora incluye cantidades cuando son > 1
+ * Formato abreviado: "3/4 • Papas x2 • Chimichurri"
+ * @param {Array} complementosSeleccionados - Array de complementos con estructura { opcion, cantidad }
  * @param {number} maxLength - Longitud máxima (por defecto 50 caracteres)
  * @returns {string} String compacto para UI
  */
@@ -497,7 +503,10 @@ export const formatearComplementosCompacto = (complementosSeleccionados, maxLeng
   
   const partes = complementosSeleccionados.map(comp => {
     const opcion = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : (comp.opcion || '');
-    return opcion;
+    const cantidad = comp.cantidad || 1;
+    
+    // v2.0: Agregar cantidad si es mayor a 1
+    return cantidad > 1 ? `${opcion} x${cantidad}` : opcion;
   }).filter(Boolean);
   
   let resultado = partes.join(' • ');
