@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -14,89 +14,250 @@ import { themeLight } from "../constants/theme";
 
 /**
  * Modal para seleccionar complementos/variantes de un plato
+ * v2.0 - Soporte para cantidades por opción
+ * 
  * @param {boolean} visible - Si el modal está visible
  * @param {object} plato - El plato que se está agregando
  * @param {function} onConfirm - Callback cuando se confirman los complementos
  * @param {function} onClose - Callback para cerrar el modal sin guardar
+ * @param {array} complementosIniciales - Complementos ya seleccionados (para edición)
  */
-const ModalComplementos = ({ visible, plato, onConfirm, onClose }) => {
+const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIniciales = null }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const styles = modalComplementosStyles(theme);
 
   // Estado local para las selecciones del mozo
-  const [selecciones, setSelecciones] = useState({}); // { "Proteína": "Pollo", "Guarnición": "Con ensalada" }
-  const [seleccionesMultiples, setSeleccionesMultiples] = useState({}); // Para grupos con selección múltiple
+  // Estructura: { "Proteína": { "Pollo": 2, "Res": 1 }, "Guarnición": { "Ensalada": 1 } }
+  const [seleccionesPorGrupo, setSeleccionesPorGrupo] = useState({});
   const [notaEspecial, setNotaEspecial] = useState("");
 
   // Los complementos del plato (array de grupos)
   const complementos = plato?.complementos || [];
 
+  // Normalizar grupo legacy al nuevo formato
+  const normalizarGrupo = useCallback((grupo) => {
+    if (grupo.modoSeleccion) return grupo; // Ya normalizado
+    
+    return {
+      ...grupo,
+      modoSeleccion: grupo.seleccionMultiple ? 'cantidades' : 'opciones',
+      maxUnidadesGrupo: grupo.maxUnidadesGrupo ?? (grupo.seleccionMultiple ? null : 1),
+      minUnidadesGrupo: grupo.minUnidadesGrupo ?? (grupo.obligatorio ? 1 : 0),
+      maxUnidadesPorOpcion: grupo.maxUnidadesPorOpcion ?? (grupo.seleccionMultiple ? null : 1),
+      permiteRepetirOpcion: grupo.permiteRepetirOpcion ?? grupo.seleccionMultiple,
+      _esLegacy: true
+    };
+  }, []);
+
+  // Inicializar selecciones desde complementosIniciales (para edición)
+  useEffect(() => {
+    if (visible) {
+      if (complementosIniciales && Array.isArray(complementosIniciales)) {
+        // Convertir array de complementos a estructura por grupo
+        const nuevaSeleccion = {};
+        complementosIniciales.forEach(comp => {
+          if (!nuevaSeleccion[comp.grupo]) {
+            nuevaSeleccion[comp.grupo] = {};
+          }
+          const cantidad = comp.cantidad || 1;
+          nuevaSeleccion[comp.grupo][comp.opcion] = cantidad;
+        });
+        setSeleccionesPorGrupo(nuevaSeleccion);
+      } else {
+        // Limpiar para nuevo plato
+        setSeleccionesPorGrupo({});
+      }
+      setNotaEspecial("");
+    }
+  }, [visible, complementosIniciales]);
+
+  // Obtener cantidad actual de una opción
+  const getCantidadOpcion = useCallback((grupoNombre, opcion) => {
+    return seleccionesPorGrupo[grupoNombre]?.[opcion] || 0;
+  }, [seleccionesPorGrupo]);
+
+  // Obtener total de unidades en un grupo
+  const getTotalUnidadesGrupo = useCallback((grupoNombre) => {
+    const grupo = seleccionesPorGrupo[grupoNombre] || {};
+    return Object.values(grupo).reduce((sum, cant) => sum + cant, 0);
+  }, [seleccionesPorGrupo]);
+
+  // Incrementar cantidad de una opción
+  const incrementarOpcion = useCallback((grupoNombre, opcion, grupoNormalizado) => {
+    const cantidadActual = getCantidadOpcion(grupoNombre, opcion);
+    const totalActual = getTotalUnidadesGrupo(grupoNombre);
+    
+    // Validar límites
+    const maxUnidadesGrupo = grupoNormalizado.maxUnidadesGrupo;
+    const maxUnidadesPorOpcion = grupoNormalizado.maxUnidadesPorOpcion;
+    
+    // Verificar máximo del grupo
+    if (maxUnidadesGrupo !== null && totalActual >= maxUnidadesGrupo) {
+      return; // No puede agregar más
+    }
+    
+    // Verificar máximo por opción
+    if (maxUnidadesPorOpcion !== null && cantidadActual >= maxUnidadesPorOpcion) {
+      return; // No puede agregar más de esta opción
+    }
+
+    setSeleccionesPorGrupo(prev => ({
+      ...prev,
+      [grupoNombre]: {
+        ...(prev[grupoNombre] || {}),
+        [opcion]: cantidadActual + 1
+      }
+    }));
+  }, [getCantidadOpcion, getTotalUnidadesGrupo]);
+
+  // Decrementar cantidad de una opción
+  const decrementarOpcion = useCallback((grupoNombre, opcion) => {
+    const cantidadActual = getCantidadOpcion(grupoNombre, opcion);
+    
+    if (cantidadActual <= 0) return;
+
+    setSeleccionesPorGrupo(prev => {
+      const nuevoGrupo = { ...(prev[grupoNombre] || {}) };
+      
+      if (cantidadActual === 1) {
+        delete nuevoGrupo[opcion];
+      } else {
+        nuevoGrupo[opcion] = cantidadActual - 1;
+      }
+      
+      return {
+        ...prev,
+        [grupoNombre]: nuevoGrupo
+      };
+    });
+  }, [getCantidadOpcion]);
+
+  // Toggle para modo opciones (legacy - sin cantidades)
+  const toggleOpcion = useCallback((grupoNombre, opcion, grupoNormalizado) => {
+    const cantidadActual = getCantidadOpcion(grupoNombre, opcion);
+    
+    if (cantidadActual > 0) {
+      // Quitar selección
+      setSeleccionesPorGrupo(prev => {
+        const nuevoGrupo = { ...(prev[grupoNombre] || {}) };
+        delete nuevoGrupo[opcion];
+        return {
+          ...prev,
+          [grupoNombre]: nuevoGrupo
+        };
+      });
+    } else {
+      // Agregar selección (verificando límites)
+      const totalActual = getTotalUnidadesGrupo(grupoNombre);
+      const maxUnidadesGrupo = grupoNormalizado.maxUnidadesGrupo;
+      
+      // Si solo permite 1 y ya hay una seleccionada, reemplazar
+      if (maxUnidadesGrupo === 1 && totalActual === 1) {
+        // Reemplazar la selección anterior
+        const grupoPrevio = seleccionesPorGrupo[grupoNombre] || {};
+        const opcionPrevia = Object.keys(grupoPrevio)[0];
+        
+        setSeleccionesPorGrupo(prev => {
+          const nuevoGrupo = { [opcion]: 1 };
+          return {
+            ...prev,
+            [grupoNombre]: nuevoGrupo
+          };
+        });
+        return;
+      }
+      
+      // Verificar si puede agregar
+      if (maxUnidadesGrupo !== null && totalActual >= maxUnidadesGrupo) {
+        return;
+      }
+      
+      // Agregar
+      setSeleccionesPorGrupo(prev => ({
+        ...prev,
+        [grupoNombre]: {
+          ...(prev[grupoNombre] || {}),
+          [opcion]: 1
+        }
+      }));
+    }
+  }, [getCantidadOpcion, getTotalUnidadesGrupo, seleccionesPorGrupo]);
+
+  // Calcular estado de validación para cada grupo
+  const estadoGrupos = useMemo(() => {
+    const estados = {};
+    complementos.forEach(grupoOriginal => {
+      const grupo = normalizarGrupo(grupoOriginal);
+      const totalUnidades = getTotalUnidadesGrupo(grupo.grupo);
+      const minUnidades = grupo.minUnidadesGrupo || (grupo.obligatorio ? 1 : 0);
+      const maxUnidades = grupo.maxUnidadesGrupo;
+      
+      let esValido = true;
+      let mensaje = '';
+      
+      if (totalUnidades < minUnidades) {
+        esValido = false;
+        mensaje = `Faltan ${minUnidades - totalUnidades} unidad(es)`;
+      } else if (maxUnidades !== null && totalUnidades > maxUnidades) {
+        esValido = false;
+        mensaje = `Excedido (máx: ${maxUnidades})`;
+      } else if (maxUnidades !== null && totalUnidades === maxUnidades) {
+        mensaje = `✓ Máximo alcanzado`;
+      } else if (totalUnidades >= minUnidades && minUnidades > 0) {
+        mensaje = `✓ Mínimo cumplido`;
+      } else if (totalUnidades > 0) {
+        mensaje = `${totalUnidades} seleccionada(s)`;
+      }
+      
+      estados[grupo.grupo] = {
+        esValido,
+        totalUnidades,
+        minUnidades,
+        maxUnidades,
+        mensaje,
+        modoSeleccion: grupo.modoSeleccion,
+        obligatorio: grupo.obligatorio
+      };
+    });
+    return estados;
+  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo]);
+
   // Verificar si todos los grupos obligatorios tienen selección
   const obligatoriosCompletos = useMemo(() => {
-    return complementos
-      .filter((c) => c.obligatorio)
-      .every((c) => {
-        if (c.seleccionMultiple) {
-          const seleccionados = seleccionesMultiples[c.grupo] || [];
-          return seleccionados.length > 0;
-        }
-        return selecciones[c.grupo] !== undefined;
-      });
-  }, [complementos, selecciones, seleccionesMultiples]);
-
-  // Manejar selección de opción única (chips tipo radio)
-  const handleSeleccionUnica = (grupo, opcion) => {
-    setSelecciones((prev) => ({
-      ...prev,
-      [grupo]: opcion,
-    }));
-  };
-
-  // Manejar selección múltiple (chips tipo checkbox)
-  const handleSeleccionMultiple = (grupo, opcion) => {
-    setSeleccionesMultiples((prev) => {
-      const actuales = prev[grupo] || [];
-      const yaSeleccionado = actuales.includes(opcion);
-
-      if (yaSeleccionado) {
-        // Quitar selección
-        return {
-          ...prev,
-          [grupo]: actuales.filter((o) => o !== opcion),
-        };
-      } else {
-        // Agregar selección
-        return {
-          ...prev,
-          [grupo]: [...actuales, opcion],
-        };
-      }
+    return complementos.every(grupoOriginal => {
+      const grupo = normalizarGrupo(grupoOriginal);
+      if (!grupo.obligatorio) return true;
+      
+      const totalUnidades = getTotalUnidadesGrupo(grupo.grupo);
+      const minUnidades = grupo.minUnidadesGrupo || 1;
+      
+      return totalUnidades >= minUnidades;
     });
-  };
+  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo]);
+
+  // Verificar si hay algún error de validación
+  const hayErrores = useMemo(() => {
+    return Object.values(estadoGrupos).some(e => !e.esValido);
+  }, [estadoGrupos]);
 
   // Confirmar y agregar el plato con complementos
   const handleConfirmar = () => {
-    if (!obligatoriosCompletos) return;
+    if (!obligatoriosCompletos || hayErrores) return;
 
     // Construir array de complementos seleccionados
     const complementosSeleccionados = [];
-
-    complementos.forEach((c) => {
-      if (c.seleccionMultiple) {
-        const opcionesSeleccionadas = seleccionesMultiples[c.grupo] || [];
-        opcionesSeleccionadas.forEach((opcion) => {
+    
+    Object.entries(seleccionesPorGrupo).forEach(([grupoNombre, opciones]) => {
+      Object.entries(opciones).forEach(([opcion, cantidad]) => {
+        if (cantidad > 0) {
           complementosSeleccionados.push({
-            grupo: c.grupo,
+            grupo: grupoNombre,
             opcion: opcion,
+            cantidad: cantidad
           });
-        });
-      } else if (selecciones[c.grupo]) {
-        complementosSeleccionados.push({
-          grupo: c.grupo,
-          opcion: selecciones[c.grupo],
-        });
-      }
+        }
+      });
     });
 
     // Llamar al callback con los datos
@@ -106,15 +267,13 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose }) => {
     });
 
     // Resetear estado local
-    setSelecciones({});
-    setSeleccionesMultiples({});
+    setSeleccionesPorGrupo({});
     setNotaEspecial("");
   };
 
   // Cerrar sin guardar
   const handleCancelar = () => {
-    setSelecciones({});
-    setSeleccionesMultiples({});
+    setSeleccionesPorGrupo({});
     setNotaEspecial("");
     onClose();
   };
@@ -158,52 +317,108 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose }) => {
             showsVerticalScrollIndicator={true}
           >
             {/* Grupos de complementos */}
-            {complementos.map((complemento, index) => (
-              <View key={index} style={styles.grupoContainer}>
-                <View style={styles.grupoHeader}>
-                  <Text style={styles.grupoTitle}>{complemento.grupo}</Text>
-                  {complemento.obligatorio && (
-                    <View style={styles.requeridoBadge}>
-                      <Text style={styles.requeridoBadgeText}>Requerido</Text>
+            {complementos.map((complemento, index) => {
+              const grupoNormalizado = normalizarGrupo(complemento);
+              const estado = estadoGrupos[grupoNormalizado.grupo] || {};
+              const esModoCantidad = grupoNormalizado.modoSeleccion === 'cantidades';
+              
+              return (
+                <View key={index} style={styles.grupoContainer}>
+                  <View style={styles.grupoHeader}>
+                    <Text style={styles.grupoTitle}>{grupoNormalizado.grupo}</Text>
+                    {grupoNormalizado.obligatorio && (
+                      <View style={styles.requeridoBadge}>
+                        <Text style={styles.requeridoBadgeText}>Requerido</Text>
+                      </View>
+                    )}
+                    {esModoCantidad && (
+                      <Text style={styles.cantidadHint}>
+                        (máx: {grupoNormalizado.maxUnidadesGrupo || '∞'})
+                      </Text>
+                    )}
+                  </View>
+                  
+                  {/* Estado del grupo */}
+                  {estado.mensaje && (
+                    <View style={[
+                      styles.estadoBadge,
+                      !estado.esValido && styles.estadoBadgeError,
+                      estado.esValido && estado.totalUnidades > 0 && styles.estadoBadgeSuccess
+                    ]}>
+                      <Text style={[
+                        styles.estadoBadgeText,
+                        !estado.esValido && styles.estadoBadgeTextError
+                      ]}>
+                        {estado.mensaje}
+                      </Text>
                     </View>
                   )}
-                  {complemento.seleccionMultiple && (
-                    <Text style={styles.seleccionMultipleHint}>
-                      (puedes elegir varios)
-                    </Text>
-                  )}
-                </View>
 
-                {/* Chips de opciones */}
-                <View style={styles.opcionesContainer}>
-                  {complemento.opciones.map((opcion, optIndex) => {
-                    let isSelected = false;
+                  {/* Chips de opciones */}
+                  <View style={styles.opcionesContainer}>
+                    {grupoNormalizado.opciones.map((opcion, optIndex) => {
+                      const cantidad = getCantidadOpcion(grupoNormalizado.grupo, opcion);
+                      const isSelected = cantidad > 0;
+                      const puedeIncrementar = 
+                        (grupoNormalizado.maxUnidadesGrupo === null || getTotalUnidadesGrupo(grupoNormalizado.grupo) < grupoNormalizado.maxUnidadesGrupo) &&
+                        (grupoNormalizado.maxUnidadesPorOpcion === null || cantidad < grupoNormalizado.maxUnidadesPorOpcion);
 
-                    if (complemento.seleccionMultiple) {
-                      const seleccionados =
-                        seleccionesMultiples[complemento.grupo] || [];
-                      isSelected = seleccionados.includes(opcion);
-                    } else {
-                      isSelected = selecciones[complemento.grupo] === opcion;
-                    }
+                      // Modo cantidad: mostrar +/- buttons
+                      if (esModoCantidad) {
+                        return (
+                          <View key={optIndex} style={styles.opcionCantidadRow}>
+                            <TouchableOpacity
+                              style={[
+                                styles.opcionChip,
+                                isSelected && styles.opcionChipSelected,
+                              ]}
+                              onPress={() => toggleOpcion(grupoNormalizado.grupo, opcion, grupoNormalizado)}
+                              activeOpacity={0.7}
+                            >
+                              <Text
+                                style={[
+                                  styles.opcionText,
+                                  isSelected && styles.opcionTextSelected,
+                                ]}
+                              >
+                                {opcion}
+                              </Text>
+                            </TouchableOpacity>
+                            
+                            <View style={styles.cantidadControls}>
+                              <TouchableOpacity
+                                style={[styles.cantidadButton, cantidad === 0 && styles.cantidadButtonDisabled]}
+                                onPress={() => decrementarOpcion(grupoNormalizado.grupo, opcion)}
+                                disabled={cantidad === 0}
+                              >
+                                <MaterialCommunityIcons name="minus" size={16} color={cantidad > 0 ? theme.colors.text.white : theme.colors.text.light} />
+                              </TouchableOpacity>
+                              
+                              <Text style={styles.cantidadText}>{cantidad}</Text>
+                              
+                              <TouchableOpacity
+                                style={[styles.cantidadButton, !puedeIncrementar && styles.cantidadButtonDisabled]}
+                                onPress={() => incrementarOpcion(grupoNormalizado.grupo, opcion, grupoNormalizado)}
+                                disabled={!puedeIncrementar}
+                              >
+                                <MaterialCommunityIcons name="plus" size={16} color={puedeIncrementar ? theme.colors.text.white : theme.colors.text.light} />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      }
 
-                    return (
-                      <TouchableOpacity
-                        key={optIndex}
-                        style={[
-                          styles.opcionChip,
-                          isSelected && styles.opcionChipSelected,
-                        ]}
-                        onPress={() => {
-                          if (complemento.seleccionMultiple) {
-                            handleSeleccionMultiple(complemento.grupo, opcion);
-                          } else {
-                            handleSeleccionUnica(complemento.grupo, opcion);
-                          }
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        {complemento.seleccionMultiple && (
+                      // Modo opciones (legacy): chip simple
+                      return (
+                        <TouchableOpacity
+                          key={optIndex}
+                          style={[
+                            styles.opcionChip,
+                            isSelected && styles.opcionChipSelected,
+                          ]}
+                          onPress={() => toggleOpcion(grupoNormalizado.grupo, opcion, grupoNormalizado)}
+                          activeOpacity={0.7}
+                        >
                           <MaterialCommunityIcons
                             name={isSelected ? "checkbox-marked" : "checkbox-blank-outline"}
                             size={18}
@@ -214,21 +429,21 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose }) => {
                             }
                             style={styles.checkboxIcon}
                           />
-                        )}
-                        <Text
-                          style={[
-                            styles.opcionText,
-                            isSelected && styles.opcionTextSelected,
-                          ]}
-                        >
-                          {opcion}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                          <Text
+                            style={[
+                              styles.opcionText,
+                              isSelected && styles.opcionTextSelected,
+                            ]}
+                          >
+                            {opcion}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
 
             {/* Campo de nota especial */}
             <View style={styles.notaContainer}>
@@ -264,10 +479,10 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose }) => {
             <TouchableOpacity
               style={[
                 styles.confirmButton,
-                !obligatoriosCompletos && styles.confirmButtonDisabled,
+                (!obligatoriosCompletos || hayErrores) && styles.confirmButtonDisabled,
               ]}
               onPress={handleConfirmar}
-              disabled={!obligatoriosCompletos}
+              disabled={!obligatoriosCompletos || hayErrores}
               activeOpacity={0.8}
             >
               <MaterialCommunityIcons
@@ -288,7 +503,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose }) => {
                 color={theme.colors.warning}
               />
               <Text style={styles.warningText}>
-                Selecciona las opciones requeridas
+                Completa las opciones requeridas
               </Text>
             </View>
           )}
@@ -367,10 +582,31 @@ const modalComplementosStyles = (theme) =>
       fontSize: 11,
       fontWeight: "600",
     },
-    seleccionMultipleHint: {
+    cantidadHint: {
       fontSize: 12,
       color: theme.colors.text.light,
       fontStyle: "italic",
+    },
+    estadoBadge: {
+      backgroundColor: theme.colors.background,
+      paddingHorizontal: theme.spacing.sm,
+      paddingVertical: 4,
+      borderRadius: 8,
+      marginBottom: theme.spacing.sm,
+    },
+    estadoBadgeError: {
+      backgroundColor: theme.colors.primary + "30",
+    },
+    estadoBadgeSuccess: {
+      backgroundColor: theme.colors.secondary + "30",
+    },
+    estadoBadgeText: {
+      fontSize: 11,
+      color: theme.colors.text.secondary,
+      fontWeight: "500",
+    },
+    estadoBadgeTextError: {
+      color: theme.colors.primary,
     },
     opcionesContainer: {
       flexDirection: "row",
@@ -386,7 +622,7 @@ const modalComplementosStyles = (theme) =>
       borderRadius: 24,
       borderWidth: 2,
       borderColor: theme.colors.border,
-      minHeight: 44, // Accesibilidad: mínimo 44pt para toque fácil
+      minHeight: 44,
     },
     opcionChipSelected: {
       backgroundColor: theme.colors.primary,
@@ -403,6 +639,36 @@ const modalComplementosStyles = (theme) =>
     opcionTextSelected: {
       color: theme.colors.text.white,
       fontWeight: "600",
+    },
+    opcionCantidadRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+      marginBottom: theme.spacing.xs,
+    },
+    cantidadControls: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: theme.colors.background,
+      borderRadius: 12,
+      overflow: "hidden",
+    },
+    cantidadButton: {
+      width: 32,
+      height: 32,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: theme.colors.primary,
+    },
+    cantidadButtonDisabled: {
+      backgroundColor: theme.colors.text.light + "40",
+    },
+    cantidadText: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: theme.colors.text.primary,
+      minWidth: 32,
+      textAlign: "center",
     },
     notaContainer: {
       marginTop: theme.spacing.md,

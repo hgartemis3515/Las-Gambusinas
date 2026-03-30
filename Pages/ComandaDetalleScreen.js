@@ -630,6 +630,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
     const instanceId = `${plato._id}_${Date.now()}`;
 
+    // v2.0: Normalizar complementos seleccionados (asegurar que tengan cantidad)
+    const complementosNormalizados = complementosSeleccionados.map(comp => ({
+      grupo: comp.grupo,
+      opcion: comp.opcion,
+      cantidad: comp.cantidad || 1 // Si no tiene cantidad, asumir 1 (legacy)
+    }));
+
     const platoConComplementos = {
       ...plato,
       instanceId,
@@ -639,7 +646,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       cantidad: 1,
       nombre: plato.nombre,
       precio: plato.precio,
-      complementosSeleccionados,
+      complementosSeleccionados: complementosNormalizados,
       notaEspecial,
     };
 
@@ -648,7 +655,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       if (p.plato !== plato._id && p.plato?.toString() !== plato._id?.toString()) return false;
 
       const pComps = p.complementosSeleccionados || [];
-      const newComps = complementosSeleccionados || [];
+      const newComps = complementosNormalizados || [];
       const pNota = (p.notaEspecial || '').trim();
       const newNota = notaEspecial.trim();
 
@@ -659,10 +666,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       if (pComps.length !== newComps.length) return false;
       if (pNota !== newNota) return false;
 
+      // v2.0: Comparar incluyendo cantidad
       return pComps.every(pc => 
-        newComps.some(nc => nc.grupo === pc.grupo && nc.opcion === pc.opcion)
+        newComps.some(nc => nc.grupo === pc.grupo && nc.opcion === pc.opcion && nc.cantidad === pc.cantidad)
       ) && newComps.every(nc =>
-        pComps.some(pc => pc.grupo === nc.grupo && pc.opcion === nc.opcion)
+        pComps.some(pc => pc.grupo === nc.grupo && pc.opcion === nc.opcion && pc.cantidad === nc.cantidad)
       );
     });
 
@@ -2985,6 +2993,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         plato={platoParaComplementar}
         onConfirm={handleConfirmarComplementosEdicion}
         onClose={() => setPlatoParaComplementar(null)}
+        complementosIniciales={platoParaComplementar?.complementosSeleccionados || null}
       />
     </View>
   );

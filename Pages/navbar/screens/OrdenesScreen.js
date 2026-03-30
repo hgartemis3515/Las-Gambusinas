@@ -368,10 +368,17 @@ const OrdenesScreen = ({ route }) => {
     // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
     const instanceId = `${plato._id}_${Date.now()}`;
 
+    // v2.0: Normalizar complementos seleccionados (asegurar que tengan cantidad)
+    const complementosNormalizados = complementosSeleccionados.map(comp => ({
+      grupo: comp.grupo,
+      opcion: comp.opcion,
+      cantidad: comp.cantidad || 1 // Si no tiene cantidad, asumir 1 (legacy)
+    }));
+
     const platoConComplementos = {
       ...plato,
       instanceId, // ID único para esta instancia
-      complementosElegidos: complementosSeleccionados,
+      complementosElegidos: complementosNormalizados,
       notaEspecial: notaEspecial,
     };
 
@@ -382,7 +389,7 @@ const OrdenesScreen = ({ route }) => {
 
       // Si ambos NO tienen complementos, son iguales
       const pComps = p.complementosElegidos || [];
-      const newComps = complementosSeleccionados || [];
+      const newComps = complementosNormalizados || [];
       const pNota = (p.notaEspecial || "").trim();
       const newNota = notaEspecial.trim();
 
@@ -390,15 +397,15 @@ const OrdenesScreen = ({ route }) => {
         return true;
       }
 
-      // Si tienen complementos, compararlos
+      // Si tienen complementos, compararlos (incluyendo cantidad)
       if (pComps.length !== newComps.length) return false;
       if (pNota !== newNota) return false;
 
-      // Comparar cada complemento
+      // Comparar cada complemento incluyendo cantidad
       return pComps.every(pc => 
-        newComps.some(nc => nc.grupo === pc.grupo && nc.opcion === pc.opcion)
+        newComps.some(nc => nc.grupo === pc.grupo && nc.opcion === pc.opcion && nc.cantidad === pc.cantidad)
       ) && newComps.every(nc =>
-        pComps.some(pc => pc.grupo === nc.grupo && pc.opcion === nc.opcion)
+        pComps.some(pc => pc.grupo === nc.grupo && pc.opcion === nc.opcion && pc.cantidad === nc.cantidad)
       );
     });
 
@@ -1146,12 +1153,20 @@ const OrdenesScreen = ({ route }) => {
                     {/* Mostrar complementos si existen */}
                     {tieneComplementos && (
                       <View style={styles.complementosContainer}>
-                        {plato.complementosElegidos.map((comp, idx) => (
-                          <View key={idx} style={styles.complementoBadge}>
-                            <MaterialCommunityIcons name="check" size={12} color={theme.colors.secondary} />
-                            <Text style={styles.complementoText}>{comp.opcion}</Text>
-                          </View>
-                        ))}
+                        {plato.complementosElegidos.map((comp, idx) => {
+                          // v2.0: Mostrar cantidad si es mayor a 1
+                          const cantidadComp = comp.cantidad || 1;
+                          const mostrarCantidad = cantidadComp > 1;
+                          
+                          return (
+                            <View key={idx} style={styles.complementoBadge}>
+                              <MaterialCommunityIcons name="check" size={12} color={theme.colors.secondary} />
+                              <Text style={styles.complementoText}>
+                                {comp.opcion}{mostrarCantidad ? ` x${cantidadComp}` : ''}
+                              </Text>
+                            </View>
+                          );
+                        })}
                       </View>
                     )}
                     
