@@ -1590,9 +1590,23 @@ const InicioScreen = () => {
       return "Reservado";
     }
 
-    // Fuente única: comandas activas de la mesa. Si no hay comandas activas, la mesa está libre.
+    // Fuente única: comandas activas de la mesa
     const comandasMesa = getComandasPorMesa(mesa.nummesa);
-    if (comandasMesa.length === 0) return "Libre";
+
+    // 🔥 CORREGIDO: Si no hay comandas activas localmente, cruzar con el estado de la mesa desde el backend
+    // Esto previene que una mesa aparezca como "Libre" cuando hay desincronización de datos
+    if (comandasMesa.length === 0) {
+      // Si el backend tiene la mesa como "pedido" o "preparado", dar prioridad a ese estado
+      // (puede haber comandas activas que no llegaron por Socket o que están en caché desactualizado)
+      if (mesa.estado) {
+        const estadoBackend = mesa.estado.toLowerCase();
+        if (estadoBackend === "pedido" || estadoBackend === "preparado") {
+          console.log(`⚠️ [DESYNC] Mesa ${mesa.nummesa} sin comandas locales pero backend dice "${estadoBackend}" - Usando estado del backend`);
+          return estadoBackend.charAt(0).toUpperCase() + estadoBackend.slice(1);
+        }
+      }
+      return "Libre";
+    }
 
     // Si la mesa tiene estado definido, usarlo (prioridad al estado de la mesa)
     // PERO verificar que el estado sea consistente con las comandas actuales
