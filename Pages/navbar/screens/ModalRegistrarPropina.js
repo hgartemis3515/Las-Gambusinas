@@ -22,12 +22,12 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import axios from "axios";
+import axios from "../../../config/axiosConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
-import { PROPINAS_API } from "../../../apiConfig";
+import { getPropinasAPI } from "../../../apiConfig";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -114,6 +114,27 @@ const ModalRegistrarPropina = ({
     setTipoPropina("porcentaje");
   };
 
+  // Función helper para reintentos con delay
+  const retryRequest = async (requestFn, maxRetries = 3, delay = 1000) => {
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await requestFn();
+        return result;
+      } catch (error) {
+        lastError = error;
+        // Solo reintentar si es error de red (Network Error)
+        if (error.message === "Network Error" && attempt < maxRetries) {
+          console.log(`[Propina] Reintento ${attempt}/${maxRetries} después de error de red...`);
+          await new Promise((resolve) => setTimeout(resolve, delay * attempt));
+        } else {
+          break;
+        }
+      }
+    }
+    throw lastError;
+  };
+
   const handleRegistrarPropina = async () => {
     if (propinaCalculada <= 0 && tipoPropina !== "ninguna") {
       Alert.alert("Error", "Ingrese un monto o porcentaje válido");
@@ -140,10 +161,35 @@ const ModalRegistrarPropina = ({
         idempotencyKeyRef.current = `propina-boucher-${boucherData._id}-${Date.now()}`;
       }
 
+      // Extraer ID de forma robusta (puede venir como string, ObjectId, o objeto poblado)
+      const extraerId = (obj) => {
+        if (!obj) return null;
+        if (typeof obj === 'string') return obj;
+        if (typeof obj === 'object') {
+          // Si es un objeto poblado con _id, o un objeto con estructura { _id: string }
+          return obj._id?.toString() || obj.toString();
+        }
+        return null;
+      };
+
+      // Extraer mesaId: primero de mesaData, si no coincide usar boucher.mesa
+      const mesaIdFromData = extraerId(mesaData);
+      const mesaIdFromBoucher = extraerId(boucherData?.mesa);
+      const mesaIdFinal = mesaIdFromBoucher || mesaIdFromData;
+
+      // Extraer mozoId
+      const mozoIdFinal = extraerId(mozoData) || extraerId(boucherData?.mozo) || userId;
+
+      console.log("[Propina] Debug IDs:");
+      console.log("  mesaData:", JSON.stringify(mesaData?._id || mesaData, null, 2));
+      console.log("  boucherData.mesa:", JSON.stringify(boucherData?.mesa, null, 2));
+      console.log("  mesaIdFinal:", mesaIdFinal);
+      console.log("  mozoIdFinal:", mozoIdFinal);
+
       const propinaPayload = {
-        mesaId: mesaData._id,
+        mesaId: mesaIdFinal,
         boucherId: boucherData._id,
-        mozoId: mozoData?._id || userId,
+        mozoId: mozoIdFinal,
         tipo: tipoPropina === "ninguna" ? "ninguna" : tipoPropina,
         montoFijo: tipoPropina === "monto" ? parseFloat(montoFijo) || 0 : null,
         porcentaje: tipoPropina === "porcentaje" ? parseFloat(porcentaje) || 0 : null,
@@ -151,17 +197,26 @@ const ModalRegistrarPropina = ({
         registradoPor: userId,
       };
 
-      const response = await axios.post(
-        `${PROPINAS_API}`,
-        propinaPayload,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-            "Idempotency-Key": idempotencyKeyRef.current,
-          },
-        }
-      );
+      // Debug: mostrar datos que se envían
+      console.log("[Propina] Enviando payload:", JSON.stringify(propinaPayload, null, 2));
+      console.log("[Propina] boucherData.mozo:", JSON.stringify(boucherData?.mozo, null, 2));
+      console.log("[Propina] mozoData recibido:", JSON.stringify(mozoData, null, 2));
+      console.log("[Propina] mozoIdFinal:", mozoIdFinal);
+
+      // Usar función de reintento para mayor robustez
+      const response = await retryRequest(async () => {
+        return await axios.post(
+          getPropinasAPI(),
+          propinaPayload,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+              "Idempotency-Key": idempotencyKeyRef.current,
+            },
+          }
+        );
+      });
 
       if (response.data.success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -192,11 +247,34 @@ const ModalRegistrarPropina = ({
       }
     } catch (error) {
       console.error("Error al registrar propina:", error);
+      console.error("[Propina] Error response data:", JSON.stringify(error.response?.data, null, 2));
+      console.error("[Propina] Error status:", error.response?.status);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert(
-        "Error",
-        error.response?.data?.error || "No se pudo registrar la propina"
-      );
+
+      // Mensaje de error más descriptivo
+      let errorMessage = "No se pudo registrar la propina";
+
+      if (error.message === "Network Error") {
+        errorMessage = "Sin conexión al servidor.\n\n" +
+          "Posibles causas:\n" +
+          "• El servidor no está ejecutándose\n" +
+          "• La red WiFi se desconectó\n" +
+          "• La IP del servidor cambió\n\n" +
+          "Verifica que el servidor esté corriendo en:\n" +
+          "http://192.168.18.11:3000";
+      } else if (error.code === "ECONNABORTED") {
+        errorMessage = "Tiempo de espera agotado.\n\nEl servidor no respondió a tiempo. Inténtalo de nuevo.";
+      } else if (error.response?.status === 400) {
+        errorMessage = error.response?.data?.error || "Datos de propina inválidos";
+      } else if (error.response?.status === 404) {
+        errorMessage = "Endpoint no encontrado.\n\nVerifica que el backend tenga la ruta /api/propinas configurada.";
+      } else if (error.response?.status === 409) {
+        errorMessage = "Ya existe una propina registrada para este boucher.";
+      } else if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      }
+
+      Alert.alert("Error", errorMessage);
     } finally {
       setLoading(false);
     }

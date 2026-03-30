@@ -22,6 +22,7 @@ import { colors } from "../../../constants/colors";
 import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET, BOUCHER_API, CLIENTES_API, SELECTABLE_API_GET, DISHES_API, apiConfig } from "../../../apiConfig";
 import ModalClientes from "../../../Components/ModalClientes";
 import ModalRegistrarPropina from "./ModalRegistrarPropina";
+import ModalPagoExitoso from "./ModalPagoExitoso";
 import IconoBoton from "../../../Components/IconoBoton";
 import { useWindowDimensions } from "react-native";
 import { useSocket } from "../../../context/SocketContext";
@@ -183,6 +184,9 @@ const PagosScreen = () => {
   const [total, setTotal] = useState(0);
   const [modalClienteVisible, setModalClienteVisible] = useState(false);
   const [modalPropinaVisible, setModalPropinaVisible] = useState(false);
+  const [modalPagoExitosoVisible, setModalPagoExitosoVisible] = useState(false);
+  const [pdfUri, setPdfUri] = useState(null);
+  const [clientePagoExitoso, setClientePagoExitoso] = useState(null);
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [procesandoPago, setProcesandoPago] = useState(false);
   const [mensajeCarga, setMensajeCarga] = useState("Procesando pago...");
@@ -1632,11 +1636,11 @@ const PagosScreen = () => {
       setMensajeCarga("Procesando pago...");
 
       // Generar PDF silenciosamente (sin mostrar Alert) para obtener el URI
-      let pdfUri = null;
+      let pdfUriGenerado = null;
       try {
         console.log("📄 [PAGO] Generando boucher PDF...");
-        pdfUri = await generarPDF(boucherCreado, false); // false = modo silencioso
-        console.log("✅ [PAGO] PDF generado exitosamente:", pdfUri ? "OK" : "falló");
+        pdfUriGenerado = await generarPDF(boucherCreado, false); // false = modo silencioso
+        console.log("✅ [PAGO] PDF generado exitosamente:", pdfUriGenerado ? "OK" : "falló");
       } catch (pdfError) {
         console.error("⚠️ [PAGO] Error generando PDF (continuando de todas formas):", pdfError);
         // No bloquear el flujo si falla la generación del PDF
@@ -1647,44 +1651,13 @@ const PagosScreen = () => {
         ? `La mesa ${mesaFinal.nummesa} está en estado 'Pagado' (verificado).`
         : `⚠️ La mesa ${mesaFinal.nummesa} podría tardar unos segundos en actualizarse.`;
 
-      // ✅ Mostrar alerta de éxito con opciones de imprimir si el PDF se generó
-      const alertButtons = [];
-      
-      // Si el PDF se generó, agregar opciones de imprimir/compartir
-      if (pdfUri) {
-        alertButtons.push({
-          text: "Imprimir",
-          onPress: async () => {
-            try {
-              await Print.printAsync({ uri: pdfUri });
-            } catch (error) {
-              console.error("Error imprimiendo:", error);
-              Alert.alert("Error", "No se pudo imprimir el documento");
-            }
-          }
-        });
-        alertButtons.push({
-          text: "Compartir",
-          onPress: async () => {
-            try {
-              if (await Sharing.isAvailableAsync()) {
-                await Sharing.shareAsync(pdfUri);
-              } else {
-                Alert.alert("Error", "La función de compartir no está disponible");
-              }
-            } catch (error) {
-              console.error("Error compartiendo:", error);
-              Alert.alert("Error", "No se pudo compartir el documento");
-            }
-          }
-        });
-      }
-      
+      // Mostrar modal de pago exitoso con opciones
       const irAlInicio = () => {
         setComandas([]);
         setMesa(null);
         setClienteSeleccionado(null);
         setBoucherData(null);
+        setModalPagoExitosoVisible(false);
         navigation.navigate("Inicio", {
           refresh: true,
           mesaId: mesaIdStr,
@@ -1694,22 +1667,11 @@ const PagosScreen = () => {
         });
       };
 
-      alertButtons.push({
-        text: "Registrar propina",
-        onPress: () => {
-          setModalPropinaVisible(true);
-        },
-      });
-      alertButtons.push({
-        text: "Ir al inicio",
-        onPress: irAlInicio,
-      });
-
-      Alert.alert(
-        "✅ Pago Exitoso",
-        `Pago procesado y boucher generado.\n\nCliente: ${cliente.nombre || "Invitado"}\nBoucher ID: ${boucherCreado.voucherId}\n\n${estadoMesaMsg}\n\nPuedes registrar la propina ahora o ir al inicio.`,
-        alertButtons
-      );
+      // Guardar datos para el modal y abrirlo
+      setPdfUri(pdfUriGenerado);
+      setClientePagoExitoso(cliente);
+      setBoucherData(boucherCreado);
+      setModalPagoExitosoVisible(true);
       
     } catch (error) {
       // ✅ SIEMPRE resetear loading en caso de error
@@ -2308,12 +2270,51 @@ const PagosScreen = () => {
         onClose={() => setModalPropinaVisible(false)}
         boucherData={boucherData || boucherFromParams}
         mesaData={mesa}
-        mozoData={(boucherData || boucherFromParams)?.mozo ? { _id: (boucherData || boucherFromParams).mozo } : comandas[0]?.mozos}
+        mozoData={
+          (boucherData || boucherFromParams)?.mozo
+            ? {
+                _id: typeof (boucherData || boucherFromParams).mozo === 'object'
+                  ? (boucherData || boucherFromParams).mozo._id
+                  : (boucherData || boucherFromParams).mozo
+              }
+            : comandas[0]?.mozos
+        }
         onPropinaRegistrada={() => {
           setComandas([]);
           setMesa(null);
           setClienteSeleccionado(null);
           setBoucherData(null);
+          setModalPagoExitosoVisible(false);
+          navigation.navigate("Inicio", {
+            refresh: true,
+            mesaId: mesa?._id?.toString?.() || mesa?._id,
+            mostrarMensajePago: true,
+            mesaPagada: mesa
+              ? { _id: mesa._id, nummesa: mesa.nummesa }
+              : undefined,
+            boucher: boucherData || boucherFromParams,
+          });
+        }}
+      />
+
+      {/* Modal de Pago Exitoso */}
+      <ModalPagoExitoso
+        visible={modalPagoExitosoVisible}
+        onClose={() => setModalPagoExitosoVisible(false)}
+        boucherData={boucherData || boucherFromParams}
+        mesaData={mesa}
+        clienteData={clientePagoExitoso}
+        pdfUri={pdfUri}
+        onRegistrarPropina={() => {
+          setModalPagoExitosoVisible(false);
+          setModalPropinaVisible(true);
+        }}
+        onIrAlInicio={() => {
+          setComandas([]);
+          setMesa(null);
+          setClienteSeleccionado(null);
+          setBoucherData(null);
+          setModalPagoExitosoVisible(false);
           navigation.navigate("Inicio", {
             refresh: true,
             mesaId: mesa?._id?.toString?.() || mesa?._id,
