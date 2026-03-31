@@ -19,6 +19,9 @@ const useSocketMozos = ({
   onComandaActualizada,
   onNuevaComanda,
   onSocketStatus,
+  onMesasJuntadas,
+  onMesasSeparadas,
+  onMapaActualizado,
   token // Token JWT para autenticación
 }) => {
   const [connected, setConnected] = useState(false);
@@ -543,6 +546,34 @@ const useSocketMozos = ({
     });
 
     // ========== FIN EVENTOS JUNTAR/SEPARAR ==========
+
+    // ========== EVENTO DE MAPA ACTUALIZADO ==========
+    
+    // Evento: Mapa de mesas actualizado (admin guardó cambios)
+    socket.on('mapa-actualizado', (data) => {
+      console.log('🗺️ [MOZOS] Mapa actualizado recibido:', {
+        areaId: data.areaId,
+        timestamp: data.timestamp
+      });
+      
+      // Notificar cambio para que InicioScreen recargue el mapa
+      if (onMapaActualizado && data.areaId) {
+        onMapaActualizado(data);
+      }
+      
+      // Notificar cambio de estado visual
+      if (onSocketStatus) {
+        setConnectionStatus('online-active');
+        onSocketStatus({ connected: true, status: 'online-active' });
+        
+        setTimeout(() => {
+          setConnectionStatus('conectado');
+          onSocketStatus({ connected: true, status: 'conectado' });
+        }, 2000);
+      }
+    });
+
+    // ========== FIN EVENTO MAPA ==========
 
     // Cleanup - NO desconectar el socket ya que está en contexto global
     // El socket se mantiene activo en todas las pantallas

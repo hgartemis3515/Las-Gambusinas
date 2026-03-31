@@ -22,11 +22,34 @@ const MasScreen = () => {
   const isDarkMode = themeContext?.isDarkMode || false;
   const toggleTheme = themeContext?.toggleTheme || (() => {});
   const [userInfo, setUserInfo] = useState(null);
+  const [vistaInicio, setVistaInicio] = useState("tarjetas"); // 'tarjetas' o 'mapa'
   const styles = MasScreenStyles(theme);
 
   useEffect(() => {
     loadUserData();
+    loadVistaPreference();
   }, []);
+
+  const loadVistaPreference = async () => {
+    try {
+      const saved = await AsyncStorage.getItem("vistaInicio");
+      if (saved) {
+        setVistaInicio(saved);
+      }
+    } catch (error) {
+      console.error("Error cargando preferencia de vista:", error);
+    }
+  };
+
+  const toggleVistaInicio = async () => {
+    const nuevaVista = vistaInicio === "tarjetas" ? "mapa" : "tarjetas";
+    setVistaInicio(nuevaVista);
+    try {
+      await AsyncStorage.setItem("vistaInicio", nuevaVista);
+    } catch (error) {
+      console.error("Error guardando preferencia de vista:", error);
+    }
+  };
 
   const loadUserData = async () => {
     try {
@@ -127,6 +150,8 @@ const MasScreen = () => {
         {/* Configuración */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Configuración</Text>
+          
+          {/* Toggle Modo Oscuro */}
           <TouchableOpacity
             style={styles.menuItem}
             activeOpacity={0.7}
@@ -146,6 +171,39 @@ const MasScreen = () => {
                 trackColor={{ false: '#767577', true: theme.colors.primary }}
                 thumbColor={isDarkMode ? theme.colors.text.white : '#f4f3f4'}
               />
+            </View>
+          </TouchableOpacity>
+          
+          {/* Toggle Vista Inicio (Mapa vs Tarjetas) */}
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={toggleVistaInicio}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuIconContainer, { backgroundColor: theme.colors.primary + "20" }]}>
+              <MaterialCommunityIcons 
+                name={vistaInicio === "mapa" ? "map-marker-radius" : "view-grid"} 
+                size={24} 
+                color={theme.colors.primary} 
+              />
+            </View>
+            <View style={styles.themeToggleContainer}>
+              <Text style={styles.menuItemText}>Vista de Inicio</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={{ 
+                  fontSize: 12, 
+                  color: theme.colors.text.secondary,
+                  marginRight: 4 
+                }}>
+                  {vistaInicio === "mapa" ? "Mapa" : "Tarjetas"}
+                </Text>
+                <Switch
+                  value={vistaInicio === "mapa"}
+                  onValueChange={toggleVistaInicio}
+                  trackColor={{ false: '#767577', true: theme.colors.primary }}
+                  thumbColor={vistaInicio === "mapa" ? theme.colors.text.white : '#f4f3f4'}
+                />
+              </View>
             </View>
           </TouchableOpacity>
         </View>

@@ -46,6 +46,7 @@ import { slideInRightDelay, springConfig } from "../../../constants/animations";
 import { LinearGradient } from 'expo-linear-gradient';
 import { filtrarComandasActivas } from '../../../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
+import MesaMapView from '../../../Components/MesaMapView';
 
 // Componente de Loading con Verificaciones Paso a Paso
 const LoadingVerificacionEliminar = ({ visible, mensaje, pasos = [] }) => {
@@ -548,6 +549,9 @@ const InicioScreen = () => {
   const [eliminandoPlatos, setEliminandoPlatos] = useState(false);
   const [mensajeCargaEliminacionPlatos, setMensajeCargaEliminacionPlatos] = useState("");
   const [mesaZoomLevel, setMesaZoomLevel] = useState(2); // 0-4: extraSmall, small, medium, large, extraLarge
+  
+  // ========== ESTADO PARA VISTA DE MAPA ==========
+  const [vistaInicio, setVistaInicio] = useState("tarjetas"); // 'tarjetas' o 'mapa'
   
   // ========== ESTADOS PARA JUNTAR/SEPARAR MESAS ==========
   const [modoSeleccion, setModoSeleccion] = useState(false); // Activa modo selección múltiple
@@ -1338,6 +1342,8 @@ const InicioScreen = () => {
         obtenerComandasHoy();
         obtenerReservasActivas();
       }
+      // Recargar preferencias de configuración (incluye vistaInicio)
+      loadConfig();
       return () => {
         subscribeToEvents({
           onMesaActualizada: null,
@@ -1363,6 +1369,11 @@ const InicioScreen = () => {
       const config = await AsyncStorage.getItem("adaptMobile");
       if (config !== null) {
         setAdaptMobile(JSON.parse(config));
+      }
+      // Cargar preferencia de vista de inicio
+      const vistaPref = await AsyncStorage.getItem("vistaInicio");
+      if (vistaPref) {
+        setVistaInicio(vistaPref);
       }
     } catch (error) {
       console.error("Error cargando configuración:", error);
@@ -4508,83 +4519,94 @@ const InicioScreen = () => {
 
       {/* Contenido Principal */}
       <View style={styles.mainContent}>
-        {/* Canvas de Mesas */}
+        {/* Canvas de Mesas - Vista de Tarjetas o Mapa */}
         <View style={[styles.canvas, { width: canvasWidth }]}>
-          <ScrollView 
-            style={styles.canvasScroll}
-            contentContainerStyle={styles.canvasContent}
-          >
-            {seccionActiva ? (
-              getMesasPorArea(seccionActiva).map((mesa, index) => {
-                const estado = getEstadoMesa(mesa);
-                const estadoColor = getEstadoColor(estado);
-                const mozo = getMozoMesa(mesa);
-                const isSelected = mesaSeleccionada?._id === mesa._id;
-                const estaSeleccionada = mesasSeleccionadas.includes(mesa._id);
+          {vistaInicio === 'mapa' && !modoSeleccion ? (
+            // ========== VISTA DE MAPA ==========
+            <MesaMapView
+              mesas={mesas}
+              areaId={seccionActiva?._id || seccionActiva}
+              onMesaPress={handleSelectMesa}
+              style={{ flex: 1 }}
+            />
+          ) : (
+            // ========== VISTA DE TARJETAS ==========
+            <ScrollView 
+              style={styles.canvasScroll}
+              contentContainerStyle={styles.canvasContent}
+            >
+              {seccionActiva ? (
+                getMesasPorArea(seccionActiva).map((mesa, index) => {
+                  const estado = getEstadoMesa(mesa);
+                  const estadoColor = getEstadoColor(estado);
+                  const mozo = getMozoMesa(mesa);
+                  const isSelected = mesaSeleccionada?._id === mesa._id;
+                  const estaSeleccionada = mesasSeleccionadas.includes(mesa._id);
 
-                return (
-                  <MesaAnimada
-                    key={`${mesa._id}-${estado}`}
-                    mesa={mesa}
-                    estado={estado}
-                    estadoColor={estadoColor}
-                    mozo={mozo}
-                    isSelected={isSelected}
-                    mesaSize={mesaSize}
-                    zoomLevel={mesaZoomLevel}
-                    theme={theme}
-                    styles={styles}
-                    onPress={modoSeleccion ? toggleSeleccionMesa : handleSelectMesa}
-                    index={index}
-                    // Props para juntar/separar
-                    modoSeleccion={modoSeleccion}
-                    estaSeleccionada={estaSeleccionada}
-                    esMesaPrincipal={mesa.esMesaPrincipal !== false}
-                    mesasUnidas={mesa.mesasUnidas || []}
-                    mesaPrincipalNum={mesa.esMesaPrincipal === false ? 
-                      mesas.find(m => m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString())?.nummesa : null
-                    }
-                    formatearGrupo={formatearGrupoMesas(mesa)}
-                  />
-                );
-              })
-            ) : (
-              // Vista de todas las mesas (sin filtro de área) - excluye mesas secundarias
-              mesas.filter(mesa => mesa.esMesaPrincipal !== false).map((mesa, index) => {
-                const estado = getEstadoMesa(mesa);
-                const estadoColor = getEstadoColor(estado);
-                const mozo = getMozoMesa(mesa);
-                const isSelected = mesaSeleccionada?._id === mesa._id;
-                const estaSeleccionada = mesasSeleccionadas.includes(mesa._id);
+                  return (
+                    <MesaAnimada
+                      key={`${mesa._id}-${estado}`}
+                      mesa={mesa}
+                      estado={estado}
+                      estadoColor={estadoColor}
+                      mozo={mozo}
+                      isSelected={isSelected}
+                      mesaSize={mesaSize}
+                      zoomLevel={mesaZoomLevel}
+                      theme={theme}
+                      styles={styles}
+                      onPress={modoSeleccion ? toggleSeleccionMesa : handleSelectMesa}
+                      index={index}
+                      // Props para juntar/separar
+                      modoSeleccion={modoSeleccion}
+                      estaSeleccionada={estaSeleccionada}
+                      esMesaPrincipal={mesa.esMesaPrincipal !== false}
+                      mesasUnidas={mesa.mesasUnidas || []}
+                      mesaPrincipalNum={mesa.esMesaPrincipal === false ? 
+                        mesas.find(m => m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString())?.nummesa : null
+                      }
+                      formatearGrupo={formatearGrupoMesas(mesa)}
+                    />
+                  );
+                })
+              ) : (
+                // Vista de todas las mesas (sin filtro de área) - excluye mesas secundarias
+                mesas.filter(mesa => mesa.esMesaPrincipal !== false).map((mesa, index) => {
+                  const estado = getEstadoMesa(mesa);
+                  const estadoColor = getEstadoColor(estado);
+                  const mozo = getMozoMesa(mesa);
+                  const isSelected = mesaSeleccionada?._id === mesa._id;
+                  const estaSeleccionada = mesasSeleccionadas.includes(mesa._id);
 
-                return (
-                  <MesaAnimada
-                    key={`${mesa._id}-${estado}`}
-                    mesa={mesa}
-                    estado={estado}
-                    estadoColor={estadoColor}
-                    mozo={mozo}
-                    isSelected={isSelected}
-                    mesaSize={mesaSize}
-                    zoomLevel={mesaZoomLevel}
-                    theme={theme}
-                    styles={styles}
-                    onPress={modoSeleccion ? toggleSeleccionMesa : handleSelectMesa}
-                    index={index}
-                    // Props para juntar/separar
-                    modoSeleccion={modoSeleccion}
-                    estaSeleccionada={estaSeleccionada}
-                    esMesaPrincipal={mesa.esMesaPrincipal !== false}
-                    mesasUnidas={mesa.mesasUnidas || []}
-                    mesaPrincipalNum={mesa.esMesaPrincipal === false ? 
-                      mesas.find(m => m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString())?.nummesa : null
-                    }
-                    formatearGrupo={formatearGrupoMesas(mesa)}
-                  />
-                );
-              })
-            )}
-          </ScrollView>
+                  return (
+                    <MesaAnimada
+                      key={`${mesa._id}-${estado}`}
+                      mesa={mesa}
+                      estado={estado}
+                      estadoColor={estadoColor}
+                      mozo={mozo}
+                      isSelected={isSelected}
+                      mesaSize={mesaSize}
+                      zoomLevel={mesaZoomLevel}
+                      theme={theme}
+                      styles={styles}
+                      onPress={modoSeleccion ? toggleSeleccionMesa : handleSelectMesa}
+                      index={index}
+                      // Props para juntar/separar
+                      modoSeleccion={modoSeleccion}
+                      estaSeleccionada={estaSeleccionada}
+                      esMesaPrincipal={mesa.esMesaPrincipal !== false}
+                      mesasUnidas={mesa.mesasUnidas || []}
+                      mesaPrincipalNum={mesa.esMesaPrincipal === false ? 
+                        mesas.find(m => m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString())?.nummesa : null
+                      }
+                      formatearGrupo={formatearGrupoMesas(mesa)}
+                    />
+                  );
+                })
+              )}
+            </ScrollView>
+          )}
         </View>
 
         {/* Barra Vertical Derecha */}
