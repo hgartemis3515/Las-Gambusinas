@@ -192,6 +192,7 @@ const PagosScreen = () => {
   const [mensajeCarga, setMensajeCarga] = useState("Procesando pago...");
   const [boucherData, setBoucherData] = useState(boucherFromParams || null);
   const [configMoneda, setConfigMoneda] = useState(null);
+  const [plantillaVoucher, setPlantillaVoucher] = useState(null);
 
   // Obtener socket del contexto
   const { subscribeToEvents, connected: socketConnected } = useSocket();
@@ -211,7 +212,28 @@ const PagosScreen = () => {
         console.error('Error al cargar configuración de moneda:', error);
       }
     };
+    
+    const cargarPlantillaVoucher = async () => {
+      try {
+        const baseURL = apiConfig.isConfigured 
+          ? apiConfig.getEndpoint('/configuracion/voucher-plantilla')
+          : `${apiConfig.getDefaultBaseURL?.() || 'http://localhost:3000/api'}/configuracion/voucher-plantilla`;
+        
+        const response = await axios.get(baseURL, { timeout: 5000 });
+        if (response.data?.success && response.data.plantilla) {
+          setPlantillaVoucher(response.data.plantilla);
+          console.log('✅ Plantilla de voucher cargada:', {
+            tieneLogo: !!response.data.plantilla.logo,
+            nombre: response.data.plantilla.restaurante?.nombre
+          });
+        }
+      } catch (error) {
+        console.warn('⚠️ No se pudo cargar plantilla de voucher, usando valores por defecto:', error.message);
+      }
+    };
+    
     cargarConfiguracion();
+    cargarPlantillaVoucher();
   }, []);
 
   // ❌ DESHABILITADO: No actualizar comandas desde WebSocket en PagosScreen
@@ -543,11 +565,136 @@ const PagosScreen = () => {
     opacity: totalAnim.value > 0 || infoDescuentos.descuentos.length > 0 ? 1 : 0.5,
   }));
 
+  // ==========================================
+  // PLANTILLA DE VOUCHER - Adaptado del Backend Admin
+  // ==========================================
+  
+  // Configuración por defecto de la plantilla
+  const PLANTILLA_DEFAULT = {
+    logo: '',
+    restaurante: { 
+      nombre: 'LAS GAMBUSINAS', 
+      eslogan: '* Comidas Típicas y Parrilla *', 
+      ruc: '20123456789', 
+      direccion: 'Calle Principal 123, Lima', 
+      telefono: '01-1234567' 
+    },
+    encabezado: { 
+      tipoComprobante: 'BOLETA DE VENTA ELECTRONICA', 
+      serie: 'B001', 
+      correlativo: '' // Se generará dinámicamente
+    },
+    bloques: { 
+      mostrarEncabezado: true, 
+      mostrarDatosPedido: true, 
+      mostrarDetalleProductos: true, 
+      mostrarTotales: true, 
+      mostrarDatosCliente: true, 
+      mostrarAgradecimiento: true 
+    },
+    campos: { 
+      mostrarIGV: true, 
+      mostrarRC: false, 
+      mostrarICBPER: false, 
+      mostrarPropina: false, 
+      mostrarBloquePromo: false, 
+      mostrarQR: false 
+    },
+    promo: { 
+      titulo: 'CALIFICA Y GANA', 
+      mensaje: 'Escanéa el código QR y participa por grandes premios', 
+      qrTamano: 70 
+    },
+    visibilidad: { 
+      nombre: true, eslogan: true, ruc: true, direccion: true, telefono: true, 
+      voucherId: true, numeroVoucher: true, fechaPedido: true, fechaPago: true, 
+      tipo: true, local: true, caja: true, mesero: true, mesa: true, 
+      observacion: true, cliente: true, dniCliente: true, totales: true 
+    },
+    espaciado: { lineHeight: 16, tamanoFuente: 11, espacioDivider: 8 },
+    mensajes: { 
+      agradecimiento: 'Gracias por ser parte de Nuestra Familia', 
+      urlConsulta: 'https://www.lasgambusinas.com/consulta' 
+    },
+    etiquetas: { 
+      voucherId: 'Voucher ID', 
+      numeroVoucher: 'Nro. Voucher', 
+      fechaPedido: 'Fecha Pedido', 
+      fechaPago: 'Fecha Pago', 
+      mesero: 'Mesero', 
+      mesa: 'Mesa', 
+      total: 'TOTAL', 
+      cliente: 'Cliente', 
+      observaciones: 'Observaciones' 
+    }
+  };
+
+  // Función auxiliar: Número a letras
+  const numeroALetras = (num) => {
+    const unidades = ['','UNO','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE'];
+    const especiales = ['DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISEIS','DIECISIETE','DIECIOCHO','DIECINUEVE'];
+    const decenas = ['','','VEINTE','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
+    const centenas = ['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
+
+    if (num === 0) return 'CERO';
+
+    const entero = Math.floor(num);
+    const decimal = Math.round((num - entero) * 100);
+
+    const convertir = n => {
+      if (n < 10) return unidades[n];
+      if (n < 20) return especiales[n - 10];
+      if (n < 100) {
+        const d = Math.floor(n / 10);
+        const u = n % 10;
+        if (d === 2 && u > 0) return 'VEINTI' + unidades[u].toLowerCase();
+        return decenas[d] + (u > 0 ? ' Y ' + unidades[u] : '');
+      }
+      if (n < 1000) {
+        const c = Math.floor(n / 100);
+        const r = n % 100;
+        if (n === 100) return 'CIEN';
+        return centenas[c] + (r > 0 ? ' ' + convertir(r) : '');
+      }
+      if (n < 1000000) {
+        const m = Math.floor(n / 1000);
+        const r = n % 1000;
+        const miles = m === 1 ? 'MIL' : convertir(m) + ' MIL';
+        return miles + (r > 0 ? ' ' + convertir(r) : '');
+      }
+      return n.toString();
+    };
+
+    let resultado = convertir(entero) + (entero === 1 ? ' Y ' : ' Y ');
+    resultado += decimal.toString().padStart(2, '0') + '/100 Soles';
+    return resultado;
+  };
+
+  // Función auxiliar: Censurar valor
+  const censurar = (valor, visible) => {
+    if (visible) return valor;
+    return 'X'.repeat(Math.min(String(valor || '').length, 10));
+  };
+
+  // Función auxiliar: Obtener etiqueta con fallback
+  const obtenerEtiqueta = (key, plantilla) => {
+    const etiquetas = plantilla?.etiquetas || PLANTILLA_DEFAULT.etiquetas;
+    return etiquetas[key] || PLANTILLA_DEFAULT.etiquetas[key] || key;
+  };
+
   /**
-   * Genera el HTML del boucher para el PDF
-   * @param {Object|null} boucher - Datos del boucher del backend (opcional, si viene de "Imprimir Boucher")
+   * Genera el HTML del boucher para el PDF - Formato ticket 80mm
+   * Adaptado del backend admin (bouchers.html)
+   * @param {Object|null} boucher - Datos del boucher del backend (opcional)
    */
   const generarHTMLBoucher = (boucher = null) => {
+    // Usar plantilla cargada del backend o la por defecto
+    const p = plantillaVoucher || PLANTILLA_DEFAULT;
+    const e = p.espaciado;
+    const b = p.bloques;
+    const v = p.visibilidad;
+    const et = p.etiquetas;
+    
     // Si hay boucher del backend, usar esos datos; si no, usar datos locales
     const usarBoucherBackend = boucher && boucher.platos && boucher.platos.length > 0;
     
@@ -557,88 +704,26 @@ const PagosScreen = () => {
     const nombreImpuesto = boucher?.configuracionIGV?.nombreImpuesto || configMoneda?.nombreImpuestoPrincipal || 'IGV';
     const igvPorcentaje = boucher?.configuracionIGV?.igvPorcentaje || configMoneda?.igvPorcentaje || 18;
     
+    // Fechas
     const fechaActual = boucher?.fechaPagoString || moment().tz("America/Lima").format("DD/MM/YYYY HH:mm:ss");
     const primeraComanda = usarBoucherBackend ? null : comandas[0];
-    const fecha = usarBoucherBackend 
-      ? moment(boucher.fechaPago || boucher.createdAt).tz("America/Lima")
+    const fechaPedido = usarBoucherBackend 
+      ? moment(boucher.fechaPedido || boucher.createdAt).tz("America/Lima")
       : moment(primeraComanda?.createdAt || primeraComanda?.fecha).tz("America/Lima");
-    const fechaFormateada = fecha.format("DD/MM/YYYY HH:mm:ss");
+    const fechaPago = usarBoucherBackend
+      ? moment(boucher.fechaPago || boucher.createdAt).tz("America/Lima")
+      : moment().tz("America/Lima");
     
-    // Obtener voucherId y boucherNumber del boucher o de los datos locales
+    // Datos del voucher
     const voucherId = boucher?.voucherId || boucherData?.voucherId || "N/A";
     const boucherNumber = boucher?.boucherNumber || boucherData?.boucherNumber || "N/A";
-
-    let itemsHTML = "";
+    const numMesa = mesa?.nombreCombinado || boucher?.numMesa || mesa?.nummesa || comandas[0]?.mesas?.nummesa || "N/A";
+    const nombreMozo = boucher?.nombreMozo || comandas[0]?.mozos?.name || "N/A";
+    const nombreCliente = boucher?.cliente?.nombre || clienteSeleccionado?.nombre || "CLIENTE GENERAL";
+    const dniCliente = boucher?.cliente?.dni || clienteSeleccionado?.dni || "00000000";
+    const observaciones = boucher?.observaciones || comandas.filter(c => c.observaciones).map(c => `C#${c.comandaNumber || c._id.slice(-6)}: ${c.observaciones}`).join('. ') || "";
     
-    if (usarBoucherBackend) {
-      // Usar platos del boucher del backend
-      boucher.platos.forEach((platoItem) => {
-        const cantidad = platoItem.cantidad || 1;
-        const precio = platoItem.precio || 0;
-        const subtotal = platoItem.subtotal || (precio * cantidad);
-        const comandaNum = platoItem.comandaNumber || "";
-        
-        // Generar HTML de complementos si existen
-        const complementos = platoItem.complementosSeleccionados || [];
-        const complementosHTML = complementos.length > 0
-          ? `<br/><span style="font-size: 10px; color: #666; font-style: italic;">${
-              complementos.map(c =>
-                `· ${Array.isArray(c.opcion) ? c.opcion.join(', ') : c.opcion}`
-              ).join('<br/>')
-            }</span>`
-          : '';
-        
-        itemsHTML += `
-          <tr>
-            <td style="padding: 8px; border-bottom: 1px solid #ddd;">${cantidad}x</td>
-            <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: left;">
-              ${platoItem.nombre || "Plato"} ${comandaNum ? `(C#${comandaNum})` : ''}
-              ${complementosHTML}
-            </td>
-            <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${simboloMoneda} ${precio.toFixed(decimales)}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${simboloMoneda} ${subtotal.toFixed(decimales)}</td>
-          </tr>
-        `;
-      });
-    } else {
-      // Usar platos de las comandas locales
-      comandas.forEach((comanda, comandaIndex) => {
-        if (comanda.platos) {
-          comanda.platos.forEach((platoItem, index) => {
-            const plato = platoItem.plato || platoItem;
-            const cantidad = comanda.cantidades?.[index] || 1;
-            const precio = plato.precio || 0;
-            const subtotal = precio * cantidad;
-            const comandaNum = comanda.comandaNumber || comanda._id.slice(-6);
-            
-            // Generar HTML de complementos si existen
-            const complementos = platoItem.complementosSeleccionados || [];
-            const complementosHTML = complementos.length > 0
-              ? `<br/><span style="font-size: 10px; color: #666; font-style: italic;">${
-                  complementos.map(c =>
-                    `· ${Array.isArray(c.opcion) ? c.opcion.join(', ') : c.opcion}`
-                  ).join('<br/>')
-                }</span>`
-              : '';
-            
-            itemsHTML += `
-              <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;">${cantidad}x</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: left;">
-                  ${plato.nombre || "Plato"} ${comandas.length > 1 ? `(C#${comandaNum})` : ''}
-                  ${complementosHTML}
-                </td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${simboloMoneda} ${precio.toFixed(decimales)}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${simboloMoneda} ${subtotal.toFixed(decimales)}</td>
-              </tr>
-            `;
-          });
-        }
-      });
-    }
-    
-    // Calcular totales: usar del boucher si está disponible, si no calcular localmente
-    // 🔥 NUEVO: Soporte para descuentos
+    // Calcular totales
     const descuentosComandas = usarBoucherBackend 
       ? (boucher.descuentos || []) 
       : comandas.filter(c => c.descuento > 0).map(c => ({
@@ -652,196 +737,178 @@ const PagosScreen = () => {
       ? (boucher.montoDescuento || 0)
       : comandas.reduce((sum, c) => sum + (c.montoDescuento || 0), 0);
     
-    // 🔥 FIX: Usar subtotalOriginal (pre-descuento) para voucher, no total post-descuento
     const subtotalFinal = boucher?.subtotal || subtotalOriginal || total;
     const igvFinal = boucher?.igv || (subtotalFinal * (igvPorcentaje / 100));
-    const totalSinDescuento = boucher?.totalSinDescuento || (subtotalFinal + igvFinal);
-
-    // 🔥 FIX: Usar totalConDescuento solo si hay descuento real (montoDescuento > 0)
+    const rcFinal = 0; // RC no se usa actualmente
     const tieneDescuentoBoucher = (boucher?.montoDescuento || 0) > 0 || (boucher?.descuentos?.length || 0) > 0;
     const totalFinal = tieneDescuentoBoucher && boucher?.totalConDescuento != null
       ? boucher.totalConDescuento
-      : (boucher?.total != null ? boucher.total : Math.max(0, totalSinDescuento - montoTotalDescuento));
+      : (boucher?.total != null ? boucher.total : Math.max(0, subtotalFinal + igvFinal - montoTotalDescuento));
     
-    // Obtener comandas numbers del boucher o de las comandas locales
-    const comandasNumbers = boucher?.comandasNumbers || comandas.map(c => c.comandaNumber || c._id.slice(-6));
-    const comandasNumbersStr = comandasNumbers.map(n => `#${n}`).join(', ');
-
-    const html = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              width: 80mm;
-              margin: 0;
-              padding: 10px;
-              font-size: 12px;
-            }
-            .header {
-              text-align: center;
-              border-bottom: 2px solid #000;
-              padding-bottom: 10px;
-              margin-bottom: 10px;
-            }
-            .header h1 {
-              margin: 5px 0;
-              font-size: 18px;
-              font-weight: bold;
-            }
-            .info {
-              margin: 10px 0;
-              line-height: 1.6;
-            }
-            .info-row {
-              display: flex;
-              justify-content: space-between;
-              margin: 5px 0;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin: 10px 0;
-            }
-            th {
-              background-color: #f0f0f0;
-              padding: 8px;
-              text-align: left;
-              font-weight: bold;
-              border-bottom: 2px solid #000;
-            }
-            .total {
-              margin-top: 15px;
-              padding-top: 10px;
-              border-top: 2px solid #000;
-              text-align: right;
-            }
-            .total-row {
-              display: flex;
-              justify-content: space-between;
-              margin: 5px 0;
-              font-weight: bold;
-            }
-            .footer {
-              margin-top: 20px;
-              text-align: center;
-              font-size: 10px;
-              color: #666;
-            }
-            .observaciones {
-              margin-top: 10px;
-              padding: 8px;
-              background-color: #f9f9f9;
-              border-radius: 4px;
-              font-style: italic;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>LAS GAMBUSINAS</h1>
-            <p>Restaurante</p>
-          </div>
+    const totalLetras = numeroALetras(totalFinal);
+    
+    // Generar HTML
+    let html = '';
+    
+    // === BLOQUE ENCABEZADO ===
+    if (b.mostrarEncabezado) {
+      html += `<div style="text-align:center;">`;
+      if (p.logo) {
+        html += `<img src="${p.logo}" style="max-width:200px;max-height:60px;margin:0 auto 4px;display:block;" alt="Logo">`;
+      }
+      html += `<div style="font-size:16px;font-weight:800;letter-spacing:0.5px;">${censurar(p.restaurante.nombre, v.nombre)}</div>`;
+      html += `<div style="font-size:10px;font-weight:500;color:#444;">${censurar(p.restaurante.eslogan, v.eslogan)}</div>`;
+      html += `<div style="font-weight:600;">R.U.C.: ${censurar(p.restaurante.ruc, v.ruc)}</div>`;
+      html += `<div style="font-size:10px;">${censurar(p.restaurante.direccion, v.direccion)}</div>`;
+      html += `<div style="font-size:10px;">Tel: ${censurar(p.restaurante.telefono, v.telefono)}</div>`;
+      html += `</div>`;
+      
+      html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
+      html += `<div style="text-align:center;font-weight:700;font-size:11px;">${p.encabezado.tipoComprobante}</div>`;
+      html += `<div style="text-align:center;font-weight:600;">${p.encabezado.serie}-${String(boucherNumber).padStart(6, '0')}</div>`;
+      html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
+    }
+    
+    // === BLOQUE DATOS PEDIDO ===
+    if (b.mostrarDatosPedido) {
+      const lbl = '15ch';
+      const formatFecha = (f) => f.format('DD/MM/YYYY HH:mm:ss');
+      
+      html += `<div><span style="display:inline-block;width:${lbl};font-weight:600;color:#222;">${obtenerEtiqueta('voucherId', p)}:</span><span style="font-weight:400;color:#000;">${censurar(voucherId, v.voucherId)}-${censurar(boucherNumber, v.numeroVoucher)}</span></div>`;
+      html += `<div><span style="display:inline-block;width:${lbl};font-weight:600;color:#222;">${obtenerEtiqueta('fechaPedido', p)}:</span><span style="font-weight:400;color:#000;">${censurar(formatFecha(fechaPedido), v.fechaPedido)}</span></div>`;
+      html += `<div><span style="display:inline-block;width:${lbl};font-weight:600;color:#222;">${obtenerEtiqueta('fechaPago', p)}:</span><span style="font-weight:400;color:#000;">${censurar(formatFecha(fechaPago), v.fechaPago)}</span></div>`;
+      html += `<div><span style="display:inline-block;width:${lbl};font-weight:600;color:#222;">${obtenerEtiqueta('mesero', p)}:</span><span style="font-weight:400;color:#000;">${censurar(nombreMozo, v.mesero)}</span></div>`;
+      html += `<div><span style="display:inline-block;width:${lbl};font-weight:600;color:#222;">Moneda:</span><span style="font-weight:400;color:#000;">Soles</span></div>`;
+      html += `<div><span style="display:inline-block;width:${lbl};font-weight:600;color:#222;">${obtenerEtiqueta('mesa', p)}:</span><span style="font-weight:400;color:#000;">${censurar(String(numMesa), v.mesa)}</span></div>`;
+      if (observaciones) {
+        html += `<div><span style="display:inline-block;width:${lbl};font-weight:600;color:#222;">${obtenerEtiqueta('observaciones', p)}:</span><span style="font-weight:400;color:#000;">${censurar(observaciones, v.observacion)}</span></div>`;
+      }
+      html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
+    }
+    
+    // === BLOQUE DETALLE PRODUCTOS ===
+    if (b.mostrarDetalleProductos) {
+      html += `<div style="display:flex;justify-content:space-between;font-weight:700;font-size:10px;border-bottom:1px solid #333;padding-bottom:3px;margin-bottom:2px;">`;
+      html += `<span>Producto</span><span>Cant.</span><span style="width:45px;text-align:right;">P.Unit</span><span style="width:45px;text-align:right;">Total</span></div>`;
+      
+      if (usarBoucherBackend) {
+        boucher.platos.forEach((platoItem) => {
+          const cantidad = platoItem.cantidad || 1;
+          const precio = platoItem.precio || 0;
+          const subtotal = platoItem.subtotal || (precio * cantidad);
           
-          <div class="info">
-            <div class="info-row">
-              <span><strong>Voucher ID:</strong></span>
-              <span style="font-weight: bold; font-size: 14px;">${voucherId}</span>
-            </div>
-            <div class="info-row">
-              <span><strong>Boucher #:</strong></span>
-              <span>${boucherNumber}</span>
-            </div>
-            <div class="info-row">
-              <span><strong>Comanda(s):</strong></span>
-              <span>${comandasNumbersStr}</span>
-            </div>
-            <div class="info-row">
-              <span><strong>Mesa:</strong></span>
-              <span>${mesa?.nombreCombinado || boucher?.numMesa || mesa?.nummesa || comandas[0]?.mesas?.nummesa || "N/A"}</span>
-            </div>
-            <div class="info-row">
-              <span><strong>Mozo:</strong></span>
-              <span>${boucher?.nombreMozo || comandas[0]?.mozos?.name || "N/A"}</span>
-            </div>
-            <div class="info-row">
-              <span><strong>Fecha Pedido:</strong></span>
-              <span>${fechaFormateada}</span>
-            </div>
-            <div class="info-row">
-              <span><strong>Fecha Pago:</strong></span>
-              <span>${fechaActual}</span>
-            </div>
-            ${(boucher?.cliente?.nombre || clienteSeleccionado?.nombre) ? `
-            <div class="info-row">
-              <span><strong>Cliente:</strong></span>
-              <span>${boucher?.cliente?.nombre || clienteSeleccionado?.nombre || 'N/A'}</span>
-            </div>
-            ` : ''}
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 15%;">Cant.</th>
-                <th style="width: 45%;">Plato</th>
-                <th style="width: 20%; text-align: right;">Precio</th>
-                <th style="width: 20%; text-align: right;">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHTML}
-            </tbody>
-          </table>
-
-          ${(boucher?.observaciones || comandas.some(c => c.observaciones)) ? `
-            <div class="observaciones">
-              <strong>Observaciones:</strong><br/>
-              ${boucher?.observaciones || comandas.filter(c => c.observaciones).map(c => `C#${c.comandaNumber || c._id.slice(-6)}: ${c.observaciones}`).join('<br/>')}
-            </div>
-          ` : ""}
-
-          <div class="total">
-            <div class="total-row">
-              <span>SUBTOTAL:</span>
-              <span>${simboloMoneda} ${subtotalFinal.toFixed(decimales)}</span>
-            </div>
-            <div class="total-row">
-              <span>${nombreImpuesto} (${igvPorcentaje}%):</span>
-              <span>${simboloMoneda} ${igvFinal.toFixed(decimales)}</span>
-            </div>
-            ${descuentosComandas.length > 0 ? `
-            <div class="total-row" style="color: #EF4444;">
-              <span>DESCUENTO ${descuentosComandas.length === 1 ? `(${descuentosComandas[0].porcentaje}%)` : ''}:</span>
-              <span>-${simboloMoneda} ${montoTotalDescuento.toFixed(decimales)}</span>
-            </div>
-            ${descuentosComandas.length > 1 ? `
-            <div style="font-size: 10px; color: #666; margin-top: -5px; margin-bottom: 5px;">
-              ${descuentosComandas.map(d => `C#${d.comandaNumber}: ${d.porcentaje}% - ${d.motivo}`).join('<br>')}
-            </div>
-            ` : `
-            <div style="font-size: 10px; color: #666; margin-top: -5px; margin-bottom: 5px;">
-              ${descuentosComandas[0]?.motivo || ''}
-            </div>
-            `}
-            ` : ''}
-            <div class="total-row" style="font-size: 16px; margin-top: 10px;">
-              <span>TOTAL:</span>
-              <span>${simboloMoneda} ${totalFinal.toFixed(decimales)}</span>
-            </div>
-          </div>
-
-          <div class="footer">
-            <p>Gracias por su visita</p>
-            <p>${fechaActual}</p>
-          </div>
-        </body>
-      </html>
-    `;
-
-    return html;
+          html += `<div style="display:flex;justify-content:space-between;font-size:10px;padding:2px 0;">`;
+          html += `<span style="flex:1;">${platoItem.nombre || "Plato"}</span>`;
+          html += `<span style="width:30px;text-align:center;">${cantidad}</span>`;
+          html += `<span style="width:45px;text-align:right;">${precio.toFixed(2)}</span>`;
+          html += `<span style="width:45px;text-align:right;">${subtotal.toFixed(2)}</span></div>`;
+          
+          // Mostrar complementos
+          const complementos = platoItem.complementosSeleccionados || [];
+          if (complementos.length > 0) {
+            complementos.forEach(comp => {
+              const opcionStr = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : (comp.opcion || comp.nombre || '');
+              html += `<div style="display:flex;justify-content:space-between;font-size:9px;padding:0 0 0 8px;color:#666;">`;
+              html += `<span style="flex:1;">└ ${opcionStr}</span>`;
+              html += `<span style="width:30px;"></span>`;
+              html += `<span style="width:45px;text-align:right;">${comp.precio > 0 ? '+' + comp.precio.toFixed(2) : ''}</span>`;
+              html += `<span style="width:45px;"></span></div>`;
+            });
+          }
+        });
+      } else {
+        comandas.forEach((comanda) => {
+          if (comanda.platos) {
+            comanda.platos.forEach((platoItem, index) => {
+              const plato = platoItem.plato || platoItem;
+              const cantidad = comanda.cantidades?.[index] || 1;
+              const precio = plato.precio || 0;
+              const subtotal = precio * cantidad;
+              
+              html += `<div style="display:flex;justify-content:space-between;font-size:10px;padding:2px 0;">`;
+              html += `<span style="flex:1;">${plato.nombre || "Plato"}</span>`;
+              html += `<span style="width:30px;text-align:center;">${cantidad}</span>`;
+              html += `<span style="width:45px;text-align:right;">${precio.toFixed(2)}</span>`;
+              html += `<span style="width:45px;text-align:right;">${subtotal.toFixed(2)}</span></div>`;
+              
+              // Mostrar complementos
+              const complementos = platoItem.complementosSeleccionados || [];
+              if (complementos.length > 0) {
+                complementos.forEach(comp => {
+                  const opcionStr = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : (comp.opcion || comp.nombre || '');
+                  html += `<div style="display:flex;justify-content:space-between;font-size:9px;padding:0 0 0 8px;color:#666;">`;
+                  html += `<span style="flex:1;">└ ${opcionStr}</span>`;
+                  html += `<span style="width:30px;"></span>`;
+                  html += `<span style="width:45px;text-align:right;">${comp.precio > 0 ? '+' + comp.precio.toFixed(2) : ''}</span>`;
+                  html += `<span style="width:45px;"></span></div>`;
+                });
+              }
+            });
+          }
+        });
+      }
+      
+      html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
+    }
+    
+    // === BLOQUE TOTALES ===
+    if (b.mostrarTotales && v.totales) {
+      html += `<div style="text-align:right;">`;
+      html += `<div style="padding:1px 0;">Subtotal: <span style="font-weight:500;">${simboloMoneda} ${subtotalFinal.toFixed(2)}</span></div>`;
+      if (p.campos.mostrarIGV) {
+        html += `<div style="padding:1px 0;">${nombreImpuesto} (${igvPorcentaje}%): <span style="font-weight:500;">${simboloMoneda} ${igvFinal.toFixed(2)}</span></div>`;
+      }
+      if (p.campos.mostrarRC && rcFinal > 0) {
+        html += `<div style="padding:1px 0;">RC 4%: <span style="font-weight:500;">${simboloMoneda} ${rcFinal.toFixed(2)}</span></div>`;
+      }
+      if (descuentosComandas.length > 0) {
+        html += `<div style="padding:1px 0;color:#EF4444;">Descuento: <span style="font-weight:500;">-${simboloMoneda} ${montoTotalDescuento.toFixed(2)}</span></div>`;
+      }
+      html += `<div style="font-size:13px;font-weight:700;border-top:2px solid #000;padding-top:4px;margin-top:4px;">${obtenerEtiqueta('total', p)}: ${simboloMoneda} ${totalFinal.toFixed(2)}</div></div>`;
+      html += `<div style="font-style:italic;font-size:10px;margin-top:4px;">Son: ${totalLetras}</div>`;
+    } else if (b.mostrarTotales) {
+      html += `<div style="text-align:right;"><div style="font-size:13px;font-weight:700;border-top:2px solid #000;padding-top:4px;margin-top:4px;">${obtenerEtiqueta('total', p)}: ${simboloMoneda} XXXXXXXX</div></div>`;
+      html += `<div style="font-style:italic;font-size:10px;">Son: XXXXXXXXXXXXXXXX</div>`;
+    }
+    
+    // Método de pago
+    html += `<div style="margin-top:6px;font-size:10px;">Pago: ${boucher?.metodoPago || 'Efectivo'}</div>`;
+    
+    // === BLOQUE DATOS CLIENTE ===
+    if (b.mostrarDatosCliente) {
+      html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
+      html += `<div><span style="font-weight:600;color:#222;">${obtenerEtiqueta('cliente', p)}:</span> <span style="font-weight:400;color:#000;">${censurar(nombreCliente, v.cliente)}</span></div>`;
+      html += `<div><span style="font-weight:600;color:#222;">DNI:</span> <span style="font-weight:400;color:#000;">${censurar(dniCliente, v.dniCliente)}</span></div>`;
+    }
+    
+    // === BLOQUE AGRADECIMIENTO ===
+    if (b.mostrarAgradecimiento) {
+      html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
+      html += `<div style="text-align:center;font-weight:600;">${p.mensajes.agradecimiento}</div>`;
+      html += `<div style="font-size:9px;text-align:center;margin-top:4px;">Consulte en: ${p.mensajes.urlConsulta}</div>`;
+    }
+    
+    // === BLOQUE PROMOCIÓN (opcional) ===
+    if (p.campos.mostrarBloquePromo) {
+      html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
+      html += `<div style="text-align:center;font-weight:700;margin-top:6px;">${p.promo.titulo}</div>`;
+      if (p.promo.mensaje) {
+        html += `<div style="font-size:9px;text-align:center;margin-top:2px;">${p.promo.mensaje}</div>`;
+      }
+      if (p.campos.mostrarQR) {
+        const qrSize = Math.max(40, Math.min(120, p.promo.qrTamano || 70));
+        html += `<div style="width:${qrSize}px;height:${qrSize}px;background:#e5e5e5;display:flex;align-items:center;justify-content:center;font-size:9px;color:#666;margin:6px auto;border:1px dashed #999;">[QR]</div>`;
+      }
+    }
+    
+    // Envolver en estructura HTML completa
+    const htmlCompleto = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Voucher</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoFuente}px;padding:10px;max-width:320px;margin:0 auto;background:#fff;color:#000;}
+</style></head><body><div style="font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoFuente}px;line-height:${e.lineHeight}px;">${html}</div></body></html>`;
+    
+    return htmlCompleto;
   };
 
   /**
