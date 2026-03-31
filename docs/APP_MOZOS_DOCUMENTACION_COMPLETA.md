@@ -1,6 +1,6 @@
 # Documentación Completa - App de Mozos (Las Gambusinas)
 
-**Version:** 2.7  
+**Version:** 2.8  
 **Ultima Actualizacion:** Marzo 2026  
 **Tecnologia:** React Native + Expo + Socket.io-client + AsyncStorage
 
@@ -9,6 +9,18 @@
 ---
 
 ## 📋 Historial de Cambios
+
+### v2.8 (Marzo 2026) - Voucher Sincronizado con Backend
+
+- ✅ **Nueva funcionalidad**: Plantilla de voucher sincronizada entre backend y App Mozos
+- ✅ **Generación de PDF mejorada**: El app genera PDFs usando la plantilla configurada en `bouchers.html`
+- ✅ **ModalPagoExitoso**: Nuevo componente para mostrar opciones post-pago con animaciones
+- ✅ **ModalRegistrarPropina**: Nuevo modal para registrar propinas después del pago
+- ✅ **Endpoints sincronizados**: `/api/configuracion/voucher-plantilla` para obtener configuración
+- ✅ **Archivos modificados**:
+  - `Pages/navbar/screens/ModalPagoExitoso.js` - Nuevo componente
+  - `Pages/navbar/screens/ModalRegistrarPropina.js` - Nuevo componente
+  - `Pages/navbar/screens/PagosScreen.js` - Integración de modales post-pago
 
 ### v2.7 (Marzo 2026) - Corrección de Registro de Propinas
 
@@ -395,6 +407,9 @@ OrdenesScreen -> POST /api/comanda -> Backend agregarComanda() -> emitNuevaComan
 
 - POST `/api/boucher` -> PDF (expo-print) -> compartir. Limpieza de comandasPago y mesaPago en AsyncStorage tras pago exitoso.
 - Configuracion de moneda dinamica (IGV, simbolo) desde `configuracionService`.
+- **ModalPagoExitoso (v2.8)**: Modal post-pago con opciones: Registrar Propina, Compartir, Imprimir, Ir al inicio.
+- **ModalRegistrarPropina (v2.8)**: Modal para registrar propinas (monto fijo o porcentaje) después del pago exitoso.
+- **Plantilla sincronizada (v2.8)**: El PDF se genera usando la plantilla configurada en el backend (`/api/configuracion/voucher-plantilla`).
 
 ### 6. WebSocket (Socket.io)
 
@@ -2374,6 +2389,6 @@ curl http://localhost:3000/api/comanda/fecha/2026-03-29 | jq '.[0].platos[0]'
 
 ---
 
-**Version del documento:** 2.7  
+**Version del documento:** 2.8  
 **Ultima actualizacion:** Marzo 2026  
 **Sistema:** Las Gambusinas – App de Mozos
