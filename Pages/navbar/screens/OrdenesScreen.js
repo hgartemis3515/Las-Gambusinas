@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
+  InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -181,6 +182,9 @@ const OrdenesScreen = ({ route }) => {
 
   // Estado para el modal de complementos
   const [platoParaComplementar, setPlatoParaComplementar] = useState(null); // Cuando no es null, el modal de complementos está abierto
+  // iOS: un segundo Modal encima del modal de platos no se muestra; se cierra Menú y luego se abre complementos
+  const platoPendienteComplementosRef = useRef(null);
+  const reabrirModalPlatosTrasComplementosRef = useRef(false);
 
   // Debounce búsqueda 300ms para no re-filtrar en cada tecla
   const debouncedSetSearchRef = useRef(
@@ -190,6 +194,15 @@ const OrdenesScreen = ({ route }) => {
     debouncedSetSearchRef(searchPlato);
     return () => debouncedSetSearchRef.cancel?.();
   }, [searchPlato, debouncedSetSearchRef]);
+
+  useEffect(() => {
+    if (modalPlatosVisible || !platoPendienteComplementosRef.current) return;
+    const pending = platoPendienteComplementosRef.current;
+    platoPendienteComplementosRef.current = null;
+    InteractionManager.runAfterInteractions(() => {
+      setPlatoParaComplementar(pending);
+    });
+  }, [modalPlatosVisible]);
 
   useEffect(() => {
     loadUserData();
@@ -351,15 +364,26 @@ const OrdenesScreen = ({ route }) => {
   };
 
   const handleAddPlato = (plato) => {
-    // Verificar si el plato tiene complementos definidos
     const tieneComplementos = plato.complementos && plato.complementos.length > 0;
 
     if (tieneComplementos) {
-      // Abrir modal de complementos
-      setPlatoParaComplementar(plato);
+      if (modalPlatosVisible) {
+        reabrirModalPlatosTrasComplementosRef.current = true;
+        platoPendienteComplementosRef.current = plato;
+        setModalPlatosVisible(false);
+      } else {
+        setPlatoParaComplementar(plato);
+      }
     } else {
-      // Agregar directamente (comportamiento actual)
       agregarPlatoSinComplementos(plato);
+    }
+  };
+
+  const cerrarModalComplementosYReabrirMenu = () => {
+    setPlatoParaComplementar(null);
+    if (reabrirModalPlatosTrasComplementosRef.current) {
+      reabrirModalPlatosTrasComplementosRef.current = false;
+      setModalPlatosVisible(true);
     }
   };
 
@@ -423,9 +447,10 @@ const OrdenesScreen = ({ route }) => {
   // Función para confirmar complementos desde el modal
   const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial }) => {
     if (platoParaComplementar) {
+      const nombre = platoParaComplementar.nombre;
       agregarPlatoSinComplementos(platoParaComplementar, complementosSeleccionados, notaEspecial);
-      Alert.alert("✅", `${platoParaComplementar.nombre} agregado`);
-      setPlatoParaComplementar(null); // Cerrar modal
+      Alert.alert("✅", `${nombre} agregado`);
+      cerrarModalComplementosYReabrirMenu();
     }
   };
 
@@ -1573,7 +1598,7 @@ const OrdenesScreen = ({ route }) => {
         visible={platoParaComplementar !== null}
         plato={platoParaComplementar}
         onConfirm={handleConfirmarComplementos}
-        onClose={() => setPlatoParaComplementar(null)}
+        onClose={cerrarModalComplementosYReabrirMenu}
       />
     </SafeAreaView>
   );

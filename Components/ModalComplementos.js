@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
+  Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
@@ -287,6 +288,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       transparent={true}
       animationType="slide"
       onRequestClose={handleCancelar}
+      presentationStyle={Platform.OS === "ios" ? "overFullScreen" : undefined}
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
