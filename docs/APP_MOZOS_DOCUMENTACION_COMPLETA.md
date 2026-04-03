@@ -123,7 +123,7 @@ Solicitar Pago → Procesar Pago → Generar Boucher → Liberar Mesa
 12. [Problemas Criticos Identificados](#problemas-criticos-identificados)
 13. [Problemas de logica en la funcion de eliminar platos](#problemas-de-logica-en-la-funcion-de-eliminar-platos)
 14. [Propuestas de Mejora](#propuestas-de-mejora)
-15. [Actualizacion en Tiempo Real - Arquitectura Completa](#actualización-en-tiempo-real---arquitectura-completa)
+15. [Actualizacion en Tiempo Real - Arquitectura Completa](#actualización-en-tiempo-real---arquitectura-completa) — ver [Herramientas tiempo real pantallas](#herramientas-para-actualizar-pantallas-en-tiempo-real)
 16. [Resumen Ejecutivo](#resumen-ejecutivo)
 
 ---
@@ -415,13 +415,16 @@ OrdenesScreen -> POST /api/comanda -> Backend agregarComanda() -> emitNuevaComan
 
 - **Namespace:** `/mozos`.
 - **useSocketMozos:** Conexion a getWebSocketURL()/mozos, heartbeat 25s, reconexion con backoff, rejoin de rooms (join-mesa) tras reconectar.
-- **SocketContext:** socket, connected, connectionStatus, joinMesa(mesaId), leaveMesa(mesaId), subscribeToEvents({ onMesaActualizada, onComandaActualizada, onNuevaComanda }).
-- **Eventos recibidos:** 
+- **SocketContext:** socket, connected, connectionStatus, joinMesa(mesaId), leaveMesa(mesaId), subscribeToEvents({ onMesaActualizada, onComandaActualizada, onNuevaComanda, onMesasJuntadas, onMesasSeparadas, onMapaActualizado, onCatalogoMesasAreas }).
+- **Eventos recibidos (listeners en useSocketMozos; la pantalla reacciona vía subscribeToEvents):** 
   - `plato-actualizado` (granular)
   - `plato-actualizado-batch`
   - `comanda-actualizada`
   - `nueva-comanda`
   - `mesa-actualizada`
+  - `mesas-juntadas` / `mesas-separadas`
+  - `catalogo-mesas-areas-actualizado` (admin mesas/áreas → refetch REST en InicioScreen)
+  - `mapa-actualizado` (editor de mapa admin → refetch mesas en InicioScreen)
   - `comanda-revertida`
   - `plato-anulado`
   - `comanda-anulada`
@@ -522,7 +525,7 @@ OrdenesScreen -> POST /api/comanda -> Backend agregarComanda() -> emitNuevaComan
 
 - Conexion a getWebSocketURL()/mozos con reconnection, pingInterval 25s, pingTimeout 60s.
 - join-mesa, leave-mesa; roomsJoinedRef para rejoin tras reconectar.
-- Callbacks: onMesaActualizada, onComandaActualizada, onNuevaComanda, onSocketStatus.
+- Callbacks: onMesaActualizada, onComandaActualizada, onNuevaComanda, onSocketStatus, onMesasJuntadas, onMesasSeparadas, onMapaActualizado, onCatalogoMesasAreas.
 - Estados: 'conectado', 'desconectado', 'reconectando', 'online-active'.
 - Exporta: socket, connected, connectionStatus, reconnectAttempts, trackRoom, untrackRoom.
 
@@ -733,7 +736,9 @@ OrdenesScreen -> POST /api/comanda -> Backend agregarComanda() -> emitNuevaComan
 | `plato-actualizado-batch` | `[{ comandaId, platoId, nuevoEstado }]` | Batch de actualizaciones |
 | `comanda-actualizada` | `{ comanda }` | Recargar comanda completa |
 | `nueva-comanda` | `{ comanda }` | Agregar nueva comanda |
-| `mesa-actualizada` | `{ mesa }` | Actualizar estado de mesa |
+| `mesa-actualizada` | `{ mesaId, mesa, timestamp }` | Actualizar estado de mesa (merge en lista local) |
+| `catalogo-mesas-areas-actualizado` | `{ timestamp, razon? }` | Admin creó/editó/eliminó mesa o área: refetch `GET /mesas` y `GET /areas` (InicioScreen) |
+| `mapa-actualizado` | `{ areaId, timestamp }` | Admin guardó mapa: refetch mesas (InicioScreen) |
 | `comanda-eliminada` | `{ comandaId }` | Remover comanda |
 | `socket-status` | `{ connected, socketId }` | Estado de conexión |
 | `token-expiring-soon` | `{ message }` | Advertencia de token |
@@ -751,6 +756,25 @@ OrdenesScreen -> POST /api/comanda -> Backend agregarComanda() -> emitNuevaComan
 ---
 
 ## 🔄 Actualización en Tiempo Real - Arquitectura Completa
+
+### Herramientas para actualizar pantallas en tiempo real
+
+Las pantallas no “poll-ean” de forma continua cuando el socket está bien: reaccionan a **eventos Socket.io** y, en algunos casos, a un **refetch REST** puntual. Componentes y archivos implicados:
+
+| Herramienta | Ubicación / paquete | Función |
+|-------------|---------------------|---------|
+| **socket.io-client** | `package.json` (~4.8.3) | Cliente WebSocket; conexión al namespace `/mozos` con JWT en `auth.token`. |
+| **useSocketMozos** | `hooks/useSocketMozos.js` | Crea el socket, heartbeat (~25s), reconexión, registro de listeners (`mesa-actualizada`, `comanda-actualizada`, `catalogo-mesas-areas-actualizado`, `mapa-actualizado`, juntar/separar, etc.) y notifica `SocketStatus`. |
+| **SocketContext** | `context/SocketContext.js` | Provider global: expone `subscribeToEvents`, `joinMesa` / `leaveMesa`, `connected`. Los callbacks de pantalla se guardan en refs para no desmontar el socket en cada render. |
+| **subscribeToEvents** | Desde cualquier pantalla con `useSocket()` | Cada pantalla registra qué hacer al llegar cada evento (p. ej. InicioScreen: `handleMesaActualizada`, refetch catálogo/mapa). |
+| **React Navigation useFocusEffect** | Pantallas como `InicioScreen.js` | Patrón recomendado: al **entrar** a la pantalla se llama `subscribeToEvents({ ... })`; en el **cleanup** al salir se ponen esos handlers a `null` para no procesar eventos fuera de la pantalla activa. |
+| **Estado React (useState)** | Dentro de cada pantalla | Tras un evento, se actualiza la UI con `setMesas`, `setComandas`, etc. (merge parcial o lista completa según el evento). |
+| **Axios + apiConfig** | `config/axiosConfig.js`, `config/apiConfig.js` | Refetch cuando el evento lo exige: p. ej. `GET /api/mesas` y `GET /api/areas` tras `catalogo-mesas-areas-actualizado`; `GET /api/mesas` tras `mapa-actualizado` en Inicio. |
+| **offlineQueue** | `utils/offlineQueue.js` | Si el socket estuvo caído, algunos eventos pueden quedar encolados y aplicarse al reconectar con los handlers vigentes. |
+| **Polling de respaldo** | `InicioScreen.js` (efecto ligado a `socketConnected`) | Solo cuando el WebSocket **no** está conectado: intervalo ~30s que vuelve a pedir mesas/comandas por REST. |
+| **SocketStatus** | `Components/SocketStatus.js` (navbar) | Indicador visual (conectado / reconectando / live al recibir datos). |
+
+**Resumen:** el backend emite en `/mozos` → **useSocketMozos** recibe → **SocketContext** delega al callback registrado con **subscribeToEvents** en la pantalla enfocada → esa pantalla actualiza **estado React** y, si aplica, hace **GET** para alinearse con la fuente de verdad.
 
 ### Visión General del Sistema de Tiempo Real
 

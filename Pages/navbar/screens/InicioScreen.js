@@ -1527,6 +1527,30 @@ const InicioScreen = () => {
     }
   }, []);
 
+  // Admin (areas.html / mesas.html): refetch catálogo vía Socket; mapa editor vía mapa-actualizado
+  useFocusEffect(
+    useCallback(() => {
+      subscribeToEvents({
+        onCatalogoMesasAreas: () => {
+          Promise.all([obtenerMesas(), obtenerAreas()]).catch((err) =>
+            console.warn('[INICIO] catalogo mesas/áreas refetch:', err?.message)
+          );
+        },
+        onMapaActualizado: () => {
+          obtenerMesas().catch((err) =>
+            console.warn('[INICIO] obtenerMesas tras mapa:', err?.message)
+          );
+        },
+      });
+      return () => {
+        subscribeToEvents({
+          onCatalogoMesasAreas: null,
+          onMapaActualizado: null,
+        });
+      };
+    }, [subscribeToEvents, obtenerMesas, obtenerAreas])
+  );
+
   // Función de sincronización manual (fallback cuando WebSocket falla)
   const sincronizarManual = useCallback(async () => {
     try {

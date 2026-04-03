@@ -22,6 +22,7 @@ const useSocketMozos = ({
   onMesasJuntadas,
   onMesasSeparadas,
   onMapaActualizado,
+  onCatalogoMesasAreas,
   token // Token JWT para autenticación
 }) => {
   const [connected, setConnected] = useState(false);
@@ -546,6 +547,22 @@ const useSocketMozos = ({
     });
 
     // ========== FIN EVENTOS JUNTAR/SEPARAR ==========
+
+    // Catálogo mesas/áreas (admin areas.html / mesas.html)
+    socket.on('catalogo-mesas-areas-actualizado', (data) => {
+      console.log('📋 [MOZOS] Catálogo mesas/áreas actualizado:', data?.razon, data?.timestamp);
+      if (onCatalogoMesasAreas) {
+        onCatalogoMesasAreas(data);
+      }
+      if (onSocketStatus) {
+        setConnectionStatus('online-active');
+        onSocketStatus({ connected: true, status: 'online-active' });
+        setTimeout(() => {
+          setConnectionStatus('conectado');
+          onSocketStatus({ connected: true, status: 'conectado' });
+        }, 2000);
+      }
+    });
 
     // ========== EVENTO DE MAPA ACTUALIZADO ==========
     
