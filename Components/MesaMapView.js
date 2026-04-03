@@ -1,6 +1,7 @@
 /**
  * MesaMapView - Componente de mapa de mesas con posicionamiento absoluto
  * Renderiza las mesas en sus posiciones configuradas por el admin
+ * Soporte para secciones de layout y elementos decorativos
  */
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
@@ -21,8 +22,8 @@ import { getMesasAPI } from '../apiConfig';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Tamaño de referencia del canvas del admin (para escalado)
-const CANVAS_REFERENCE = { width: 800, height: 600 };
+// Tamaño de referencia del canvas del admin (por defecto)
+const CANVAS_REFERENCE_DEFAULT = { width: 1600, height: 1200 };
 
 /**
  * Componente individual de mesa en el mapa
@@ -62,6 +63,8 @@ const MesaMapItem = React.memo(({
           backgroundColor: colores.backgroundColor,
           borderColor: colores.borderColor,
           borderRadius: isRound ? itemWidth / 2 : 12,
+          zIndex: config.zIndex || 10,
+          transform: [{ rotate: `${config.rotation || 0}deg` }],
         }
       ]}
     >
@@ -76,11 +79,62 @@ const MesaMapItem = React.memo(({
 });
 
 /**
+ * Componente para renderizar items del layout (barreras, etiquetas, zonas)
+ */
+const LayoutItemView = React.memo(({ 
+  item, 
+  scale 
+}) => {
+  const left = (item.x || 0) * scale;
+  const top = (item.y || 0) * scale;
+  const itemWidth = (item.width || 100) * scale;
+  const itemHeight = (item.height || 20) * scale;
+  
+  const isLabel = item.tipo === 'label';
+  const isZone = item.tipo === 'zone';
+  
+  return (
+    <View
+      style={[
+        styles.layoutItem,
+        {
+          left,
+          top,
+          width: itemWidth,
+          height: itemHeight,
+          backgroundColor: isLabel ? 'transparent' : (item.color || '#444'),
+          opacity: item.opacity || 1,
+          zIndex: item.zIndex || 1,
+          borderRadius: isZone ? 8 : 4,
+          transform: [{ rotate: `${item.rotation || 0}deg` }],
+        }
+      ]}
+    >
+      {isLabel && item.texto && (
+        <Text style={[
+          styles.labelText, 
+          { 
+            fontSize: (item.fontSize || 14) * scale,
+            fontWeight: item.fontWeight || 'normal',
+            color: item.color || '#ffffff'
+          }
+        ]}>
+          {item.texto}
+        </Text>
+      )}
+    </View>
+  );
+});
+
+/**
  * Componente principal del mapa
  */
 const MesaMapView = ({
   mesas = [],
   areaId = null,
+  sectionId = null,
+  sectionConfig = null,
+  layoutItems = [],
   onMesaPress,
   style,
 }) => {
@@ -89,36 +143,58 @@ const MesaMapView = ({
   const isDark = themeContext?.isDarkMode || false;
   
   const [mapaConfig, setMapaConfig] = useState([]);
+  const [itemsConfig, setItemsConfig] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [canvasSize, setCanvasSize] = useState({ width: SCREEN_WIDTH - 32, height: 500 });
   
+  // Configuración del canvas desde sección o valores por defecto
+  const canvasReference = useMemo(() => ({
+    width: sectionConfig?.canvasWidth || CANVAS_REFERENCE_DEFAULT.width,
+    height: sectionConfig?.canvasHeight || CANVAS_REFERENCE_DEFAULT.height,
+  }), [sectionConfig]);
+  
   // Calcular factor de escala
   const scale = useMemo(() => {
     return Math.min(
-      canvasSize.width / CANVAS_REFERENCE.width,
-      canvasSize.height / CANVAS_REFERENCE.height
+      canvasSize.width / canvasReference.width,
+      canvasSize.height / canvasReference.height
     );
-  }, [canvasSize]);
+  }, [canvasSize, canvasReference]);
   
   // Cargar configuración del mapa desde el backend
   const cargarMapa = useCallback(async () => {
-    if (!areaId) {
-      // Si no hay área seleccionada, usar las mesas que ya tienen mapaConfig
-      const mesasConMapa = mesas.filter(m => m.mapaConfig?.x != null && m.mapaConfig?.y != null);
-      setMapaConfig(mesasConMapa);
-      return;
-    }
-    
     setLoading(true);
     setError(null);
     
     try {
       const mesasApiUrl = getMesasAPI();
-      const response = await axios.get(`${mesasApiUrl}/mapa?area=${areaId}`, { timeout: 10000 });
-      if (response.data?.success && response.data.mesas) {
-        setMapaConfig(response.data.mesas.filter(m => m.mapaConfig?.x != null && m.mapaConfig?.y != null));
+      
+      // Si hay sectionId, cargar por sección
+      if (sectionId) {
+        const response = await axios.get(`${mesasApiUrl}/mapa?sectionId=${sectionId}`, { timeout: 10000 });
+        if (response.data?.success && response.data.mesas) {
+          setMapaConfig(response.data.mesas.filter(m => m.mapaConfig?.x != null && m.mapaConfig?.y != null));
+        }
+      } 
+      // Si hay areaId, cargar por área
+      else if (areaId) {
+        const response = await axios.get(`${mesasApiUrl}/mapa?area=${areaId}`, { timeout: 10000 });
+        if (response.data?.success && response.data.mesas) {
+          setMapaConfig(response.data.mesas.filter(m => m.mapaConfig?.x != null && m.mapaConfig?.y != null));
+        }
       }
+      // Fallback: usar mesas que ya tienen mapaConfig
+      else {
+        const mesasConMapa = mesas.filter(m => m.mapaConfig?.x != null && m.mapaConfig?.y != null);
+        setMapaConfig(mesasConMapa);
+      }
+      
+      // Si hay layoutItems en props, usarlos; sino cargar del backend
+      if (layoutItems && layoutItems.length > 0) {
+        setItemsConfig(layoutItems);
+      }
+      
     } catch (err) {
       console.error('Error cargando mapa:', err);
       setError('No se pudo cargar el mapa');
@@ -128,7 +204,7 @@ const MesaMapView = ({
     } finally {
       setLoading(false);
     }
-  }, [areaId, mesas]);
+  }, [sectionId, areaId, mesas, layoutItems]);
   
   useEffect(() => {
     cargarMapa();
@@ -164,7 +240,7 @@ const MesaMapView = ({
   }
   
   // Sin configuración de mapa
-  if (mapaConfig.length === 0) {
+  if (mapaConfig.length === 0 && itemsConfig.length === 0) {
     return (
       <View style={[styles.container, styles.centerContent, style]}>
         <MaterialCommunityIcons name="map-marker-off" size={48} color={theme.colors.text.muted} />
@@ -174,6 +250,9 @@ const MesaMapView = ({
     );
   }
   
+  // Color de fondo desde configuración
+  const backgroundColor = sectionConfig?.color || theme.colors.background;
+  
   return (
     <View style={[styles.container, style]} onLayout={handleLayout}>
       <ScrollView 
@@ -181,23 +260,33 @@ const MesaMapView = ({
         contentContainerStyle={[
           styles.canvas,
           { 
-            width: Math.max(canvasSize.width, CANVAS_REFERENCE.width * scale),
-            height: Math.max(canvasSize.height, CANVAS_REFERENCE.height * scale)
+            width: Math.max(canvasSize.width, canvasReference.width * scale),
+            height: Math.max(canvasSize.height, canvasReference.height * scale),
+            backgroundColor: backgroundColor,
           }
         ]}
         showsVerticalScrollIndicator={true}
         showsHorizontalScrollIndicator={true}
       >
-        {/* Grid de fondo (opcional) */}
-        <View style={styles.gridBackground}>
-          {Array.from({ length: Math.ceil(canvasSize.height / 25) }).map((_, row) => (
+        {/* Grid de fondo */}
+        <View style={[styles.gridBackground, { opacity: 0.05 }]}>
+          {Array.from({ length: Math.ceil(canvasReference.height / 25) }).map((_, row) => (
             <View key={`row-${row}`} style={styles.gridRow}>
-              {Array.from({ length: Math.ceil(canvasSize.width / 25) }).map((_, col) => (
+              {Array.from({ length: Math.ceil(canvasReference.width / 25) }).map((_, col) => (
                 <View key={`cell-${row}-${col}`} style={styles.gridCell} />
               ))}
             </View>
           ))}
         </View>
+        
+        {/* Layout Items (barreras, etiquetas, zonas) */}
+        {itemsConfig.map((item) => (
+          <LayoutItemView
+            key={item._id || `item-${item.x}-${item.y}`}
+            item={item}
+            scale={scale}
+          />
+        ))}
         
         {/* Mesas */}
         {mapaConfig.map((mesa) => (
@@ -213,13 +302,13 @@ const MesaMapView = ({
       </ScrollView>
       
       {/* Leyenda */}
-      <View style={styles.legend}>
+      <View style={[styles.legend, { borderTopColor: theme.colors.border }]}>
         {['Libre', 'Pedido', 'Preparado', 'Pagado'].map((estado) => {
           const colores = obtenerColoresEstadoAdaptados(estado, isDark, true);
           return (
             <View key={estado} style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: colores.backgroundColor }]} />
-              <Text style={styles.legendText}>{estado}</Text>
+              <Text style={[styles.legendText, { color: theme.colors.text.secondary }]}>{estado}</Text>
             </View>
           );
         })}
@@ -269,7 +358,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    opacity: 0.1,
   },
   gridRow: {
     flexDirection: 'row',
@@ -303,13 +391,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 2,
   },
+  layoutItem: {
+    position: 'absolute',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  labelText: {
+    textAlign: 'center',
+  },
   legend: {
     flexDirection: 'row',
     justifyContent: 'center',
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
     flexWrap: 'wrap',
     gap: 12,
   },
@@ -325,7 +420,6 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: 10,
-    color: '#666',
   },
 });
 

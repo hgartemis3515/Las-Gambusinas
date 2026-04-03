@@ -4526,6 +4526,12 @@ const InicioScreen = () => {
             <MesaMapView
               mesas={mesas}
               areaId={seccionActiva?._id || seccionActiva}
+              sectionId={areas.find(a => a._id === (seccionActiva?._id || seccionActiva))?.layoutSectionId}
+              sectionConfig={areas.find(a => a._id === (seccionActiva?._id || seccionActiva))?.layoutSectionId ? {
+                canvasWidth: areas.find(a => a._id === (seccionActiva?._id || seccionActiva))?.canvasWidth || 1600,
+                canvasHeight: areas.find(a => a._id === (seccionActiva?._id || seccionActiva))?.canvasHeight || 1200,
+                color: areas.find(a => a._id === (seccionActiva?._id || seccionActiva))?.color || '#1a1a28'
+              } : null}
               onMesaPress={handleSelectMesa}
               style={{ flex: 1 }}
             />
