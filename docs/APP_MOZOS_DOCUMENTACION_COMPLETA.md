@@ -1,14 +1,45 @@
 # Documentación Completa - App de Mozos (Las Gambusinas)
 
-**Version:** 2.8  
-**Ultima Actualizacion:** Marzo 2026  
+**Version:** 2.10  
+**Ultima Actualizacion:** Abril 2026  
 **Tecnologia:** React Native + Expo + Socket.io-client + AsyncStorage
 
-**Proposito del documento:** Analisis completo del app de mozos para Las Gambusinas: estructura, flujo de datos, integracion con backend y otras aplicaciones, librerias, funciones principales, problemas y propuestas de mejora. Documento alineado con el codebase actual (marzo 2026). Incluye documentacion detallada de ComandaDetalleScreen.
+**Proposito del documento:** Analisis completo del app de mozos para Las Gambusinas: estructura, flujo de datos, integracion con backend y otras aplicaciones, librerias, funciones principales, problemas y propuestas de mejora. Documento alineado con el codebase actual (abril 2026). Incluye documentacion detallada de ComandaDetalleScreen, guía de conversión a APK nativo con notificaciones push, funcionamiento en segundo plano, y catálogo completo de eventos Socket.io.
 
 ---
 
 ## 📋 Historial de Cambios
+
+### v2.10 (Abril 2026) - Catálogo de Eventos Socket.io
+
+- ✅ **Nueva sección completa**: Catálogo de todos los eventos Socket.io que el App Mozos recibe
+- ✅ **Eventos de Comandas**: `nueva-comanda`, `comanda-actualizada`, `comanda-eliminada`, `comanda-revertida`, `comanda-finalizada`, `comanda-anulada`
+- ✅ **Eventos de Platos**: `plato-actualizado`, `plato-actualizado-batch`, `plato-anulado`, `plato-entregado`
+- ✅ **Eventos de Mesas**: `mesa-actualizada`, `mesas-juntadas`, `mesas-separadas`, `mapa-actualizado`, `catalogo-mesas-areas-actualizado`
+- ✅ **Eventos de Descuentos**: Documentación completa de `PUT /api/comanda/:id/descuento` y `DELETE /api/comanda/:id/descuento` desde comandas.html
+- ✅ **Eventos de Reservas**: `reserva-creada`, `reserva-actualizada`, `reserva-expirada`, `reserva-alerta-expiracion`, `reserva-cancelada`
+- ✅ **Eventos de Propinas**: `propina-registrada`, `propina-actualizada`, `propina-eliminada`
+- ✅ **Eventos de Menú**: `plato-menu-actualizado`
+- ✅ **Notificaciones Push sugeridas**: Mapeo de eventos a notificaciones móviles recomendadas
+- ✅ **Resumen de listeners**: Lista completa de eventos a escuchar en `useSocketMozos.js`
+
+### v2.9 (Abril 2026) - Guía de Conversión a APK Nativo
+
+- ✅ **Nueva sección completa**: Conversión de Expo Go a APK/AAB productivo
+- ✅ **Notificaciones Push**: Implementación completa con FCM/APNs
+  - Servicio `notificationService.js` con registro de tokens
+  - Backend controller para envío de notificaciones
+  - Canales Android personalizados por tipo de alerta
+- ✅ **Background Tasks**: Funcionamiento en segundo plano
+  - BackgroundFetch API para polling de mesas
+  - Headless JS para tareas con app cerrada
+  - BootReceiver para inicio automático
+- ✅ **Foreground Service**: Socket.io persistente en Android
+  - Servicio nativo con notificación persistente
+  - Manejo de reconexión automática
+- ✅ **Optimización de batería**: Solicitud de exclusión de optimizaciones
+- ✅ **Checklist de implementación**: 5 fases con pasos detallados
+- ✅ **Dependencias actualizadas**: expo-notifications, expo-background-fetch, @notifee/react-native
 
 ### v2.8 (Marzo 2026) - Voucher Sincronizado con Backend
 
@@ -125,6 +156,24 @@ Solicitar Pago → Procesar Pago → Generar Boucher → Liberar Mesa
 14. [Propuestas de Mejora](#propuestas-de-mejora)
 15. [Actualizacion en Tiempo Real - Arquitectura Completa](#actualización-en-tiempo-real---arquitectura-completa) — ver [Herramientas tiempo real pantallas](#herramientas-para-actualizar-pantallas-en-tiempo-real)
 16. [Resumen Ejecutivo](#resumen-ejecutivo)
+17. [Conversion a APK Nativo y Funcionalidades Moviles Avanzadas](#-conversión-a-apk-nativo-y-funcionalidades-móviles-avanzadas)
+    - [Generación de APK/AAB Productivo](#1-generación-de-apkaab-productivo)
+    - [Sistema de Notificaciones Push](#2-sistema-de-notificaciones-push)
+    - [Funcionamiento en Segundo Plano](#3-funcionamiento-en-segundo-plano-background)
+    - [Socket.io en Segundo Plano](#4-socketio-en-segundo-plano)
+    - [Optimización de Batería](#5-optimización-de-batería)
+    - [Resumen de Implementación](#6-resumen-de-implementación)
+18. [Catálogo Completo de Eventos Socket.io y Notificaciones](#-catálogo-completo-de-eventos-socketio-y-notificaciones)
+    - [Eventos de Comandas](#1-eventos-de-comandas)
+    - [Eventos de Platos](#2-eventos-de-platos)
+    - [Eventos de Mesas](#3-eventos-de-mesas)
+    - [Eventos de Descuentos](#4-eventos-de-descuentos-adminsupervisor)
+    - [Eventos de Reservas](#5-eventos-de-reservas)
+    - [Eventos de Propinas](#6-eventos-de-propinas)
+    - [Eventos de Conexión y Sistema](#7-eventos-de-conexión-y-sistema)
+    - [Eventos de Menú/Catálogo](#8-eventos-de-menúcatálogo)
+    - [Notificaciones Push Sugeridas](#9-notificaciones-push-sugeridas)
+    - [Resumen de Listeners](#10-resumen-de-listeners-en-app-mozos)
 
 ---
 
@@ -2413,6 +2462,1423 @@ curl http://localhost:3000/api/comanda/fecha/2026-03-29 | jq '.[0].platos[0]'
 
 ---
 
-**Version del documento:** 2.8  
-**Ultima actualizacion:** Marzo 2026  
+## 📱 Conversión a APK Nativo y Funcionalidades Móviles Avanzadas
+
+### Estado Actual: Expo Go vs APK Productivo
+
+El app está desarrollado con **Expo (SDK 54)** en modo desarrollo. Para producción, requiere convertirse en un APK/AAP standalone con build nativo.
+
+| Aspecto | Expo Go (Actual) | APK Productivo |
+|---------|------------------|----------------|
+| Distribución | Solo desarrollo | Play Store / APK directo |
+| Notificaciones push | Limitadas | Completas con FCM/APNs |
+| Segundo plano | Limitado | Headless JS + Background Tasks |
+| Performance | Debug mode | Optimizado |
+| Permisos | Parciales | Completos |
+
+---
+
+### 1. Generación de APK/AAB Productivo
+
+#### Opción A: EAS Build (Recomendado - Expo Application Services)
+
+```bash
+# Instalar EAS CLI
+npm install -g eas-cli
+
+# Login en Expo
+eas login
+
+# Configurar proyecto
+eas build:configure
+
+# Crear eas.json
+```
+
+**eas.json recomendado:**
+```json
+{
+  "cli": {
+    "version": ">= 5.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
+```
+
+**Comandos de build:**
+```bash
+# APK para testing interno
+eas build --platform android --profile preview
+
+# AAB para Play Store
+eas build --platform android --profile production
+
+# Submit a Play Store
+eas submit --platform android --profile production
+```
+
+#### Opción B: Prebuild y Build Local
+
+```bash
+# Prebuild para generar carpetas android/
+npx expo prebuild --platform android
+
+# Build con Gradle
+cd android
+./gradlew assembleRelease
+
+# APK generado en:
+# android/app/build/outputs/apk/release/app-release.apk
+```
+
+#### Configuración Requerida en app.json
+
+```json
+{
+  "expo": {
+    "name": "App Mozos - Las Gambusinas",
+    "slug": "appmozo",
+    "version": "2.8.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.lasgambusinas.appmozo",
+      "versionCode": 28,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1a1a2e"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.POST_NOTIFICATIONS"
+      ],
+      "googleServicesFile": "./google-services.json",
+      "useNextNotificationsApi": true
+    },
+    "plugins": [
+      "expo-notifications",
+      [
+        "expo-background-fetch",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#1a1a2e"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "tu-project-id"
+      }
+    }
+  }
+}
+```
+
+---
+
+### 2. Sistema de Notificaciones Push
+
+#### Arquitectura Propuesta
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    SISTEMA DE NOTIFICACIONES PUSH                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   Backend ──────► FCM (Firebase Cloud Messaging) ──────► App Mozos      │
+│      │                        │                          │              │
+│      │                        │                          │              │
+│      │   1. Detecta evento   │   2. Envía push         │   3. Muestra  │
+│      │   (plato listo)       │      notification       │      alerta   │
+│      │                        │                          │              │
+│      │   4. Guarda token     │◄── 5. Token guardado    │   6. App      │
+│      │      en MongoDB       │      al login           │      abre     │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Instalación de Dependencias
+
+```bash
+npm install expo-notifications expo-device expo-constants
+npm install @react-native-firebase/app @react-native-firebase/messaging
+```
+
+#### Implementación: Servicio de Notificaciones
+
+**services/notificationService.js:**
+```javascript
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from '../config/axiosConfig';
+
+// Configurar handler de notificaciones
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
+// Registrar para notificaciones push
+export async function registerForPushNotificationsAsync() {
+  let token;
+
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'Notificaciones de Mesa',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+      sound: 'default',
+      enableVibrate: true,
+      enableLights: true,
+    });
+
+    // Canal específico para platos listos
+    await Notifications.setNotificationChannelAsync('plato-listo', {
+      name: 'Platos Listos',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 500, 200, 500],
+      lightColor: '#4CAF50',
+      sound: 'plato_listo.wav',
+      enableVibrate: true,
+    });
+
+    // Canal para alertas de mesa
+    await Notifications.setNotificationChannelAsync('mesa-alerta', {
+      name: 'Alertas de Mesa',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF9800',
+      sound: 'default',
+    });
+  }
+
+  if (Device.isDevice) {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== 'granted') {
+      console.log('❌ Permiso de notificaciones denegado');
+      return null;
+    }
+
+    try {
+      token = (await Notifications.getExpoPushTokenAsync({
+        projectId: 'tu-project-id',
+      })).data;
+      
+      console.log('✅ Token de notificación:', token);
+      
+      // Guardar token localmente
+      await AsyncStorage.setItem('pushToken', token);
+      
+      // Enviar token al backend
+      await sendTokenToBackend(token);
+    } catch (e) {
+      console.error('Error obteniendo token:', e);
+    }
+  } else {
+    console.log('⚠️ Notificaciones push solo funcionan en dispositivo físico');
+  }
+
+  return token;
+}
+
+// Enviar token al backend
+async function sendTokenToBackend(token) {
+  try {
+    const user = JSON.parse(await AsyncStorage.getItem('user'));
+    if (user && user._id) {
+      await axios.post('/api/mozos/push-token', {
+        mozoId: user._id,
+        pushToken: token,
+        platform: Platform.OS,
+        deviceId: Device.deviceId || 'unknown',
+      });
+      console.log('✅ Token registrado en backend');
+    }
+  } catch (error) {
+    console.error('Error enviando token:', error);
+  }
+}
+
+// Listener de notificaciones recibidas
+export function setupNotificationListeners(navigation) {
+  // Notificación recibida mientras app está en primer plano
+  const foregroundSubscription = Notifications.addNotificationReceivedListener(
+    (notification) => {
+      console.log('📬 Notificación recibida:', notification);
+      
+      const data = notification.request.content.data;
+      
+      // Vibrar y reproducir sonido
+      if (data.tipo === 'plato-listo') {
+        // Sonido específico para plato listo
+        playSound('plato_listo');
+      }
+    }
+  );
+
+  // Usuario toca la notificación
+  const responseSubscription = Notifications.addNotificationResponseReceivedListener(
+    (response) => {
+      console.log('👆 Usuario tocó notificación');
+      
+      const data = response.notification.request.content.data;
+      
+      // Navegar según el tipo de notificación
+      if (data.mesaId) {
+        navigation.navigate('ComandaDetalle', {
+          mesaId: data.mesaId,
+          mesa: data.mesa,
+        });
+      }
+    }
+  );
+
+  return () => {
+    foregroundSubscription.remove();
+    responseSubscription.remove();
+  };
+}
+
+// Reproducir sonido local
+async function playSound(soundName) {
+  // Implementar con expo-av si es necesario
+  console.log(`🔊 Reproduciendo sonido: ${soundName}`);
+}
+```
+
+#### Integración en App.js
+
+```javascript
+import { registerForPushNotificationsAsync, setupNotificationListeners } from './services/notificationService';
+
+export default function App() {
+  const [notification, setNotification] = useState(false);
+  const navigationRef = useRef();
+
+  useEffect(() => {
+    // Registrar notificaciones
+    registerForPushNotificationsAsync();
+
+    // Configurar listeners
+    const cleanup = setupNotificationListeners(navigationRef.current);
+
+    return cleanup;
+  }, []);
+
+  return (
+    <NavigationContainer ref={navigationRef}>
+      <Stack.Navigator>
+        {/* ... screens ... */}
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+}
+```
+
+#### Backend: Controlador de Notificaciones
+
+**src/controllers/notificationController.js:**
+```javascript
+const admin = require('firebase-admin');
+const Mozo = require('../database/models/mozo.model');
+
+// Inicializar Firebase Admin (una sola vez)
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    }),
+  });
+}
+
+// Guardar token del dispositivo
+async function guardarPushToken(req, res) {
+  try {
+    const { mozoId, pushToken, platform, deviceId } = req.body;
+
+    await Mozo.findByIdAndUpdate(mozoId, {
+      pushToken,
+      pushPlatform: platform,
+      deviceId,
+      pushTokenUpdatedAt: new Date(),
+    });
+
+    res.json({ success: true, message: 'Token registrado' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// Enviar notificación a un mozo específico
+async function enviarNotificacionMozo(mozoId, notificacion) {
+  try {
+    const mozo = await Mozo.findById(mozoId);
+    
+    if (!mozo || !mozo.pushToken) {
+      console.log(`Mozo ${mozoId} no tiene push token`);
+      return;
+    }
+
+    const message = {
+      to: mozo.pushToken,
+      sound: notificacion.sound || 'default',
+      title: notificacion.title,
+      body: notificacion.body,
+      data: notificacion.data || {},
+      priority: 'high',
+      channelId: notificacion.channelId || 'default',
+    };
+
+    // Enviar vía Expo
+    await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(message),
+    });
+
+    console.log(`✅ Notificación enviada a ${mozo.name}`);
+  } catch (error) {
+    console.error('Error enviando notificación:', error);
+  }
+}
+
+// Enviar cuando un plato está listo
+async function notificarPlatoListo(comanda, platoIndex) {
+  const mozoId = comanda.mozos[0]; // Primer mozo de la comanda
+  
+  await enviarNotificacionMozo(mozoId, {
+    title: '🍽️ Plato Listo',
+    body: `${comanda.platos[platoIndex].plato} está listo para recoger`,
+    sound: 'plato_listo.wav',
+    channelId: 'plato-listo',
+    data: {
+      tipo: 'plato-listo',
+      comandaId: comanda._id,
+      mesaId: comanda.mesas,
+      platoIndex,
+    },
+  });
+}
+
+module.exports = {
+  guardarPushToken,
+  enviarNotificacionMozo,
+  notificarPlatoListo,
+};
+```
+
+#### Tipos de Notificaciones
+
+| Tipo | Título | Body | Prioridad | Canal |
+|------|--------|------|-----------|-------|
+| Plato listo | 🍽️ Plato Listo | [Nombre] está listo para recoger | MAX | plato-listo |
+| Comanda nueva | 📝 Nueva Comanda | Mesa [N] tiene nuevo pedido | HIGH | default |
+| Mesa asignada | 🏷️ Mesa Asignada | Se te asignó la Mesa [N] | HIGH | mesa-alerta |
+| Pago pendiente | 💰 Pago Pendiente | Mesa [N] solicita el pago | HIGH | default |
+| Alerta admin | ⚠️ [Mensaje] | [Detalle] | MAX | mesa-alerta |
+
+---
+
+### 3. Funcionamiento en Segundo Plano (Background)
+
+#### Arquitectura de Background Tasks
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    BACKGROUND EXECUTION                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐ │
+│   │  Foreground      │    │  Background      │    │  Headless JS     │ │
+│   │  (App abierta)   │    │  (App minimizada)│    │  (App cerrada)   │ │
+│   │                  │    │                  │    │                  │ │
+│   │  - Socket.io     │    │  - Push tokens   │    │  - Background    │ │
+│   │  - Polling       │    │  - Background    │    │    Fetch API     │ │
+│   │  - Real-time     │    │    fetch         │    │  - BootReceiver  │ │
+│   │                  │    │  - Local         │    │  - Scheduled     │ │
+│   │                  │    │    notifications │    │    tasks         │ │
+│   └──────────────────┘    └──────────────────┘    └──────────────────┘ │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Implementación: Background Fetch
+
+**hooks/useBackgroundTask.js:**
+```javascript
+import * as BackgroundFetch from 'expo-background-fetch';
+import * as TaskManager from 'expo-task-manager';
+import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from '../config/axiosConfig';
+
+const BACKGROUND_FETCH_TASK = 'background-fetch-mesas';
+const PING_INTERVAL = 60000; // 1 minuto
+
+// Definir tarea de background
+TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
+  try {
+    console.log('🔄 Ejecutando background fetch...');
+    
+    const user = JSON.parse(await AsyncStorage.getItem('user'));
+    if (!user) return BackgroundFetch.BackgroundFetchResult.NoData;
+
+    // Verificar mesas asignadas
+    const response = await axios.get(`/api/mesas/mozos/${user._id}/asignadas`);
+    const mesas = response.data;
+
+    // Verificar si hay platos listos
+    const platosListos = mesas.flatMap(m => 
+      m.comandas?.flatMap(c => 
+        c.platos.filter(p => p.estado === 'recoger')
+      ) || []
+    );
+
+    if (platosListos.length > 0) {
+      // Enviar notificación local
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '🍽️ Platos Pendientes',
+          body: `Tienes ${platosListos.length} plato(s) listo(s) para recoger`,
+          sound: true,
+          priority: Notifications.AndroidNotificationPriority.HIGH,
+        },
+        trigger: null,
+      });
+    }
+
+    return BackgroundFetch.BackgroundFetchResult.NewData;
+  } catch (error) {
+    console.error('Error en background fetch:', error);
+    return BackgroundFetch.BackgroundFetchResult.Failed;
+  }
+});
+
+// Registrar tarea de background
+export async function registerBackgroundFetchAsync() {
+  try {
+    await BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
+      minimumInterval: 15 * 60, // 15 minutos (mínimo en Android)
+      stopOnTerminate: false,   // Continuar después de cerrar app
+      startOnBoot: true,        // Iniciar al boot del dispositivo
+    });
+    
+    console.log('✅ Background fetch registrado');
+  } catch (err) {
+    console.log('❌ Error registrando background fetch:', err);
+  }
+}
+
+// Desregistrar
+export async function unregisterBackgroundFetchAsync() {
+  try {
+    await BackgroundFetch.unregisterTaskAsync(BACKGROUND_FETCH_TASK);
+    console.log('✅ Background fetch desregistrado');
+  } catch (err) {
+    console.log('❌ Error desregistrando:', err);
+  }
+}
+
+// Verificar estado
+export async function checkBackgroundFetchStatus() {
+  const status = await BackgroundFetch.getStatusAsync();
+  const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_FETCH_TASK);
+  
+  return { status, isRegistered };
+}
+```
+
+#### Implementación: Headless JS (Android)
+
+**android/app/src/main/java/com/lasgambusinas/appmozo/HeadlessTaskService.java:**
+```java
+package com.lasgambusinas.appmozo;
+
+import android.content.Intent;
+import android.os.Bundle;
+import com.facebook.react.HeadlessJsTaskService;
+import com.facebook.react.bridge.Arguments;
+import com.facebook.react.jstasks.HeadlessJsConfig;
+
+public class HeadlessTaskService extends HeadlessJsTaskService {
+  @Override
+  protected HeadlessJsTaskConfig getTaskConfig(Intent intent) {
+    Bundle extras = intent.getExtras();
+    return new HeadlessJsTaskConfig(
+      "BackgroundTask",
+      extras != null ? Arguments.fromBundle(extras) : null,
+      60000, // timeout: 60 segundos
+      true   // permitir en foreground
+    );
+  }
+}
+```
+
+**android/app/src/main/java/com/lasgambusinas/appmozo/BootReceiver.java:**
+```java
+package com.lasgambusinas.appmozo;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.util.Log;
+
+public class BootReceiver extends BroadcastReceiver {
+  @Override
+  public void onReceive(Context context, Intent intent) {
+    if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
+      Log.d("BootReceiver", "Device booted, starting background task");
+      
+      // Iniciar servicio de background
+      Intent serviceIntent = new Intent(context, HeadlessTaskService.class);
+      context.startService(serviceIntent);
+    }
+  }
+}
+```
+
+**android/app/src/main/AndroidManifest.xml (agregar):**
+```xml
+<!-- Permisos -->
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+<uses-permission android:name="android.permission.WAKE_LOCK" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+<application>
+  <!-- Boot Receiver -->
+  <receiver android:name=".BootReceiver" android:enabled="true">
+    <intent-filter>
+      <action android:name="android.intent.action.BOOT_COMPLETED" />
+      <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+    </intent-filter>
+  </receiver>
+
+  <!-- Headless Service -->
+  <service android:name=".HeadlessTaskService" android:enabled="true" />
+</application>
+```
+
+#### Tarea Headless en JavaScript
+
+**tasks/backgroundTask.js:**
+```javascript
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from '../config/axiosConfig';
+
+module.exports = async (taskData) => {
+  console.log('📱 Headless task ejecutándose...');
+  
+  try {
+    const user = JSON.parse(await AsyncStorage.getItem('user'));
+    
+    if (!user) {
+      console.log('No hay usuario logueado');
+      return;
+    }
+
+    // Verificar mesas del mozo
+    const response = await axios.get(`/api/mesas/mozos/${user._id}/asignadas`);
+    const mesas = response.data;
+
+    // Contar platos pendientes
+    let platosPendientes = 0;
+    mesas.forEach(mesa => {
+      mesa.comandas?.forEach(comanda => {
+        comanda.platos.forEach(plato => {
+          if (plato.estado === 'recoger') platosPendientes++;
+        });
+      });
+    });
+
+    if (platosPendientes > 0) {
+      // Notificar al sistema (será manejado por el servicio nativo)
+      console.log(`🔔 ${platosPendientes} platos pendientes`);
+    }
+  } catch (error) {
+    console.error('Error en headless task:', error);
+  }
+};
+```
+
+---
+
+### 4. Socket.io en Segundo Plano
+
+#### Problema
+
+Socket.io se desconecta cuando la app pasa a segundo plano en React Native.
+
+#### Solución: Servicio Foreground (Android)
+
+**services/SocketForegroundService.js:**
+```javascript
+import { Platform } from 'react-native';
+import Notifee, { AndroidImportance } from '@notifee/react-native';
+import io from 'socket.io-client';
+
+class SocketForegroundService {
+  constructor() {
+    this.socket = null;
+    this.isConnected = false;
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 10;
+  }
+
+  async startForegroundService() {
+    if (Platform.OS !== 'android') return;
+
+    // Crear canal de notificación
+    await Notifee.createChannel({
+      id: 'socket-service',
+      name: 'Servicio de Conexión',
+      importance: AndroidImportance.LOW,
+      sound: '',
+      vibration: false,
+    });
+
+    // Mostrar notificación persistente
+    await Notifee.displayNotification({
+      id: 'socket-foreground',
+      title: 'App Mozos - Conectado',
+      body: 'Recibiendo actualizaciones de mesas',
+      android: {
+        channelId: 'socket-service',
+        asForegroundService: true,
+        ongoing: true,
+        autoCancel: false,
+        pressAction: {
+          id: 'default',
+          launchActivity: 'default',
+        },
+      },
+    });
+  }
+
+  async connect(wsURL, user) {
+    if (this.socket?.connected) return;
+
+    this.socket = io(`${wsURL}/mozos`, {
+      auth: { token: user.token },
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: this.maxReconnectAttempts,
+    });
+
+    this.socket.on('connect', () => {
+      console.log('🟢 Socket conectado (foreground)');
+      this.isConnected = true;
+      this.reconnectAttempts = 0;
+    });
+
+    this.socket.on('disconnect', (reason) => {
+      console.log('🔴 Socket desconectado:', reason);
+      this.isConnected = false;
+    });
+
+    // Iniciar foreground service
+    await this.startForegroundService();
+  }
+
+  disconnect() {
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
+    Notifee.cancelNotification('socket-foreground');
+  }
+}
+
+export default new SocketForegroundService();
+```
+
+---
+
+### 5. Optimización de Batería
+
+#### Solicitar Exclusión de Optimizaciones de Batería
+
+```javascript
+import * as IntentLauncher from 'expo-intent-launcher';
+import { Platform } from 'react-native';
+
+async function requestIgnoreBatteryOptimization() {
+  if (Platform.OS === 'android') {
+    try {
+      await IntentLauncher.startActivityAsync(
+        'android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+        {
+          flags: 1, // FLAG_ACTIVITY_NEW_TASK
+        }
+      );
+    } catch (error) {
+      console.log('Error solicitando exclusión de batería:', error);
+    }
+  }
+}
+```
+
+#### Configuración en MasScreen
+
+Agregar botón en la pantalla de configuración:
+```javascript
+<TouchableOpacity onPress={requestIgnoreBatteryOptimization}>
+  <View style={styles.settingRow}>
+    <Text>🔋 Optimizar para segundo plano</Text>
+    <Text style={styles.hint}>Toca para permitir ejecución en segundo plano</Text>
+  </View>
+</TouchableOpacity>
+```
+
+---
+
+### 6. Resumen de Implementación
+
+#### Checklist de Conversión a APK Nativo
+
+```
+□ FASE 1: Build Básico
+  □ Crear cuenta Expo EAS
+  □ Configurar eas.json
+  □ Agregar íconos adaptativos
+  □ Configurar package name (com.lasgambusinas.appmozo)
+  □ Build APK de prueba
+  □ Test en dispositivo físico
+
+□ FASE 2: Notificaciones Push
+  □ Crear proyecto Firebase
+  □ Configurar google-services.json
+  □ Implementar notificationService.js
+  □ Backend: endpoints de push tokens
+  □ Backend: integrar en eventos Socket
+  □ Test notificaciones en primer plano
+  □ Test notificaciones en segundo plano
+  □ Test notificaciones con app cerrada
+
+□ FASE 3: Background Tasks
+  □ Implementar useBackgroundTask.js
+  □ Registrar BackgroundFetch
+  □ Configurar Headless JS
+  □ Agregar BootReceiver
+  □ Test funcionamiento en segundo plano
+  □ Test reinicio después de boot
+
+□ FASE 4: Optimización
+  □ Solicitar exclusión de batería
+  □ Configurar canales de notificación
+  □ Agregar sonidos personalizados
+  □ Test de consumo de batería
+  □ Test de memoria
+  □ Documentar uso
+
+□ FASE 5: Distribución
+  □ Build AAB para Play Store
+  □ Preparar assets (screenshots, descripción)
+  □ Configurar firmas
+  □ Submit a Play Store
+  □ O alternativamente: distribución APK directa
+```
+
+#### Dependencias Finales a Agregar
+
+```json
+{
+  "dependencies": {
+    "expo-notifications": "~0.27.0",
+    "expo-device": "~5.9.0",
+    "expo-background-fetch": "~12.0.0",
+    "expo-task-manager": "~11.0.0",
+    "@notifee/react-native": "^7.0.0",
+    "expo-intent-launcher": "~11.0.0"
+  }
+}
+```
+
+---
+
+## 📬 Catálogo Completo de Eventos Socket.io y Notificaciones
+
+Esta sección documenta todos los eventos WebSocket que el **App de Mozos** recibe del backend, incluyendo su origen (App Cocina, admin, sistema), datos enviados y acciones recomendadas en el frontend.
+
+---
+
+### 1. Eventos de Comandas
+
+#### `nueva-comanda`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `comanda` | Object | Comanda completa creada |
+| `comandaId` | String | ID de la comanda |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** App Mozos (POST `/api/comanda`), Backend.
+
+**Destino:** App Cocina (namespace `/cocina`, room `fecha-YYYY-MM-DD`), App Mozos (broadcast), Admin.
+
+**Acción App Mozos:** Agregar comanda a la lista local, actualizar estado de mesa a `pedido`.
+
+---
+
+#### `comanda-actualizada`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `comandaId` | String | ID de la comanda |
+| `comanda` | Object | Comanda completa actualizada |
+| `estadoAnterior` | String | Estado anterior (opcional) |
+| `estadoNuevo` | String | Estado nuevo (opcional) |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Edición de comanda, cambios de estado, **aplicación/eliminación de descuentos**, pagos.
+
+**Destino:** App Cocina, App Mozos (room `mesa-{mesaId}`), Admin.
+
+**Acción App Mozos:** Reemplazar comanda en el state local, recalcular totales si hay descuento.
+
+---
+
+#### `comanda-eliminada`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `comandaId` | String | ID de la comanda eliminada |
+| `mesaId` | String | ID de la mesa |
+| `motivo` | String | Motivo de eliminación |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Mozo o Admin elimina comanda completa.
+
+**Destino:** App Cocina, App Mozos (room `mesa-{mesaId}`), Admin.
+
+**Acción App Mozos:** Remover comanda de la lista, si no quedan comandas activas navegar a InicioScreen.
+
+---
+
+#### `comanda-revertida`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `comanda` | Object | Comanda revertida |
+| `mesa` | Object | Mesa actualizada |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** App Cocina revierte una comanda (devuelve a estado anterior).
+
+**Destino:** App Cocina, App Mozos (room `mesa-{mesaId}`), Admin.
+
+**Acción App Mozos:** Actualizar comanda y estado de mesa.
+
+---
+
+#### `comanda-finalizada`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `comandaId` | String | ID de la comanda |
+| `comanda` | Object | Comanda con todos los platos entregados |
+| `cocinero` | Object | Información del cocinero |
+| `tipo` | String | `"comanda-finalizada"` |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** App Cocina marca todos los platos como entregados.
+
+**Destino:** App Cocina (room `fecha-YYYY-MM-DD`), Admin.
+
+**Acción App Mozos:** Actualizar estado de comanda, habilitar botón de pago.
+
+---
+
+#### `comanda-anulada`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `comandaId` | String | ID de la comanda |
+| `comanda` | Object | Comanda anulada |
+| `motivoGeneral` | String | Motivo de la anulación |
+| `totalAnulado` | Number | Monto total anulado |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** App Cocina anula toda la comanda.
+
+**Destino:** App Cocina, App Mozos (room `mesa-{mesaId}`), Admin.
+
+**Acción App Mozos:** Mostrar alerta con el monto anulado, actualizar UI, navegar a Inicio si corresponde.
+
+---
+
+### 2. Eventos de Platos
+
+#### `plato-actualizado`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `comandaId` | String | ID de la comanda |
+| `platoId` | Number | Índice del plato en el array |
+| `nuevoEstado` | String | Estado nuevo (`pedido`, `recoger`, `entregado`, `pagado`) |
+| `estadoAnterior` | String | Estado anterior |
+| `mesaId` | String | ID de la mesa |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** App Cocina cambia estado de un plato (ej: marca como listo).
+
+**Destino:** App Cocina, App Mozos (room `mesa-{mesaId}` si existe, sino broadcast), Admin.
+
+**Acción App Mozos:** Actualizar estado del plato en la UI, mostrar alerta si `nuevoEstado === 'recoger'`, actualizar indicador SocketStatus a `online-active`.
+
+---
+
+#### `plato-actualizado-batch`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `comandaId` | String | ID de la comanda |
+| `platos` | Array | `[{ platoId, nuevoEstado, estadoAnterior }]` |
+| `mesaId` | String | ID de la mesa |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** App Cocina actualiza múltiples platos en lote (FASE 5 batching).
+
+**Destino:** App Cocina, App Mozos.
+
+**Acción App Mozos:** Actualizar todos los platos del batch en una sola operación.
+
+---
+
+#### `plato-anulado`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `comandaId` | String | ID de la comanda |
+| `comanda` | Object | Comanda actualizada |
+| `platoAnulado` | Object | `{ nombre, motivo, platoId }` |
+| `auditoria` | Object | `{ activos, anulados, eliminados }` |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** App Cocina anula un plato específico.
+
+**Destino:** App Cocina, App Mozos (room `mesa-{mesaId}`), Admin.
+
+**Acción App Mozos:** Mostrar alerta: `"🍽️ Plato Anulado - [nombre] fue anulado por cocina. Motivo: [motivo]"`, actualizar comanda.
+
+---
+
+#### `plato-entregado`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `comandaId` | String | ID de la comanda |
+| `platoId` | Number | Índice del plato |
+| `platoNombre` | String | Nombre del plato |
+| `estadoAnterior` | String | Estado anterior |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Mozo marca plato como entregado.
+
+**Destino:** App Mozos, Admin.
+
+**Acción App Mozos:** Actualizar estado del plato, recalcular si todos entregados para habilitar pago.
+
+---
+
+### 3. Eventos de Mesas
+
+#### `mesa-actualizada`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `mesaId` | String | ID de la mesa |
+| `mesa` | Object | Mesa completa actualizada |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Cambio de estado de mesa (libre → pedido, pagado → libre, etc.), reserva creada/actualizada.
+
+**Destino:** App Mozos (broadcast), App Cocina (broadcast), Admin.
+
+**Acción App Mozos:** Merge de la mesa en la lista local (`mesas.map(m => m._id === mesaId ? mesa : m)`), actualizar color/estado visual.
+
+---
+
+#### `mesas-juntadas`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `mesaPrincipal` | Object | Mesa principal del grupo |
+| `mesasSecundarias` | Array | Lista de mesas secundarias |
+| `mozoId` | String | ID del mozo que realizó la acción |
+| `totalMesas` | Number | Total de mesas en el grupo |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Mozo/Admin junta mesas (POST `/api/mesas/juntar`).
+
+**Destino:** App Mozos (broadcast), App Cocina (broadcast), Admin.
+
+**Acción App Mozos:** Actualizar mesas en la lista, mostrar badge de grupo en UI.
+
+---
+
+#### `mesas-separadas`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `mesaPrincipal` | Object | Mesa principal |
+| `mesasSecundarias` | Array | Mesas liberadas |
+| `mozoId` | String | ID del mozo |
+| `totalMesasLiberadas` | Number | Cantidad liberada |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Mozo/Admin separa mesas (POST `/api/mesas/separar`).
+
+**Destino:** App Mozos (broadcast), App Cocina (broadcast), Admin.
+
+**Acción App Mozos:** Actualizar mesas, remover badges de grupo.
+
+---
+
+#### `mapa-actualizado`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `areaId` | String | ID del área actualizada |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Admin guarda cambios en el editor de mapa (posiciones, layout).
+
+**Destino:** App Mozos, Admin.
+
+**Acción App Mozos:** Refetch de mesas (`GET /api/mesas`).
+
+---
+
+#### `catalogo-mesas-areas-actualizado`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `timestamp` | String | ISO timestamp |
+| `razon` | String | Razón del cambio (opcional) |
+
+**Origen:** Admin crea/edita/elimina mesas o áreas (mesas.html, areas.html).
+
+**Destino:** App Mozos.
+
+**Acción App Mozos:** Refetch de mesas (`GET /api/mesas`) y áreas (`GET /api/areas`).
+
+---
+
+### 4. Eventos de Descuentos (Admin/Supervisor)
+
+#### Aplicación de Descuento - `comanda-actualizada`
+
+Cuando se aplica un descuento desde **comandas.html** (admin):
+
+**Endpoint:** `PUT /api/comanda/:id/descuento`
+
+**Body enviado:**
+```javascript
+{
+  descuento: 10,          // Porcentaje (0-100)
+  motivo: "Cliente frecuente",
+  usuarioId: "65abc123...",
+  usuarioRol: "admin"
+}
+```
+
+**Evento emitido:** `comanda-actualizada` con datos adicionales:
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `comandaId` | String | ID de la comanda |
+| `comanda.descuento` | Number | Porcentaje de descuento |
+| `comanda.motivoDescuento` | String | Motivo |
+| `comanda.descuentoAplicadoPor` | Object | Usuario que aplicó |
+| `comanda.descuentoAplicadoAt` | String | Timestamp |
+| `comanda.montoDescuento` | Number | Monto descontado |
+| `comanda.totalCalculado` | Number | Total con descuento aplicado |
+
+**Acción App Mozos:** Actualizar totales en la vista de comanda, mostrar badge/indicador de descuento aplicado.
+
+---
+
+#### Eliminación de Descuento - `comanda-actualizada`
+
+**Endpoint:** `DELETE /api/comanda/:id/descuento`
+
+**Body enviado:**
+```javascript
+{
+  usuarioId: "65abc123...",
+  usuarioRol: "admin",
+  motivoEliminacion: "Descuento aplicado por error"
+}
+```
+
+**Evento emitido:** `comanda-actualizada` con `comanda.descuento = 0`.
+
+**Acción App Mozos:** Recalcular totales sin descuento, remover indicador visual.
+
+---
+
+### 5. Eventos de Reservas
+
+#### `reserva-creada`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `reserva` | Object | Reserva creada |
+| `mesaId` | String | ID de la mesa reservada |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Admin crea reserva.
+
+**Destino:** App Mozos, Admin.
+
+**Acción App Mozos:** Actualizar estado de mesa a `reservado`, mostrar indicador.
+
+---
+
+#### `reserva-actualizada`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `reservaId` | String | ID de la reserva |
+| `cambios` | Object | Campos actualizados |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Admin modifica reserva.
+
+**Acción App Mozos:** Actualizar datos de reserva si está en la mesa actual.
+
+---
+
+#### `reserva-expirada`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `reservaId` | String | ID de la reserva |
+| `reserva` | Object | Reserva expirada (opcional) |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Reserva expira por tiempo.
+
+**Acción App Mozos:** Liberar mesa si estaba en estado reservado.
+
+---
+
+#### `reserva-alerta-expiracion`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `reservaId` | String | ID de la reserva |
+| `datos` | Object | Información adicional |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Alerta de reserva próxima a expirar (configurable).
+
+**Acción App Mozos:** Mostrar notificación de advertencia.
+
+---
+
+#### `reserva-cancelada`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `reservaId` | String | ID de la reserva |
+| `motivo` | String | Motivo de cancelación (opcional) |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Admin cancela reserva.
+
+**Acción App Mozos:** Liberar mesa, actualizar UI.
+
+---
+
+### 6. Eventos de Propinas
+
+#### `propina-registrada`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `propinaId` | String | ID de la propina |
+| `mesaId` | String | ID de la mesa |
+| `numMesa` | Number | Número de mesa |
+| `mozoId` | String | ID del mozo |
+| `nombreMozo` | String | Nombre del mozo |
+| `montoPropina` | Number | Monto de la propina |
+| `tipo` | String | Tipo (`efectivo`, `tarjeta`, `yape`) |
+| `boucherNumber` | String | Número de boucher |
+| `nota` | String | Nota opcional |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Mozo registra propina desde App Mozos (ModalRegistrarPropina).
+
+**Destino:** Admin (dashboard), Mozo específico (room `mozo-{mozoId}`).
+
+**Acción App Mozos:** Mostrar confirmación de propina registrada.
+
+---
+
+#### `propina-actualizada`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `propinaId` | String | ID de la propina |
+| `mozoId` | String | ID del mozo |
+| `montoPropina` | Number | Nuevo monto |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Admin modifica propina.
+
+**Acción App Mozos:** Actualizar registro de propina si aplica.
+
+---
+
+#### `propina-eliminada`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `propinaId` | String | ID de la propina |
+| `mozoId` | String | ID del mozo |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Admin elimina propina (soft delete).
+
+**Acción App Mozos:** Remover de la lista local.
+
+---
+
+### 7. Eventos de Conexión y Sistema
+
+#### `joined-mesa`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `mesaId` | String | ID de la mesa |
+| `roomName` | String | Nombre de la room |
+
+**Origen:** Backend confirma suscripción a room de mesa.
+
+**Acción App Mozos:** Logging, confirmación de conexión.
+
+---
+
+#### `heartbeat-ack` / `heartbeat-pong`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Backend responde al heartbeat del cliente.
+
+**Acción App Mozos:** Calcular latencia, mantener conexión activa.
+
+---
+
+#### `socket-status`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `connected` | Boolean | Estado de conexión |
+| `socketId` | String | ID del socket |
+
+**Origen:** Backend notifica cambios de estado.
+
+---
+
+### 8. Eventos de Menú/Catálogo
+
+#### `plato-menu-actualizado`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `platoId` | String | ID del plato |
+| `plato` | Object | Plato actualizado |
+| `cambios` | Object | Campos modificados |
+| `timestamp` | String | ISO timestamp |
+
+**Origen:** Admin modifica plato del menú.
+
+**Destino:** App Cocina, App Mozos, Admin.
+
+**Acción App Mozos:** Refetch de platos (`GET /api/platos`).
+
+---
+
+### 9. Notificaciones Push Sugeridas
+
+Basado en los eventos anteriores, estas son las notificaciones push recomendadas para el App de Mozos:
+
+| Evento | Título Push | Body Push | Prioridad |
+|--------|-------------|-----------|-----------|
+| `plato-actualizado` (estado=recoger) | 🍽️ Plato Listo | `[nombre] está listo para recoger` | MAX |
+| `comanda-anulada` | ⚠️ Comanda Anulada | `Mesa [N]: [motivo]` | HIGH |
+| `plato-anulado` | ⚠️ Plato Anulado | `Cocina anuló: [nombre]` | HIGH |
+| `mesa-actualizada` (estado=libre) | ✅ Mesa Liberada | `Mesa [N] ahora está libre` | DEFAULT |
+| `propina-registrada` | 💰 Propina Recibida | `S/. [monto] de Mesa [N]` | DEFAULT |
+| `reserva-alerta-expiracion` | ⏰ Reserva por Expirar | `Mesa [N] reserva expira pronto` | HIGH |
+| `mesas-juntadas` | 🔗 Mesas Juntadas | `Mesa [N] ahora es principal` | DEFAULT |
+| `mesas-separadas` | ✂️ Mesas Separadas | `Mesa [N] liberada del grupo` | DEFAULT |
+
+---
+
+### 10. Resumen de Listeners en App Mozos
+
+```javascript
+// useSocketMozos.js - Eventos que el App Mozos debe escuchar
+const eventsToListen = [
+  'plato-actualizado',
+  'plato-actualizado-batch',
+  'plato-entregado',
+  'plato-anulado',
+  'comanda-actualizada',
+  'comanda-eliminada',
+  'comanda-revertida',
+  'comanda-anulada',
+  'comanda-finalizada',
+  'nueva-comanda',
+  'mesa-actualizada',
+  'mesas-juntadas',
+  'mesas-separadas',
+  'mapa-actualizado',
+  'catalogo-mesas-areas-actualizado',
+  'plato-menu-actualizado',
+  'reserva-creada',
+  'reserva-actualizada',
+  'reserva-expirada',
+  'reserva-alerta-expiracion',
+  'reserva-cancelada',
+  'propina-registrada',
+  'propina-actualizada',
+  'propina-eliminada',
+  'joined-mesa',
+  'heartbeat-ack',
+  'socket-status'
+];
+```
+
+---
+
+**Version del documento:** 2.10  
+**Ultima actualizacion:** Abril 2026  
 **Sistema:** Las Gambusinas – App de Mozos

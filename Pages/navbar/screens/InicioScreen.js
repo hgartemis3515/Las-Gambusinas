@@ -1488,7 +1488,15 @@ const InicioScreen = () => {
       const reservasURL = apiConfig.isConfigured 
         ? apiConfig.getEndpoint('/reservas?estado=pendiente')
         : 'http://192.168.18.11:3000/api/reservas?estado=pendiente';
-      const response = await axios.get(reservasURL, { timeout: 5000 });
+      
+      // Obtener token JWT para autorización
+      const authToken = await AsyncStorage.getItem('authToken');
+      const headers = authToken ? { Authorization: `Bearer ${authToken}` } : {};
+      
+      const response = await axios.get(reservasURL, { 
+        timeout: 5000,
+        headers
+      });
       setReservas(response.data || []);
     } catch (error) {
       console.error("Error al obtener las reservas:", error.message);

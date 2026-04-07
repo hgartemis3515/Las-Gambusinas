@@ -1,7 +1,11 @@
 import 'react-native-gesture-handler';
 import './utils/registerGsapPlugins';
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useEffect } from 'react';
+import { Platform } from 'react-native';
+import {
+  NavigationContainer,
+  createNavigationContainerRef,
+} from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { ThemeProvider } from './context/ThemeContext';
 import { SocketProvider } from './context/SocketContext';
@@ -10,16 +14,35 @@ import Navbar from './Pages/navbar/navbar';
 import ComandaDetalleScreen from './Pages/ComandaDetalleScreen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  configureNotificationBehavior,
+  subscribeToNotificationResponses,
+} from './services/pushNotifications';
+
+if (Platform.OS !== 'web') {
+  require('./tasks/backgroundFetchTask');
+}
 
 const Stack = createStackNavigator();
+export const navigationRef = createNavigationContainerRef();
 
 export default function App() {
+  useEffect(() => {
+    configureNotificationBehavior();
+    const sub = subscribeToNotificationResponses(navigationRef);
+    if (Platform.OS !== 'web') {
+      const { registerMozosBackgroundFetch } = require('./tasks/backgroundFetchTask');
+      registerMozosBackgroundFetch().catch(() => {});
+    }
+    return () => sub.remove();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <ThemeProvider>
           <SocketProvider>
-            <NavigationContainer>
+            <NavigationContainer ref={navigationRef}>
               <Stack.Navigator 
                 initialRouteName="Login"
                 screenOptions={{

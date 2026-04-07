@@ -33,6 +33,7 @@ import { colors } from "../../constants/colors";
 import { useOrientation } from "../../hooks/useOrientation";
 import SettingsModal from "../../Components/SettingsModal";
 import apiConfig from "../../config/apiConfig";
+import { registerPushAfterLogin } from "../../services/pushNotifications";
 
 // Componente de partículas flotantes
 const FloatingParticle = ({ delay = 0, screenHeight, screenWidth }) => {
@@ -475,6 +476,8 @@ const Login = () => {
       await AsyncStorage.setItem("user", JSON.stringify(userData));
       await AsyncStorage.setItem("authToken", token);
       console.log("💾 Usuario y token guardados en AsyncStorage");
+
+      registerPushAfterLogin(userData._id).catch(() => {});
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 

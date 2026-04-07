@@ -22,11 +22,24 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.carlos121.appmozo"
+      "package": "com.carlos121.appmozo",
+      "useNextNotificationsApi": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#ffffff",
+          "defaultChannel": "default",
+          "sounds": [],
+          "enableBackgroundRemoteNotifications": true
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "45f606d3-3084-4711-8931-1c8d4b6aa967"
