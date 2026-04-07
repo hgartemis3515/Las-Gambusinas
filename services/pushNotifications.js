@@ -10,8 +10,17 @@ const PUSH_TOKEN_KEY = 'pushToken';
 const CHANNEL_DEFAULT = 'default';
 const CHANNEL_PLATO_LISTO = 'plato-listo';
 
+// Detectar si estamos en Expo Go (SDK 53+ tiene limitaciones con push notifications remotas)
+// appOwnership es 'expo' en Expo Go, 'standalone' o 'legacy' en builds nativas
+const isExpoGo = Constants.appOwnership === 'expo';
+
+if (isExpoGo) {
+  console.log('[push] Ejecutando en Expo Go - push notifications remotas no disponibles (SDK 53+)');
+}
+
 export function configureNotificationBehavior() {
   if (Platform.OS === 'web') return;
+  // En Expo Go, las notificaciones locales aún funcionan, solo las remotas están limitadas
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
@@ -37,11 +46,17 @@ async function ensureAndroidChannels() {
 }
 
 /**
- * Obtiene token Expo Push (requiere dev build / EAS; en Expo Go también funciona con limitaciones).
+ * Obtiene token Expo Push (requiere dev build / EAS; en Expo Go no disponible en SDK 53+).
  * Necesita `extra.eas.projectId` en app.json.
  */
 export async function registerForExpoPushAsync() {
   if (Platform.OS === 'web') return null;
+
+  // SDK 53+: Push notifications remotas no disponibles en Expo Go
+  if (isExpoGo) {
+    console.log('[push] Saltando registro de push token en Expo Go (SDK 53+)');
+    return null;
+  }
 
   await ensureAndroidChannels();
 

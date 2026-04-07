@@ -7,6 +7,7 @@ const SocketContext = createContext(null);
 export const SocketProvider = ({ children }) => {
   const [socketStatus, setSocketStatus] = useState({ connected: false, status: 'desconectado' });
   const [authToken, setAuthToken] = useState(null);
+  const [isLoadingToken, setIsLoadingToken] = useState(true); // Nuevo: estado de carga inicial
   
   // Callbacks globales para eventos WebSocket
   const [eventHandlers, setEventHandlers] = useState({
@@ -29,26 +30,35 @@ export const SocketProvider = ({ children }) => {
 
   // Obtener token de AsyncStorage al iniciar
   useEffect(() => {
+    let mounted = true;
+
     const loadToken = async () => {
       try {
         const token = await AsyncStorage.getItem('authToken');
-        if (token) {
-          console.log('🔐 [MOZOS] Token JWT cargado desde AsyncStorage');
-          setAuthToken(token);
-        } else {
-          console.log('⚠️ [MOZOS] No hay token JWT guardado');
+        if (mounted) {
+          if (token) {
+            console.log('🔐 [MOZOS] Token JWT cargado desde AsyncStorage');
+            setAuthToken(token);
+          } else {
+            console.log('⚠️ [MOZOS] No hay token JWT guardado');
+          }
+          setIsLoadingToken(false);
         }
       } catch (error) {
         console.error('❌ [MOZOS] Error cargando token:', error);
+        if (mounted) setIsLoadingToken(false);
       }
     };
-    
+
     loadToken();
-    
+
     // Escuchar cambios en el token (para cuando se hace login/logout)
     const checkTokenInterval = setInterval(loadToken, 5000);
-    
-    return () => clearInterval(checkTokenInterval);
+
+    return () => {
+      mounted = false;
+      clearInterval(checkTokenInterval);
+    };
   }, []);
 
   const handleMesaActualizada = useCallback((mesa) => {
@@ -117,6 +127,7 @@ export const SocketProvider = ({ children }) => {
   // Hook WebSocket global - se mantiene activo en todas las pantallas
   // Los callbacks usan useRef para evitar recrear el hook y causar desconexiones
   // IMPORTANTE: Se pasa el token JWT para autenticación
+  // OPTIMIZADO: No pasar token hasta que termine la carga inicial para evitar warning
   const socketHookResult = useSocketMozos({
     onMesaActualizada: handleMesaActualizada,
     onComandaActualizada: handleComandaActualizada,
@@ -126,7 +137,7 @@ export const SocketProvider = ({ children }) => {
     onMesasSeparadas: handleMesasSeparadas,
     onMapaActualizado: handleMapaActualizado,
     onCatalogoMesasAreas: handleCatalogoMesasAreas,
-    token: authToken // Token JWT para autenticación
+    token: isLoadingToken ? null : authToken // Solo conectar cuando el token esté cargado
   });
   
   const { connected, connectionStatus, reconnectAttempts, socket, trackRoom, untrackRoom, authError } = socketHookResult;
@@ -161,6 +172,7 @@ export const SocketProvider = ({ children }) => {
   // Función para actualizar el token (llamar desde Login después de autenticar)
   const updateToken = useCallback((newToken) => {
     setAuthToken(newToken);
+    setIsLoadingToken(false); // Token disponible, listo para conectar
   }, []);
 
   return (
@@ -176,6 +188,7 @@ export const SocketProvider = ({ children }) => {
       authError,
       updateToken,
       authToken,
+      isLoadingToken,
       handleMesasJuntadas,
       handleMesasSeparadas,
       handleMapaActualizado

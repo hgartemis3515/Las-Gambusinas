@@ -45,7 +45,9 @@ const useSocketMozos = ({
   useEffect(() => {
     // VALIDACIÓN: Token es obligatorio para conectar
     if (!token) {
-      console.warn('⚠️ [MOZOS] No hay token JWT, no se puede conectar a Socket.io');
+      // No mostrar warning si estamos esperando el token (carga inicial)
+      // Solo log simple, no usar console.warn para evitar LogBox
+      console.log('⏳ [MOZOS] Esperando token JWT para conectar Socket.io...');
       
       // Desconectar socket existente si hay uno
       if (socketRef.current) {
