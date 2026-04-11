@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
+import axios from "../../config/axiosConfig";
 import { useNavigation } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { MotiView, MotiText } from "moti";
@@ -415,7 +415,8 @@ const Login = () => {
       setError({ nombre: true, dni: false });
       return;
     }
-    if (!dni.trim() || dni.trim().length < 8) {
+    const dniDigits = dni.replace(/\D/g, "");
+    if (!dni.trim() || dniDigits.length < 8) {
       setError({ nombre: false, dni: true });
       return;
     }
@@ -455,7 +456,13 @@ const Login = () => {
           username: nombre.trim(),
           password: dni.trim(),
         },
-        { timeout: 5000 }
+        {
+          timeout: 15000,
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+        }
       );
 
       const { token, usuario } = response.data;
@@ -508,7 +515,7 @@ const Login = () => {
           "No se pudo conectar con el servidor. Verifica que:\n\n1. El backend esté corriendo\n2. Tu teléfono y computadora estén en la misma red WiFi\n3. La IP en apiConfig.js sea correcta"
         );
       } else if (error.response?.status === 401) {
-        Alert.alert("Error", "DNI o Nombre incorrectos.");
+        Alert.alert("Error", "Nombre o DNI incorrectos.");
         setError({ nombre: true, dni: true });
       } else {
         Alert.alert(
@@ -731,7 +738,7 @@ const Login = () => {
               <AnimatedInput
                 label="DNI"
                 icon="card-account-details"
-                placeholder="12345678"
+                placeholder="8 dígitos"
                 value={dni}
                 onChangeText={(text) => {
                   setDni(text);

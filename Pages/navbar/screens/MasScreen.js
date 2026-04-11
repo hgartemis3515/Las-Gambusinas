@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -7,18 +7,22 @@ import {
   TouchableOpacity,
   Alert,
   Switch,
+  ActivityIndicator,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Constants from "expo-constants";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { MotiView } from "moti";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "../../../context/ThemeContext";
 import { useSocket } from "../../../context/SocketContext";
 import { themeLight } from "../../../constants/theme";
 import SettingsModal from "../../../Components/SettingsModal";
+import axios from "../../../config/axiosConfig";
+import { apiConfig } from "../../../apiConfig";
 import {
   getPushNotificationsPrefEnabled,
   setPushNotificationsPrefEnabled,
@@ -27,6 +31,35 @@ import {
 } from "../../../services/pushNotifications";
 
 const CONFIG_CACHE_KEY = "@lasgambusinas_config";
+
+/** Etiqueta de rol legible para personal de sala */
+function formatRolLabel(rol) {
+  if (!rol) return "Personal";
+  const map = {
+    mozos: "Mozo / Sala",
+    capitanMozos: "Capitán de mozos",
+    admin: "Administrador",
+    supervisor: "Supervisor",
+    cocinero: "Cocina",
+    cajero: "Caja",
+  };
+  return map[rol] || rol;
+}
+
+/** Texto amigable para el estado del socket (sin jerga técnica) */
+function liveSyncSubtitle(connected, connectionStatus, reconnectAttempts) {
+  if (connected) {
+    return "Las mesas y comandas se actualizan al instante.";
+  }
+  const parts = ["Sin conexión en vivo con el local."];
+  if (connectionStatus) parts.push(connectionStatus);
+  if (reconnectAttempts > 0) {
+    parts.push(`Reintentando (${reconnectAttempts})…`);
+  } else {
+    parts.push("Comprueba WiFi o el servidor.");
+  }
+  return parts.join(" ");
+}
 
 const LOGOUT_STORAGE_KEYS = [
   "user",
@@ -57,6 +90,10 @@ const MasScreen = () => {
   const [vistaInicio, setVistaInicio] = useState("tarjetas");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(true);
+  const [profileSyncing, setProfileSyncing] = useState(false);
+  const [serverOk, setServerOk] = useState(null);
+  const [serverLatencyMs, setServerLatencyMs] = useState(null);
+  const syncInFlight = useRef(false);
 
   const styles = useMemo(() => MasScreenStyles(theme), [theme]);
 
@@ -72,11 +109,82 @@ const MasScreen = () => {
     [navigation]
   );
 
+  const openProfile = useCallback(() => {
+    Haptics.selectionAsync();
+    navigateToStack("Profile");
+  }, [navigateToStack]);
+
   useEffect(() => {
-    loadUserData();
     loadVistaPreference();
     loadPushPref();
   }, []);
+
+  const checkServerReachable = useCallback(async () => {
+    try {
+      if (!apiConfig.isConfigured || !apiConfig.baseURL) {
+        setServerOk(false);
+        setServerLatencyMs(null);
+        return;
+      }
+      const result = await apiConfig.testConnection();
+      setServerOk(!!result.success);
+      setServerLatencyMs(result.latency != null ? result.latency : null);
+    } catch {
+      setServerOk(false);
+      setServerLatencyMs(null);
+    }
+  }, []);
+
+  const syncProfileFromServer = useCallback(async () => {
+    if (syncInFlight.current) return;
+    const [userJson, token] = await Promise.all([
+      AsyncStorage.getItem("user"),
+      AsyncStorage.getItem("authToken"),
+    ]);
+    const local = userJson ? JSON.parse(userJson) : null;
+    const id = local?._id;
+    if (!id || !token || !apiConfig.isConfigured) return;
+
+    syncInFlight.current = true;
+    setProfileSyncing(true);
+    try {
+      const url = apiConfig.getEndpoint(`/mozos/${id}`);
+      const { data } = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 8000,
+      });
+      if (!data || typeof data !== "object") return;
+
+      const prev = local || {};
+      const next = {
+        ...prev,
+        _id: data._id || prev._id,
+        name: data.name != null && String(data.name).trim() ? data.name : prev.name,
+        rol: data.rol != null ? data.rol : prev.rol,
+      };
+      if (Array.isArray(data.permisosEfectivos) && data.permisosEfectivos.length > 0) {
+        next.permisos = data.permisosEfectivos;
+      }
+      if (data.fotoUrl !== undefined && data.fotoUrl !== null) {
+        next.fotoUrl = data.fotoUrl;
+      }
+      await AsyncStorage.setItem("user", JSON.stringify(next));
+      setUserInfo(next);
+    } catch {
+      // Silencioso: ya hay datos locales; el usuario puede abrir perfil para ver errores
+    } finally {
+      setProfileSyncing(false);
+      syncInFlight.current = false;
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadUserData();
+      checkServerReachable();
+      syncProfileFromServer();
+    }, [loadUserData, checkServerReachable, syncProfileFromServer])
+  );
 
   const loadPushPref = async () => {
     try {
@@ -107,14 +215,14 @@ const MasScreen = () => {
     }
   };
 
-  const loadUserData = async () => {
+  const loadUserData = useCallback(async () => {
     try {
       const user = await AsyncStorage.getItem("user");
       if (user) setUserInfo(JSON.parse(user));
     } catch (error) {
       console.error("Error cargando usuario:", error);
     }
-  };
+  }, []);
 
   const onTogglePush = async (value) => {
     setPushEnabled(value);
@@ -146,16 +254,14 @@ const MasScreen = () => {
     );
   };
 
-  const menuItems = [
+  const menuItems = useMemo(
+    () => [
     {
       id: 1,
       title: "Mi Perfil",
       icon: "account-circle",
       color: theme.colors.primary,
-      onPress: () => {
-        Haptics.selectionAsync();
-        navigateToStack("Profile");
-      },
+      onPress: openProfile,
     },
     {
       id: 3,
@@ -177,22 +283,59 @@ const MasScreen = () => {
         navigateToStack("About");
       },
     },
-  ];
+    ],
+    [navigateToStack, openProfile, theme.colors.accent, theme.colors.primary, theme.colors.warning]
+  );
 
   const expoPushLimited = isExpoGoPushLimited();
+
+  const liveSyncDetail = liveSyncSubtitle(connected, connectionStatus, reconnectAttempts);
 
   return (
     <SafeAreaView style={styles.container} edges={[]}>
       <SettingsModal visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <ScrollView style={styles.scrollView}>
         <View style={styles.header}>
-          <View style={styles.profileContainer}>
-            <View style={styles.avatar}>
-              <MaterialCommunityIcons name="account" size={48} color={theme.colors.primary} />
+          <TouchableOpacity
+            style={styles.profileContainer}
+            onPress={openProfile}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Mi perfil"
+            accessibilityHint="Abre tu ficha para ver y editar datos"
+          >
+            <View style={styles.avatarRow}>
+              <View style={styles.avatar}>
+                {userInfo?.fotoUrl && String(userInfo.fotoUrl).trim() ? (
+                  <Image
+                    source={{ uri: String(userInfo.fotoUrl).trim() }}
+                    style={styles.avatarImage}
+                    accessibilityIgnoresInvertColors
+                  />
+                ) : (
+                  <MaterialCommunityIcons name="account" size={48} color={theme.colors.primary} />
+                )}
+              </View>
+              {profileSyncing ? (
+                <View style={styles.headerSyncBadge} accessibilityLabel="Actualizando datos del perfil">
+                  <ActivityIndicator size="small" color={theme.colors.text.white} />
+                </View>
+              ) : null}
             </View>
-            <Text style={styles.userName}>{userInfo?.name || "Usuario"}</Text>
-            <Text style={styles.userRole}>{userInfo?.rol || "Mozo"}</Text>
-          </View>
+            <View style={styles.userNameRow}>
+              <Text style={styles.userName} numberOfLines={1}>
+                {userInfo?.name || "Usuario"}
+              </Text>
+              <MaterialCommunityIcons
+                name="chevron-right"
+                size={22}
+                color={theme.colors.text.white}
+                style={styles.userNameChevron}
+              />
+            </View>
+            <Text style={styles.userRole}>{formatRolLabel(userInfo?.rol)}</Text>
+            <Text style={styles.profileHint}>Toca para ver o editar tu perfil</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.section}>
@@ -237,6 +380,8 @@ const MasScreen = () => {
                 onValueChange={toggleTheme}
                 trackColor={{ false: "#767577", true: theme.colors.primary }}
                 thumbColor={isDarkMode ? theme.colors.text.white : "#f4f3f4"}
+                accessibilityLabel="Modo oscuro"
+                accessibilityHint="Activa o desactiva el tema oscuro de la aplicación"
               />
             </View>
           </TouchableOpacity>
@@ -270,6 +415,8 @@ const MasScreen = () => {
                   onValueChange={(v) => setVistaInicioMode(v)}
                   trackColor={{ false: "#767577", true: theme.colors.primary }}
                   thumbColor={vistaInicio === "mapa" ? theme.colors.text.white : "#f4f3f4"}
+                  accessibilityLabel="Vista de inicio: mapa o tarjetas"
+                  accessibilityHint="Activa para mostrar el mapa de mesas al abrir la app"
                 />
               </View>
             </View>
@@ -286,7 +433,33 @@ const MasScreen = () => {
             <View style={[styles.menuIconContainer, { backgroundColor: theme.colors.accent + "20" }]}>
               <MaterialCommunityIcons name="server-network" size={24} color={theme.colors.accent} />
             </View>
-            <Text style={styles.menuItemText}>Configuración del servidor</Text>
+            <View style={styles.serverRowText}>
+              <Text style={styles.serverMenuTitle}>Configuración del servidor</Text>
+              <Text style={styles.serverStatusLine} numberOfLines={1}>
+                {serverOk === null
+                  ? "Comprobando…"
+                  : serverOk
+                    ? serverLatencyMs != null
+                      ? `En línea · ${serverLatencyMs} ms`
+                      : "En línea"
+                    : "Sin respuesta del servidor"}
+              </Text>
+            </View>
+            <View style={styles.serverDotWrap} accessibilityLabel={serverOk ? "Servidor en línea" : "Servidor sin respuesta"}>
+              <View
+                style={[
+                  styles.serverDot,
+                  {
+                    backgroundColor:
+                      serverOk === null
+                        ? theme.colors.text.light
+                        : serverOk
+                          ? theme.colors.secondary
+                          : theme.colors.warning,
+                  },
+                ]}
+              />
+            </View>
             <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.light} />
           </TouchableOpacity>
 
@@ -306,6 +479,8 @@ const MasScreen = () => {
                 onValueChange={onTogglePush}
                 trackColor={{ false: "#767577", true: theme.colors.primary }}
                 thumbColor={pushEnabled ? theme.colors.text.white : "#f4f3f4"}
+                accessibilityLabel="Notificaciones push"
+                accessibilityHint="Activa o desactiva avisos en este dispositivo"
               />
             </View>
           </View>
@@ -322,17 +497,13 @@ const MasScreen = () => {
           </View>
           <View style={styles.infoCard}>
             <MaterialCommunityIcons
-              name={connected ? "wifi" : "wifi-off"}
+              name={connected ? "sync" : "cloud-off-outline"}
               size={24}
               color={connected ? theme.colors.secondary : theme.colors.warning}
             />
             <View style={styles.infoContent}>
-              <Text style={styles.infoTitle}>WebSocket /mozos</Text>
-              <Text style={styles.infoSubtitle}>
-                {connected ? "Conectado" : "Desconectado"}
-                {connectionStatus ? ` · ${connectionStatus}` : ""}
-                {reconnectAttempts > 0 ? ` · reintentos ${reconnectAttempts}` : ""}
-              </Text>
+              <Text style={styles.infoTitle}>Sincronización en vivo</Text>
+              <Text style={styles.infoSubtitle}>{liveSyncDetail}</Text>
             </View>
           </View>
         </View>
@@ -375,6 +546,10 @@ const MasScreenStyles = (theme) =>
     profileContainer: {
       alignItems: "center",
     },
+    avatarRow: {
+      position: "relative",
+      marginBottom: theme.spacing.md,
+    },
     avatar: {
       width: 80,
       height: 80,
@@ -382,19 +557,77 @@ const MasScreenStyles = (theme) =>
       backgroundColor: theme.colors.surface,
       alignItems: "center",
       justifyContent: "center",
-      marginBottom: theme.spacing.md,
+      overflow: "hidden",
       ...theme.shadows.medium,
+    },
+    avatarImage: {
+      width: "100%",
+      height: "100%",
+    },
+    headerSyncBadge: {
+      position: "absolute",
+      top: -4,
+      right: -4,
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: "rgba(0,0,0,0.35)",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    userNameRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      maxWidth: "100%",
+      paddingHorizontal: theme.spacing.sm,
+      marginBottom: theme.spacing.xs,
     },
     userName: {
       fontSize: 24,
       fontWeight: "700",
       color: theme.colors.text.white,
-      marginBottom: theme.spacing.xs,
+      flexShrink: 1,
+      textAlign: "center",
+    },
+    userNameChevron: {
+      marginLeft: 4,
+      opacity: 0.95,
     },
     userRole: {
       fontSize: 16,
       color: theme.colors.text.white,
       opacity: 0.9,
+    },
+    profileHint: {
+      fontSize: 12,
+      color: theme.colors.text.white,
+      opacity: 0.75,
+      marginTop: theme.spacing.sm,
+    },
+    serverRowText: {
+      flex: 1,
+      marginRight: theme.spacing.sm,
+      minWidth: 0,
+    },
+    serverMenuTitle: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: theme.colors.text.primary,
+    },
+    serverStatusLine: {
+      fontSize: 12,
+      color: theme.colors.text.secondary,
+      marginTop: 2,
+    },
+    serverDotWrap: {
+      justifyContent: "center",
+      marginRight: theme.spacing.xs,
+    },
+    serverDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
     },
     section: {
       padding: theme.spacing.lg,

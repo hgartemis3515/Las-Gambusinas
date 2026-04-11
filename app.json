@@ -38,6 +38,13 @@
           "sounds": [],
           "enableBackgroundRemoteNotifications": true
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permite elegir una foto para tu perfil de mozo.",
+          "cameraPermission": "Permite tomar una foto para tu perfil de mozo."
+        }
       ]
     ],
     "extra": {

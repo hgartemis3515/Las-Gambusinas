@@ -87,7 +87,16 @@ axios.interceptors.response.use(
       const url = error.config?.url;
       // Solo mostrar errores reales (no 200/201)
       if (status !== 200 && status !== 201) {
-        console.error(`❌ [HTTP] ${method} ${url} → ${status} ${error.response.statusText || ''}`);
+        const urlStr = url || '';
+        const loginMozo401 =
+          status === 401 &&
+          method === "POST" &&
+          /\/admin\/mozos\/auth/i.test(urlStr);
+        if (loginMozo401 && __DEV__) {
+          console.warn(`[HTTP] Login mozos no autorizado (401): ${urlStr}`);
+        } else {
+          console.error(`❌ [HTTP] ${method} ${url} → ${status} ${error.response.statusText || ""}`);
+        }
       }
     }
     // Error sin información específica
