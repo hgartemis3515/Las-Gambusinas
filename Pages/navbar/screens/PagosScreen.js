@@ -108,6 +108,22 @@ async function fetchComandasBackendParaMesa(mesaId, mesaNummesa) {
   return filtrarComandasActivas(comandasBackend);
 }
 
+/** Snapshot para Inicio tras pago: incluye etiqueta de mesa y grupo (evita tarjeta verde sin nombre). */
+function buildMesaPagadaNavPayload(mesaObj) {
+  if (!mesaObj?._id) return undefined;
+  return {
+    _id: mesaObj._id,
+    nummesa: mesaObj.nummesa,
+    nombre: mesaObj.nombre,
+    nombreCombinado: mesaObj.nombreCombinado,
+    area: mesaObj.area,
+    mesasUnidas: mesaObj.mesasUnidas,
+    esMesaPrincipal: mesaObj.esMesaPrincipal,
+    mesaPrincipalId: mesaObj.mesaPrincipalId,
+    estado: "pagado",
+  };
+}
+
 // Componente de Overlay de Carga Animado
 const AnimatedOverlay = ({ mensaje }) => {
   const themeContext = useTheme();
@@ -1440,6 +1456,7 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
           voucherId: boucherCreado.voucherId
         });
       } catch (postError) {
+        let boucherRecoveredInCatch = false;
         // 🔥 MEJORADO: Manejo inteligente de errores con retry automático
         if (postError.code === 'ECONNABORTED' || postError.message?.includes('timeout')) {
           throw new Error("Tiempo de espera agotado. Verifica tu conexión e intenta nuevamente.");
@@ -1505,8 +1522,7 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
                     boucherNumber: boucherCreado.boucherNumber
                   });
                   
-                  // Continuar con el flujo normal
-                  return; // Salir del catch para continuar con el flujo de éxito
+                  boucherRecoveredInCatch = true;
                 }
               } catch (retryError) {
                 console.error("❌ [PAGO] Error en retry con comandas frescas:", retryError);
@@ -1514,7 +1530,7 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
               }
             }
             
-            if (comandasValidasDelError.length > 0) {
+            if (!boucherRecoveredInCatch && comandasValidasDelError.length > 0) {
               // Hay comandas válidas, retry automático
               console.log(`🔄 [PAGO] Retry automático con ${comandasValidasDelError.length} comanda(s) válida(s)`);
               
@@ -1577,7 +1593,7 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
                 // Si el retry también falla, mostrar error
                 throw new Error(`No se pudo procesar el pago: ${retryError.message || errorMsg}`);
               }
-            } else {
+            } else if (!boucherRecoveredInCatch) {
               // No hay comandas válidas - construir mensaje detallado
               let mensajeError = "No hay comandas válidas para pagar.";
               
@@ -1602,20 +1618,23 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
             }
           }
           
-          if (status === 404) {
-            throw new Error("Mesa o comandas no encontradas. Por favor, recarga la pantalla.");
-          } else if (status === 400) {
-            // Mejorar mensaje de error 400 con detalles del backend
-            const backendError = errorData.error || errorData.message || errorMsg;
-            const detalles = errorData.details ? `\n\nDetalles: ${JSON.stringify(errorData.details)}` : '';
-            throw new Error(`Datos inválidos: ${backendError}${detalles}`);
-          } else if (status === 500) {
-            throw new Error("Error en el servidor. Por favor, intenta nuevamente o contacta al administrador.");
-          } else {
-            throw new Error(`Error ${status}: ${errorMsg}`);
+          if (!(boucherCreado && boucherCreado._id)) {
+            if (status === 404) {
+              throw new Error("Mesa o comandas no encontradas. Por favor, recarga la pantalla.");
+            } else if (status === 400) {
+              const backendError = errorData.error || errorData.message || errorMsg;
+              const detalles = errorData.details ? `\n\nDetalles: ${JSON.stringify(errorData.details)}` : '';
+              throw new Error(`Datos inválidos: ${backendError}${detalles}`);
+            } else if (status === 500) {
+              throw new Error("Error en el servidor. Por favor, intenta nuevamente o contacta al administrador.");
+            } else {
+              throw new Error(`Error ${status}: ${errorMsg}`);
+            }
           }
         }
-        throw postError; // Re-lanzar si no es un error conocido
+        if (!(boucherCreado && boucherCreado._id)) {
+          throw postError;
+        }
       }
       
       // 🔥 Si llegamos aquí, el boucher se creó exitosamente (ya sea en el primer intento o en el retry)
@@ -1696,7 +1715,7 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
           }
         };
         
-        const MAX_REINTENTOS = 3;
+        const MAX_REINTENTOS = 5;
         const DELAY_REINTENTO = 1000; // 1 segundo entre reintentos
         
         for (let intento = 1; intento <= MAX_REINTENTOS; intento++) {
@@ -1725,8 +1744,8 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
           setMensajeCarga("Verificando estado de mesa...");
           console.log(`🔍 [MESA] Verificando estado de mesa ${mesaFinal.nummesa}...`);
           
-          // Pequeña pausa para dar tiempo al backend a procesar
-          await new Promise(resolve => setTimeout(resolve, 500));
+          // Pausa para dar tiempo al backend (latencia / réplicas)
+          await new Promise(resolve => setTimeout(resolve, 800));
           
           const estadoVerificado = await verificarEstadoMesa();
           
@@ -1756,7 +1775,7 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
 
       // ✅ Guardar boucher y mesa para InicioScreen (mensaje post-pago, imprimir, liberar)
       const mesaIdStr = mesaFinal._id?.toString?.() || mesaFinal._id;
-      const mesaPagadaPayload = { _id: mesaFinal._id, nummesa: mesaFinal.nummesa };
+      const mesaPagadaPayload = buildMesaPagadaNavPayload(mesaFinal);
       try {
         await AsyncStorage.setItem("ultimoBoucher", JSON.stringify(boucherCreado));
         await AsyncStorage.setItem("mesaPagada", JSON.stringify(mesaPagadaPayload));
@@ -1795,7 +1814,7 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
           refresh: true,
           mesaId: mesaIdStr,
           mostrarMensajePago: true,
-          mesaPagada: mesaPagadaPayload,
+          mesaPagada: mesaPagadaPayload || buildMesaPagadaNavPayload(mesaFinal),
           boucher: boucherCreado,
         });
       };
@@ -2422,9 +2441,7 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
             refresh: true,
             mesaId: mesa?._id?.toString?.() || mesa?._id,
             mostrarMensajePago: true,
-            mesaPagada: mesa
-              ? { _id: mesa._id, nummesa: mesa.nummesa }
-              : undefined,
+            mesaPagada: buildMesaPagadaNavPayload(mesa),
             boucher: boucherData || boucherFromParams,
           });
         }}
@@ -2452,9 +2469,7 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
             refresh: true,
             mesaId: mesa?._id?.toString?.() || mesa?._id,
             mostrarMensajePago: true,
-            mesaPagada: mesa
-              ? { _id: mesa._id, nummesa: mesa.nummesa }
-              : undefined,
+            mesaPagada: buildMesaPagadaNavPayload(mesa),
             boucher: boucherData || boucherFromParams,
           });
         }}

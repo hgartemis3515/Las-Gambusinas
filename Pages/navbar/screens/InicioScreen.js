@@ -48,6 +48,16 @@ import { filtrarComandasActivas } from '../../../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
 import MesaMapView from '../../../Components/MesaMapView';
 
+/** Evita que un evento WebSocket con campos undefined borre datos ya mostrados en la tarjeta. */
+function mergeMesaServidorPatch(mesaAnterior, mesaServidor) {
+  if (!mesaAnterior) return mesaServidor || mesaAnterior;
+  if (!mesaServidor) return mesaAnterior;
+  const patch = Object.fromEntries(
+    Object.entries(mesaServidor).filter(([, v]) => v !== undefined)
+  );
+  return { ...mesaAnterior, ...patch };
+}
+
 // Componente de Loading con Verificaciones Paso a Paso
 const LoadingVerificacionEliminar = ({ visible, mensaje, pasos = [] }) => {
   const themeContext = useTheme();
@@ -381,9 +391,9 @@ const MesaAnimada = React.memo(({
       );
       translateX.value = 0; // Sin movimiento horizontal
     } else if (estadoLower === "pagado") {
-      // Fade out sutil para mesas pagadas
-      pulseScale.value = withTiming(0.95, { duration: 500 });
-      opacity.value = withTiming(0.7, { duration: 500 });
+      // Pagado: mantener legible el número / nombre del mozo (evitar “tarjeta vacía”)
+      pulseScale.value = withTiming(1, { duration: 300 });
+      opacity.value = withTiming(1, { duration: 300 });
     } else {
       // Para otros estados, sin animación
       pulseScale.value = 1;
@@ -503,7 +513,9 @@ const MesaAnimada = React.memo(({
         )}
         
         <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25 }]}>
-          {mesa.nombreCombinado || `M${mesa.nummesa}`}
+          {(mesa.nombreCombinado && String(mesa.nombreCombinado).trim()) ||
+            (mesa.nombre && String(mesa.nombre).trim()) ||
+            (mesa.nummesa != null && mesa.nummesa !== "" ? `M${mesa.nummesa}` : "Mesa")}
         </Text>
         {zoomLevel >= 0 && mozoLabel ? (
           <Text
@@ -558,6 +570,8 @@ const InicioScreen = () => {
   const [mensajeCargaEliminacionTodas, setMensajeCargaEliminacionTodas] = useState("");
   const [verificandoComandas, setVerificandoComandas] = useState(false);
   const [mensajeCargaVerificacion, setMensajeCargaVerificacion] = useState("");
+  const [sincronizandoPostPago, setSincronizandoPostPago] = useState(false);
+  const [mensajeSincronizacionPostPago, setMensajeSincronizacionPostPago] = useState("");
   const [eliminandoPlatos, setEliminandoPlatos] = useState(false);
   const [mensajeCargaEliminacionPlatos, setMensajeCargaEliminacionPlatos] = useState("");
   const [mesaZoomLevel, setMesaZoomLevel] = useState(2); // 0-4: extraSmall, small, medium, large, extraLarge
@@ -1064,8 +1078,8 @@ const InicioScreen = () => {
         const estadoAnterior = mesaAnterior.estado;
         const nuevoEstado = mesa.estado;
         
-        // CRÍTICO: Usar el estado del servidor directamente (es la fuente de verdad)
-        nuevas[index] = { ...mesaAnterior, ...mesa, estado: nuevoEstado };
+        // CRÍTICO: estado del servidor + merge sin pisar con undefined (nombre / nummesa / grupo)
+        nuevas[index] = { ...mergeMesaServidorPatch(mesaAnterior, mesa), estado: nuevoEstado };
         
         // Log del cambio para debugging de animaciones
         if (estadoAnterior !== nuevoEstado) {
@@ -1092,7 +1106,10 @@ const InicioScreen = () => {
           return mId === mesaId || m.nummesa === mesa.nummesa;
         });
         if (index !== -1) {
-          mesasArray[index] = { ...mesasArray[index], ...mesa, estado: mesa.estado };
+          mesasArray[index] = {
+            ...mergeMesaServidorPatch(mesasArray[index], mesa),
+            estado: mesa.estado,
+          };
         } else {
           mesasArray.push(mesa);
         }
@@ -1263,7 +1280,7 @@ const InicioScreen = () => {
     }
   }, [socketConnected, mesas, joinMesa]);
 
-  // Flujo post-pago: useEffect aislado para evitar loop (no usar useFocusEffect + route.params aquí)
+  // Flujo post-pago: overlay obligatorio + actualización optimista + reintentos hasta ver "pagado" en API
   const mostrarMensajePago = route.params?.mostrarMensajePago === true;
   const postPagoMesaId = route.params?.mesaId;
   useEffect(() => {
@@ -1277,19 +1294,62 @@ const InicioScreen = () => {
     const params = route.params || {};
     const mesaPagada = params.mesaPagada || {};
     const boucherFromParams = params.boucher;
-    const nummesa = mesaPagada.nummesa ?? "?";
+    const etiquetaMesa =
+      (mesaPagada.nombreCombinado && String(mesaPagada.nombreCombinado).trim()) ||
+      (mesaPagada.nombre && String(mesaPagada.nombre).trim()) ||
+      (mesaPagada.nummesa != null && mesaPagada.nummesa !== ""
+        ? `Mesa ${mesaPagada.nummesa}`
+        : "La mesa");
 
     let cancelled = false;
     joinMesa(postPagoMesaId);
+    const mesaIdNorm = String(postPagoMesaId);
+
+    setSincronizandoPostPago(true);
+    setMensajeSincronizacionPostPago("Actualizando mesas después del pago…");
+
+    if (mesaPagada._id) {
+      setMesas((prev) => {
+        let hit = false;
+        const next = prev.map((m) => {
+          if (String(m._id) !== mesaIdNorm) return m;
+          hit = true;
+          return mergeMesaServidorPatch(m, { ...mesaPagada, estado: "pagado" });
+        });
+        return hit ? ordenarMesasPorNumero(next) : prev;
+      });
+    }
+
     (async () => {
+      let confirmadaEnServidor = false;
       try {
-        await Promise.all([obtenerMesas(), obtenerComandasHoy()]);
-        if (cancelled) return;
-        await new Promise((r) => setTimeout(r, 450));
+        for (let i = 0; i < 8; i++) {
+          if (cancelled) break;
+          setMensajeSincronizacionPostPago(
+            i === 0
+              ? "Sincronizando con el servidor…"
+              : `Confirmando mesa pagada (${i + 1}/8)…`
+          );
+          const listaMesas = await obtenerMesas();
+          await obtenerComandasHoy();
+          const m = listaMesas?.find((mm) => String(mm._id) === mesaIdNorm);
+          if (m?.estado?.toLowerCase() === "pagado") {
+            confirmadaEnServidor = true;
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 600));
+        }
       } catch (e) {
         if (!cancelled) console.warn("⚠️ [Inicio] Error refresh post-pago:", e?.message);
       }
+
+      if (!cancelled) {
+        setSincronizandoPostPago(false);
+        setMensajeSincronizacionPostPago("");
+      }
+
       if (cancelled) return;
+
       navigation.setParams({
         mostrarMensajePago: false,
         mesaId: undefined,
@@ -1297,38 +1357,44 @@ const InicioScreen = () => {
         boucher: undefined,
         refresh: undefined
       });
-      Alert.alert(
-        "✅ Pago confirmado",
-        `Mesa ${nummesa} pagada (verde). Opciones:`,
-        [
-          {
-            text: "📄 Imprimir Boucher",
-            onPress: () => {
-              if (boucherFromParams) {
-                navigation.navigate("Pagos", { boucher: boucherFromParams });
-              } else {
-                AsyncStorage.getItem("ultimoBoucher").then((s) => {
-                  const b = s ? JSON.parse(s) : null;
-                  if (b) navigation.navigate("Pagos", { boucher: b });
-                  else Alert.alert("Error", "No hay boucher disponible para imprimir.");
-                });
-              }
+
+      const subtitulo = confirmadaEnServidor
+        ? `${etiquetaMesa} está en verde (Pagado) en el servidor.`
+        : `${etiquetaMesa} debería mostrarse en verde; si no, espera unos segundos o vuelve a abrir Inicio.`;
+
+      Alert.alert("✅ Pago confirmado", `${subtitulo}\n\n¿Qué deseas hacer?`, [
+        {
+          text: "📄 Imprimir Boucher",
+          onPress: () => {
+            if (boucherFromParams) {
+              navigation.navigate("Pagos", { boucher: boucherFromParams });
+            } else {
+              AsyncStorage.getItem("ultimoBoucher").then((s) => {
+                const b = s ? JSON.parse(s) : null;
+                if (b) navigation.navigate("Pagos", { boucher: b });
+                else Alert.alert("Error", "No hay boucher disponible para imprimir.");
+              });
             }
-          },
-          {
-            text: "🔄 Liberar Mesa",
-            onPress: () => {
-              const mesaMin = { _id: mesaPagada._id, nummesa: mesaPagada.nummesa };
-              if (mesaMin._id && handleLiberarMesaRef.current) handleLiberarMesaRef.current(mesaMin);
-              else if (!mesaMin._id) Alert.alert("Error", "No se pudo obtener la mesa para liberar.");
-            }
-          },
-          { text: "Continuar", style: "cancel" }
-        ]
-      );
+          }
+        },
+        {
+          text: "🔄 Liberar Mesa",
+          onPress: () => {
+            const mesaMin = { _id: mesaPagada._id, nummesa: mesaPagada.nummesa };
+            if (mesaMin._id && handleLiberarMesaRef.current) handleLiberarMesaRef.current(mesaMin);
+            else if (!mesaMin._id) Alert.alert("Error", "No se pudo obtener la mesa para liberar.");
+          }
+        },
+        { text: "Continuar", style: "cancel" }
+      ]);
     })();
-    return () => { cancelled = true; };
-  }, [mostrarMensajePago, postPagoMesaId, joinMesa, obtenerMesas, obtenerComandasHoy, navigation]);
+
+    return () => {
+      cancelled = true;
+      setSincronizandoPostPago(false);
+      setMensajeSincronizacionPostPago("");
+    };
+  }, [mostrarMensajePago, postPagoMesaId, joinMesa, obtenerMesas, obtenerComandasHoy, navigation, ordenarMesasPorNumero]);
 
   // Suscribirse a eventos WebSocket y cargar datos cuando la pantalla está enfocada (sin deps que cambien cada render)
   useFocusEffect(
@@ -1474,8 +1540,10 @@ const InicioScreen = () => {
       // Aplicar ordenamiento numérico después de recibir datos
       const mesasOrdenadas = ordenarMesasPorNumero(response.data);
       setMesas(mesasOrdenadas);
+      return mesasOrdenadas;
     } catch (error) {
       console.error("Error al obtener las mesas:", error.message);
+      return null;
     }
   }, [ordenarMesasPorNumero]);
 
@@ -1486,11 +1554,14 @@ const InicioScreen = () => {
         ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
         : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
       const response = await axios.get(comandasURL, { timeout: 5000 });
-      setComandas(response.data);
+      const data = response.data;
+      setComandas(data);
       // Corrección automática de status: comandas con todos los platos entregados → status recoger (workaround backend).
-      verificarComandasEnLote(response.data || [], axios).catch(() => {});
+      verificarComandasEnLote(data || [], axios).catch(() => {});
+      return data;
     } catch (error) {
       console.error("Error al obtener las comandas de hoy:", error.message);
+      return null;
     }
   }, []);
 
@@ -1653,6 +1724,27 @@ const InicioScreen = () => {
     }
     prevSocketConnectedRef.current = socketConnected;
   }, [socketConnected, obtenerMesas, obtenerComandasHoy]);
+
+  /** Comandas de la mesa para mostrar mozo en "Pagado" (incluye cerradas; excluye eliminadas). */
+  const getComandasHistorialMesaPorNumero = (mesaNum) => {
+    return comandas.filter(
+      (c) =>
+        c.mesas?.nummesa != null &&
+        mesaNum != null &&
+        String(c.mesas.nummesa) === String(mesaNum) &&
+        c.IsActive !== false &&
+        c.eliminada !== true
+    );
+  };
+
+  const getComandasHistorialMesaPorMesaId = (mesa) => {
+    if (!mesa?._id) return [];
+    return comandas.filter((c) => {
+      if (c.IsActive === false || c.eliminada === true) return false;
+      const mid = c.mesas?._id ?? c.mesas;
+      return mid != null && String(mid) === String(mesa._id);
+    });
+  };
 
   // Obtener comandas de la mesa: solo activas (sin boucher, no pagadas, no eliminadas)
   // Mesa liberada = solo servicio actual; misma lógica que ComandaDetalleScreen
@@ -1841,6 +1933,22 @@ const InicioScreen = () => {
     // Si la mesa está libre, no mostrar mozo
     if (mesa.estado?.toLowerCase() === "libre") {
       return "N/A";
+    }
+
+    const st = mesa.estado?.toLowerCase();
+    if (st === "pagado" || st === "pagando") {
+      let pool = getComandasHistorialMesaPorNumero(mesa.nummesa);
+      if (pool.length === 0) pool = getComandasHistorialMesaPorMesaId(mesa);
+      if (pool.length > 0) {
+        const ordenadas = [...pool].sort((a, b) => {
+          if (a.createdAt && b.createdAt) {
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          }
+          return (b.comandaNumber || 0) - (a.comandaNumber || 0);
+        });
+        const nm = nombreMozoDesdeComanda(ordenadas[0]);
+        if (nm) return nm;
+      }
     }
     
     // Si la mesa está reservada, buscar el mozo en la reserva
@@ -6426,6 +6534,10 @@ const InicioScreen = () => {
       {/* Overlay de Carga para Verificación de Comandas antes de Pagar */}
       {verificandoComandas && (
         <AnimatedOverlay mensaje={mensajeCargaVerificacion} />
+      )}
+
+      {sincronizandoPostPago && (
+        <AnimatedOverlay mensaje={mensajeSincronizacionPostPago || "Sincronizando…"} />
       )}
 
       {/* Overlay de Carga para Eliminación de Platos de Comanda */}
