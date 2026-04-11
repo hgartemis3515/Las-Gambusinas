@@ -1482,6 +1482,38 @@ const InicioScreen = () => {
     }
   }, []);
 
+  // 🔥 NUEVO: Obtener comandas activas de una mesa específica (para casos de desincronización)
+  const obtenerComandasMesa = useCallback(async (mesaId) => {
+    try {
+      const comandasURL = apiConfig.isConfigured 
+        ? `${apiConfig.getEndpoint('/comanda')}/mesa/${mesaId}/activas`
+        : `${COMANDASEARCH_API_GET}/mesa/${mesaId}/activas`;
+      
+      console.log(`🔄 [DESYNC] Obteniendo comandas activas de mesa ${mesaId}...`);
+      const response = await axios.get(comandasURL, { timeout: 5000 });
+      
+      if (response.data?.success && response.data.comandas?.length > 0) {
+        console.log(`✅ [DESYNC] Encontradas ${response.data.comandas.length} comandas para mesa ${mesaId}`);
+        // Agregar las comandas al estado local si no existen
+        setComandas(prev => {
+          const nuevasComandas = [...prev];
+          response.data.comandas.forEach(comanda => {
+            const existe = nuevasComandas.find(c => c._id === comanda._id);
+            if (!existe) {
+              nuevasComandas.unshift(comanda);
+            }
+          });
+          return nuevasComandas;
+        });
+        return response.data.comandas;
+      }
+      return [];
+    } catch (error) {
+      console.error(`❌ [DESYNC] Error obteniendo comandas de mesa ${mesaId}:`, error.message);
+      return [];
+    }
+  }, []);
+
   // Cargar reservas activas para mostrar mozo en mesas reservadas
   const obtenerReservasActivas = useCallback(async () => {
     try {
@@ -1597,6 +1629,9 @@ const InicioScreen = () => {
   }, [socketConnected, obtenerMesas, obtenerComandasHoy]);
 
   // Re-fetch al reconectar: cuando socket pasa de desconectado a conectado
+  // Ref para evitar log spam de mesas desincronizadas
+  const mesasDesyncLoggedRef = useRef(new Set());
+  
   const prevSocketConnectedRef = useRef(socketConnected);
   useEffect(() => {
     if (socketConnected && !prevSocketConnectedRef.current) {
@@ -1644,7 +1679,11 @@ const InicioScreen = () => {
       if (mesa.estado) {
         const estadoBackend = mesa.estado.toLowerCase();
         if (estadoBackend === "pedido" || estadoBackend === "preparado") {
-          console.log(`⚠️ [DESYNC] Mesa ${mesa.nummesa} sin comandas locales pero backend dice "${estadoBackend}" - Usando estado del backend`);
+          // Log solo una vez por mesa (usando ref para tracking)
+          if (!mesasDesyncLoggedRef.current.has(mesa.nummesa)) {
+            console.log(`⚠️ [DESYNC] Mesa ${mesa.nummesa} sin comandas locales pero backend dice "${estadoBackend}"`);
+            mesasDesyncLoggedRef.current.add(mesa.nummesa);
+          }
           return estadoBackend.charAt(0).toUpperCase() + estadoBackend.slice(1);
         }
       }
@@ -1782,6 +1821,13 @@ const InicioScreen = () => {
       return comandaMasReciente.mozos?.name || "N/A";
     }
     
+    // 🔥 FIX: Si la mesa tiene estado "pedido" o "preparado" pero no hay comandas locales
+    // Indicar que hay desincronización - el usuario debe tocar la mesa para sincronizar
+    const estadoLower = mesa.estado?.toLowerCase();
+    if (estadoLower === "pedido" || estadoLower === "preparado") {
+      return "🔄 Sync...";
+    }
+    
     return "N/A";
   };
 
@@ -1850,11 +1896,7 @@ const InicioScreen = () => {
                   navigation.navigate('ComandaDetalle', {
                     mesa: mesa,
                     comandas: [],
-                    reserva: reserva,
-                    onRefresh: () => {
-                      obtenerMesas();
-                      obtenerComandasHoy();
-                    }
+                    reserva: reserva
                   });
                 }
               }
@@ -1899,15 +1941,43 @@ const InicioScreen = () => {
         }
 
         // Navegar al nuevo screen de detalle de comanda
+        // Nota: useFocusEffect ya refresca datos al volver a esta pantalla
         navigation.navigate('ComandaDetalle', {
           mesa: mesa,
-          comandas: comandasActivas.length > 0 ? comandasActivas : [comandaActiva],
-          onRefresh: () => {
-            // Callback para refrescar datos cuando se vuelva
-            obtenerMesas();
-            obtenerComandasHoy();
-          }
+          comandas: comandasActivas.length > 0 ? comandasActivas : [comandaActiva]
         });
+      } else {
+        // 🔥 FIX: No hay comandas locales pero la mesa está en estado "pedido" - buscar en backend
+        console.log(`⚠️ [DESYNC] Mesa ${mesa.nummesa} en estado "pedido" sin comandas locales - Buscando en backend...`);
+        
+        const comandasBackend = await obtenerComandasMesa(mesa._id);
+        
+        if (comandasBackend && comandasBackend.length > 0) {
+          // Verificar permisos con las comandas obtenidas
+          const mozoComandaId = comandasBackend[0].mozos?._id || comandasBackend[0].mozos;
+          const mozoActualId = userInfo?._id;
+          
+          if (mozoComandaId && mozoActualId && mozoComandaId.toString() !== mozoActualId.toString()) {
+            Alert.alert(
+              "Acceso Denegado",
+              "Solo el mozo que creó esta comanda puede editarla.",
+              [{ text: "OK" }]
+            );
+            return;
+          }
+          
+          // Navegar con las comandas obtenidas
+          navigation.navigate('ComandaDetalle', {
+            mesa: mesa,
+            comandas: comandasBackend
+          });
+        } else {
+          Alert.alert(
+            "Sin Comandas",
+            `La mesa ${mesa.nummesa} está marcada como "Pedido" pero no tiene comandas activas. Contacta al administrador para corregir el estado de la mesa.`,
+            [{ text: "OK" }]
+          );
+        }
       }
     } else if (estado === "Preparado" || estado?.toLowerCase() === "preparado") {
       // Obtener TODAS las comandas activas de la mesa (no solo las preparadas)
@@ -1936,8 +2006,38 @@ const InicioScreen = () => {
       
       // Obtener el mozo de la primera comanda (más reciente) para validar
       const primeraComanda = comandasOrdenadas[0];
+      
+      // 🔥 FIX: Si no hay comandas locales, buscar en backend
       if (!primeraComanda) {
-        Alert.alert("Error", "No se encontraron comandas para esta mesa");
+        console.log(`⚠️ [DESYNC] Mesa ${mesa.nummesa} en estado "preparado" sin comandas locales - Buscando en backend...`);
+        
+        const comandasBackend = await obtenerComandasMesa(mesa._id);
+        
+        if (comandasBackend && comandasBackend.length > 0) {
+          const mozoComandaId = comandasBackend[0].mozos?._id || comandasBackend[0].mozos;
+          const mozoActualId = userInfo?._id;
+          const mismoMozo = mozoComandaId && mozoActualId && mozoComandaId.toString() === mozoActualId.toString();
+          
+          if (!mismoMozo) {
+            Alert.alert(
+              "Acceso Denegado",
+              "Solo el mozo que creó esta comanda puede realizar acciones en esta mesa.",
+              [{ text: "OK" }]
+            );
+            return;
+          }
+          
+          navigation.navigate('ComandaDetalle', {
+            mesa: mesa,
+            comandas: comandasBackend
+          });
+        } else {
+          Alert.alert(
+            "Sin Comandas",
+            `La mesa ${mesa.nummesa} está marcada como "Preparado" pero no tiene comandas activas. Contacta al administrador.`,
+            [{ text: "OK" }]
+          );
+        }
         return;
       }
       
@@ -1960,12 +2060,7 @@ const InicioScreen = () => {
         // Si es el mismo mozo, navegar al screen de detalle de comanda
         navigation.navigate('ComandaDetalle', {
           mesa: mesa,
-          comandas: comandasOrdenadas,
-          onRefresh: () => {
-            // Callback para refrescar datos cuando se vuelva
-            obtenerMesas();
-            obtenerComandasHoy();
-          }
+          comandas: comandasOrdenadas
         });
         console.log(`✅ Navegando a ComandaDetalle con ${comandasOrdenadas.length} comanda(s) activa(s)`);
       }

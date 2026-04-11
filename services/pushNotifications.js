@@ -7,6 +7,18 @@ import * as Notifications from 'expo-notifications';
 import apiConfig from '../config/apiConfig';
 
 const PUSH_TOKEN_KEY = 'pushToken';
+/** Preferencia local: si es false, no se registra ni sincroniza push tras login desde ajustes. */
+export const PUSH_NOTIFICATIONS_PREF_KEY = 'mozos_push_notifications_enabled';
+
+export async function getPushNotificationsPrefEnabled() {
+  const v = await AsyncStorage.getItem(PUSH_NOTIFICATIONS_PREF_KEY);
+  if (v === null) return true;
+  return v === 'true';
+}
+
+export async function setPushNotificationsPrefEnabled(enabled) {
+  await AsyncStorage.setItem(PUSH_NOTIFICATIONS_PREF_KEY, enabled ? 'true' : 'false');
+}
 const CHANNEL_DEFAULT = 'default';
 const CHANNEL_PLATO_LISTO = 'plato-listo';
 
@@ -16,6 +28,11 @@ const isExpoGo = Constants.appOwnership === 'expo';
 
 if (isExpoGo) {
   console.log('[push] Ejecutando en Expo Go - push notifications remotas no disponibles (SDK 53+)');
+}
+
+/** True en Expo Go: el token remoto no está disponible (SDK 53+). */
+export function isExpoGoPushLimited() {
+  return isExpoGo;
 }
 
 export function configureNotificationBehavior() {
@@ -117,6 +134,8 @@ export async function syncPushTokenToBackend(mozoId) {
 }
 
 export async function registerPushAfterLogin(mozoId) {
+  const allowed = await getPushNotificationsPrefEnabled();
+  if (!allowed) return;
   const token = await registerForExpoPushAsync();
   if (token) await syncPushTokenToBackend(mozoId);
 }

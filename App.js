@@ -12,6 +12,9 @@ import { SocketProvider } from './context/SocketContext';
 import Login from './Pages/Login/Login';
 import Navbar from './Pages/navbar/navbar';
 import ComandaDetalleScreen from './Pages/ComandaDetalleScreen';
+import ProfileScreen from './Pages/Profile/ProfileScreen';
+import HelpScreen from './Pages/Help/HelpScreen';
+import AboutScreen from './Pages/About/AboutScreen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
@@ -65,6 +68,21 @@ export default function App() {
                   options={{
                     headerShown: false, // Header personalizado en el screen
                   }}
+                />
+                <Stack.Screen
+                  name="Profile"
+                  component={ProfileScreen}
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen
+                  name="Help"
+                  component={HelpScreen}
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen
+                  name="About"
+                  component={AboutScreen}
+                  options={{ headerShown: false }}
                 />
               </Stack.Navigator>
             </NavigationContainer>

@@ -69,7 +69,8 @@ const obtenerEstilosPorEstado = (estado) => {
 
 const ComandaDetalleScreen = ({ route, navigation }) => {
   // Recibir parámetros de navegación (clienteId / filterByCliente para filtrar por cliente)
-  const { mesa, comandas: comandasIniciales, onRefresh, clienteId, filterByCliente, reserva } = route.params || {};
+  // Nota: onRefresh eliminado - useFocusEffect en InicioScreen maneja el refresh
+  const { mesa, comandas: comandasIniciales, clienteId, filterByCliente, reserva } = route.params || {};
   
   // Hooks
   const { theme, isDarkMode } = useTheme();
@@ -250,11 +251,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
       // Corrección automática de status: si todas las comandas de la mesa tienen todos los platos entregados pero status distinto de recoger/entregado, actualizar en backend (workaround).
       verificarComandasEnLote(comandasFinales, axios).catch(() => {});
-
-      // Ejecutar callback si existe
-      if (onRefresh) {
-        onRefresh();
-      }
 
       return comandasFinales;
     } catch (error) {
@@ -443,7 +439,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       if (esNuestraMesa || esNuestraComanda) {
         refrescarComandasRef.current?.().then((actualizadas) => {
           if (Array.isArray(actualizadas) && actualizadas.length === 0) {
-            if (onRefresh) onRefresh();
             if (navigation.canGoBack && navigation.canGoBack()) navigation.goBack();
             else navigation.navigate('Inicio');
           }
@@ -493,7 +488,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 text: 'Volver al Inicio', 
                 style: 'default',
                 onPress: () => {
-                  if (onRefresh) onRefresh();
                   if (navigation.canGoBack && navigation.canGoBack()) navigation.goBack();
                   else navigation.navigate('Inicio');
                 }
@@ -524,7 +518,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       socket.off('plato-anulado');
       socket.off('comanda-anulada');
     };
-  }, [socket, connected, mesaId, joinMesa, leaveMesa, connectionStatus, navigation, onRefresh]);
+  }, [socket, connected, mesaId, joinMesa, leaveMesa, connectionStatus, navigation]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1124,7 +1118,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         setModalEliminarVisible(false);
         setMotivoEliminacion('');
         setPlatosSeleccionadosEliminar([]);
-        if (onRefresh) onRefresh();
         if (navigation.canGoBack && navigation.canGoBack()) {
           navigation.goBack();
         } else {
@@ -1308,8 +1301,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       setPlatosEliminablesComanda([]);
       setHayPlatosEnRecogerComanda(false);
       
-      // Refrescar lista de mesas para que la mesa pase a estado libre
-      if (onRefresh) onRefresh();
+      // Volver al inicio - useFocusEffect refrescará los datos
       if (navigation.canGoBack && navigation.canGoBack()) {
         navigation.goBack();
       } else {
