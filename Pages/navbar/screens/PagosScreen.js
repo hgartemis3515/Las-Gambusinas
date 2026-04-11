@@ -28,6 +28,7 @@ import { useWindowDimensions } from "react-native";
 import { useSocket } from "../../../context/SocketContext";
 import logger from "../../../utils/logger";
 import configuracionService from "../../../services/configuracionService";
+import { filtrarComandasActivas } from "../../../utils/comandaHelpers";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -38,6 +39,74 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+
+/** Comandas listas para cobrar (misma mesa, no pagada, platos no anulados). */
+function filtrarComandasPagablesParaPago(comandasBackend, mesaIdStr, mesaNummesa) {
+  const idMesa = mesaIdStr != null ? String(mesaIdStr) : '';
+  return comandasBackend.filter((c) => {
+    const comandaMesaId = c.mesas?._id ?? c.mesas;
+    const coincideMesa =
+      (idMesa && comandaMesaId != null && String(comandaMesaId) === idMesa) ||
+      (mesaNummesa != null &&
+        c.mesas?.nummesa != null &&
+        String(c.mesas.nummesa) === String(mesaNummesa));
+    const noEliminada = c.eliminada !== true;
+    const noPagada =
+      c.status?.toLowerCase() !== 'pagado' && c.status?.toLowerCase() !== 'completado';
+    const tienePlatos = c.platos && c.platos.length > 0;
+    const platosActivos =
+      c.platos?.filter((p) => p.eliminado !== true && p.anulado !== true) || [];
+    return (
+      coincideMesa &&
+      noEliminada &&
+      noPagada &&
+      tienePlatos &&
+      platosActivos.length > 0
+    );
+  });
+}
+
+/** Fuente alineada con ComandaDetalle: activas por mesa (sin depender del día) + fallback por fecha. */
+async function fetchComandasBackendParaMesa(mesaId, mesaNummesa) {
+  const mesaIdStr = mesaId != null ? String(mesaId) : '';
+  const comandaBase = apiConfig.isConfigured
+    ? apiConfig.getEndpoint('/comanda')
+    : COMANDASEARCH_API_GET;
+
+  let comandasBackend = [];
+
+  if (mesaIdStr) {
+    try {
+      const resActivas = await axios.get(`${comandaBase}/mesa/${mesaIdStr}/activas`, {
+        timeout: 10000,
+      });
+      if (resActivas.data?.success && Array.isArray(resActivas.data.comandas)) {
+        comandasBackend = resActivas.data.comandas;
+      }
+    } catch (e) {
+      if (__DEV__) console.warn('[PAGOS] GET /mesa/activas:', e?.message);
+    }
+  }
+
+  if (comandasBackend.length === 0) {
+    const currentDate = moment().tz('America/Lima').format('YYYY-MM-DD');
+    const res = await axios.get(`${comandaBase}/fecha/${currentDate}`, { timeout: 10000 });
+    const todas = Array.isArray(res.data) ? res.data : res.data?.comandas || [];
+    comandasBackend = todas.filter((c) => {
+      const mid = c.mesas?._id ?? c.mesas;
+      const coincideId = mesaIdStr && mid != null && String(mid) === mesaIdStr;
+      const coincideNum =
+        mesaNummesa != null &&
+        c.mesas?.nummesa != null &&
+        String(c.mesas.nummesa) === String(mesaNummesa);
+      const noPagada =
+        c.status?.toLowerCase() !== 'pagado' && c.status?.toLowerCase() !== 'completado';
+      return (coincideId || coincideNum) && noPagada;
+    });
+  }
+
+  return filtrarComandasActivas(comandasBackend);
+}
 
 // Componente de Overlay de Carga Animado
 const AnimatedOverlay = ({ mensaje }) => {
@@ -219,7 +288,8 @@ const PagosScreen = () => {
           ? apiConfig.getEndpoint('/configuracion/voucher-plantilla')
           : `${apiConfig.getDefaultBaseURL?.() || 'http://localhost:3000/api'}/configuracion/voucher-plantilla`;
         
-        const response = await axios.get(baseURL, { timeout: 5000 });
+        const authHeaders = await configuracionService.getMozoAuthHeaders();
+        const response = await axios.get(baseURL, { timeout: 5000, headers: authHeaders });
         if (response.data?.success && response.data.plantilla) {
           setPlantillaVoucher(response.data.plantilla);
           console.log('✅ Plantilla de voucher cargada:', {
@@ -395,14 +465,40 @@ const PagosScreen = () => {
         setTotal(0);
       }
 
-      // Suscribirse a eventos
+      let syncCancelled = false;
+      if (currentMesa?._id && !currentBoucher && currentComandas?.length > 0) {
+        (async () => {
+          try {
+            const backend = await fetchComandasBackendParaMesa(
+              currentMesa._id,
+              currentMesa.nummesa
+            );
+            if (syncCancelled) return;
+            const validas = filtrarComandasPagablesParaPago(
+              backend,
+              String(currentMesa._id),
+              currentMesa.nummesa
+            );
+            if (validas.length > 0) {
+              console.log(
+                `🔄 [PAGOS] Sincronización automática al enfocar: ${validas.length} comanda(s) desde servidor`
+              );
+              setComandas(validas);
+              setMesa({ ...currentMesa });
+            }
+          } catch (e) {
+            if (__DEV__) console.warn("[PAGOS] Sync al enfocar:", e?.message);
+          }
+        })();
+      }
+
       subscribeToEvents({
         onComandaActualizada: handleComandaActualizada,
         onNuevaComanda: handleNuevaComanda
       });
 
-      // Cleanup: desuscribirse
       return () => {
+        syncCancelled = true;
         subscribeToEvents({
           onComandaActualizada: null,
           onNuevaComanda: null
@@ -1037,105 +1133,69 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
   // ✅ IMPORTANTE: Usar SOLO comandas de route.params (backend = única fuente de verdad)
   // 🔥 Función para validar comandas antes de enviar al backend
   // MEJORADO: Obtener comandas FRESCAS del backend por mesa (no por IDs)
-  const validarComandasParaPago = async (comandasIds, mesaId) => {
+  const validarComandasParaPago = async (comandasIds, mesaId, mesaNummesa) => {
     try {
       setMensajeCarga("Obteniendo comandas frescas del servidor...");
-      
-      // 🔥 CRÍTICO: Obtener comandas FRESCAS del backend por fecha y filtrar por mesa
-      // Esto asegura que tenemos el estado más reciente después de eliminar platos
-      const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-      const comandasURL = apiConfig.isConfigured 
-        ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
-        : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
-      
-      // Obtener todas las comandas del día y filtrar por mesa
-      const mesaIdStr = mesaId?.toString() || mesaId;
-      const comandasResponse = await axios.get(comandasURL, { timeout: 10000 });
-      
-      const todasLasComandas = Array.isArray(comandasResponse.data) 
-        ? comandasResponse.data 
-        : (comandasResponse.data?.comandas || []);
-      
-      // Filtrar comandas de esta mesa que NO estén pagadas
-      const comandasBackend = todasLasComandas.filter(c => {
-        const comandaMesaId = c.mesas?._id?.toString() || c.mesas?.toString() || c.mesas;
-        const comandaMesaNum = c.mesas?.nummesa;
-        const coincideMesa = comandaMesaId === mesaIdStr || 
-                            (comandaMesaNum && comandaMesaNum.toString() === mesaIdStr);
-        const noPagada = c.status?.toLowerCase() !== 'pagado' && c.status?.toLowerCase() !== 'completado';
-        return coincideMesa && noPagada;
-      });
-      
-      console.log(`✅ [VALIDACIÓN] Obtenidas ${comandasBackend.length} comanda(s) fresca(s) del backend para mesa ${mesaIdStr?.slice(-6)}`);
-      
+
+      const mesaIdStr = mesaId != null ? String(mesaId) : "";
+      const comandasBackend = await fetchComandasBackendParaMesa(mesaId, mesaNummesa);
+
+      console.log(
+        `✅ [VALIDACIÓN] Obtenidas ${comandasBackend.length} comanda(s) fresca(s) del backend para mesa ${mesaIdStr ? mesaIdStr.slice(-6) : mesaNummesa}`
+      );
+
       if (comandasIds.length > 0) {
-        console.log(`🔍 [VALIDACIÓN] Validando ${comandasIds.length} ID(s) específico(s):`, comandasIds.map(id => id?.slice(-6)));
+        console.log(
+          `🔍 [VALIDACIÓN] Validando ${comandasIds.length} ID(s) específico(s):`,
+          comandasIds.map((id) => id?.toString?.().slice(-6))
+        );
       } else {
         console.log(`🔍 [VALIDACIÓN] Obteniendo todas las comandas válidas de la mesa (sin filtrar por IDs)`);
       }
-      
-      // Filtrar comandas válidas (no eliminadas, no pagadas, con platos válidos)
-      const comandasValidas = comandasBackend.filter(c => {
-        const comandaMesaId = c.mesas?._id?.toString() || c.mesas?.toString() || c.mesas;
-        const mesaIdStr = mesaId?.toString() || mesaId;
-        
-        // Validaciones críticas:
-        const noEliminada = c.eliminada !== true; // Comanda no eliminada completamente
-        const noPagada = c.status?.toLowerCase() !== 'pagado';
-        const mismaMesa = comandaMesaId === mesaIdStr;
-        const tienePlatos = c.platos && c.platos.length > 0;
-        // 🔥 CORREGIDO: El sistema usa SOFT DELETE (eliminado=true, anulado=true)
-        // Los platos anulados desde cocina tienen eliminado=true y anulado=true
-        // Deben filtrarse para que no cuenten en el pago
-        const platosActivos = c.platos?.filter(p => p.eliminado !== true && p.anulado !== true) || [];
-        const tienePlatosNoEliminados = platosActivos.length > 0;
-        
-        const esValida = noEliminada && noPagada && mismaMesa && tienePlatos && tienePlatosNoEliminados;
-        
-        if (!esValida) {
-          const razon = !noEliminada ? 'eliminada' : 
-                       !noPagada ? 'ya pagada' : 
-                       !mismaMesa ? 'mesa diferente' : 
-                       !tienePlatos ? 'sin platos' : 
-                       !tienePlatosNoEliminados ? 'sin platos válidos' : 'desconocida';
-          console.warn(`⚠️ [VALIDACIÓN] Comanda #${c.comandaNumber || c._id?.slice(-6)} inválida: ${razon}`);
+
+      const comandasValidas = filtrarComandasPagablesParaPago(comandasBackend, mesaIdStr, mesaNummesa);
+
+      comandasBackend.forEach((c) => {
+        const ok = comandasValidas.some((v) => String(v._id) === String(c._id));
+        if (!ok) {
+          const comandaMesaId = c.mesas?._id ?? c.mesas;
+          const coincideMesa =
+            (mesaIdStr && comandaMesaId != null && String(comandaMesaId) === mesaIdStr) ||
+            (mesaNummesa != null &&
+              c.mesas?.nummesa != null &&
+              String(c.mesas.nummesa) === String(mesaNummesa));
+          const noEliminada = c.eliminada !== true;
+          const noPagada = c.status?.toLowerCase() !== 'pagado' && c.status?.toLowerCase() !== 'completado';
+          const tienePlatos = c.platos && c.platos.length > 0;
+          const platosActivos = c.platos?.filter((p) => p.eliminado !== true && p.anulado !== true) || [];
+          const razon = !coincideMesa
+            ? 'mesa diferente'
+            : !noEliminada
+              ? 'eliminada'
+              : !noPagada
+                ? 'ya pagada'
+                : !tienePlatos
+                  ? 'sin platos'
+                  : platosActivos.length === 0
+                    ? 'sin platos válidos'
+                    : 'desconocida';
+          console.warn(`⚠️ [VALIDACIÓN] Comanda #${c.comandaNumber || c._id?.toString?.().slice(-6)} inválida: ${razon}`);
         }
-        
-        return esValida;
       });
+
+      const idsValidasSet = new Set(comandasValidas.map((c) => String(c._id)));
+      const comandasInvalidas = comandasBackend.filter((c) => !idsValidasSet.has(String(c._id)));
       
-      // Filtrar comandas inválidas para logging
-      const comandasInvalidas = comandasBackend.filter(c => {
-        const comandaMesaId = c.mesas?._id?.toString() || c.mesas?.toString() || c.mesas;
-        const mesaIdStr = mesaId?.toString() || mesaId;
-        
-        const noEliminada = c.eliminada !== true;
-        const noPagada = c.status?.toLowerCase() !== 'pagado';
-        const mismaMesa = comandaMesaId === mesaIdStr;
-        const tienePlatos = c.platos && c.platos.length > 0;
-        // 🔥 CORREGIDO: El sistema usa SOFT DELETE (eliminado=true, anulado=true)
-        // Los platos anulados desde cocina tienen eliminado=true y anulado=true
-        const platosActivos = c.platos?.filter(p => p.eliminado !== true && p.anulado !== true) || [];
-        const tienePlatosNoEliminados = platosActivos.length > 0;
-        
-        return !(noEliminada && noPagada && mismaMesa && tienePlatos && tienePlatosNoEliminados);
-      });
-      
-      // Verificar si los IDs originales están en las comandas válidas (solo si se pasaron IDs)
-      const comandasIdsValidas = comandasValidas.map(c => {
-        const id = c._id?.toString() || c._id;
-        return id;
-      });
-      
-      // 🔥 CRÍTICO: Inicializar idsNoEncontrados fuera del bloque if
+      const comandasIdsValidasSet = new Set(
+        comandasValidas.map((c) => String(c._id))
+      );
+
       let idsNoEncontrados = [];
-      
+
       if (comandasIds.length > 0) {
-        // Se pasaron IDs específicos, verificar si están en las válidas
-        idsNoEncontrados = comandasIds.filter(id => {
-          const idStr = id?.toString() || id;
-          return !comandasIdsValidas.includes(idStr);
-        });
+        idsNoEncontrados = comandasIds.filter(
+          (id) => !comandasIdsValidasSet.has(String(id))
+        );
         
         if (idsNoEncontrados.length > 0) {
           console.warn(`⚠️ [VALIDACIÓN] ${idsNoEncontrados.length} ID(s) de comanda(s) no encontrado(s) o inválido(s) en backend:`, idsNoEncontrados.map(id => id?.slice(-6)));
@@ -1162,16 +1222,18 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
         console.warn(`⚠️ [VALIDACIÓN] Comandas inválidas:`, razones);
       }
       
-      // Verificar si todas las comandas solicitadas están en las válidas
-      const todasValidas = comandasIds.length > 0 ? comandasIds.every(id => {
-        const idStr = id?.toString() || id;
-        return comandasIdsValidas.includes(idStr);
-      }) : true; // Si no se pasaron IDs, considerar todas válidas
+      const todasValidas =
+        comandasIds.length > 0
+          ? comandasIds.every((id) => comandasIdsValidasSet.has(String(id)))
+          : true;
       
       return {
         validas: comandasValidas,
         invalidas: comandasInvalidas,
-        todasValidas: comandasIds.length > 0 ? (todasValidas && comandasValidas.length === comandasIds.length) : true,
+        todasValidas:
+        comandasIds.length > 0
+          ? todasValidas && comandasValidas.length === comandasIds.length
+          : true,
         idsNoEncontrados: idsNoEncontrados
       };
     } catch (error) {
@@ -1268,7 +1330,7 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
       setMensajeCarga("Obteniendo comandas actualizadas del servidor...");
       
       // Obtener TODAS las comandas válidas de la mesa desde el backend (ignorar route.params)
-      const validacion = await validarComandasParaPago([], mesaIdFinal);
+      const validacion = await validarComandasParaPago([], mesaIdFinal, mesaFinal.nummesa);
       
       if (validacion.validas.length === 0) {
         // No hay comandas válidas en el backend
@@ -1406,7 +1468,11 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
               console.log(`🔄 [PAGO] Obteniendo comandas válidas del backend después de error...`);
               try {
                 // Obtener comandas frescas de la mesa
-                const comandasFrescas = await validarComandasParaPago([], mesaIdFinal);
+                const comandasFrescas = await validarComandasParaPago(
+                  [],
+                  mesaIdFinal,
+                  mesaFinal?.nummesa
+                );
                 if (comandasFrescas.validas.length > 0) {
                   // Usar las comandas válidas encontradas
                   const comandasIdsValidas = comandasFrescas.validas.map(c => {

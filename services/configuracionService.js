@@ -15,6 +15,12 @@ const CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 let cachedConfig = null;
 let lastFetchTime = 0;
 
+/** Headers para endpoints que el backend puede proteger con el mismo JWT que el login de mozos */
+export const getMozoAuthHeaders = async () => {
+    const token = await AsyncStorage.getItem('authToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 /**
  * Obtiene la configuración del sistema desde el backend
  * Utiliza caché para evitar múltiples llamadas
@@ -49,7 +55,8 @@ export const obtenerConfiguracion = async (forceRefresh = false) => {
             ? apiConfig.getEndpoint('/configuracion')
             : `${apiConfig.baseURL || 'http://192.168.18.11:3000/api'}/configuracion`;
         
-        const response = await axios.get(url, { timeout: 5000 });
+        const headers = await getMozoAuthHeaders();
+        const response = await axios.get(url, { timeout: 5000, headers });
         
         if (response.data && response.data.success && response.data.configuracion) {
             const config = response.data.configuracion;
@@ -241,5 +248,6 @@ export default {
     calcularTotales,
     formatearMonto,
     formatearMontoAsync,
-    invalidarCache
+    invalidarCache,
+    getMozoAuthHeaders
 };

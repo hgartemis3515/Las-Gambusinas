@@ -452,6 +452,15 @@ const MesaAnimada = React.memo(({
   const badgeText = !esMesaPrincipal ? `M${mesaPrincipalNum}` : `+${mesasUnidas.length}`;
   const badgeColor = !esMesaPrincipal ? "#9C27B0" : "#2196F3";
 
+  let mozoLabel = null;
+  if (mozo && mozo !== "N/A") {
+    const t = String(mozo).trim();
+    if (t) {
+      const partes = t.split(/\s+/).filter(Boolean);
+      mozoLabel = partes[0] || t;
+    }
+  }
+
   return (
     <GestureDetector gesture={tapGesture}>
       <Animated.View
@@ -496,12 +505,15 @@ const MesaAnimada = React.memo(({
         <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25 }]}>
           {mesa.nombreCombinado || `M${mesa.nummesa}`}
         </Text>
-        {/* Mostrar mozo solo si zoom level >= 1 (small) */}
-        {zoomLevel >= 1 && (
-          <Text style={[styles.mesaMozo, { fontSize: mesaSize * 0.15 }]}>
-            {mozo !== "N/A" ? mozo.split(' ')[0] : ""}
+        {zoomLevel >= 0 && mozoLabel ? (
+          <Text
+            style={[styles.mesaMozo, { fontSize: mesaSize * (zoomLevel >= 1 ? 0.15 : 0.11) }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {mozoLabel}
           </Text>
-        )}
+        ) : null}
         {/* Mostrar icono solo si zoom level >= 0 (extraSmall) */}
         {zoomLevel >= 0 && (
           <MaterialCommunityIcons 
@@ -1646,7 +1658,11 @@ const InicioScreen = () => {
   // Mesa liberada = solo servicio actual; misma lógica que ComandaDetalleScreen
   const getTodasComandasPorMesa = (mesaNum) => {
     const porMesa = comandas.filter(
-      (c) => c.mesas?.nummesa === mesaNum && c.IsActive !== false
+      (c) =>
+        c.mesas?.nummesa != null &&
+        mesaNum != null &&
+        String(c.mesas.nummesa) === String(mesaNum) &&
+        c.IsActive !== false
     );
     return filtrarComandasActivas(porMesa);
   };
@@ -1655,6 +1671,49 @@ const InicioScreen = () => {
   const getComandasPorMesa = (mesaNum) => {
     return getTodasComandasPorMesa(mesaNum);
   };
+
+  // Auto-sincronizar comandas cuando el backend dice pedido/preparado pero no hay comandas locales
+  const mesaAutoSyncInFlightRef = useRef(new Set());
+  const mesaAutoSyncCooldownRef = useRef({});
+  const AUTO_SYNC_COOLDOWN_MS = 12000;
+
+  useEffect(() => {
+    if (!mesas.length) return;
+    let cancelled = false;
+
+    const run = async () => {
+      for (const mesa of mesas) {
+        if (cancelled) return;
+        if (!mesa?._id) continue;
+        const st = mesa.estado?.toLowerCase();
+        if (st !== "pedido" && st !== "preparado") continue;
+
+        const locales = getComandasPorMesa(mesa.nummesa);
+        if (locales.length > 0) continue;
+
+        const id = String(mesa._id);
+        const now = Date.now();
+        const last = mesaAutoSyncCooldownRef.current[id] || 0;
+        if (now - last < AUTO_SYNC_COOLDOWN_MS) continue;
+        if (mesaAutoSyncInFlightRef.current.has(id)) continue;
+
+        mesaAutoSyncInFlightRef.current.add(id);
+        mesaAutoSyncCooldownRef.current[id] = now;
+        try {
+          await obtenerComandasMesa(mesa._id);
+        } catch (e) {
+          if (__DEV__) console.warn(`[INICIO] Auto-sync mesa ${mesa.nummesa}:`, e?.message);
+        } finally {
+          mesaAutoSyncInFlightRef.current.delete(id);
+        }
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [mesas, comandas, obtenerComandasMesa]);
 
   const getEstadoMesa = (mesa) => {
     // Prioridad 1: si el backend marcó la mesa como "pagado", mostrarla verde aunque no haya comandas activas
@@ -1756,6 +1815,28 @@ const InicioScreen = () => {
     return "Pedido";
   };
 
+  /** Nombre mozo: prioriza desnormalizado (comandas largas en servicio) y luego populate */
+  const nombreMozoDesdeComanda = (c) => {
+    if (!c) return null;
+    const dn = c.mozoNombre && String(c.mozoNombre).trim();
+    if (dn) return dn;
+    if (c.mozos?.name) return String(c.mozos.name).trim();
+    if (c.mozos?.nombre) return String(c.mozos.nombre).trim();
+    return null;
+  };
+
+  /** Comandas activas de la mesa por _id (fallback si nummesa no coincide con c.mesas.nummesa) */
+  const getComandasActivasPorMesaId = (mesa) => {
+    if (!mesa?._id) return [];
+    return filtrarComandasActivas(
+      comandas.filter((c) => {
+        if (c.IsActive === false) return false;
+        const mid = c.mesas?._id ?? c.mesas;
+        return mid != null && String(mid) === String(mesa._id);
+      })
+    );
+  };
+
   const getMozoMesa = (mesa) => {
     // Si la mesa está libre, no mostrar mozo
     if (mesa.estado?.toLowerCase() === "libre") {
@@ -1774,8 +1855,11 @@ const InicioScreen = () => {
       return "Sin asignar";
     }
     
-    // PRIORIDAD: Primero buscar comandas activas (no pagadas)
-    const comandasActivas = getComandasPorMesa(mesa.nummesa);
+    // PRIORIDAD: comandas por nummesa; si no hay, por _id de mesa (evita nombre vacío por desajuste de número)
+    let comandasActivas = getComandasPorMesa(mesa.nummesa);
+    if (comandasActivas.length === 0) {
+      comandasActivas = getComandasActivasPorMesaId(mesa);
+    }
     if (comandasActivas.length > 0) {
       // Ordenar comandas activas por fecha de creación descendente (más reciente primero)
       const comandasOrdenadas = [...comandasActivas].sort((a, b) => {
@@ -1791,16 +1875,17 @@ const InicioScreen = () => {
         return numB - numA; // Descendente (mayor número = más reciente)
       });
       
-      // Tomar la comanda activa más reciente
       const comandaMasReciente = comandasOrdenadas[0];
-      if (comandaMasReciente?.mozos?.name) {
-        return comandaMasReciente.mozos.name;
-      }
+      const mozoNm = nombreMozoDesdeComanda(comandaMasReciente);
+      if (mozoNm) return mozoNm;
     }
     
     // Si no hay comandas activas, buscar en todas las comandas (incluyendo pagadas)
     // Esto es solo para casos donde la mesa tiene estado pero no comandas activas
-    const todasComandasMesa = getTodasComandasPorMesa(mesa.nummesa);
+    let todasComandasMesa = getTodasComandasPorMesa(mesa.nummesa);
+    if (todasComandasMesa.length === 0) {
+      todasComandasMesa = getComandasActivasPorMesaId(mesa);
+    }
     if (todasComandasMesa.length > 0) {
       // Ordenar comandas por fecha de creación descendente (más reciente primero)
       const comandasOrdenadas = [...todasComandasMesa].sort((a, b) => {
@@ -1816,16 +1901,14 @@ const InicioScreen = () => {
         return numB - numA; // Descendente (mayor número = más reciente)
       });
       
-      // Tomar la comanda más reciente
       const comandaMasReciente = comandasOrdenadas[0];
-      return comandaMasReciente.mozos?.name || "N/A";
+      return nombreMozoDesdeComanda(comandaMasReciente) || "N/A";
     }
     
-    // 🔥 FIX: Si la mesa tiene estado "pedido" o "preparado" pero no hay comandas locales
-    // Indicar que hay desincronización - el usuario debe tocar la mesa para sincronizar
+    // Mesa pedido/preparado sin comandas locales: la auto-sync en segundo plano las trae; no mostrar "sync manual"
     const estadoLower = mesa.estado?.toLowerCase();
     if (estadoLower === "pedido" || estadoLower === "preparado") {
-      return "🔄 Sync...";
+      return "";
     }
     
     return "N/A";
@@ -4672,7 +4755,7 @@ const InicioScreen = () => {
 
                   return (
                     <MesaAnimada
-                      key={`${mesa._id}-${estado}`}
+                      key={String(mesa._id)}
                       mesa={mesa}
                       estado={estado}
                       estadoColor={estadoColor}
@@ -4707,7 +4790,7 @@ const InicioScreen = () => {
 
                   return (
                     <MesaAnimada
-                      key={`${mesa._id}-${estado}`}
+                      key={String(mesa._id)}
                       mesa={mesa}
                       estado={estado}
                       estadoColor={estadoColor}
@@ -6427,8 +6510,12 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
   mesaMozo: {
     fontSize: 10,
     color: theme.colors.text.white,
-    opacity: 0.9,
+    opacity: 0.95,
     marginBottom: 4,
+    textAlign: "center",
+    alignSelf: "stretch",
+    maxWidth: "100%",
+    paddingHorizontal: 2,
   },
   mesaIcon: {
     marginTop: 4,

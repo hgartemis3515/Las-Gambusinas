@@ -71,6 +71,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Recibir parámetros de navegación (clienteId / filterByCliente para filtrar por cliente)
   // Nota: onRefresh eliminado - useFocusEffect en InicioScreen maneja el refresh
   const { mesa, comandas: comandasIniciales, clienteId, filterByCliente, reserva } = route.params || {};
+  const mesaIdRef = mesa?._id;
+  const mesaNumRef = mesa?.nummesa;
   
   // Hooks
   const { theme, isDarkMode } = useTheme();
@@ -215,26 +217,54 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     prepararPlatosOrdenados();
   }, [comandas, prepararPlatosOrdenados]);
   
+  // Coincide comanda con la mesa actual (ObjectId string vs objeto; nummesa número vs string)
+  const comandaPerteneceAMesa = useCallback((c) => {
+    if (!c) return false;
+    const mesaIdComanda = c.mesas?._id ?? c.mesas;
+    const coincideId =
+      mesaIdRef != null &&
+      mesaIdComanda != null &&
+      String(mesaIdComanda) === String(mesaIdRef);
+    const numMesa = c.mesas?.nummesa;
+    const coincideNumero =
+      mesaNumRef != null &&
+      numMesa != null &&
+      String(numMesa) === String(mesaNumRef);
+    return coincideId || coincideNumero;
+  }, [mesaIdRef, mesaNumRef]);
+
   // Refrescar comandas desde el servidor (estable para evitar loops; logs solo en error)
+  // Importante: NO usar solo /comanda/fecha/hoy — comandas "antiguas" (creadas ayer u otro día)
+  // siguen activas y no aparecen en el listado del día, lo que vaciaba el estado tras useFocusEffect.
   const refrescarComandas = useCallback(async () => {
-    if (!mesa?._id) return [];
+    if (mesaIdRef == null && mesaNumRef == null) return [];
     try {
       setRefreshing(true);
 
-      const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-      const comandasURL = apiConfig.isConfigured
-        ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
-        : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
+      let comandasMesa = [];
+      const comandaBase = apiConfig.isConfigured
+        ? apiConfig.getEndpoint('/comanda')
+        : COMANDASEARCH_API_GET;
 
-      const response = await axios.get(comandasURL, { timeout: 10000 });
-      const todasLasComandas = response.data || [];
+      if (mesaIdRef) {
+        try {
+          const activasURL = `${comandaBase}/mesa/${mesaIdRef}/activas`;
+          const resActivas = await axios.get(activasURL, { timeout: 10000 });
+          if (resActivas.data?.success && Array.isArray(resActivas.data.comandas)) {
+            comandasMesa = resActivas.data.comandas;
+          }
+        } catch (e) {
+          if (__DEV__) console.warn('[ComandaDetalle] /mesa/activas falló, se intentará por fecha:', e?.message);
+        }
+      }
 
-      const comandasMesa = todasLasComandas.filter(c => {
-        const mesaId = c.mesas?._id || c.mesas;
-        const coincideId = mesaId === mesa._id;
-        const coincideNumero = c.mesas?.nummesa === mesa.nummesa;
-        return coincideId || coincideNumero;
-      });
+      if (comandasMesa.length === 0) {
+        const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
+        const comandasURL = `${comandaBase}/fecha/${currentDate}`;
+        const response = await axios.get(comandasURL, { timeout: 10000 });
+        const todasLasComandas = response.data || [];
+        comandasMesa = todasLasComandas.filter(comandaPerteneceAMesa);
+      }
 
       let comandasFinales = filtrarComandasActivas(comandasMesa);
 
@@ -260,7 +290,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     } finally {
       setRefreshing(false);
     }
-  }, [mesa?._id, mesa?.nummesa, filterByCliente, clienteId]);
+  }, [mesaIdRef, mesaNumRef, comandaPerteneceAMesa, filterByCliente, clienteId]);
 
   // Marcar plato como entregado
   const handleMarcarPlatoEntregado = async (platoObj) => {
