@@ -15,6 +15,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiConfig from '../config/apiConfig';
+import { getFallbackApiBase } from '../config/envDefaults';
 
 /**
  * Modal de Configuración de Servidor - Patrón Profesional
@@ -58,7 +59,7 @@ const SettingsModal = ({ visible, onClose }) => {
       } else {
         // Si no hay configuración, usar valores por defecto
         setConfig({
-          baseURL: apiConfig.baseURL || 'http://192.168.18.11:3000/api',
+          baseURL: apiConfig.baseURL || getFallbackApiBase(),
           apiVersion: apiConfig.apiVersion || 'v1',
           timeout: String(apiConfig.timeout || 10000)
         });
@@ -251,14 +252,14 @@ const SettingsModal = ({ visible, onClose }) => {
                   setTestStatus('idle');
                   setTestMessage('');
                 }}
-                placeholder="http://192.168.18.11:3000/api"
+                placeholder={getFallbackApiBase()}
                 placeholderTextColor="#999"
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="url"
               />
               <Text style={styles.hint}>
-                Ejemplo: http://192.168.18.11:3000/api o https://tu-servidor.com/api
+                Ejemplo: http://TU_IP_LAN:3000/api o https://tu-servidor.com/api
               </Text>
             </View>
 

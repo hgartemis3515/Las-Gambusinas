@@ -33,6 +33,7 @@ import { colors } from "../../constants/colors";
 import { useOrientation } from "../../hooks/useOrientation";
 import SettingsModal from "../../Components/SettingsModal";
 import apiConfig from "../../config/apiConfig";
+import { getFallbackApiBase } from "../../config/envDefaults";
 import { registerPushAfterLogin } from "../../services/pushNotifications";
 
 // Componente de partículas flotantes
@@ -434,7 +435,7 @@ const Login = () => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       // Test de conexión antes de guardar y navegar (evita guardar con IP incorrecta)
-      const baseForLogin = apiConfig.baseURL || 'http://192.168.18.11:3000/api';
+      const baseForLogin = apiConfig.baseURL || getFallbackApiBase();
       const testResult = await apiConfig.testConnection(baseForLogin);
       if (!testResult.success) {
         Alert.alert(

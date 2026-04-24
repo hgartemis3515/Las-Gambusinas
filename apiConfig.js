@@ -7,6 +7,7 @@
  */
 
 import apiConfig from './config/apiConfig';
+import { getFallbackApiBase, getFallbackServerOrigin } from './config/envDefaults';
 
 // Función helper para obtener endpoint completo
 const getEndpoint = (path) => {
@@ -19,8 +20,7 @@ const getEndpoint = (path) => {
     console.warn('[apiConfig] Error obteniendo endpoint dinámico:', error);
   }
   
-  // Fallback a valores por defecto si no está configurado
-  const defaultBase = 'http://192.168.18.11:3000/api';
+  const defaultBase = getFallbackApiBase();
   return `${defaultBase}${path.startsWith('/') ? path : `/${path}`}`;
 };
 
@@ -86,7 +86,7 @@ export const getServerBaseURL = () => {
   } catch (error) {
     console.warn('[apiConfig] Error parseando baseURL:', error);
   }
-  return 'http://192.168.18.11:3000';
+  return getFallbackServerOrigin();
 };
 
 // Función helper para obtener WebSocket URL (con try-catch para reintentos estables)
@@ -98,7 +98,7 @@ export const getWebSocketURL = () => {
   } catch (error) {
     console.warn('[apiConfig] Error obteniendo wsURL:', error);
   }
-  return 'http://192.168.18.11:3000';
+  return getFallbackServerOrigin();
 };
 
 // Indica si la URL actual es válida para procesar cola offline (no demo, IP/host real)

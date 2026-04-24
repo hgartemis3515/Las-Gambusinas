@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { getFallbackApiBase, getFallbackServerOrigin } from './envDefaults';
 
 /**
  * Sistema de Configuración Dinámica de API - Patrón Singleton
@@ -71,9 +72,8 @@ class ApiConfig {
    * Configuración por defecto (compatibilidad con código existente)
    */
   setDefaultConfig() {
-    // Valores por defecto del apiConfig.js original
-    this.baseURL = 'http://192.168.18.11:3000/api';
-    this.wsURL = 'http://192.168.18.11:3000';
+    this.baseURL = getFallbackApiBase();
+    this.wsURL = getFallbackServerOrigin();
     this.apiVersion = 'v1';
     this.timeout = 10000;
     this.isConfigured = true;

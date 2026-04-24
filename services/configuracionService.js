@@ -8,6 +8,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { apiConfig } from '../apiConfig';
+import { getFallbackApiBase } from '../config/envDefaults';
 
 const CONFIG_CACHE_KEY = '@lasgambusinas_config';
 const CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
@@ -53,7 +54,7 @@ export const obtenerConfiguracion = async (forceRefresh = false) => {
         // Obtener del servidor
         const url = apiConfig.isConfigured 
             ? apiConfig.getEndpoint('/configuracion')
-            : `${apiConfig.baseURL || 'http://192.168.18.11:3000/api'}/configuracion`;
+            : `${apiConfig.baseURL || getFallbackApiBase()}/configuracion`;
         
         const headers = await getMozoAuthHeaders();
         const response = await axios.get(url, { timeout: 5000, headers });

@@ -17,6 +17,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "../../../config/axiosConfig";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API, COMANDASEARCH_API_GET, apiConfig } from "../../../apiConfig";
+import { getFallbackApiBase } from "../../../config/envDefaults";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
 import { useOrientation } from "../../../hooks/useOrientation";
@@ -577,7 +578,7 @@ const OrdenesScreen = ({ route }) => {
           try {
             const reservaURL = apiConfig.isConfigured 
               ? apiConfig.getEndpoint(`/reservas/mesa/${mesaActualizada._id}/activa`)
-              : `http://192.168.18.11:3000/api/reservas/mesa/${mesaActualizada._id}/activa`;
+              : `${getFallbackApiBase()}/reservas/mesa/${mesaActualizada._id}/activa`;
             
             const reservaResponse = await axios.get(reservaURL, { timeout: 5000 });
             

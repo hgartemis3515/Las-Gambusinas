@@ -23,6 +23,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useSocket } from '../context/SocketContext';
 import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
+import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas } from '../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
@@ -321,7 +322,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               // Usar endpoint /estado (mismo que cocina) en lugar de /entregar
               const endpoint = apiConfig.isConfigured
                 ? `${apiConfig.getEndpoint('/comanda')}/${platoObj.comandaId}/plato/${platoIdentifier}/estado`
-                : `http://192.168.18.11:3000/api/comanda/${platoObj.comandaId}/plato/${platoIdentifier}/estado`;
+                : `${getFallbackApiBase()}/comanda/${platoObj.comandaId}/plato/${platoIdentifier}/estado`;
               
               await axios.put(endpoint, { nuevoEstado: 'entregado' });
               await refrescarComandas();
@@ -1417,7 +1418,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         : '';
       const endpoint = apiConfig.isConfigured
         ? `${apiConfig.getEndpoint('/comanda')}/comandas-para-pagar/${mesa._id}${idsQuery}`
-        : `http://192.168.18.11:3000/api/comanda/comandas-para-pagar/${mesa._id}${idsQuery}`;
+        : `${getFallbackApiBase()}/comanda/comandas-para-pagar/${mesa._id}${idsQuery}`;
       
       const response = await axios.get(endpoint);
       
@@ -1509,7 +1510,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           // Usar endpoint /estado (mismo que cocina) en lugar de /entregar
           const endpoint = apiConfig.isConfigured
             ? `${apiConfig.getEndpoint('/comanda')}/${plato.comandaId}/plato/${platoIdentifier}/estado`
-            : `http://192.168.18.11:3000/api/comanda/${plato.comandaId}/plato/${platoIdentifier}/estado`;
+            : `${getFallbackApiBase()}/comanda/${plato.comandaId}/plato/${platoIdentifier}/estado`;
           
           // Timeout de 5 segundos por plato
           const controller = new AbortController();

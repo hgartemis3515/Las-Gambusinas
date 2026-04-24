@@ -28,6 +28,7 @@ import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
 import { getPropinasAPI } from "../../../apiConfig";
+import { getFallbackServerOrigin } from "../../../config/envDefaults";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -261,7 +262,7 @@ const ModalRegistrarPropina = ({
           "• La red WiFi se desconectó\n" +
           "• La IP del servidor cambió\n\n" +
           "Verifica que el servidor esté corriendo en:\n" +
-          "http://192.168.18.11:3000";
+          getFallbackServerOrigin();
       } else if (error.code === "ECONNABORTED") {
         errorMessage = "Tiempo de espera agotado.\n\nEl servidor no respondió a tiempo. Inténtalo de nuevo.";
       } else if (error.response?.status === 400) {

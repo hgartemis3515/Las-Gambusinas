@@ -19,6 +19,7 @@ import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/nativ
 import axios from "../../../config/axiosConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, DISHES_API, AREAS_API, MESAS_API_UPDATE, apiConfig } from "../../../apiConfig";
+import { getFallbackApiBase } from "../../../config/envDefaults";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
@@ -1602,7 +1603,7 @@ const InicioScreen = () => {
     try {
       const reservasURL = apiConfig.isConfigured 
         ? apiConfig.getEndpoint('/reservas?estado=pendiente')
-        : 'http://192.168.18.11:3000/api/reservas?estado=pendiente';
+        : `${getFallbackApiBase()}/reservas?estado=pendiente`;
       
       // Obtener token JWT para autorización
       const authToken = await AsyncStorage.getItem('authToken');
@@ -2056,7 +2057,7 @@ const InicioScreen = () => {
       try {
         const reservaURL = apiConfig.isConfigured 
           ? apiConfig.getEndpoint(`/reservas/mesa/${mesa._id}/activa`)
-          : `http://192.168.18.11:3000/api/reservas/mesa/${mesa._id}/activa`;
+          : `${getFallbackApiBase()}/reservas/mesa/${mesa._id}/activa`;
         
         const response = await axios.get(reservaURL, { timeout: 5000 });
         
@@ -2322,7 +2323,7 @@ const InicioScreen = () => {
                 // Llamar al nuevo endpoint para obtener el boucher de la mesa
                 const boucherURL = apiConfig.isConfigured 
                   ? apiConfig.getEndpoint(`/boucher/by-mesa/${mesa._id}`)
-                  : `http://192.168.18.11:3000/api/boucher/by-mesa/${mesa._id}`;
+                  : `${getFallbackApiBase()}/boucher/by-mesa/${mesa._id}`;
                 
                 const boucherResponse = await axios.get(boucherURL, { timeout: 10000 });
                 const boucher = boucherResponse.data;
