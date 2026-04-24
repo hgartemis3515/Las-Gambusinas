@@ -282,6 +282,26 @@ const PagosScreen = () => {
   // Obtener socket del contexto
   const { subscribeToEvents, connected: socketConnected } = useSocket();
   
+  const cargarPlantillaVoucher = React.useCallback(async () => {
+    try {
+      const baseURL = apiConfig.isConfigured
+        ? apiConfig.getEndpoint('/configuracion/voucher-plantilla')
+        : `${apiConfig.getDefaultBaseURL?.() || 'http://localhost:3000/api'}/configuracion/voucher-plantilla`;
+
+      const authHeaders = await configuracionService.getMozoAuthHeaders();
+      const response = await axios.get(baseURL, { timeout: 5000, headers: authHeaders });
+      if (response.data?.success && response.data.plantilla) {
+        setPlantillaVoucher(response.data.plantilla);
+        console.log('✅ Plantilla de voucher cargada:', {
+          tieneLogo: !!response.data.plantilla.logo,
+          nombre: response.data.plantilla.restaurante?.nombre
+        });
+      }
+    } catch (error) {
+      console.warn('⚠️ No se pudo cargar plantilla de voucher, usando valores por defecto:', error.message);
+    }
+  }, []);
+
   // Cargar configuración al iniciar
   useEffect(() => {
     const cargarConfiguracion = async () => {
@@ -297,30 +317,9 @@ const PagosScreen = () => {
         console.error('Error al cargar configuración de moneda:', error);
       }
     };
-    
-    const cargarPlantillaVoucher = async () => {
-      try {
-        const baseURL = apiConfig.isConfigured 
-          ? apiConfig.getEndpoint('/configuracion/voucher-plantilla')
-          : `${apiConfig.getDefaultBaseURL?.() || 'http://localhost:3000/api'}/configuracion/voucher-plantilla`;
-        
-        const authHeaders = await configuracionService.getMozoAuthHeaders();
-        const response = await axios.get(baseURL, { timeout: 5000, headers: authHeaders });
-        if (response.data?.success && response.data.plantilla) {
-          setPlantillaVoucher(response.data.plantilla);
-          console.log('✅ Plantilla de voucher cargada:', {
-            tieneLogo: !!response.data.plantilla.logo,
-            nombre: response.data.plantilla.restaurante?.nombre
-          });
-        }
-      } catch (error) {
-        console.warn('⚠️ No se pudo cargar plantilla de voucher, usando valores por defecto:', error.message);
-      }
-    };
-    
     cargarConfiguracion();
     cargarPlantillaVoucher();
-  }, []);
+  }, [cargarPlantillaVoucher]);
 
   // ❌ DESHABILITADO: No actualizar comandas desde WebSocket en PagosScreen
   // Backend = única fuente de verdad. Solo usar route.params
@@ -438,6 +437,9 @@ const PagosScreen = () => {
   // También recargar datos si vienen nuevos params al enfocar la pantalla
   useFocusEffect(
     React.useCallback(() => {
+      // Plantilla puede cambiar en el admin mientras el mozo usa la app: refrescar al entrar a Pagos
+      cargarPlantillaVoucher();
+
       // Leer params directamente del route al enfocar
       const currentParams = route.params || {};
       const currentMesa = currentParams.mesa;
@@ -520,7 +522,7 @@ const PagosScreen = () => {
           onNuevaComanda: null
         });
       };
-    }, [handleComandaActualizada, handleNuevaComanda, subscribeToEvents, route.params])
+    }, [cargarPlantillaVoucher, handleComandaActualizada, handleNuevaComanda, subscribeToEvents, route.params])
   );
 
   useEffect(() => {
