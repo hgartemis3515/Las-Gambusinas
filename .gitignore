@@ -28,7 +28,11 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# Variables de entorno locales (nunca al repositorio)
+.env
+.env.local
+.env.development
+.env.production
 .env*.local
 
 # typescript
