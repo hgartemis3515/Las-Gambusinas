@@ -21,6 +21,7 @@ import {
   configureNotificationBehavior,
   subscribeToNotificationResponses,
 } from './services/pushNotifications';
+import { checkAndApplyOtaUpdate } from './services/otaUpdates';
 
 if (Platform.OS !== 'web') {
   require('./tasks/backgroundFetchTask');
@@ -36,6 +37,7 @@ export default function App() {
     if (Platform.OS !== 'web') {
       const { registerMozosBackgroundFetch } = require('./tasks/backgroundFetchTask');
       registerMozosBackgroundFetch().catch(() => {});
+      checkAndApplyOtaUpdate().catch(() => {});
     }
     return () => sub.remove();
   }, []);

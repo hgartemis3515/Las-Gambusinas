@@ -379,6 +379,8 @@ Para que las push notifications funcionen correctamente, se necesita:
 
 ### 6.2 Pasos para Crear APK
 
+> **Expo / EAS (APK + OTA sin Play Store):** **[EXPO_EAS_APK_Y_ACTUALIZACIONES.md](./EXPO_EAS_APK_Y_ACTUALIZACIONES.md)**. **Tablets en restaurante:** **[INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md](./INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md)**.
+
 #### Opción A: Development Build (Recomendado para pruebas)
 
 ```bash
@@ -397,28 +399,17 @@ eas build:run --platform android
 
 #### Opción B: EAS Build (Producción)
 
+En el repositorio actual, el perfil `production` en `eas.json` ya usa `buildType: "apk"` (no AAB).
+
 ```bash
-# 1. Configurar eas.json
-{
-  "build": {
-    "preview": {
-      "android": {
-        "buildType": "apk"
-      }
-    },
-    "production": {
-      "android": {
-        "buildType": "app-bundle"
-      }
-    }
-  }
-}
+# 1. Crear APK de producción
+cd Las-Gambusinas
+eas build --platform android --profile production
 
-# 2. Crear APK
-eas build --platform android --profile preview
+# 2. Descargar APK desde dashboard de EAS
+# https://expo.dev/accounts/hgartemis/projects/appmozo/builds
 
-# 3. Descargar APK desde dashboard de EAS
-# https://expo.dev/accounts/[tu-cuenta]/projects/appmozo/builds
+# 3. Instalar o actualizar en tablet → ver INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md
 ```
 
 ### 6.3 Configuración de Firebase (Push Notifications)

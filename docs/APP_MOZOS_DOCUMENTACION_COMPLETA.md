@@ -10,6 +10,16 @@
 
 ## 📋 Historial de Cambios
 
+### v2.12 (Mayo 2026) - Guía Expo EAS (APK + OTA)
+
+- ✅ [EXPO_EAS_APK_Y_ACTUALIZACIONES.md](./EXPO_EAS_APK_Y_ACTUALIZACIONES.md) — Procedimiento Expo Dev: APK sin Play Store, EAS Update (OTA), comandos y canales
+- ✅ [INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md](./INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md) v1.1 — OTA activo, enlaces a guía EAS
+
+### v2.11 (Mayo 2026) - Guía instalación y actualización APK
+
+- ✅ Nuevo documento operativo: [INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md](./INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md)
+- ✅ Enlaces desde índice y sección de conversión a APK; nota de alineación con valores reales del repo
+
 ### v2.10 (Abril 2026) - Catálogo de Eventos Socket.io
 
 - ✅ **Nueva sección completa**: Catálogo de todos los eventos Socket.io que el App Mozos recibe
@@ -157,6 +167,8 @@ Solicitar Pago → Procesar Pago → Generar Boucher → Liberar Mesa
 15. [Actualizacion en Tiempo Real - Arquitectura Completa](#actualización-en-tiempo-real---arquitectura-completa) — ver [Herramientas tiempo real pantallas](#herramientas-para-actualizar-pantallas-en-tiempo-real)
 16. [Resumen Ejecutivo](#resumen-ejecutivo)
 17. [Conversion a APK Nativo y Funcionalidades Moviles Avanzadas](#-conversión-a-apk-nativo-y-funcionalidades-móviles-avanzadas)
+    - [**Expo / EAS: APK y OTA sin Play Store**](./EXPO_EAS_APK_Y_ACTUALIZACIONES.md) — procedimiento completo de build y actualizaciones
+    - [**Instalación y actualización en tablets (operativa)**](./INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md) — guía APK en restaurante
     - [Generación de APK/AAB Productivo](#1-generación-de-apkaab-productivo)
     - [Sistema de Notificaciones Push](#2-sistema-de-notificaciones-push)
     - [Funcionamiento en Segundo Plano](#3-funcionamiento-en-segundo-plano-background)
@@ -2464,6 +2476,8 @@ curl http://localhost:3000/api/comanda/fecha/2026-03-29 | jq '.[0].platos[0]'
 
 ## 📱 Conversión a APK Nativo y Funcionalidades Móviles Avanzadas
 
+> **APK y actualizaciones sin Play Store:** **[EXPO_EAS_APK_Y_ACTUALIZACIONES.md](./EXPO_EAS_APK_Y_ACTUALIZACIONES.md)** (EAS Build + EAS Update OTA). **Tablets en restaurante:** **[INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md](./INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md)**. Esta sección cubre build técnico, push y segundo plano.
+
 ### Estado Actual: Expo Go vs APK Productivo
 
 El app está desarrollado con **Expo (SDK 54)** en modo desarrollo. Para producción, requiere convertirse en un APK/AAP standalone con build nativo.
@@ -2479,6 +2493,8 @@ El app está desarrollado con **Expo (SDK 54)** en modo desarrollo. Para producc
 ---
 
 ### 1. Generación de APK/AAB Productivo
+
+> **Nota (valores del repo):** En el código actual, `app.json` tiene `version` `1.0.0`, `versionCode` `1` en `android/app/build.gradle`, package `com.carlos121.appmozo`, y `eas.json` perfil `production` con `buildType: "apk"`. Los ejemplos siguientes con `versionCode: 28`, `app-bundle` en producción o package `com.lasgambusinas.appmozo` son **referencia histórica**; priorizar [INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md](./INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md) y los archivos del repositorio.
 
 #### Opción A: EAS Build (Recomendado - Expo Application Services)
 
