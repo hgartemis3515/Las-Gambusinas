@@ -1,156 +1,253 @@
-# Expo / EAS: APK sin Play Store y actualizaciones (App Mozos)
+# Expo Dev / EAS: desarrollo, APK y actualizaciones (App Mozos)
 
-**Versión del documento:** 1.0  
+**Versión del documento:** 2.0  
 **Última actualización:** Mayo 2026  
 **Proyecto Expo:** [@hgartemis/appmozo](https://expo.dev/accounts/hgartemis/projects/appmozo)  
-**Project ID:** `afcea184-5e43-4fc0-8fb9-553db952ce44`
+**Project ID:** `afcea184-5e43-4fc0-8fb9-553db952ce44`  
+**Cuenta:** `hgartemis` · **Package Android:** `com.carlos121.appmozo`
 
-Guía completa para el equipo de desarrollo: generar un **APK instalable directo en Android** (sin Google Play Store) y publicar **actualizaciones** de dos formas — **OTA** (solo JavaScript/assets) o **nuevo APK** (cambios nativos).
+Guía operativa completa: desarrollo con **Expo Dev**, generación de **APK** sin Play Store, **actualizaciones OTA** automáticas en tablets y cuándo hace falta un APK nuevo.
 
-Para instalación en tablets del restaurante (mozos), ver también [INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md](./INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md).
+| Documento relacionado | Contenido |
+|----------------------|-----------|
+| [INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md](./INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md) | Instalación en tablets del restaurante |
+| [NETWORK_ERROR_APK_VS_EXPO_GO.md](./NETWORK_ERROR_APK_VS_EXPO_GO.md) | Network Error en APK vs Expo Go |
 
 ---
 
 ## Índice
 
-1. [Conceptos: qué es Expo, EAS Build y EAS Update](#1-conceptos-qué-es-expo-eas-build-y-eas-update)
-2. [Requisitos en la PC de desarrollo](#2-requisitos-en-la-pc-de-desarrollo)
-3. [Configuración del proyecto (ya aplicada)](#3-configuración-del-proyecto-ya-aplicada)
-4. [Primera vez: cuenta Expo y vinculación](#4-primera-vez-cuenta-expo-y-vinculación)
-5. [Generar el APK en la nube (EAS Build)](#5-generar-el-apk-en-la-nube-eas-build)
-6. [Instalar el APK en el celular o tablet](#6-instalar-el-apk-en-el-celular-o-tablet)
-7. [Actualizar la app sin Play Store](#7-actualizar-la-app-sin-play-store)
-8. [Versionado, canales y runtimeVersion](#8-versionado-canales-y-runtimeversion)
-9. [Comandos de referencia rápida](#9-comandos-de-referencia-rápida)
-10. [Build local con Gradle (alternativa)](#10-build-local-con-gradle-alternativa)
-11. [Solución de problemas](#11-solución-de-problemas)
-12. [Enlaces útiles](#12-enlaces-útiles)
+1. [Resumen: tres formas de ejecutar la app](#1-resumen-tres-formas-de-ejecutar-la-app)
+2. [Expo Dev: desarrollo en tu PC (expo start)](#2-expo-dev-desarrollo-en-tu-pc-expo-start)
+3. [Expo Go vs APK vs Development Client](#3-expo-go-vs-apk-vs-development-client)
+4. [Requisitos y primera configuración](#4-requisitos-y-primera-configuración)
+5. [Configuración del proyecto en el repo](#5-configuración-del-proyecto-en-el-repo)
+6. [Generar APK con EAS Build](#6-generar-apk-con-eas-build)
+7. [Instalar y actualizar APK en tablets](#7-instalar-y-actualizar-apk-en-tablets)
+8. [Actualizaciones OTA (sin descargar APK)](#8-actualizaciones-ota-sin-descargar-apk)
+9. [Flujo de trabajo recomendado (día a día)](#9-flujo-de-trabajo-recomendado-día-a-día)
+10. [Versionado, canales y runtimeVersion](#10-versionado-canales-y-runtimeversion)
+11. [Build local con Gradle (alternativa)](#11-build-local-con-gradle-alternativa)
+12. [Solución de problemas](#12-solución-de-problemas)
+13. [Comandos de referencia](#13-comandos-de-referencia)
+14. [Enlaces útiles](#14-enlaces-útiles)
 
 ---
 
-## 1. Conceptos: qué es Expo, EAS Build y EAS Update
+## 1. Resumen: tres formas de ejecutar la app
 
-| Herramienta | Función |
-|-------------|---------|
-| **Expo** | Framework sobre React Native; el proyecto usa SDK 54. |
-| **Expo Go** | App de prueba en desarrollo; **no** sirve para producción ni push completas. |
-| **EAS Build** | Compila en servidores de Expo y entrega un **APK** (o IPA en iOS). |
-| **EAS Update** | Publica cambios de **JS/TS y assets** a apps ya instaladas (**OTA**), sin reinstalar APK. |
-| **Canal (channel)** | Etiqueta que une un APK compilado con las OTA que recibe (p. ej. `preview`). |
+| Modo | Comando / origen | Uso | ¿Recibe OTA? | ¿Push remoto? |
+|------|------------------|-----|--------------|---------------|
+| **Expo Dev** (`expo start` + QR) | `npx expo start` | Programar y probar en el momento | No | Limitado en Expo Go |
+| **APK preview** (EAS Build) | `eas build --profile preview` | Tablets del restaurante | **Sí**, canal `preview` | Sí |
+| **APK production** | `eas build --profile production` | Entorno real separado | **Sí**, canal `production` | Sí |
 
 ```mermaid
 flowchart TB
-  subgraph dev [Tu PC]
-    Code[Código React Native]
-    EASBuild[eas build]
-    EASUpdate[eas update]
+  subgraph dev [Desarrollo - tu PC]
+    Start[expo start]
+    Code[Editar .js / .tsx]
+    OTAcmd[eas update --channel preview]
+    Buildcmd[eas build --profile preview]
   end
-  subgraph expo [Expo / EAS]
-    Cloud[Build en la nube]
-    CDN[CDN de actualizaciones]
+  subgraph expo [expo.dev]
+    Metro[Metro bundler]
+    CDN[CDN EAS Update]
+    EAS[EAS Build - APK]
   end
-  subgraph phone [Android del mozo]
-    APK[APK instalado]
-    Bundle[Bundle JS OTA]
+  subgraph devices [Dispositivos]
+    ExpoGo[Expo Go - QR]
+    APK[APK instalado - tablets]
   end
-  Code --> EASBuild --> Cloud --> APK
-  Code --> EASUpdate --> CDN --> Bundle
-  APK --> Bundle
+  Start --> Metro --> ExpoGo
+  Code --> OTAcmd --> CDN
+  Code --> Buildcmd --> EAS --> APK
+  CDN --> APK
 ```
 
-**Sin Google Play Store:** el APK se distribuye por enlace de Expo, USB, carpeta compartida o URL en tu servidor. Las OTA llegan por internet al abrir la app (configurado en `app.json` → `updates.url`).
+**Respuesta corta:** con el APK **v1.0.1** (build actual) instalas **una vez** en cada tablet. Después, la mayoría de cambios se publican con **`eas update`** y la app se actualiza sola al abrirse (OTA). Solo vuelves a descargar APK cuando cambias algo **nativo**.
 
 ---
 
-## 2. Requisitos en la PC de desarrollo
+## 2. Expo Dev: desarrollo en tu PC (`expo start`)
 
-- **Node.js** LTS (compatible con Expo 54).
-- **Cuenta Expo:** [expo.dev](https://expo.dev) (cuenta del proyecto: `hgartemis`).
-- **EAS CLI:** global o vía `npx eas-cli` (recomendado si falla `npm install -g`).
-- **Git** (opcional; EAS puede subir el proyecto comprimido sin commit).
-- Para **build local** (opcional): Android Studio, Android SDK, JDK — ver [sección 10](#10-build-local-con-gradle-alternativa).
+### 2.1 Iniciar el servidor de desarrollo
 
-No necesitas publicar en Google Play Console para generar ni instalar el APK.
+```powershell
+cd e:\PROYECTOGAMBUSINAS\Las-Gambusinas
+npm install
+npx expo start
+```
+
+Opciones útiles en la terminal de Expo:
+
+| Tecla | Acción |
+|-------|--------|
+| `a` | Abrir en emulador Android |
+| `w` | Abrir en navegador web |
+| `r` | Recargar app |
+| `m` | Menú de desarrollo |
+
+### 2.2 Probar en el teléfono con QR (Expo Go)
+
+1. Instala **Expo Go** desde Play Store en el teléfono.
+2. Misma red Wi‑Fi que la PC.
+3. Escanea el QR que muestra `expo start`.
+4. La app carga el bundle desde tu PC (Metro).
+
+**Importante:** en Expo Go el backend suele funcionar con `http://IP_LAN:3000/api` aunque el APK release lo bloqueaba antes del fix de cleartext. Por eso “en QR sí conecta y en APK no” era habitual — ver [NETWORK_ERROR_APK_VS_EXPO_GO.md](./NETWORK_ERROR_APK_VS_EXPO_GO.md).
+
+### 2.3 Variables de entorno en desarrollo
+
+Copia y ajusta la IP de tu PC/servidor:
+
+```powershell
+copy .env.example .env
+```
+
+Ejemplo en `.env`:
+
+```env
+EXPO_PUBLIC_API_BASE=http://192.168.18.127:3000/api
+EXPO_PUBLIC_WS_URL=ws://192.168.18.127:3000
+```
+
+Reinicia `expo start` tras cambiar `.env`.
+
+### 2.4 Qué NO hace Expo Dev
+
+- No genera el APK de producción.
+- No aplica **EAS Update** (OTA) — eso solo corre en builds release (`__DEV__ === false`).
+- Expo Go no equivale al APK de mozos en restaurante (push remoto, manifest Android, etc.).
 
 ---
 
-## 3. Configuración del proyecto (ya aplicada)
+## 3. Expo Go vs APK vs Development Client
 
-### 3.1 `eas.json` — perfiles de compilación
+| | Expo Go | APK `preview` (EAS) | Development Client |
+|--|---------|---------------------|-------------------|
+| Instalación | App Expo Go + QR | APK desde [expo.dev/builds](https://expo.dev/accounts/hgartemis/projects/appmozo/builds) | `eas build --profile development` |
+| Conexión HTTP LAN | Suele funcionar | Requiere `usesCleartextTraffic` (ya en v1.0.1) | Similar a debug |
+| Actualización sin APK | No (solo recarga Metro) | **Sí — OTA** | Parcial |
+| Uso en restaurante | No recomendado | **Recomendado** | Solo desarrollo |
 
-| Perfil | Uso | Canal EAS Update | Android |
-|--------|-----|------------------|---------|
-| `development` | Cliente de desarrollo | `development` | Development client |
-| **`preview`** | **APK interno (recomendado para mozos / pruebas)** | `preview` | `apk`, `distribution: internal` |
-| `production` | APK de producción | `production` | `apk` |
+**Build APK actual (reemplaza builds anteriores sin cleartext):**
 
-Archivo: [`eas.json`](../eas.json).
+- **URL:** https://expo.dev/accounts/hgartemis/projects/appmozo/builds/71c12af4-f124-46d1-abd4-dddc55285681  
+- **Versión:** 1.0.1 · `versionCode` 2 · `runtimeVersion` 1.0.1 · canal `preview`  
+- **Incluye:** HTTP cleartext (fix Network Error), `POST_NOTIFICATIONS`, `expo-updates` OTA al abrir
 
-### 3.2 `app.json` — updates y proyecto Expo
+**Build obsoleto (no usar en tablets nuevas):**  
+https://expo.dev/accounts/hgartemis/projects/appmozo/builds/c88a544a-f288-4ed3-8212-c5d88f00a5bd (v1.0.0, sin fix de red en release)
+
+---
+
+## 4. Requisitos y primera configuración
+
+### 4.1 En la PC de desarrollo
+
+- **Node.js** LTS (compatible con Expo SDK 54).
+- **Cuenta Expo:** [expo.dev](https://expo.dev) — usuario `hgartemis`.
+- **EAS CLI:** `npx eas-cli` (no hace falta instalar global si usas `npx`).
+- **Git** (opcional; EAS sube el proyecto comprimido).
+
+### 4.2 Login y vinculación (primera vez)
+
+```powershell
+cd e:\PROYECTOGAMBUSINAS\Las-Gambusinas
+npm install
+npx eas-cli login
+npx eas-cli whoami
+```
+
+Debe mostrar `hgartemis`. El `projectId` ya está en `app.json`:
+
+```text
+afcea184-5e43-4fc0-8fb9-553db952ce44
+```
+
+Solo ejecuta `npx eas-cli init` si creas un proyecto Expo nuevo.
+
+### 4.3 Dashboard Expo (panel web)
+
+| Sección | URL |
+|---------|-----|
+| Proyecto | https://expo.dev/accounts/hgartemis/projects/appmozo |
+| Builds (APK) | https://expo.dev/accounts/hgartemis/projects/appmozo/builds |
+| Updates (OTA) | https://expo.dev/accounts/hgartemis/projects/appmozo/updates |
+
+---
+
+## 5. Configuración del proyecto en el repo
+
+### 5.1 Perfiles EAS — [`eas.json`](../eas.json)
+
+| Perfil | Uso | Canal OTA | Salida Android |
+|--------|-----|-----------|----------------|
+| `development` | Dev client | `development` | Development build |
+| **`preview`** | **Tablets mozos (recomendado)** | **`preview`** | APK interno |
+| `production` | Entorno real separado | `production` | APK |
+
+### 5.2 `app.json` — versión y OTA (valores actuales)
+
+| Campo | Valor actual |
+|-------|----------------|
+| `expo.version` | `1.0.1` |
+| `runtimeVersion` | `1.0.1` |
+| `android.usesCleartextTraffic` | `true` |
+| Permisos Android | `RECORD_AUDIO`, `POST_NOTIFICATIONS` |
 
 ```json
-"version": "1.0.0",
-"runtimeVersion": "1.0.0",
 "updates": {
   "url": "https://u.expo.dev/afcea184-5e43-4fc0-8fb9-553db952ce44",
   "enabled": true,
-  "checkAutomatically": "ON_LOAD"
-},
-"extra": {
-  "eas": {
-    "projectId": "afcea184-5e43-4fc0-8fb9-553db952ce44"
-  }
+  "checkAutomatically": "ON_LOAD",
+  "fallbackToCacheTimeout": 0
 }
 ```
 
-- **`projectId`:** ya vinculado; no hace falta `eas init` salvo proyecto nuevo.
-- **`runtimeVersion`:** debe ser un **string fijo** (p. ej. `"1.0.0"`) porque el repo tiene carpeta `android/` (**bare workflow**). No usar `{"policy": "appVersion"}` en este proyecto.
+- **`runtimeVersion`:** string fijo `"1.0.1"` (bare workflow con carpeta `android/`). No usar `policy: appVersion`.
+- **`checkAutomatically: ON_LOAD`:** al abrir la app, consulta si hay OTA nueva.
 
-### 3.3 `expo-updates` y comprobación al abrir la app
+### 5.3 Código que aplica OTA al iniciar
 
-- Dependencia: `expo-updates` (~29.x, SDK 54).
-- Lógica: [`services/otaUpdates.js`](../services/otaUpdates.js) — en release comprueba OTA y recarga; en `__DEV__` no aplica.
-- Integración: [`App.js`](../App.js) llama a `checkAndApplyOtaUpdate()` al iniciar.
+| Archivo | Función |
+|---------|---------|
+| [`services/otaUpdates.js`](../services/otaUpdates.js) | `checkAndApplyOtaUpdate()` — comprueba, descarga y `reloadAsync()` |
+| [`App.js`](../App.js) | Llama a OTA al arranque (solo release, no en `__DEV__`) |
+| [`services/pushNotifications.js`](../services/pushNotifications.js) | Permisos push; pide notificaciones en login (APK, no Expo Go) |
 
-### 3.4 Scripts npm
+Manifest Android (release) ya incluye:
 
-| Script | Comando equivalente |
-|--------|---------------------|
+- `android:usesCleartextTraffic="true"` — permite `http://IP:3000/api` en LAN.
+- Meta-datos `expo.modules.updates.*` — OTA habilitada, check **ALWAYS** al lanzar.
+
+### 5.4 Scripts npm — [`package.json`](../package.json)
+
+| Script | Comando |
+|--------|---------|
+| `npm start` | `expo start` — desarrollo |
 | `npm run build:apk:preview` | `eas build --platform android --profile preview` |
 | `npm run update:preview` | `eas update --channel preview` |
 | `npm run update:production` | `eas update --channel production` |
 
 ---
 
-## 4. Primera vez: cuenta Expo y vinculación
+## 6. Generar APK con EAS Build
+
+### 6.1 Cuándo generar un APK nuevo
+
+- Primera instalación en tablets.
+- Cambios en `android/`, permisos, plugins nativos (`expo-notifications`, etc.).
+- Cambio de `runtimeVersion`.
+- Actualización de SDK Expo con código nativo.
+
+### 6.2 Comando (perfil `preview`)
 
 ```powershell
 cd e:\PROYECTOGAMBUSINAS\Las-Gambusinas
 npm install
-npx eas-cli login
-npx eas-cli whoami
-```
-
-Si el proyecto no tuviera `projectId` en `app.json`:
-
-```powershell
-npx eas-cli init
-```
-
-En este repo el ID ya es `afcea184-5e43-4fc0-8fb9-553db952ce44`.
-
----
-
-## 5. Generar el APK en la nube (EAS Build)
-
-### 5.1 Perfil recomendado: `preview`
-
-APK listo para instalar en dispositivos reales, canal `preview` para OTA.
-
-```powershell
-cd e:\PROYECTOGAMBUSINAS\Las-Gambusinas
-npm install
-npx eas-cli build --platform android --profile preview
+npx eas-cli build --platform android --profile preview --non-interactive
 ```
 
 O:
@@ -159,70 +256,107 @@ O:
 npm run build:apk:preview
 ```
 
-### 5.2 Qué ocurre durante el build
+`--non-interactive` evita preguntas en CI/scripts. Sin `--no-wait`, la CLI espera hasta que termine (~15–25 min).
 
-1. EAS empaqueta el proyecto y lo sube.
-2. Usa credenciales Android remotas (keystore en servidores Expo) si ya están configuradas.
-3. Compila el APK en la nube (~15–25 min).
-4. Muestra un **enlace** y un **código QR** para instalar en el teléfono.
+### 6.3 Qué hace EAS durante el build
 
-### 5.3 Dónde ver el resultado
+1. Comprime y sube el proyecto a Expo.
+2. Usa **keystore remoto** de Expo (credencial `yvmbF6MBWH` en la cuenta).
+3. Compila APK en la nube (SDK 54, `versionCode` desde `build.gradle`).
+4. Publica enlace + QR para instalar.
 
-- Listado de builds: https://expo.dev/accounts/hgartemis/projects/appmozo/builds  
-- Ejemplo de build exitoso (preview): https://expo.dev/accounts/hgartemis/projects/appmozo/builds/c88a544a-f288-4ed3-8212-c5d88f00a5bd  
+### 6.4 Checklist antes de cada APK
 
-### 5.4 Descargar el APK a disco (opcional)
+- [ ] `npm install`
+- [ ] Si es release nuevo: **`versionCode` +1** en `android/app/build.gradle`
+- [ ] Alinear `expo.version`, `runtimeVersion` y `strings.xml` → `expo_runtime_version` si cambias versión nativa
+- [ ] URL/API correcta para el entorno (el mozo también puede cambiarla en Ajustes)
+- [ ] No mezclar APK firmado localmente con APK EAS en la misma tablet sin coordinar firma
 
-Desde el dashboard → build → **Download** → guardar p. ej.:
+### 6.5 Ver estado y descargar
 
-```text
-E:\PROYECTOGAMBUSINAS\Las-Gambusinas-mozos-preview-v1.0.0.apk
+```powershell
+npx eas-cli build:list
+npx eas-cli build:view 71c12af4-f124-46d1-abd4-dddc55285681
 ```
 
-### 5.5 Perfil `production`
+En el dashboard → **Download** para guardar el `.apk` en disco.
 
-Mismo flujo, otro canal (OTA independiente):
+### 6.6 Perfil `production`
 
 ```powershell
 npx eas-cli build --platform android --profile production
 ```
 
-Usa `production` solo cuando quieras separar builds/OTA de entorno real vs pruebas.
-
-### 5.6 Checklist antes de cada build APK
-
-- [ ] `npm install` ejecutado
-- [ ] URL del API / `.env` correctos para el entorno
-- [ ] Si es **nuevo APK** (no solo OTA): subir `versionCode` en `android/app/build.gradle` y alinear `expo.version` + `runtimeVersion` si cambias versión nativa (ver [sección 8](#8-versionado-canales-y-runtimeversion))
+OTA de producción solo llega a APKs compilados con canal `production`.
 
 ---
 
-## 6. Instalar el APK en el celular o tablet
+## 7. Instalar y actualizar APK en tablets
 
-1. Abre en el **mismo dispositivo Android** el enlace del build o escanea el QR de Expo.
-2. Descarga e instala (permite **instalar apps desconocidas** para Chrome/Archivos).
-3. Abre **App Mozos** → configura **URL del servidor** → **login** del mozo.
-4. Comprueba versión en **Más** / **Acerca de** (`1.0.0` según `app.json`).
+### 7.1 Primera instalación
 
-Detalle operativo para restaurante: [INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md §5](./INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md#5-primera-instalación-en-la-tablet).
+1. Abrir en la tablet el enlace del build o escanear el QR (mismo dispositivo).
+2. Permitir **orígenes desconocidos** (Chrome / Archivos).
+3. Instalar → Abrir.
+4. **Configuración del servidor:** `http://<IP_LAN_PC>:3000/api` (no `localhost`).
+5. **Probar conexión** en ajustes.
+6. Login del mozo.
+7. Android 13+: aceptar permiso de **notificaciones** cuando la app lo solicite.
+
+### 7.2 Actualizar APK encima (sin desinstalar)
+
+Requisitos Android:
+
+| Requisito | Valor |
+|-----------|--------|
+| Package | `com.carlos121.appmozo` |
+| Firma | Misma keystore EAS |
+| `versionCode` | **Mayor** que el instalado (actual: `2`) |
+
+Pasos: descargar nuevo APK → abrir → **Actualizar** / **Instalar**.
+
+Si falla “conflicto de paquete”: firma distinta o `versionCode` no incrementado → desinstalar e instalar de nuevo (se pierde URL/sesión en AsyncStorage).
+
+### 7.3 Verificar versión instalada
+
+En la app: **Más** → **Acerca de** → debe mostrar **1.0.1**.
 
 ---
 
-## 7. Actualizar la app sin Play Store
+## 8. Actualizaciones OTA (sin descargar APK)
 
-Hay **dos mecanismos**. Elige según el tipo de cambio.
+### 8.1 Cómo funciona en la tablet
 
-### 7.1 Actualización OTA (EAS Update) — sin nuevo APK
+1. La tablet tiene el APK **preview** con `runtimeVersion` **1.0.1**.
+2. Tú publicas una OTA con `eas update --channel preview`.
+3. El mozo **abre la app** (o la cierra y vuelve a abrir).
+4. La app consulta `https://u.expo.dev/...` (`ON_LOAD` + `otaUpdates.js`).
+5. Si hay bundle nuevo: lo descarga y **recarga** automáticamente.
 
-**Qué actualiza:** pantallas, lógica JS/TS, estilos, assets empaquetados en el bundle.  
-**Qué no actualiza:** plugins nativos nuevos, permisos Android, cambios en `android/`, SDK de Expo, dependencias con código nativo.
+**Requisitos en la tablet:** internet (Wi‑Fi) al abrir la app. No hace falta Play Store ni descargar otro APK.
 
-**Requisito:** el dispositivo debe tener instalado un APK compilado con el **mismo canal** y **mismo `runtimeVersion`** que la OTA.
+### 8.2 Qué puedes actualizar con OTA
+
+| Sí (OTA) | No (necesita APK nuevo) |
+|----------|-------------------------|
+| Pantallas, componentes React | Permisos Android nuevos |
+| Lógica JS/TS, axios, sockets | Cambios en `AndroidManifest.xml` |
+| Estilos, textos, assets en bundle | Nuevos plugins con código nativo |
+| Fixes de negocio (comandas, pagos) | Cambio de `runtimeVersion` |
+| Configuración guardada en AsyncStorage (runtime) | `usesCleartextTraffic` (ya va en APK 1.0.1) |
+
+### 8.3 Publicar una OTA (paso a paso)
 
 ```powershell
 cd e:\PROYECTOGAMBUSINAS\Las-Gambusinas
-# Tras editar código JS/TS:
-npx eas-cli update --channel preview --message "Descripción del cambio"
+
+# 1. Editar código (.js, .tsx, etc.)
+# 2. Probar localmente (opcional)
+npx expo start
+
+# 3. Publicar al canal preview (mismo que el APK instalado)
+npx eas-cli update --channel preview --message "Fix: pantalla pagos y mensaje mesa"
 ```
 
 O:
@@ -231,163 +365,227 @@ O:
 npm run update:preview
 ```
 
-**En el teléfono:** cerrar y volver a abrir la app (o esperar recarga automática). La app comprueba updates al cargar (`checkAutomatically: ON_LOAD` + `otaUpdates.js`).
+**En la tablet:** cerrar la app por completo → volver a abrir → esperar unos segundos (descarga + recarga).
 
-**Dashboard de updates:** https://expo.dev/accounts/hgartemis/projects/appmozo/updates  
+### 8.4 Comprobar que la OTA se publicó
 
-| Publicas OTA en canal | El APK debe haberse generado con perfil |
-|-----------------------|----------------------------------------|
-| `preview` | `preview` |
-| `production` | `production` |
+- Dashboard: https://expo.dev/accounts/hgartemis/projects/appmozo/updates  
+- Debe mostrar: **Branch** `preview`, **Runtime version** `1.0.1`, plataforma Android.
 
-### 7.2 Actualización con nuevo APK — cambios nativos o versión nueva
-
-**Cuándo:** nuevo plugin Expo, permisos, `expo-notifications`, cambio de `runtimeVersion`, actualización mayor de SDK, etc.
-
-**Pasos:**
-
-1. Incrementar `versionCode` (y opcionalmente `versionName`) en [`android/app/build.gradle`](../android/app/build.gradle).
-2. Si cambias versión de app de forma incompatible con OTA anterior: actualizar `expo.version` y **`runtimeVersion`** (mismo string) en [`app.json`](../app.json).
-3. `npx eas-cli build --platform android --profile preview` (o `production`).
-4. En cada tablet: abrir el **nuevo APK** → Instalar/Actualizar encima (misma firma EAS + `versionCode` mayor).
-5. Opcional: publicar OTA inicial en el canal tras el build: `eas update --channel preview --message "Baseline v1.0.1"`.
-
-```mermaid
-flowchart LR
-  subgraph ota [OTA - eas update]
-    JS[Cambios .js / assets]
-    Fast[Rápido - minutos]
-  end
-  subgraph apk [APK - eas build]
-    Native[Plugins / android / SDK]
-    Slow[Más lento - reinstall APK]
-  end
-  JS --> Fast
-  Native --> Slow
-```
-
-### 7.3 Resumen: ¿OTA o APK?
-
-| Cambio | Comando |
-|--------|---------|
-| Textos, pantallas, fixes en `.js` | `eas update --channel preview` |
-| Nuevo módulo nativo, permisos, `app.json` plugins | `eas build --profile preview` + instalar APK |
-| Subir versión incompatible de runtime | Cambiar `runtimeVersion` + **nuevo APK** + luego OTA solo con ese runtime |
-
-### 7.4 Distribuir APK sin Play Store (recordatorio)
-
-| Método | Pasos |
-|--------|--------|
-| Enlace Expo | QR / URL del build en expo.dev |
-| Archivo local | Copiar `.apk` por USB o carpeta compartida |
-| Servidor propio | Subir APK a HTTPS; el mozo descarga e instala |
-
-No se usa Google Play Console en este flujo.
-
----
-
-## 8. Versionado, canales y runtimeVersion
-
-### Android (`android/app/build.gradle`)
-
-| Campo | Valor actual | Siguiente release (ejemplo) |
-|-------|--------------|----------------------------|
-| `versionCode` | `1` | `2` (obligatorio +1 para instalar encima) |
-| `versionName` | `"1.0.0"` | `"1.0.1"` |
-
-> Con carpeta `android/`, EAS **ignora** `android.package` de `app.json` y usa el valor nativo (`com.carlos121.appmozo`).
-
-### Expo (`app.json`)
-
-| Campo | Rol |
-|-------|-----|
-| `version` | Versión visible en la app |
-| `runtimeVersion` | Debe coincidir entre APK y OTA; si cambia, hace falta **nuevo APK** |
-
-Al publicar OTA, EAS muestra algo como:
-
-```text
-Branch          preview
-Runtime version 1.0.0
-Platform        android, ios
-```
-
-Si cambias `runtimeVersion` de `1.0.0` a `1.0.1`, los dispositivos con APK `1.0.0` **no** recibirán OTA `1.0.1` hasta que instalen un APK compilado con `runtimeVersion` `1.0.1`.
-
----
-
-## 9. Comandos de referencia rápida
+### 8.5 OTA en canal `production`
 
 ```powershell
-cd e:\PROYECTOGAMBUSINAS\Las-Gambusinas
+npx eas-cli update --channel production --message "Release producción"
+```
 
-# Dependencias
-npm install
+Solo tablets con APK compilado con perfil `production` la recibirán.
 
-# Sesión Expo
-npx eas-cli login
-npx eas-cli whoami
+### 8.6 Baseline OTA tras un APK nuevo (opcional)
 
-# --- APK (instalación inicial o cambios nativos) ---
-npx eas-cli build --platform android --profile preview
-npm run build:apk:preview
+Después de instalar un APK nuevo por primera vez con `runtimeVersion` nuevo:
 
-# --- OTA (solo JS/TS, mismo runtimeVersion) ---
-npx eas-cli update --channel preview --message "Fix pantalla pagos"
-npm run update:preview
+```powershell
+npx eas-cli update --channel preview --message "Baseline v1.0.1"
+```
 
-# Ver estado de un build
-npx eas-cli build:list
-npx eas-cli build:view BUILD_ID
+Así el CDN tiene el mismo JS que el embebido en el APK.
 
-# Desarrollo local (no es el APK de producción)
-npx expo start
+### 8.7 Diagrama: decisión OTA vs APK
+
+```mermaid
+flowchart TD
+  A[Cambio en el código] --> B{¿Tocaste android/ plugins permisos runtimeVersion?}
+  B -->|No| C[eas update --channel preview]
+  C --> D[Tablet: abrir app con internet]
+  D --> E[OTA aplicada automáticamente]
+  B -->|Sí| F[Subir versionCode + version/runtime]
+  F --> G[eas build --profile preview]
+  G --> H[Instalar APK en tablet]
 ```
 
 ---
 
-## 10. Build local con Gradle (alternativa)
+## 9. Flujo de trabajo recomendado (día a día)
 
-Si no usas EAS y tienes Android SDK instalado:
+### Escenario A — Desarrollo y prueba rápida
+
+```text
+1. Backend corriendo (IP en .env del backend)
+2. cd Las-Gambusinas && npx expo start
+3. Escanear QR con Expo Go
+4. Probar login, mesas, socket
+```
+
+### Escenario B — Entregar fix a tablets ya con APK 1.0.1 (lo más habitual)
+
+```text
+1. Editar código JS/TS
+2. npm run update:preview   (o eas update con --message)
+3. Avisar al local: "cerrar y abrir la app con Wi‑Fi"
+4. Verificar en una tablet
+```
+
+**Tiempo:** minutos. **Sin** nuevo APK.
+
+### Escenario C — Nuevo permiso, plugin o versión nativa
+
+```text
+1. Editar app.json / android/ / build.gradle
+2. versionCode++ , alinear version + runtimeVersion
+3. npm run build:apk:preview
+4. Esperar build en expo.dev
+5. Instalar APK en tablets (enlace o QR)
+6. Opcional: eas update --channel preview --message "Baseline"
+```
+
+### Escenario D — Primera vez en un restaurante
+
+```text
+1. eas build --profile preview  (o usar build 71c12af4... si ya terminó)
+2. Instalar APK en cada tablet
+3. Configurar URL servidor + login
+4. Futuros cambios → solo OTA (escenario B)
+```
+
+---
+
+## 10. Versionado, canales y runtimeVersion
+
+### 10.1 Valores actuales en el repo
+
+| Archivo | Campo | Valor |
+|---------|--------|-------|
+| `app.json` | `version` | `1.0.1` |
+| `app.json` | `runtimeVersion` | `1.0.1` |
+| `android/app/build.gradle` | `versionCode` | `2` |
+| `android/app/build.gradle` | `versionName` | `"1.0.1"` |
+| `android/.../strings.xml` | `expo_runtime_version` | `1.0.1` |
+
+> Con carpeta `android/`, EAS usa `applicationId` del Gradle: `com.carlos121.appmozo`.
+
+### 10.2 Regla del `runtimeVersion`
+
+| Situación | Acción |
+|-----------|--------|
+| Solo cambios JS | OTA en canal `preview`, **mismo** `runtimeVersion` 1.0.1 |
+| Cambio incompatible nativo | Subir `runtimeVersion` a p. ej. `1.0.2` + **nuevo APK** + luego OTA solo para 1.0.2 |
+
+Tablets con APK `runtimeVersion` **1.0.0** **no** reciben OTA publicada para **1.0.1**.
+
+### 10.3 Canales y perfiles (tabla de correspondencia)
+
+| Publicas con | APK debe compilarse con | Tablets que reciben |
+|--------------|-------------------------|---------------------|
+| `eas update --channel preview` | `eas build --profile preview` | Mozos / pruebas |
+| `eas update --channel production` | `eas build --profile production` | Producción dedicada |
+
+### 10.4 Siguiente release APK (ejemplo)
+
+| Archivo | Cambio |
+|---------|--------|
+| `app.json` | `"version": "1.0.2"`, `"runtimeVersion": "1.0.2"` |
+| `build.gradle` | `versionCode 3`, `versionName "1.0.2"` |
+| `strings.xml` | `expo_runtime_version` → `1.0.2` |
+
+---
+
+## 11. Build local con Gradle (alternativa)
+
+Si no usas EAS y tienes Android SDK:
 
 ```powershell
 & "E:\PROYECTOGAMBUSINAS\build-Las-Gambusinas-APK.ps1"
 ```
 
-Salida: `Las-Gambusinas/android/app/build/outputs/apk/release/app-release.apk`.
+Salida:
 
-**Nota:** el build local puede usar keystore distinto al de EAS; para OTA coherentes, preferir **un solo método de firma** (idealmente EAS Build para tablets de mozos).
+```text
+Las-Gambusinas/android/app/build/outputs/apk/release/app-release.apk
+```
 
----
-
-## 11. Solución de problemas
-
-| Error / síntoma | Causa | Solución |
-|-----------------|-------|----------|
-| `runtime version policies are not supported` | Bare workflow + `policy: appVersion` | Usar `"runtimeVersion": "1.0.0"` string en `app.json` |
-| OTA no llega al teléfono | Canal distinto al del APK | Rebuild con perfil `preview` o publicar OTA en `preview` |
-| OTA no llega | `runtimeVersion` distinto | Alinear `runtimeVersion` o generar nuevo APK |
-| `eas update` sin efecto | App en modo dev | OTA solo en APK release, no en `expo start` |
-| No instala APK nuevo | `versionCode` no subió | Incrementar en `build.gradle` |
-| Conflicto de paquete al instalar | Firma distinta | Usar mismo canal EAS / misma cuenta; no mezclar APK local y EAS sin coordinar |
-| `ECOMPROMISED` en npm | Caché npm | `npm cache clean --force`; usar `npx eas-cli` |
-| `SDK location not found` | Build local sin SDK | Android Studio + `ANDROID_HOME` |
+**Advertencia:** keystore local puede diferir del de EAS → problemas al “actualizar encima” o con OTA. Para tablets de mozos, **preferir EAS Build** y un solo método de firma.
 
 ---
 
-## 12. Enlaces útiles
+## 12. Solución de problemas
+
+| Síntoma | Causa probable | Solución |
+|---------|----------------|----------|
+| **Network Error** en APK, Expo Go OK | HTTP bloqueado en release | APK **v1.0.1+** con cleartext; URL con IP LAN, no `localhost` — [NETWORK_ERROR](./NETWORK_ERROR_APK_VS_EXPO_GO.md) |
+| OTA no llega | Canal distinto | APK `preview` + `eas update --channel preview` |
+| OTA no llega | `runtimeVersion` distinto | Mismo runtime o nuevo APK |
+| OTA no aplica | App en desarrollo | OTA solo en APK release, no en `expo start` |
+| OTA no aplica | Sin internet en tablet | Wi‑Fi activo al abrir app |
+| `eas update` sin efecto | Mensaje de runtime | Ver dashboard Updates: runtime `1.0.1` |
+| No instala APK nuevo | `versionCode` no subió | +1 en `build.gradle` |
+| Conflicto al instalar | Firma distinta | Solo APK EAS misma cuenta; no mezclar con Gradle local |
+| `runtime version policies are not supported` | `policy: appVersion` en bare | String fijo en `runtimeVersion` |
+| Push no funciona en Expo Go | Limitación SDK 53+ | Probar en APK EAS |
+| Notificaciones no en Android 13+ | Permiso no concedido | Aceptar diálogo; revisar Ajustes → App → Notificaciones |
+| `ECOMPROMISED` npm | Caché npm | `npm cache clean --force`; usar `npx eas-cli` |
+| Build EAS lento / falla | Cola o dependencias | Ver logs en URL del build; `npm install` local antes de subir |
+
+---
+
+## 13. Comandos de referencia
+
+```powershell
+cd e:\PROYECTOGAMBUSINAS\Las-Gambusinas
+
+# --- Expo Dev (desarrollo) ---
+npm install
+npx expo start                    # QR / emulador
+npx expo start --tunnel           # Si la red bloquea LAN
+
+# --- Cuenta Expo ---
+npx eas-cli login
+npx eas-cli whoami
+
+# --- APK (instalación o cambios nativos) ---
+npx eas-cli build --platform android --profile preview
+npx eas-cli build --platform android --profile preview --non-interactive --no-wait
+npm run build:apk:preview
+
+# --- OTA (actualizar tablets sin nuevo APK) ---
+npx eas-cli update --channel preview --message "Descripción del cambio"
+npm run update:preview
+npx eas-cli update --channel production --message "Release prod"
+
+# --- Consultar builds ---
+npx eas-cli build:list
+npx eas-cli build:view 71c12af4-f124-46d1-abd4-dddc55285681
+```
+
+---
+
+## 14. Enlaces útiles
 
 | Recurso | URL |
 |---------|-----|
 | Proyecto appmozo | https://expo.dev/accounts/hgartemis/projects/appmozo |
 | Builds | https://expo.dev/accounts/hgartemis/projects/appmozo/builds |
+| Build actual v1.0.1 | https://expo.dev/accounts/hgartemis/projects/appmozo/builds/71c12af4-f124-46d1-abd4-dddc55285681 |
 | Updates (OTA) | https://expo.dev/accounts/hgartemis/projects/appmozo/updates |
 | Docs EAS Build | https://docs.expo.dev/build/introduction/ |
 | Docs EAS Update | https://docs.expo.dev/eas-update/introduction/ |
+| Docs `expo start` | https://docs.expo.dev/get-started/start-developing/ |
 | Runtime versions | https://docs.expo.dev/eas-update/runtime-versions/ |
 
 ### Documentación relacionada en este repo
 
-- [INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md](./INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md) — Operación en restaurante
-- [APP_MOZOS_DOCUMENTACION_COMPLETA.md](./APP_MOZOS_DOCUMENTACION_COMPLETA.md) — Arquitectura app y push
-- [App Mozos, App Cocina, Backend Las Gambusinas.md](./App%20Mozos,%20App%20Cocina,%20Backend%20Las%20Gambusinas.md) — Integración backend
+- [INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md](./INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md) — Operación en restaurante  
+- [NETWORK_ERROR_APK_VS_EXPO_GO.md](./NETWORK_ERROR_APK_VS_EXPO_GO.md) — Diagnóstico red APK vs Expo Go  
+- [APP_MOZOS_DOCUMENTACION_COMPLETA.md](./APP_MOZOS_DOCUMENTACION_COMPLETA.md) — Arquitectura y push  
+- [`eas.json`](../eas.json) · [`app.json`](../app.json) · [`services/otaUpdates.js`](../services/otaUpdates.js)
+
+---
+
+## Resumen ejecutivo
+
+| Pregunta | Respuesta |
+|----------|-----------|
+| ¿Desarrollo diario? | `npx expo start` + Expo Go (QR) |
+| ¿Tablets del restaurante? | APK EAS `preview` v1.0.1 (enlace arriba) |
+| ¿Actualizar sin descargar APK? | **Sí** → `eas update --channel preview` + abrir app con Wi‑Fi |
+| ¿Cuándo nuevo APK? | Permisos, `android/`, plugins nativos, nuevo `runtimeVersion` |
+| ¿Se actualiza sola al abrir? | **Sí** — `ON_LOAD` + `checkAndApplyOtaUpdate()` en release |

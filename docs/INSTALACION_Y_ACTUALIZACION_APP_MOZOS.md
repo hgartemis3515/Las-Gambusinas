@@ -9,6 +9,7 @@
 | Documento | Contenido |
 |-----------|-----------|
 | **[EXPO_EAS_APK_Y_ACTUALIZACIONES.md](./EXPO_EAS_APK_Y_ACTUALIZACIONES.md)** | Procedimiento completo Expo/EAS: crear APK, OTA sin Play Store, comandos |
+| **[NETWORK_ERROR_APK_VS_EXPO_GO.md](./NETWORK_ERROR_APK_VS_EXPO_GO.md)** | **Network Error** al configurar servidor en APK (HTTP / cleartext) |
 | [APP_MOZOS_DOCUMENTACION_COMPLETA.md](./APP_MOZOS_DOCUMENTACION_COMPLETA.md#-conversión-a-apk-nativo-y-funcionalidades-móviles-avanzadas) | Build nativo, Firebase, push |
 
 ---
@@ -264,6 +265,7 @@ La app incluye **`expo-updates`**. Al abrir el APK compilado con canal `preview`
 | *App no instalada* al abrir APK | Firma distinta al build anterior | Desinstalar app anterior; instalar con el keystore de producción correcto |
 | Instala pero no actualiza | `versionCode` igual o menor | Subir `versionCode` en `build.gradle` y recompilar |
 | App abre pero no conecta | URL del servidor incorrecta o red/firewall | Revisar URL en ajustes; ping al backend; HTTPS válido |
+| **Network Error** solo en APK (Expo Go OK) | HTTP bloqueado en release o `localhost` en la URL | Ver **[NETWORK_ERROR_APK_VS_EXPO_GO.md](./NETWORK_ERROR_APK_VS_EXPO_GO.md)**; recompilar APK con `usesCleartextTraffic` |
 | EAS CLI: `ECOMPROMISED` (npm) | Caché o lock de npm dañado | `npm cache clean --force`; reinstalar `eas-cli`; ver logs en `%LOCALAPPDATA%\npm-cache\_logs` |
 | Versión en app no coincide | No sincronizaste `app.json` con el build | Alinear `expo.version` y volver a compilar |
 

@@ -2,8 +2,8 @@
   "expo": {
     "name": "appmozo",
     "slug": "appmozo",
-    "version": "1.0.0",
-    "runtimeVersion": "1.0.0",
+    "version": "1.0.1",
+    "runtimeVersion": "1.0.1",
     "updates": {
       "url": "https://u.expo.dev/afcea184-5e43-4fc0-8fb9-553db952ce44",
       "enabled": true,
@@ -25,6 +25,7 @@
       "supportsTablet": true
     },
     "android": {
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -32,7 +33,8 @@
       "package": "com.carlos121.appmozo",
       "useNextNotificationsApi": true,
       "permissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {

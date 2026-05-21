@@ -10,6 +10,11 @@
 
 ## 📋 Historial de Cambios
 
+### v2.13 (Mayo 2026) - Network Error APK vs Expo Go
+
+- ✅ [NETWORK_ERROR_APK_VS_EXPO_GO.md](./NETWORK_ERROR_APK_VS_EXPO_GO.md) — Diagnóstico cleartext HTTP, localhost, IP LAN
+- ✅ Fix: `usesCleartextTraffic` en `AndroidManifest` release y `app.json`
+
 ### v2.12 (Mayo 2026) - Guía Expo EAS (APK + OTA)
 
 - ✅ [EXPO_EAS_APK_Y_ACTUALIZACIONES.md](./EXPO_EAS_APK_Y_ACTUALIZACIONES.md) — Procedimiento Expo Dev: APK sin Play Store, EAS Update (OTA), comandos y canales
@@ -167,6 +172,7 @@ Solicitar Pago → Procesar Pago → Generar Boucher → Liberar Mesa
 15. [Actualizacion en Tiempo Real - Arquitectura Completa](#actualización-en-tiempo-real---arquitectura-completa) — ver [Herramientas tiempo real pantallas](#herramientas-para-actualizar-pantallas-en-tiempo-real)
 16. [Resumen Ejecutivo](#resumen-ejecutivo)
 17. [Conversion a APK Nativo y Funcionalidades Moviles Avanzadas](#-conversión-a-apk-nativo-y-funcionalidades-móviles-avanzadas)
+    - [**Network Error APK vs Expo Go**](./NETWORK_ERROR_APK_VS_EXPO_GO.md) — servidor / HTTP en APK
     - [**Expo / EAS: APK y OTA sin Play Store**](./EXPO_EAS_APK_Y_ACTUALIZACIONES.md) — procedimiento completo de build y actualizaciones
     - [**Instalación y actualización en tablets (operativa)**](./INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md) — guía APK en restaurante
     - [Generación de APK/AAB Productivo](#1-generación-de-apkaab-productivo)
