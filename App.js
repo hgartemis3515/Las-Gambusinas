@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 import './utils/registerGsapPlugins';
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Platform } from 'react-native';
 import {
   NavigationContainer,
@@ -9,6 +9,7 @@ import {
 import { createStackNavigator } from '@react-navigation/stack';
 import { ThemeProvider } from './context/ThemeContext';
 import { SocketProvider } from './context/SocketContext';
+import SplashScreen from './Pages/Splash/SplashScreen';
 import Login from './Pages/Login/Login';
 import Navbar from './Pages/navbar/navbar';
 import ComandaDetalleScreen from './Pages/ComandaDetalleScreen';
@@ -21,7 +22,6 @@ import {
   configureNotificationBehavior,
   subscribeToNotificationResponses,
 } from './services/pushNotifications';
-import { checkAndApplyOtaUpdate } from './services/otaUpdates';
 
 if (Platform.OS !== 'web') {
   require('./tasks/backgroundFetchTask');
@@ -31,16 +31,32 @@ const Stack = createStackNavigator();
 export const navigationRef = createNavigationContainerRef();
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
+
   useEffect(() => {
     configureNotificationBehavior();
     const sub = subscribeToNotificationResponses(navigationRef);
     if (Platform.OS !== 'web') {
-      const { registerMozosBackgroundFetch } = require('./tasks/backgroundFetchTask');
-      registerMozosBackgroundFetch().catch(() => {});
-      checkAndApplyOtaUpdate().catch(() => {});
+      // OTA check lo hace el SplashScreen
     }
     return () => sub.remove();
   }, []);
+
+  const handleSplashFinish = () => {
+    setShowSplash(false);
+  };
+
+  if (showSplash) {
+    return (
+      <SafeAreaProvider>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <ThemeProvider>
+            <SplashScreen onFinish={handleSplashFinish} />
+          </ThemeProvider>
+        </GestureHandlerRootView>
+      </SafeAreaProvider>
+    );
+  }
 
   return (
     <SafeAreaProvider>
@@ -68,7 +84,7 @@ export default function App() {
                   name="ComandaDetalle"
                   component={ComandaDetalleScreen}
                   options={{
-                    headerShown: false, // Header personalizado en el screen
+                    headerShown: false,
                   }}
                 />
                 <Stack.Screen
