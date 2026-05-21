@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import moment from 'moment-timezone';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { showLocalPush } from '../services/pushNotifications';
 
 // Componentes
 import BadgeEstadoPlato from '../Components/BadgeEstadoPlato';
@@ -433,7 +434,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           } catch (_) {}
           if (data.nuevoEstado === 'recoger') {
             const nombrePlato = platoActualizado.plato?.nombre || platoActualizado.nombre || 'Un plato';
-            Alert.alert('🍽️ Plato Listo', `${nombrePlato} está listo para recoger de cocina.`, [{ text: 'Entendido' }]);
+            const mesaNumero = mesa?.numero || mesa?.nummesa || '';
+            showLocalPush(
+              '🍽️ Plato Listo',
+              `${nombrePlato} está listo para recoger${mesaNumero ? `. Mesa ${mesaNumero}` : ''}.`,
+              { mesaId: mesaId, mesaNumero, type: 'plato-listo', comandaId: data.comandaId },
+              'plato-listo'
+            );
           }
           return nuevasComandas;
         });

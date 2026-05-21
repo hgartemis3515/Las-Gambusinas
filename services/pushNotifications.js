@@ -156,6 +156,35 @@ export function subscribeToNotificationResponses(navigationRef) {
 }
 
 /**
+ * Muestra una notificación local del sistema (funciona en foreground y background).
+ * Usada para alertar al mozo cuando un plato o comanda está listo para recoger,
+ * tanto si la push remota no llegó como refuerzo visual/sonoro.
+ *
+ * @param {string} title - Título de la notificación
+ * @param {string} body - Texto del cuerpo
+ * @param {object} [data] - Datos extras para navegación al tocar (mesaId, etc.)
+ * @param {string} [channelId='plato-listo'] - Canal de Android
+ */
+export async function showLocalPush(title, body, data = {}, channelId = CHANNEL_PLATO_LISTO) {
+  if (Platform.OS === 'web') return;
+  try {
+    await ensureAndroidChannels();
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data,
+        sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+      },
+      trigger: null, // Inmediata
+    });
+  } catch (e) {
+    console.warn('[push] Error mostrando notificación local:', e?.message);
+  }
+}
+
+/**
  * Abre la ficha de la app en ajustes (Android) para ajustar batería / notificaciones.
  */
 export async function openBatteryOptimizationSettings() {

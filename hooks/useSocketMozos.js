@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 import moment from 'moment-timezone';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getWebSocketURL } from '../apiConfig';
+import { showLocalPush } from '../services/pushNotifications';
 
 /**
  * Hook personalizado para manejar conexión Socket.io con namespace /mozos
@@ -327,6 +328,18 @@ const useSocketMozos = ({
     // Evento: Comanda actualizada
     socket.on('comanda-actualizada', (data) => {
       console.log('📥 [MOZOS] Comanda actualizada recibida:', data.comandaId, 'Comanda completa:', !!data.comanda);
+
+      // Push notification local cuando la comanda entera cambia a "recoger"
+      if (data.estadoNuevo === 'recoger' || data.estadoNuevo === 'recoger') {
+        const mesaNumero = data.comanda?.mesas?.nummesa || data.comanda?.mesas?.numero || data.mesaNumero || '';
+        const comandaNumber = data.comanda?.comandaNumber || '?';
+        showLocalPush(
+          '✅ Comanda Lista',
+          `Comanda #${comandaNumber}${mesaNumero ? ` de Mesa ${mesaNumero}` : ''} completa para recoger.`,
+          { mesaId: data.comanda?.mesas?._id, mesaNumero, type: 'comanda-lista', comandaId: data.comandaId },
+          'plato-listo'
+        );
+      }
       
       if (onComandaActualizada) {
         if (data.comanda) {
@@ -387,6 +400,17 @@ const useSocketMozos = ({
           setConnectionStatus('conectado');
           onSocketStatus({ connected: true, status: 'conectado' });
         }, 2000);
+      }
+
+      // Push notification local cuando un plato cambia a "recoger" (complementa la push remota)
+      if (data.nuevoEstado === 'recoger') {
+        const mesaNumero = data.mesaNumero || data.mesaId || '';
+        showLocalPush(
+          '🍽️ Plato Listo',
+          `Un plato está listo para recoger${mesaNumero ? `. Mesa ${mesaNumero}` : ''}.`,
+          { mesaId: data.mesaId, mesaNumero, type: 'plato-listo', comandaId: data.comandaId },
+          'plato-listo'
+        );
       }
       
       // Pasar el evento al handler si existe (para actualización granular)
