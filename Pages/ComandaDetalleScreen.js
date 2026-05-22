@@ -11,7 +11,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import moment from 'moment-timezone';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { showLocalPush } from '../services/pushNotifications';
 
 // Componentes
 import BadgeEstadoPlato from '../Components/BadgeEstadoPlato';
@@ -432,18 +431,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             if (data.nuevoEstado === 'recoger') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           } catch (_) {}
-          if (data.nuevoEstado === 'recoger') {
-            const nombrePlato = platoActualizado.plato?.nombre || platoActualizado.nombre || 'Un plato';
-            const mesaNumero = mesa?.numero || mesa?.nummesa || '';
-            showLocalPush(
-              '🍽️ Plato Listo',
-              `${nombrePlato} está listo para recoger${mesaNumero ? `. Mesa ${mesaNumero}` : ''}.`,
-              { mesaId: mesaId, mesaNumero, type: 'plato-listo', comandaId: data.comandaId },
-              'plato-listo'
-            );
-          }
           return nuevasComandas;
         });
+
       } else {
         refrescarComandasRef.current?.();
       }

@@ -463,27 +463,26 @@ const MasScreen = () => {
             <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.light} />
           </TouchableOpacity>
 
-          <View style={styles.menuItem}>
+          {/* Notificaciones Push — navega a pantalla dedicada */}
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              Haptics.selectionAsync();
+              navigateToStack('Notifications');
+            }}
+            activeOpacity={0.7}
+          >
             <View style={[styles.menuIconContainer, { backgroundColor: theme.colors.warning + "20" }]}>
               <MaterialCommunityIcons name="bell-outline" size={24} color={theme.colors.warning} />
             </View>
-            <View style={styles.themeToggleContainer}>
-              <View style={{ flex: 1, paddingRight: 8 }}>
-                <Text style={styles.menuItemText}>Notificaciones push</Text>
-                {expoPushLimited ? (
-                  <Text style={styles.pushHint}>Limitado en Expo Go (usa build nativo)</Text>
-                ) : null}
-              </View>
-              <Switch
-                value={pushEnabled}
-                onValueChange={onTogglePush}
-                trackColor={{ false: "#767577", true: theme.colors.primary }}
-                thumbColor={pushEnabled ? theme.colors.text.white : "#f4f3f4"}
-                accessibilityLabel="Notificaciones push"
-                accessibilityHint="Activa o desactiva avisos en este dispositivo"
-              />
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={styles.menuItemText}>Notificaciones push</Text>
+              <Text style={styles.pushHint}>
+                {pushEnabled ? 'Configurar avisos, sonido y vibración' : 'Desactivadas'}
+              </Text>
             </View>
-          </View>
+            <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.light} />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.section}>

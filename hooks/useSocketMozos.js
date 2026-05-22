@@ -3,7 +3,12 @@ import { io } from 'socket.io-client';
 import moment from 'moment-timezone';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getWebSocketURL } from '../apiConfig';
-import { showLocalPush } from '../services/pushNotifications';
+import {
+  showLocalPush,
+  isComandaListaEnCocina,
+  shouldNotifyMozoAsignado,
+  notifyPlatoListoLocal,
+} from '../services/pushNotifications';
 
 /**
  * Hook personalizado para manejar conexión Socket.io con namespace /mozos
@@ -42,6 +47,21 @@ const useSocketMozos = ({
   const maxDelay = 5000; // 5 segundos máximo (más agresivo)
   const heartbeatInterval = 25000; // 25 segundos (menor que timeout de 30s del servidor)
   const lastReconnectTimeRef = useRef(null);
+  const mozoPersonalRoomRef = useRef(null);
+
+  const joinMozoPersonalRoom = async (sock) => {
+    try {
+      const userRaw = await AsyncStorage.getItem('user');
+      if (!userRaw) return;
+      const user = JSON.parse(userRaw);
+      const mozoId = user?._id?.toString();
+      if (!mozoId || !sock?.connected) return;
+      if (mozoPersonalRoomRef.current === mozoId) return;
+      sock.emit('join-mozo-personal', mozoId);
+      mozoPersonalRoomRef.current = mozoId;
+      console.log(`📌 [MOZOS] Room personal mozo-${mozoId}`);
+    } catch (_) {}
+  };
 
   useEffect(() => {
     // VALIDACIÓN: Token es obligatorio para conectar
@@ -164,6 +184,7 @@ const useSocketMozos = ({
       
       // Rejoin rooms si había alguno
       rejoinRooms();
+      joinMozoPersonalRoom(socket);
       
       // Guardar estado de conexión
       AsyncStorage.setItem('socketConnected', 'true').catch(() => {});
@@ -329,16 +350,21 @@ const useSocketMozos = ({
     socket.on('comanda-actualizada', (data) => {
       console.log('📥 [MOZOS] Comanda actualizada recibida:', data.comandaId, 'Comanda completa:', !!data.comanda);
 
-      // Push notification local cuando la comanda entera cambia a "recoger"
-      if (data.estadoNuevo === 'recoger' || data.estadoNuevo === 'recoger') {
-        const mesaNumero = data.comanda?.mesas?.nummesa || data.comanda?.mesas?.numero || data.mesaNumero || '';
-        const comandaNumber = data.comanda?.comandaNumber || '?';
-        showLocalPush(
-          '✅ Comanda Lista',
-          `Comanda #${comandaNumber}${mesaNumero ? ` de Mesa ${mesaNumero}` : ''} completa para recoger.`,
-          { mesaId: data.comanda?.mesas?._id, mesaNumero, type: 'comanda-lista', comandaId: data.comandaId },
-          'plato-listo'
-        );
+      // Solo cuando cocina dejó todos los platos en "recoger" (no al marcar entregado)
+      if (data.estadoNuevo === 'recoger' && data.comanda && isComandaListaEnCocina(data.comanda)) {
+        shouldNotifyMozoAsignado({ comanda: data.comanda }).then((ok) => {
+          if (!ok) return;
+          const mesaNumero = data.comanda?.mesas?.nummesa || data.comanda?.mesas?.numero || data.mesaNumero || '';
+          const comandaNumber = data.comanda?.comandaNumber || '?';
+          showLocalPush(
+            '✅ Comanda Lista',
+            `Comanda #${comandaNumber}${mesaNumero ? ` de Mesa ${mesaNumero}` : ''} completa para recoger.`,
+            { mesaId: data.comanda?.mesas?._id, mesaNumero, type: 'comanda-lista', comandaId: data.comandaId },
+            'plato-listo',
+            'comanda',
+            { comanda: data.comanda }
+          );
+        });
       }
       
       if (onComandaActualizada) {
@@ -350,6 +376,31 @@ const useSocketMozos = ({
           // El handler debería hacer un fetch si es necesario
           onComandaActualizada({ _id: data.comandaId });
         }
+      }
+    });
+
+    // FASE 5: Evento batch de platos actualizados (múltiples platos en un solo evento)
+    socket.on('plato-actualizado-batch', (data) => {
+      console.log('📥 FASE5: [MOZOS] Batch de platos actualizados recibido:', data.comandaId, 'Platos:', data.platos?.length);
+
+      if (onSocketStatus) {
+        setConnectionStatus('online-active');
+        onSocketStatus({ connected: true, status: 'online-active' });
+        setTimeout(() => {
+          setConnectionStatus('conectado');
+          onSocketStatus({ connected: true, status: 'conectado' });
+        }, 2000);
+      }
+
+      // Refrescar comandas si aplica (sin notificación: la envía push remota o plato-actualizado)
+      if (onComandaActualizada) {
+        onComandaActualizada({
+          tipo: 'plato-actualizado-batch',
+          comandaId: data.comandaId,
+          platos: data.platos,
+          mesaId: data.mesaId,
+          timestamp: data.timestamp,
+        });
       }
     });
 
@@ -402,17 +453,11 @@ const useSocketMozos = ({
         }, 2000);
       }
 
-      // Push notification local cuando un plato cambia a "recoger" (complementa la push remota)
+      // Local solo si no hay push remota (Expo Go). APK: una sola notificación vía backend.
       if (data.nuevoEstado === 'recoger') {
-        const mesaNumero = data.mesaNumero || data.mesaId || '';
-        showLocalPush(
-          '🍽️ Plato Listo',
-          `Un plato está listo para recoger${mesaNumero ? `. Mesa ${mesaNumero}` : ''}.`,
-          { mesaId: data.mesaId, mesaNumero, type: 'plato-listo', comandaId: data.comandaId },
-          'plato-listo'
-        );
+        notifyPlatoListoLocal(data);
       }
-      
+
       // Pasar el evento al handler si existe (para actualización granular)
       if (onComandaActualizada) {
         // Pasar datos granulares para actualización selectiva

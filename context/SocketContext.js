@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import useSocketMozos from '../hooks/useSocketMozos';
+import { registerPushAfterLogin } from '../services/pushNotifications';
 
 const SocketContext = createContext(null);
 
@@ -35,10 +36,19 @@ export const SocketProvider = ({ children }) => {
     const loadToken = async () => {
       try {
         const token = await AsyncStorage.getItem('authToken');
+        const userRaw = await AsyncStorage.getItem('user');
         if (mounted) {
           if (token) {
             console.log('🔐 [MOZOS] Token JWT cargado desde AsyncStorage');
             setAuthToken(token);
+            if (userRaw) {
+              try {
+                const user = JSON.parse(userRaw);
+                if (user?._id) {
+                  registerPushAfterLogin(user._id).catch(() => {});
+                }
+              } catch (_) {}
+            }
           } else {
             console.log('⚠️ [MOZOS] No hay token JWT guardado');
           }

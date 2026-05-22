@@ -16,6 +16,7 @@ import ComandaDetalleScreen from './Pages/ComandaDetalleScreen';
 import ProfileScreen from './Pages/Profile/ProfileScreen';
 import HelpScreen from './Pages/Help/HelpScreen';
 import AboutScreen from './Pages/About/AboutScreen';
+import NotificationsScreen from './Pages/Notifications/NotificationsScreen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
@@ -100,6 +101,11 @@ export default function App() {
                 <Stack.Screen
                   name="About"
                   component={AboutScreen}
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen
+                  name="Notifications"
+                  component={NotificationsScreen}
                   options={{ headerShown: false }}
                 />
               </Stack.Navigator>
