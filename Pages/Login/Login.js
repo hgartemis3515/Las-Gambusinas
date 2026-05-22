@@ -35,6 +35,7 @@ import SettingsModal from "../../Components/SettingsModal";
 import apiConfig from "../../config/apiConfig";
 import { getFallbackApiBase } from "../../config/envDefaults";
 import { registerPushAfterLogin } from "../../services/pushNotifications";
+import PosLogo from "../../Components/PosLogo";
 
 // Componente de partículas flotantes
 const FloatingParticle = ({ delay = 0, screenHeight, screenWidth }) => {
@@ -653,45 +654,11 @@ const Login = () => {
               }}
             >
               <Animated.View style={titlePulseStyle}>
-                <View
-                  style={{
-                    width: isLandscape ? 100 : 120,
-                    height: isLandscape ? 50 : 60,
-                    borderRadius: 16,
-                    borderWidth: 3,
-                    borderColor: colors.primary,
-                    backgroundColor: "transparent",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    shadowColor: "#FFFFFF",
-                    shadowOffset: { width: 0, height: 0 },
-                    shadowOpacity: 0.3,
-                    shadowRadius: 8,
-                    elevation: 8,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: isLandscape 
-                        ? (isSmallScreen ? 32 : 36) 
-                        : (isSmallScreen ? 38 : 42),
-                      fontWeight: "900",
-                      fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
-                      color: "#FFFFFF",
-                      textAlign: "center",
-                      letterSpacing: 2,
-                      textShadowColor: "#000000",
-                      textShadowOffset: { width: 0, height: 2 },
-                      textShadowRadius: 4,
-                      shadowColor: "#C41E3A",
-                      shadowOffset: { width: 0, height: 0 },
-                      shadowOpacity: 0.8,
-                      shadowRadius: 12,
-                    }}
-                  >
-                    POS
-                  </Text>
-                </View>
+                <PosLogo
+                  width={isLandscape ? 100 : 120}
+                  height={isLandscape ? 50 : 60}
+                  variant="svg"
+                />
               </Animated.View>
             </MotiView>
 

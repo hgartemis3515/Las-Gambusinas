@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60" width="120" height="60" role="img" aria-label="POS">
+  <defs>
+    <linearGradient id="posFill" x1="60" y1="3" x2="60" y2="57" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1A0A0C"/>
+      <stop offset="0.5" stop-color="#4A1A20"/>
+      <stop offset="1" stop-color="#1A0A0C"/>
+    </linearGradient>
+    <filter id="posGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="3.5" flood-color="#C41E3A" flood-opacity="0.45"/>
+    </filter>
+    <filter id="posTextShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="1"/>
+    </filter>
+  </defs>
+  <!-- Marco rojo + relleno degradado (login PosLogo vector) -->
+  <rect
+    x="1.5"
+    y="1.5"
+    width="117"
+    height="57"
+    rx="16"
+    ry="16"
+    fill="url(#posFill)"
+    stroke="#E31E24"
+    stroke-width="3"
+    filter="url(#posGlow)"
+  />
+  <!-- Texto POS -->
+  <text
+    x="60"
+    y="36.5"
+    text-anchor="middle"
+    dominant-baseline="middle"
+    fill="#FFFFFF"
+    font-family="Arial Black, Arial, Helvetica, sans-serif"
+    font-weight="900"
+    font-size="33"
+    letter-spacing="2"
+    filter="url(#posTextShadow)"
+  >POS</text>
+</svg>
