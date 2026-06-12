@@ -9,6 +9,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   useWindowDimensions,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -396,8 +397,40 @@ const Login = () => {
   const [welcomeUserName, setWelcomeUserName] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [isConfigured, setIsConfigured] = useState(false);
+  /** Mientras comprobamos AsyncStorage: no mostrar el formulario de login */
+  const [restoringSession, setRestoringSession] = useState(true);
   const buttonScale = useSharedValue(1);
   const titlePulse = useSharedValue(1);
+
+  // Si ya había sesión guardada, entrar directo sin pedir nombre/DNI de nuevo
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      let didNavigate = false;
+      try {
+        const [userJson, token] = await Promise.all([
+          AsyncStorage.getItem("user"),
+          AsyncStorage.getItem("authToken"),
+        ]);
+        if (!alive) return;
+        if (userJson && token) {
+          const user = JSON.parse(userJson);
+          if (user?._id && user?.name) {
+            didNavigate = true;
+            navigation.replace("Navbar", { username: user.name });
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("No se pudo restaurar sesión:", e);
+      } finally {
+        if (alive && !didNavigate) setRestoringSession(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [navigation]);
 
   // Verificar estado de configuración
   useEffect(() => {
@@ -554,6 +587,19 @@ const Login = () => {
   const titlePulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: titlePulse.value }],
   }));
+
+  if (restoringSession) {
+    return (
+      <LinearGradient
+        colors={["#C41E3A", "#1A1A1A", "#121212"]}
+        style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <ActivityIndicator size="large" color="#FFFFFF" />
+      </LinearGradient>
+    );
+  }
 
   return (
     <LinearGradient
