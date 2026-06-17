@@ -3,7 +3,7 @@
  * Componente modal para mostrar opciones después de un pago exitoso
  * 
  * @version 1.2
- * @description Muestra opciones: Registrar Propina, Compartir, Imprimir, Ir al inicio
+ * @description Muestra opciones: Registrar Propina, Imprimir, Ir al inicio
  *              Adaptado para dispositivos móviles en vertical y horizontal
  */
 
@@ -18,8 +18,6 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
@@ -39,7 +37,7 @@ const ModalPagoExitoso = ({
   boucherData,
   mesaData,
   clienteData,
-  pdfUri,
+  onImprimir,
   onRegistrarPropina,
   onIrAlInicio,
 }) => {
@@ -61,7 +59,6 @@ const ModalPagoExitoso = ({
   const buttonAnim0 = useSharedValue(0);
   const buttonAnim1 = useSharedValue(0);
   const buttonAnim2 = useSharedValue(0);
-  const buttonAnim3 = useSharedValue(0);
 
   useEffect(() => {
     if (visible) {
@@ -90,10 +87,6 @@ const ModalPagoExitoso = ({
         withTiming(0, { duration: 0 }),
         withDelay(360, withSpring(1, { damping: 12, stiffness: 100 }))
       );
-      buttonAnim3.value = withSequence(
-        withTiming(0, { duration: 0 }),
-        withDelay(440, withSpring(1, { damping: 12, stiffness: 100 }))
-      );
     } else {
       scaleAnim.value = 0;
       fadeAnim.value = 0;
@@ -102,7 +95,6 @@ const ModalPagoExitoso = ({
       buttonAnim0.value = 0;
       buttonAnim1.value = 0;
       buttonAnim2.value = 0;
-      buttonAnim3.value = 0;
     }
   }, [visible]);
 
@@ -137,32 +129,13 @@ const ModalPagoExitoso = ({
     opacity: buttonAnim2.value,
   }));
 
-  const buttonStyle3 = useAnimatedStyle(() => ({
-    transform: [{ scale: buttonAnim3.value }],
-    opacity: buttonAnim3.value,
-  }));
-
   const handleImprimir = async () => {
-    if (!pdfUri) {
-      return;
-    }
+    if (!onImprimir) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      await Print.printAsync({ uri: pdfUri });
+      await onImprimir();
     } catch (error) {
       console.error("Error imprimiendo:", error);
-    }
-  };
-
-  const handleCompartir = async () => {
-    if (!pdfUri) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(pdfUri);
-      }
-    } catch (error) {
-      console.error("Error compartiendo:", error);
     }
   };
 
@@ -191,22 +164,13 @@ const ModalPagoExitoso = ({
       style: buttonStyle0,
     },
     {
-      id: "compartir",
-      icon: "share-variant",
-      label: "Compartir",
-      color: "#3B82F6",
-      onPress: handleCompartir,
-      visible: !!pdfUri,
-      style: buttonStyle1,
-    },
-    {
       id: "imprimir",
       icon: "printer",
       label: "Imprimir",
       color: "#8B5CF6",
       onPress: handleImprimir,
-      visible: !!pdfUri,
-      style: buttonStyle2,
+      visible: !!onImprimir,
+      style: buttonStyle1,
     },
     {
       id: "inicio",
@@ -215,7 +179,7 @@ const ModalPagoExitoso = ({
       color: "#6B7280",
       onPress: handleIrAlInicio,
       visible: true,
-      style: buttonStyle3,
+      style: buttonStyle2,
     },
   ];
 

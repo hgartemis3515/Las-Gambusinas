@@ -1,17 +1,63 @@
 /**
- * PDF ticket 80mm para expo-print + Epson TM-m30II / TM Print Assistant.
- * Ancho fijo 80mm @ 72 PPI; altura dinámica según contenido (evita rollo en blanco).
+ * PDF ticket 80mm para expo-print / compartir.
+ * Ancho fijo 226 pt (80 mm @ 72 PPI); alto dinámico según ítems del pedido.
  */
-export const BOUCHER_PDF_WIDTH_PX = Math.round((80 / 25.4) * 72);
+export const BOUCHER_PAPER_MM = 80;
+/** Ancho fijo ticketera 80 mm en puntos PDF (72 PPI). */
+export const PUNTOS_ANCHO = 226;
+export const BOUCHER_PDF_WIDTH_PX = PUNTOS_ANCHO;
 
-const CHARS_POR_LINEA = 26;
-const PADDING_INFERIOR_PX = 16;
+/** Altura base estimada: encabezado + datos pedido + totales + pie. */
+export const ALTURA_BASE_PDF = 320;
+/** Puntos adicionales por cada fila de producto (incluye complementos). */
+export const ALTURA_POR_FILA_PDF = 45;
 
-const contarLineasTexto = (texto = '', charsPorLinea = CHARS_POR_LINEA) =>
-  Math.max(1, Math.ceil(String(texto || '').length / charsPorLinea));
+export const PADDING_INFERIOR_PX = 4;
+
+const ALTURA_MINIMA_PX = 200;
 
 /**
- * Estima la altura del PDF en px (72 PPI) para que la página termine cerca del contenido.
+ * Cuenta filas del detalle de productos (platos + líneas de complementos).
+ */
+export function contarFilasProductoBoucher({ boucher = null, comandas = [] }) {
+  let filas = 0;
+
+  if (boucher?.platos?.length > 0) {
+    boucher.platos.forEach((item) => {
+      filas += 1;
+      filas += (item.complementosSeleccionados || []).length;
+    });
+    return filas;
+  }
+
+  comandas.forEach((comanda) => {
+    (comanda.platos || []).forEach((platoItem) => {
+      filas += 1;
+      filas += (platoItem.complementosSeleccionados || []).length;
+    });
+  });
+
+  return filas;
+}
+
+/**
+ * Calcula el alto del lienzo PDF: base fija + puntos por cada fila de producto.
+ */
+export function calcularAltoPdfDinamico({ boucher = null, comandas = [], plantilla } = {}) {
+  const filas = contarFilasProductoBoucher({ boucher, comandas });
+  let alto = ALTURA_BASE_PDF + filas * ALTURA_POR_FILA_PDF;
+
+  const p = plantilla || {};
+  if (p.logo) alto += 40;
+  if (p.campos?.mostrarBloquePromo && p.campos?.mostrarQR) {
+    alto += Math.max(40, Math.min(120, p.promo?.qrTamano || 70));
+  }
+
+  return Math.max(ALTURA_MINIMA_PX, Math.ceil(alto));
+}
+
+/**
+ * Estima la altura del PDF en px (72 PPI) — respaldo cuando no hay conteo de filas.
  */
 export function estimarAlturaPdfBoucher({
   boucher = null,
@@ -19,91 +65,35 @@ export function estimarAlturaPdfBoucher({
   plantilla,
   observaciones = '',
 }) {
-  const p = plantilla;
-  const b = p.bloques || {};
-  const e = p.espaciado || {};
-  const lineH = Math.max(
-    Number(e.lineHeight) || 16,
-    Math.round(Math.max(Number(e.tamanoFuente) || 11, 12) * 1.35)
-  );
-  const dividerLines = (Number(e.espacioDivider) || 8) / lineH;
-
-  let lines = 1;
-
-  if (b.mostrarEncabezado) {
-    lines += p.logo ? 5 : 4;
-    lines += 2;
-    lines += dividerLines * 2;
-  }
-
-  if (b.mostrarDatosPedido) {
-    lines += 6;
-    if (observaciones) lines += contarLineasTexto(observaciones, 24);
-    lines += dividerLines;
-  }
-
-  if (b.mostrarDetalleProductos) {
-    lines += 1;
-    const usarBackend = boucher?.platos?.length > 0;
-
-    const sumarPlato = (nombre, complementos = []) => {
-      lines += contarLineasTexto(nombre);
-      lines += complementos.length;
-    };
-
-    if (usarBackend) {
-      boucher.platos.forEach((item) => {
-        sumarPlato(item.nombre, item.complementosSeleccionados || []);
-      });
-    } else {
-      comandas.forEach((comanda) => {
-        (comanda.platos || []).forEach((platoItem) => {
-          const plato = platoItem.plato || platoItem;
-          sumarPlato(plato.nombre, platoItem.complementosSeleccionados || []);
-        });
-      });
-    }
-    lines += dividerLines;
-  }
-
-  if (b.mostrarTotales) {
-    lines += 5;
-    const hayDescuento =
-      (boucher?.montoDescuento || 0) > 0 ||
-      (boucher?.descuentos?.length || 0) > 0;
-    if (hayDescuento) lines += 1;
-  }
-
-  lines += 1;
-
-  if (b.mostrarDatosCliente) {
-    lines += 2 + dividerLines;
-  }
-
-  if (b.mostrarAgradecimiento) {
-    lines += 2 + dividerLines;
-  }
-
-  if (p.campos?.mostrarBloquePromo) {
-    lines += 2;
-    if (p.promo?.mensaje) lines += 1;
-    if (p.campos.mostrarQR) {
-      const qrSize = Math.max(40, Math.min(120, p.promo?.qrTamano || 70));
-      lines += Math.ceil(qrSize / lineH) + 1;
-    }
-    lines += dividerLines;
-  }
-
-  const altura = Math.ceil(lines * lineH) + PADDING_INFERIOR_PX;
-  return Math.max(260, Math.min(altura, 1800));
+  return calcularAltoPdfDinamico({ boucher, comandas, plantilla });
 }
 
-export function envolverHtmlBoucherTicket(html, { fontSizeBase, lineHeightBase }) {
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=${BOUCHER_PDF_WIDTH_PX}, initial-scale=1.0, maximum-scale=1.0"><title>Voucher</title>
+export const pxToMm = (px) => (px * 25.4) / 72;
+
+/**
+ * Envuelve el HTML del ticket para PDF con página de tamaño exacto.
+ */
+export function envolverHtmlBoucherTicket(html, { fontSizeBase, lineHeightBase, pageHeightPx }) {
+  const w = PUNTOS_ANCHO;
+  const h = pageHeightPx ? Math.ceil(pageHeightPx) : null;
+  const pageSize = h
+    ? `${BOUCHER_PAPER_MM}mm ${pxToMm(h).toFixed(2)}mm`
+    : `${BOUCHER_PAPER_MM}mm auto`;
+  const bodyHeight = h ? `${h}px` : 'auto';
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=${w}, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><title>Voucher</title>
 <style>
-@page{size:80mm auto;margin:0;}
-*{margin:0;padding:0;box-sizing:border-box;}
-html,body{width:${BOUCHER_PDF_WIDTH_PX}px;max-width:${BOUCHER_PDF_WIDTH_PX}px;margin:0;padding:0;overflow:visible;}
-body{font-family:Arial,Helvetica,sans-serif;font-size:${fontSizeBase}px;line-height:${lineHeightBase}px;padding:4px 2px;background:#fff;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-</style></head><body>${html}</body></html>`;
+@page{size:${pageSize};margin:0;}
+@media print{
+  @page{size:${pageSize};margin:0;}
+  html,body{width:${w}px !important;max-width:${w}px !important;margin:0 !important;overflow:hidden !important;}
+  body{height:${bodyHeight} !important;padding:4px !important;}
+}
+*{box-sizing:border-box;}
+html{width:${w}px;max-width:${w}px;margin:0;padding:0;overflow:hidden;}
+body{margin:0;padding:4px;width:100%;box-sizing:border-box;height:${bodyHeight};max-width:100%;overflow:hidden;font-family:Arial,Helvetica,sans-serif;font-size:${fontSizeBase}px;line-height:${lineHeightBase}px;background:#fff;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+#ticket-root{width:100%;}
+table{width:100%;}
+.ticket-block{width:100%;}
+</style></head><body><div id="ticket-root" class="ticket-block">${html}</div></body></html>`;
 }

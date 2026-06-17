@@ -12,8 +12,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
 import axios from "axios";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
@@ -29,12 +27,7 @@ import { useSocket } from "../../../context/SocketContext";
 import logger from "../../../utils/logger";
 import configuracionService from "../../../services/configuracionService";
 import { filtrarComandasActivas } from "../../../utils/comandaHelpers";
-import {
-  BOUCHER_PDF_WIDTH_PX,
-  estimarAlturaPdfBoucher,
-  envolverHtmlBoucherTicket,
-} from "../../../utils/boucherPrint";
-import { MedidorAlturaBoucher } from "../../../utils/medidorAlturaBoucher";
+import { mostrarOpcionesBoucher } from "../../../services/boucherPrint";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -276,7 +269,6 @@ const PagosScreen = () => {
   const [modalClienteVisible, setModalClienteVisible] = useState(false);
   const [modalPropinaVisible, setModalPropinaVisible] = useState(false);
   const [modalPagoExitosoVisible, setModalPagoExitosoVisible] = useState(false);
-  const [pdfUri, setPdfUri] = useState(null);
   const [clientePagoExitoso, setClientePagoExitoso] = useState(null);
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [procesandoPago, setProcesandoPago] = useState(false);
@@ -284,9 +276,6 @@ const PagosScreen = () => {
   const [boucherData, setBoucherData] = useState(boucherFromParams || null);
   const [configMoneda, setConfigMoneda] = useState(null);
   const [plantillaVoucher, setPlantillaVoucher] = useState(null);
-
-  // Medidor de altura real del ticket (WebView oculto) para PDF sin papel en blanco
-  const medidorAlturaRef = useRef(null);
 
   // Obtener socket del contexto
   const { subscribeToEvents, connected: socketConnected } = useSocket();
@@ -752,400 +741,24 @@ const PagosScreen = () => {
     }
   };
 
-  // Función auxiliar: Número a letras
-  const numeroALetras = (num) => {
-    const unidades = ['','UNO','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE'];
-    const especiales = ['DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISEIS','DIECISIETE','DIECIOCHO','DIECINUEVE'];
-    const decenas = ['','','VEINTE','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
-    const centenas = ['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
+  const construirOptsBoucher = (boucher = null) => ({
+    boucher: boucher || boucherData,
+    comandas,
+    mesa,
+    plantilla: plantillaVoucher || PLANTILLA_DEFAULT,
+    configMoneda,
+    clienteSeleccionado,
+    subtotalOriginal,
+    total,
+    etiquetasDefault: PLANTILLA_DEFAULT.etiquetas,
+  });
 
-    if (num === 0) return 'CERO';
-
-    const entero = Math.floor(num);
-    const decimal = Math.round((num - entero) * 100);
-
-    const convertir = n => {
-      if (n < 10) return unidades[n];
-      if (n < 20) return especiales[n - 10];
-      if (n < 100) {
-        const d = Math.floor(n / 10);
-        const u = n % 10;
-        if (d === 2 && u > 0) return 'VEINTI' + unidades[u].toLowerCase();
-        return decenas[d] + (u > 0 ? ' Y ' + unidades[u] : '');
-      }
-      if (n < 1000) {
-        const c = Math.floor(n / 100);
-        const r = n % 100;
-        if (n === 100) return 'CIEN';
-        return centenas[c] + (r > 0 ? ' ' + convertir(r) : '');
-      }
-      if (n < 1000000) {
-        const m = Math.floor(n / 1000);
-        const r = n % 1000;
-        const miles = m === 1 ? 'MIL' : convertir(m) + ' MIL';
-        return miles + (r > 0 ? ' ' + convertir(r) : '');
-      }
-      return n.toString();
-    };
-
-    let resultado = convertir(entero) + (entero === 1 ? ' Y ' : ' Y ');
-    resultado += decimal.toString().padStart(2, '0') + '/100 Soles';
-    return resultado;
-  };
-
-  // Función auxiliar: Censurar valor
-  const censurar = (valor, visible) => {
-    if (visible) return valor;
-    return 'X'.repeat(Math.min(String(valor || '').length, 10));
-  };
-
-  // Función auxiliar: Obtener etiqueta con fallback
-  const obtenerEtiqueta = (key, plantilla) => {
-    const etiquetas = plantilla?.etiquetas || PLANTILLA_DEFAULT.etiquetas;
-    return etiquetas[key] || PLANTILLA_DEFAULT.etiquetas[key] || key;
-  };
-
-  /**
-   * Genera el HTML del boucher para el PDF - Formato ticket 80mm
-   * Adaptado del backend admin (bouchers.html)
-   * @param {Object|null} boucher - Datos del boucher del backend (opcional)
-   */
-  const generarHTMLBoucher = (boucher = null) => {
-    // Usar plantilla cargada del backend o la por defecto
-    const p = plantillaVoucher || PLANTILLA_DEFAULT;
-    const e = p.espaciado;
-    const b = p.bloques;
-    const v = p.visibilidad;
-    const et = p.etiquetas;
-    
-    // Si hay boucher del backend, usar esos datos; si no, usar datos locales
-    const usarBoucherBackend = boucher && boucher.platos && boucher.platos.length > 0;
-    
-    // Usar configuración del sistema o del boucher
-    const simboloMoneda = boucher?.configuracionIGV?.simboloMoneda || configMoneda?.simboloMoneda || 'S/.';
-    const decimales = configMoneda?.decimales ?? 2;
-    const nombreImpuesto = boucher?.configuracionIGV?.nombreImpuesto || configMoneda?.nombreImpuestoPrincipal || 'IGV';
-    const igvPorcentaje = boucher?.configuracionIGV?.igvPorcentaje || configMoneda?.igvPorcentaje || 18;
-    
-    // Fechas
-    const fechaActual = boucher?.fechaPagoString || moment().tz("America/Lima").format("DD/MM/YYYY HH:mm:ss");
-    const primeraComanda = usarBoucherBackend ? null : comandas[0];
-    const fechaPedido = usarBoucherBackend 
-      ? moment(boucher.fechaPedido || boucher.createdAt).tz("America/Lima")
-      : moment(primeraComanda?.createdAt || primeraComanda?.fecha).tz("America/Lima");
-    const fechaPago = usarBoucherBackend
-      ? moment(boucher.fechaPago || boucher.createdAt).tz("America/Lima")
-      : moment().tz("America/Lima");
-    
-    // Datos del voucher
-    const voucherId = boucher?.voucherId || boucherData?.voucherId || "N/A";
-    const boucherNumber = boucher?.boucherNumber || boucherData?.boucherNumber || "N/A";
-    const numMesa = mesa?.nombreCombinado || boucher?.numMesa || mesa?.nummesa || comandas[0]?.mesas?.nummesa || "N/A";
-    const nombreMozo = boucher?.nombreMozo || comandas[0]?.mozos?.name || "N/A";
-    const nombreCliente = boucher?.cliente?.nombre || clienteSeleccionado?.nombre || "CLIENTE GENERAL";
-    const dniCliente = boucher?.cliente?.dni || clienteSeleccionado?.dni || "00000000";
-    const observaciones = boucher?.observaciones || comandas.filter(c => c.observaciones).map(c => `C#${c.comandaNumber || c._id.slice(-6)}: ${c.observaciones}`).join('. ') || "";
-    
-    // Calcular totales
-    const descuentosComandas = usarBoucherBackend 
-      ? (boucher.descuentos || []) 
-      : comandas.filter(c => c.descuento > 0).map(c => ({
-          comandaNumber: c.comandaNumber,
-          porcentaje: c.descuento,
-          motivo: c.motivoDescuento,
-          monto: c.montoDescuento || 0
-        }));
-    
-    const montoTotalDescuento = usarBoucherBackend 
-      ? (boucher.montoDescuento || 0)
-      : comandas.reduce((sum, c) => sum + (c.montoDescuento || 0), 0);
-    
-    const subtotalFinal = boucher?.subtotal || subtotalOriginal || total;
-    const igvFinal = boucher?.igv || (subtotalFinal * (igvPorcentaje / 100));
-    const rcFinal = 0; // RC no se usa actualmente
-    const tieneDescuentoBoucher = (boucher?.montoDescuento || 0) > 0 || (boucher?.descuentos?.length || 0) > 0;
-    const totalFinal = tieneDescuentoBoucher && boucher?.totalConDescuento != null
-      ? boucher.totalConDescuento
-      : (boucher?.total != null ? boucher.total : Math.max(0, subtotalFinal + igvFinal - montoTotalDescuento));
-    
-    const totalLetras = numeroALetras(totalFinal);
-    
-    // Generar HTML
-    let html = '';
-    
-    // === BLOQUE ENCABEZADO ===
-    if (b.mostrarEncabezado) {
-      html += `<div style="text-align:center;">`;
-      if (p.logo) {
-        html += `<img src="${p.logo}" style="max-width:90%;max-height:72px;margin:0 auto 4px;display:block;" alt="Logo">`;
-      }
-      html += `<div style="font-size:18px;font-weight:800;letter-spacing:0.5px;">${censurar(p.restaurante.nombre, v.nombre)}</div>`;
-      html += `<div style="font-size:12px;font-weight:500;color:#444;">${censurar(p.restaurante.eslogan, v.eslogan)}</div>`;
-      html += `<div style="font-weight:600;">R.U.C.: ${censurar(p.restaurante.ruc, v.ruc)}</div>`;
-      html += `<div style="font-size:12px;">${censurar(p.restaurante.direccion, v.direccion)}</div>`;
-      html += `<div style="font-size:12px;">Tel: ${censurar(p.restaurante.telefono, v.telefono)}</div>`;
-      html += `</div>`;
-      
-      html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
-      html += `<div style="text-align:center;font-weight:700;font-size:13px;">${p.encabezado.tipoComprobante}</div>`;
-      html += `<div style="text-align:center;font-weight:600;">${p.encabezado.serie}-${String(boucherNumber).padStart(6, '0')}</div>`;
-      html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
-    }
-    
-    // === BLOQUE DATOS PEDIDO ===
-    if (b.mostrarDatosPedido) {
-      const lbl = '15ch';
-      const formatFecha = (f) => f.format('DD/MM/YYYY HH:mm:ss');
-      
-      html += `<div><span style="display:inline-block;width:${lbl};font-weight:600;color:#222;">${obtenerEtiqueta('voucherId', p)}:</span><span style="font-weight:400;color:#000;">${censurar(voucherId, v.voucherId)}-${censurar(boucherNumber, v.numeroVoucher)}</span></div>`;
-      html += `<div><span style="display:inline-block;width:${lbl};font-weight:600;color:#222;">${obtenerEtiqueta('fechaPedido', p)}:</span><span style="font-weight:400;color:#000;">${censurar(formatFecha(fechaPedido), v.fechaPedido)}</span></div>`;
-      html += `<div><span style="display:inline-block;width:${lbl};font-weight:600;color:#222;">${obtenerEtiqueta('fechaPago', p)}:</span><span style="font-weight:400;color:#000;">${censurar(formatFecha(fechaPago), v.fechaPago)}</span></div>`;
-      html += `<div><span style="display:inline-block;width:${lbl};font-weight:600;color:#222;">${obtenerEtiqueta('mesero', p)}:</span><span style="font-weight:400;color:#000;">${censurar(nombreMozo, v.mesero)}</span></div>`;
-      html += `<div><span style="display:inline-block;width:${lbl};font-weight:600;color:#222;">Moneda:</span><span style="font-weight:400;color:#000;">Soles</span></div>`;
-      html += `<div><span style="display:inline-block;width:${lbl};font-weight:600;color:#222;">${obtenerEtiqueta('mesa', p)}:</span><span style="font-weight:400;color:#000;">${censurar(String(numMesa), v.mesa)}</span></div>`;
-      if (observaciones) {
-        html += `<div><span style="display:inline-block;width:${lbl};font-weight:600;color:#222;">${obtenerEtiqueta('observaciones', p)}:</span><span style="font-weight:400;color:#000;">${censurar(observaciones, v.observacion)}</span></div>`;
-      }
-      html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
-    }
-    
-    // === BLOQUE DETALLE PRODUCTOS ===
-    if (b.mostrarDetalleProductos) {
-      html += `<div style="display:flex;justify-content:space-between;font-weight:700;font-size:12px;border-bottom:1px solid #333;padding-bottom:3px;margin-bottom:2px;">`;
-      html += `<span>Producto</span><span>Cant.</span><span style="width:48px;text-align:right;">P.Unit</span><span style="width:48px;text-align:right;">Total</span></div>`;
-      
-      if (usarBoucherBackend) {
-        boucher.platos.forEach((platoItem) => {
-          const cantidad = platoItem.cantidad || 1;
-          const precio = platoItem.precio || 0;
-          const subtotal = platoItem.subtotal || (precio * cantidad);
-          
-          html += `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;">`;
-          html += `<span style="flex:1;">${platoItem.nombre || "Plato"}</span>`;
-          html += `<span style="width:30px;text-align:center;">${cantidad}</span>`;
-          html += `<span style="width:48px;text-align:right;">${precio.toFixed(2)}</span>`;
-          html += `<span style="width:48px;text-align:right;">${subtotal.toFixed(2)}</span></div>`;
-          
-          // Mostrar complementos
-          const complementos = platoItem.complementosSeleccionados || [];
-          if (complementos.length > 0) {
-            complementos.forEach(comp => {
-              const opcionStr = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : (comp.opcion || comp.nombre || '');
-              html += `<div style="display:flex;justify-content:space-between;font-size:11px;padding:0 0 0 8px;color:#666;">`;
-              html += `<span style="flex:1;">└ ${opcionStr}</span>`;
-              html += `<span style="width:30px;"></span>`;
-              html += `<span style="width:48px;text-align:right;">${comp.precio > 0 ? '+' + comp.precio.toFixed(2) : ''}</span>`;
-              html += `<span style="width:48px;"></span></div>`;
-            });
-          }
-        });
-      } else {
-        comandas.forEach((comanda) => {
-          if (comanda.platos) {
-            comanda.platos.forEach((platoItem, index) => {
-              const plato = platoItem.plato || platoItem;
-              const cantidad = comanda.cantidades?.[index] || 1;
-              const precio = plato.precio || 0;
-              const subtotal = precio * cantidad;
-              
-              html += `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;">`;
-              html += `<span style="flex:1;">${plato.nombre || "Plato"}</span>`;
-              html += `<span style="width:30px;text-align:center;">${cantidad}</span>`;
-              html += `<span style="width:48px;text-align:right;">${precio.toFixed(2)}</span>`;
-              html += `<span style="width:48px;text-align:right;">${subtotal.toFixed(2)}</span></div>`;
-              
-              // Mostrar complementos
-              const complementos = platoItem.complementosSeleccionados || [];
-              if (complementos.length > 0) {
-                complementos.forEach(comp => {
-                  const opcionStr = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : (comp.opcion || comp.nombre || '');
-                  html += `<div style="display:flex;justify-content:space-between;font-size:11px;padding:0 0 0 8px;color:#666;">`;
-                  html += `<span style="flex:1;">└ ${opcionStr}</span>`;
-                  html += `<span style="width:30px;"></span>`;
-                  html += `<span style="width:48px;text-align:right;">${comp.precio > 0 ? '+' + comp.precio.toFixed(2) : ''}</span>`;
-                  html += `<span style="width:48px;"></span></div>`;
-                });
-              }
-            });
-          }
-        });
-      }
-      
-      html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
-    }
-    
-    // === BLOQUE TOTALES ===
-    if (b.mostrarTotales && v.totales) {
-      html += `<div style="text-align:right;">`;
-      html += `<div style="padding:1px 0;">Subtotal: <span style="font-weight:500;">${simboloMoneda} ${subtotalFinal.toFixed(2)}</span></div>`;
-      if (p.campos.mostrarIGV) {
-        html += `<div style="padding:1px 0;">${nombreImpuesto} (${igvPorcentaje}%): <span style="font-weight:500;">${simboloMoneda} ${igvFinal.toFixed(2)}</span></div>`;
-      }
-      if (p.campos.mostrarRC && rcFinal > 0) {
-        html += `<div style="padding:1px 0;">RC 4%: <span style="font-weight:500;">${simboloMoneda} ${rcFinal.toFixed(2)}</span></div>`;
-      }
-      if (descuentosComandas.length > 0) {
-        html += `<div style="padding:1px 0;color:#EF4444;">Descuento: <span style="font-weight:500;">-${simboloMoneda} ${montoTotalDescuento.toFixed(2)}</span></div>`;
-      }
-      html += `<div style="font-size:16px;font-weight:700;border-top:2px solid #000;padding-top:4px;margin-top:4px;">${obtenerEtiqueta('total', p)}: ${simboloMoneda} ${totalFinal.toFixed(2)}</div></div>`;
-      html += `<div style="font-style:italic;font-size:12px;margin-top:4px;">Son: ${totalLetras}</div>`;
-    } else if (b.mostrarTotales) {
-      html += `<div style="text-align:right;"><div style="font-size:16px;font-weight:700;border-top:2px solid #000;padding-top:4px;margin-top:4px;">${obtenerEtiqueta('total', p)}: ${simboloMoneda} XXXXXXXX</div></div>`;
-      html += `<div style="font-style:italic;font-size:12px;">Son: XXXXXXXXXXXXXXXX</div>`;
-    }
-    
-    // Método de pago
-    html += `<div style="margin-top:6px;font-size:12px;">Pago: ${boucher?.metodoPago || 'Efectivo'}</div>`;
-    
-    // === BLOQUE DATOS CLIENTE ===
-    if (b.mostrarDatosCliente) {
-      html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
-      html += `<div><span style="font-weight:600;color:#222;">${obtenerEtiqueta('cliente', p)}:</span> <span style="font-weight:400;color:#000;">${censurar(nombreCliente, v.cliente)}</span></div>`;
-      html += `<div><span style="font-weight:600;color:#222;">DNI:</span> <span style="font-weight:400;color:#000;">${censurar(dniCliente, v.dniCliente)}</span></div>`;
-    }
-    
-    // === BLOQUE AGRADECIMIENTO ===
-    if (b.mostrarAgradecimiento) {
-      html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
-      html += `<div style="text-align:center;font-weight:600;">${p.mensajes.agradecimiento}</div>`;
-      html += `<div style="font-size:11px;text-align:center;margin-top:4px;">Consulte en: ${p.mensajes.urlConsulta}</div>`;
-    }
-    
-    // === BLOQUE PROMOCIÓN (opcional) ===
-    if (p.campos.mostrarBloquePromo) {
-      html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
-      html += `<div style="text-align:center;font-weight:700;margin-top:6px;">${p.promo.titulo}</div>`;
-      if (p.promo.mensaje) {
-        html += `<div style="font-size:9px;text-align:center;margin-top:2px;">${p.promo.mensaje}</div>`;
-      }
-      if (p.campos.mostrarQR) {
-        const qrSize = Math.max(40, Math.min(120, p.promo.qrTamano || 70));
-        html += `<div style="width:${qrSize}px;height:${qrSize}px;background:#e5e5e5;display:flex;align-items:center;justify-content:center;font-size:9px;color:#666;margin:6px auto;border:1px dashed #999;">[QR]</div>`;
-      }
-    }
-    
-    const fontSizeBase = Math.max(Number(e.tamanoFuente) || 11, 12);
-    const lineHeightBase = Math.max(Number(e.lineHeight) || 16, Math.round(fontSizeBase * 1.35));
-
-    const heightPx = estimarAlturaPdfBoucher({
-      boucher,
-      comandas,
-      plantilla: p,
-      observaciones,
+  const generarBoucher = async (boucher = null) => {
+    const opts = construirOptsBoucher(boucher);
+    return mostrarOpcionesBoucher(opts, {
+      onStart: () => setIsGenerating(true),
+      onEnd: () => setIsGenerating(false),
     });
-
-    const htmlCompleto = envolverHtmlBoucherTicket(html, { fontSizeBase, lineHeightBase });
-
-    return { html: htmlCompleto, heightPx };
-  };
-
-  /**
-   * Genera el PDF del boucher
-   * @param {Object|null} boucher - Datos del boucher del backend (opcional, si viene de "Imprimir Boucher")
-   * @param {boolean} mostrarOpciones - Si es false, solo genera el PDF sin mostrar Alert (para flujo de pago)
-   * @returns {Promise<string|null>} - URI del PDF generado o null si falla
-   */
-  const generarPDF = async (boucher = null, mostrarOpciones = true) => {
-    // Si hay boucher del backend, usarlo directamente; si no, verificar comandas locales
-    if (!boucher) {
-      // Verificar que haya comandas antes de generar el PDF
-      if (!comandas || comandas.length === 0) {
-        // No mostrar alerta, simplemente no hacer nada
-        return null;
-      }
-
-      // Verificar que las comandas tengan platos
-      const comandasConPlatos = comandas.filter(c => c.platos && c.platos.length > 0);
-      if (comandasConPlatos.length === 0) {
-        // No mostrar alerta, simplemente no hacer nada
-        return null;
-      }
-    }
-
-    try {
-      setIsGenerating(true);
-      const boucherActual = boucher || boucherData;
-      const { html, heightPx } = generarHTMLBoucher(boucherActual);
-
-      // Altura EXACTA: medir el contenido real con el WebView oculto (mismo ancho
-      // y mismo textZoom=100 que expo-print). Si falla o agota tiempo, usar la
-      // estimación como respaldo. +8px de margen: evita que un redondeo sub-pixel
-      // empuje el contenido a una 2ª página en blanco (mucho peor que ~3mm extra).
-      let alturaFinal = heightPx;
-      try {
-        const alturaMedida = await medidorAlturaRef.current?.medir(html);
-        if (alturaMedida && alturaMedida > 0) {
-          alturaFinal = alturaMedida + 8;
-        }
-      } catch (e) {
-        console.warn("Medición de altura falló, uso estimación:", e?.message);
-      }
-
-      const { uri } = await Print.printToFileAsync({
-        html,
-        base64: false,
-        width: BOUCHER_PDF_WIDTH_PX,
-        height: alturaFinal,
-        // CLAVE: mismo zoom (100%) que el WebView medidor para que la altura medida
-        // coincida EXACTA con el render del PDF. Sin esto, expo-print usa el tamaño
-        // de fuente del sistema y el contenido se desborda a una 2ª página en blanco.
-        textZoom: 100,
-      });
-
-      // Si no se deben mostrar opciones (flujo de pago), retornar el URI
-      if (!mostrarOpciones) {
-        return uri;
-      }
-
-      Alert.alert(
-        "✅ PDF Generado",
-        "¿Qué deseas hacer?",
-        [
-          {
-            text: "Imprimir",
-            onPress: async () => {
-              try {
-                await Print.printAsync({ uri });
-              } catch (error) {
-                console.error("Error imprimiendo:", error);
-                Alert.alert("Error", "No se pudo imprimir el documento");
-              }
-            }
-          },
-          {
-            text: "Compartir",
-            onPress: async () => {
-              try {
-                if (await Sharing.isAvailableAsync()) {
-                  await Sharing.shareAsync(uri, {
-                    mimeType: "application/pdf",
-                    UTI: "com.adobe.pdf",
-                  });
-                } else {
-                  Alert.alert("Error", "La función de compartir no está disponible");
-                }
-              } catch (error) {
-                console.error("Error compartiendo:", error);
-                Alert.alert("Error", "No se pudo compartir el documento");
-              }
-            }
-          },
-          {
-            text: "Cancelar",
-            style: "cancel"
-          }
-        ]
-      );
-      return uri;
-    } catch (error) {
-      console.error("Error generando PDF:", error);
-      if (mostrarOpciones) {
-        Alert.alert("Error", "No se pudo generar el PDF");
-      }
-      return null;
-    } finally {
-      setIsGenerating(false);
-    }
   };
 
 
@@ -1163,12 +776,12 @@ const PagosScreen = () => {
       // Si ya está pagada, solo generar el boucher
       Alert.alert(
         "Mesa ya Pagada",
-        "Esta mesa ya ha sido pagada. Solo puedes generar el boucher.",
+        "Esta mesa ya ha sido pagada. Solo puedes imprimir el boucher.",
         [
           {
             text: "Generar Boucher",
             onPress: async () => {
-              await generarPDF();
+              await generarBoucher();
             }
           },
           {
@@ -1823,20 +1436,9 @@ const PagosScreen = () => {
         console.warn("⚠️ [PAGO] No se pudo guardar ultimoBoucher/mesaPagada:", e?.message);
       }
 
-      // ✅ Cerrar overlay de carga ANTES de generar PDF para que el Alert sea visible
+      // Cerrar overlay de carga antes del modal post-pago
       setProcesandoPago(false);
       setMensajeCarga("Procesando pago...");
-
-      // Generar PDF silenciosamente (sin mostrar Alert) para obtener el URI
-      let pdfUriGenerado = null;
-      try {
-        console.log("📄 [PAGO] Generando boucher PDF...");
-        pdfUriGenerado = await generarPDF(boucherCreado, false); // false = modo silencioso
-        console.log("✅ [PAGO] PDF generado exitosamente:", pdfUriGenerado ? "OK" : "falló");
-      } catch (pdfError) {
-        console.error("⚠️ [PAGO] Error generando PDF (continuando de todas formas):", pdfError);
-        // No bloquear el flujo si falla la generación del PDF
-      }
 
       // ✅ Construir mensaje según estado de verificación
       const estadoMesaMsg = mesaVerificadaComoPagada 
@@ -1860,7 +1462,6 @@ const PagosScreen = () => {
       };
 
       // Guardar datos para el modal y abrirlo
-      setPdfUri(pdfUriGenerado);
       setClientePagoExitoso(cliente);
       setBoucherData(boucherCreado);
       setModalPagoExitosoVisible(true);
@@ -2018,7 +1619,6 @@ const PagosScreen = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={[]}>
-      <MedidorAlturaBoucher ref={medidorAlturaRef} />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.navigate("Inicio")}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.text.white} />
@@ -2386,7 +1986,7 @@ const PagosScreen = () => {
         <TouchableOpacity
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            generarPDF(boucherData || boucherFromParams);
+            generarBoucher(boucherData || boucherFromParams);
           }}
           disabled={isGenerating}
           activeOpacity={0.8}
@@ -2397,7 +1997,7 @@ const PagosScreen = () => {
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 * escala }}>
-                <MaterialCommunityIcons name="file-pdf-box" size={28 * escala} color="#FFFFFF" />
+                <MaterialCommunityIcons name="file-document-outline" size={28 * escala} color="#FFFFFF" />
                 <Text style={{ color: '#FFFFFF', fontSize: 16 * escala, fontWeight: '700', includeFontPadding: false, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 2 }} numberOfLines={1}>
                   Generar Boucher
                 </Text>
@@ -2495,7 +2095,7 @@ const PagosScreen = () => {
         boucherData={boucherData || boucherFromParams}
         mesaData={mesa}
         clienteData={clientePagoExitoso}
-        pdfUri={pdfUri}
+        onImprimir={() => generarBoucher(boucherData || boucherFromParams)}
         onRegistrarPropina={() => {
           setModalPagoExitosoVisible(false);
           setModalPropinaVisible(true);

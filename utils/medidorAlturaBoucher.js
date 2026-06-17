@@ -29,6 +29,20 @@ import { BOUCHER_PDF_WIDTH_PX } from './boucherPrint';
 const SCRIPT_MEDICION = `
 (function () {
   function alturaContenido() {
+    var root = document.getElementById('ticket-root');
+    if (root) {
+      var kids = root.children;
+      if (kids && kids.length > 0) {
+        var last = kids[kids.length - 1];
+        var bottom = last.offsetTop + last.offsetHeight;
+        if (bottom > 0) return Math.ceil(bottom + 2);
+      }
+      return Math.ceil(Math.max(root.getBoundingClientRect().height, root.scrollHeight));
+    }
+    var page = document.getElementById('page');
+    if (page) {
+      return Math.ceil(Math.max(page.getBoundingClientRect().height, page.scrollHeight));
+    }
     var b = document.body, d = document.documentElement;
     return Math.max(
       b.scrollHeight, b.offsetHeight,
@@ -51,7 +65,11 @@ const SCRIPT_MEDICION = `
         imgs[i].addEventListener('error', fin);
       }
     }
-    if (pendientes === 0) setTimeout(reportar, 30);
+    if (pendientes === 0) {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { setTimeout(reportar, 50); });
+      });
+    }
   }
   if (document.readyState === 'complete') {
     esperarImagenesYReportar();
@@ -82,7 +100,7 @@ export const MedidorAlturaBoucher = forwardRef((props, ref) => {
     ref,
     () => ({
       /**
-       * @param {string} htmlContenido HTML completo (ya envuelto con viewport 80mm)
+       * @param {string} htmlContenido HTML completo (ya envuelto con viewport 58mm)
        * @param {{ timeoutMs?: number }} [opts]
        * @returns {Promise<number|null>} altura en px (== puntos PDF) o null si falla/timeout
        */
@@ -120,8 +138,9 @@ export const MedidorAlturaBoucher = forwardRef((props, ref) => {
         left: 0,
         top: 0,
         width: BOUCHER_PDF_WIDTH_PX,
-        height: 1,
+        height: 1200,
         opacity: 0,
+        overflow: 'hidden',
       }}
       pointerEvents="none"
     >
@@ -137,7 +156,7 @@ export const MedidorAlturaBoucher = forwardRef((props, ref) => {
         // teléfono tiene la fuente agrandada, la altura medida sale mayor que lo
         // que renderiza expo-print y queda papel en blanco al final.
         textZoom={100}
-        style={{ width: BOUCHER_PDF_WIDTH_PX, height: 2000, opacity: 0 }}
+        style={{ width: BOUCHER_PDF_WIDTH_PX, height: 1200, opacity: 0 }}
       />
     </View>
   );
