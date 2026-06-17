@@ -186,6 +186,9 @@ const OrdenesScreen = ({ route }) => {
   // iOS: un segundo Modal encima del modal de platos no se muestra; se cierra Menú y luego se abre complementos
   const platoPendienteComplementosRef = useRef(null);
   const reabrirModalPlatosTrasComplementosRef = useRef(false);
+  const platosListScrollRef = useRef(null);
+  const platosListScrollOffsetRef = useRef(0);
+  const restaurarScrollPlatosRef = useRef(false);
 
   // Debounce búsqueda 300ms para no re-filtrar en cada tecla
   const debouncedSetSearchRef = useRef(
@@ -384,9 +387,31 @@ const OrdenesScreen = ({ route }) => {
     setPlatoParaComplementar(null);
     if (reabrirModalPlatosTrasComplementosRef.current) {
       reabrirModalPlatosTrasComplementosRef.current = false;
+      restaurarScrollPlatosRef.current = true;
       setModalPlatosVisible(true);
     }
   };
+
+  const restaurarScrollListaPlatos = useCallback(() => {
+    if (!restaurarScrollPlatosRef.current) return;
+    restaurarScrollPlatosRef.current = false;
+    const offsetY = platosListScrollOffsetRef.current;
+    if (offsetY <= 0) return;
+    InteractionManager.runAfterInteractions(() => {
+      requestAnimationFrame(() => {
+        platosListScrollRef.current?.scrollTo({ y: offsetY, animated: false });
+      });
+    });
+  }, []);
+
+  const cerrarModalPlatos = useCallback(() => {
+    setModalPlatosVisible(false);
+    setTipoPlatoFiltro(null);
+    setCategoriaFiltro(null);
+    setSearchPlato("");
+    platosListScrollOffsetRef.current = 0;
+    restaurarScrollPlatosRef.current = false;
+  }, []);
 
   // Función para agregar un plato sin complementos (comportamiento original)
   const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = "") => {
@@ -1285,6 +1310,8 @@ const OrdenesScreen = ({ route }) => {
               setTipoPlatoFiltro(null);
               setCategoriaFiltro(null);
               setSearchPlato("");
+              platosListScrollOffsetRef.current = 0;
+              restaurarScrollPlatosRef.current = false;
               setModalPlatosVisible(true);
             }}
           >
@@ -1403,23 +1430,13 @@ const OrdenesScreen = ({ route }) => {
         animationType="slide"
         transparent={true}
         visible={modalPlatosVisible}
-        onRequestClose={() => {
-          setModalPlatosVisible(false);
-          setTipoPlatoFiltro(null);
-          setCategoriaFiltro(null);
-          setSearchPlato("");
-        }}
+        onRequestClose={cerrarModalPlatos}
       >
         <View style={styles.modalBackground}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Menú</Text>
-              <TouchableOpacity onPress={() => {
-                setModalPlatosVisible(false);
-                setTipoPlatoFiltro(null);
-                setCategoriaFiltro(null);
-                setSearchPlato("");
-              }}>
+              <TouchableOpacity onPress={cerrarModalPlatos}>
                 <MaterialCommunityIcons name="close" size={24} color={theme.colors.text.primary} />
               </TouchableOpacity>
             </View>
@@ -1503,7 +1520,16 @@ const OrdenesScreen = ({ route }) => {
                   ))}
                 </ScrollView>
 
-                <ScrollView style={styles.modalScrollView}>
+                <ScrollView
+                  ref={platosListScrollRef}
+                  style={styles.modalScrollView}
+                  onScroll={(e) => {
+                    platosListScrollOffsetRef.current = e.nativeEvent.contentOffset.y;
+                  }}
+                  scrollEventThrottle={16}
+                  onContentSizeChange={restaurarScrollListaPlatos}
+                  onLayout={restaurarScrollListaPlatos}
+                >
                   {platosFiltrados.length === 0 ? (
                     <View style={styles.emptyPlatosContainer}>
                       <Text style={styles.emptyPlatosText}>
