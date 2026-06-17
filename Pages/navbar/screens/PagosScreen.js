@@ -29,6 +29,12 @@ import { useSocket } from "../../../context/SocketContext";
 import logger from "../../../utils/logger";
 import configuracionService from "../../../services/configuracionService";
 import { filtrarComandasActivas } from "../../../utils/comandaHelpers";
+import {
+  BOUCHER_PDF_WIDTH_PX,
+  estimarAlturaPdfBoucher,
+  envolverHtmlBoucherTicket,
+} from "../../../utils/boucherPrint";
+import { MedidorAlturaBoucher } from "../../../utils/medidorAlturaBoucher";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -278,6 +284,9 @@ const PagosScreen = () => {
   const [boucherData, setBoucherData] = useState(boucherFromParams || null);
   const [configMoneda, setConfigMoneda] = useState(null);
   const [plantillaVoucher, setPlantillaVoucher] = useState(null);
+
+  // Medidor de altura real del ticket (WebView oculto) para PDF sin papel en blanco
+  const medidorAlturaRef = useRef(null);
 
   // Obtener socket del contexto
   const { subscribeToEvents, connected: socketConnected } = useSocket();
@@ -868,17 +877,17 @@ const PagosScreen = () => {
     if (b.mostrarEncabezado) {
       html += `<div style="text-align:center;">`;
       if (p.logo) {
-        html += `<img src="${p.logo}" style="max-width:200px;max-height:60px;margin:0 auto 4px;display:block;" alt="Logo">`;
+        html += `<img src="${p.logo}" style="max-width:90%;max-height:72px;margin:0 auto 4px;display:block;" alt="Logo">`;
       }
-      html += `<div style="font-size:16px;font-weight:800;letter-spacing:0.5px;">${censurar(p.restaurante.nombre, v.nombre)}</div>`;
-      html += `<div style="font-size:10px;font-weight:500;color:#444;">${censurar(p.restaurante.eslogan, v.eslogan)}</div>`;
+      html += `<div style="font-size:18px;font-weight:800;letter-spacing:0.5px;">${censurar(p.restaurante.nombre, v.nombre)}</div>`;
+      html += `<div style="font-size:12px;font-weight:500;color:#444;">${censurar(p.restaurante.eslogan, v.eslogan)}</div>`;
       html += `<div style="font-weight:600;">R.U.C.: ${censurar(p.restaurante.ruc, v.ruc)}</div>`;
-      html += `<div style="font-size:10px;">${censurar(p.restaurante.direccion, v.direccion)}</div>`;
-      html += `<div style="font-size:10px;">Tel: ${censurar(p.restaurante.telefono, v.telefono)}</div>`;
+      html += `<div style="font-size:12px;">${censurar(p.restaurante.direccion, v.direccion)}</div>`;
+      html += `<div style="font-size:12px;">Tel: ${censurar(p.restaurante.telefono, v.telefono)}</div>`;
       html += `</div>`;
       
       html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
-      html += `<div style="text-align:center;font-weight:700;font-size:11px;">${p.encabezado.tipoComprobante}</div>`;
+      html += `<div style="text-align:center;font-weight:700;font-size:13px;">${p.encabezado.tipoComprobante}</div>`;
       html += `<div style="text-align:center;font-weight:600;">${p.encabezado.serie}-${String(boucherNumber).padStart(6, '0')}</div>`;
       html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
     }
@@ -902,8 +911,8 @@ const PagosScreen = () => {
     
     // === BLOQUE DETALLE PRODUCTOS ===
     if (b.mostrarDetalleProductos) {
-      html += `<div style="display:flex;justify-content:space-between;font-weight:700;font-size:10px;border-bottom:1px solid #333;padding-bottom:3px;margin-bottom:2px;">`;
-      html += `<span>Producto</span><span>Cant.</span><span style="width:45px;text-align:right;">P.Unit</span><span style="width:45px;text-align:right;">Total</span></div>`;
+      html += `<div style="display:flex;justify-content:space-between;font-weight:700;font-size:12px;border-bottom:1px solid #333;padding-bottom:3px;margin-bottom:2px;">`;
+      html += `<span>Producto</span><span>Cant.</span><span style="width:48px;text-align:right;">P.Unit</span><span style="width:48px;text-align:right;">Total</span></div>`;
       
       if (usarBoucherBackend) {
         boucher.platos.forEach((platoItem) => {
@@ -911,22 +920,22 @@ const PagosScreen = () => {
           const precio = platoItem.precio || 0;
           const subtotal = platoItem.subtotal || (precio * cantidad);
           
-          html += `<div style="display:flex;justify-content:space-between;font-size:10px;padding:2px 0;">`;
+          html += `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;">`;
           html += `<span style="flex:1;">${platoItem.nombre || "Plato"}</span>`;
           html += `<span style="width:30px;text-align:center;">${cantidad}</span>`;
-          html += `<span style="width:45px;text-align:right;">${precio.toFixed(2)}</span>`;
-          html += `<span style="width:45px;text-align:right;">${subtotal.toFixed(2)}</span></div>`;
+          html += `<span style="width:48px;text-align:right;">${precio.toFixed(2)}</span>`;
+          html += `<span style="width:48px;text-align:right;">${subtotal.toFixed(2)}</span></div>`;
           
           // Mostrar complementos
           const complementos = platoItem.complementosSeleccionados || [];
           if (complementos.length > 0) {
             complementos.forEach(comp => {
               const opcionStr = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : (comp.opcion || comp.nombre || '');
-              html += `<div style="display:flex;justify-content:space-between;font-size:9px;padding:0 0 0 8px;color:#666;">`;
+              html += `<div style="display:flex;justify-content:space-between;font-size:11px;padding:0 0 0 8px;color:#666;">`;
               html += `<span style="flex:1;">└ ${opcionStr}</span>`;
               html += `<span style="width:30px;"></span>`;
-              html += `<span style="width:45px;text-align:right;">${comp.precio > 0 ? '+' + comp.precio.toFixed(2) : ''}</span>`;
-              html += `<span style="width:45px;"></span></div>`;
+              html += `<span style="width:48px;text-align:right;">${comp.precio > 0 ? '+' + comp.precio.toFixed(2) : ''}</span>`;
+              html += `<span style="width:48px;"></span></div>`;
             });
           }
         });
@@ -939,22 +948,22 @@ const PagosScreen = () => {
               const precio = plato.precio || 0;
               const subtotal = precio * cantidad;
               
-              html += `<div style="display:flex;justify-content:space-between;font-size:10px;padding:2px 0;">`;
+              html += `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;">`;
               html += `<span style="flex:1;">${plato.nombre || "Plato"}</span>`;
               html += `<span style="width:30px;text-align:center;">${cantidad}</span>`;
-              html += `<span style="width:45px;text-align:right;">${precio.toFixed(2)}</span>`;
-              html += `<span style="width:45px;text-align:right;">${subtotal.toFixed(2)}</span></div>`;
+              html += `<span style="width:48px;text-align:right;">${precio.toFixed(2)}</span>`;
+              html += `<span style="width:48px;text-align:right;">${subtotal.toFixed(2)}</span></div>`;
               
               // Mostrar complementos
               const complementos = platoItem.complementosSeleccionados || [];
               if (complementos.length > 0) {
                 complementos.forEach(comp => {
                   const opcionStr = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : (comp.opcion || comp.nombre || '');
-                  html += `<div style="display:flex;justify-content:space-between;font-size:9px;padding:0 0 0 8px;color:#666;">`;
+                  html += `<div style="display:flex;justify-content:space-between;font-size:11px;padding:0 0 0 8px;color:#666;">`;
                   html += `<span style="flex:1;">└ ${opcionStr}</span>`;
                   html += `<span style="width:30px;"></span>`;
-                  html += `<span style="width:45px;text-align:right;">${comp.precio > 0 ? '+' + comp.precio.toFixed(2) : ''}</span>`;
-                  html += `<span style="width:45px;"></span></div>`;
+                  html += `<span style="width:48px;text-align:right;">${comp.precio > 0 ? '+' + comp.precio.toFixed(2) : ''}</span>`;
+                  html += `<span style="width:48px;"></span></div>`;
                 });
               }
             });
@@ -978,15 +987,15 @@ const PagosScreen = () => {
       if (descuentosComandas.length > 0) {
         html += `<div style="padding:1px 0;color:#EF4444;">Descuento: <span style="font-weight:500;">-${simboloMoneda} ${montoTotalDescuento.toFixed(2)}</span></div>`;
       }
-      html += `<div style="font-size:13px;font-weight:700;border-top:2px solid #000;padding-top:4px;margin-top:4px;">${obtenerEtiqueta('total', p)}: ${simboloMoneda} ${totalFinal.toFixed(2)}</div></div>`;
-      html += `<div style="font-style:italic;font-size:10px;margin-top:4px;">Son: ${totalLetras}</div>`;
+      html += `<div style="font-size:16px;font-weight:700;border-top:2px solid #000;padding-top:4px;margin-top:4px;">${obtenerEtiqueta('total', p)}: ${simboloMoneda} ${totalFinal.toFixed(2)}</div></div>`;
+      html += `<div style="font-style:italic;font-size:12px;margin-top:4px;">Son: ${totalLetras}</div>`;
     } else if (b.mostrarTotales) {
-      html += `<div style="text-align:right;"><div style="font-size:13px;font-weight:700;border-top:2px solid #000;padding-top:4px;margin-top:4px;">${obtenerEtiqueta('total', p)}: ${simboloMoneda} XXXXXXXX</div></div>`;
-      html += `<div style="font-style:italic;font-size:10px;">Son: XXXXXXXXXXXXXXXX</div>`;
+      html += `<div style="text-align:right;"><div style="font-size:16px;font-weight:700;border-top:2px solid #000;padding-top:4px;margin-top:4px;">${obtenerEtiqueta('total', p)}: ${simboloMoneda} XXXXXXXX</div></div>`;
+      html += `<div style="font-style:italic;font-size:12px;">Son: XXXXXXXXXXXXXXXX</div>`;
     }
     
     // Método de pago
-    html += `<div style="margin-top:6px;font-size:10px;">Pago: ${boucher?.metodoPago || 'Efectivo'}</div>`;
+    html += `<div style="margin-top:6px;font-size:12px;">Pago: ${boucher?.metodoPago || 'Efectivo'}</div>`;
     
     // === BLOQUE DATOS CLIENTE ===
     if (b.mostrarDatosCliente) {
@@ -999,7 +1008,7 @@ const PagosScreen = () => {
     if (b.mostrarAgradecimiento) {
       html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider}px 0;"></div>`;
       html += `<div style="text-align:center;font-weight:600;">${p.mensajes.agradecimiento}</div>`;
-      html += `<div style="font-size:9px;text-align:center;margin-top:4px;">Consulte en: ${p.mensajes.urlConsulta}</div>`;
+      html += `<div style="font-size:11px;text-align:center;margin-top:4px;">Consulte en: ${p.mensajes.urlConsulta}</div>`;
     }
     
     // === BLOQUE PROMOCIÓN (opcional) ===
@@ -1015,14 +1024,19 @@ const PagosScreen = () => {
       }
     }
     
-    // Envolver en estructura HTML completa
-    const htmlCompleto = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Voucher</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoFuente}px;padding:10px;max-width:320px;margin:0 auto;background:#fff;color:#000;}
-</style></head><body><div style="font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoFuente}px;line-height:${e.lineHeight}px;">${html}</div></body></html>`;
-    
-    return htmlCompleto;
+    const fontSizeBase = Math.max(Number(e.tamanoFuente) || 11, 12);
+    const lineHeightBase = Math.max(Number(e.lineHeight) || 16, Math.round(fontSizeBase * 1.35));
+
+    const heightPx = estimarAlturaPdfBoucher({
+      boucher,
+      comandas,
+      plantilla: p,
+      observaciones,
+    });
+
+    const htmlCompleto = envolverHtmlBoucherTicket(html, { fontSizeBase, lineHeightBase });
+
+    return { html: htmlCompleto, heightPx };
   };
 
   /**
@@ -1050,11 +1064,32 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
 
     try {
       setIsGenerating(true);
-      const html = generarHTMLBoucher(boucher || boucherData);
-      
+      const boucherActual = boucher || boucherData;
+      const { html, heightPx } = generarHTMLBoucher(boucherActual);
+
+      // Altura EXACTA: medir el contenido real con el WebView oculto (mismo ancho
+      // y mismo textZoom=100 que expo-print). Si falla o agota tiempo, usar la
+      // estimación como respaldo. +8px de margen: evita que un redondeo sub-pixel
+      // empuje el contenido a una 2ª página en blanco (mucho peor que ~3mm extra).
+      let alturaFinal = heightPx;
+      try {
+        const alturaMedida = await medidorAlturaRef.current?.medir(html);
+        if (alturaMedida && alturaMedida > 0) {
+          alturaFinal = alturaMedida + 8;
+        }
+      } catch (e) {
+        console.warn("Medición de altura falló, uso estimación:", e?.message);
+      }
+
       const { uri } = await Print.printToFileAsync({
         html,
         base64: false,
+        width: BOUCHER_PDF_WIDTH_PX,
+        height: alturaFinal,
+        // CLAVE: mismo zoom (100%) que el WebView medidor para que la altura medida
+        // coincida EXACTA con el render del PDF. Sin esto, expo-print usa el tamaño
+        // de fuente del sistema y el contenido se desborda a una 2ª página en blanco.
+        textZoom: 100,
       });
 
       // Si no se deben mostrar opciones (flujo de pago), retornar el URI
@@ -1082,7 +1117,10 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
             onPress: async () => {
               try {
                 if (await Sharing.isAvailableAsync()) {
-                  await Sharing.shareAsync(uri);
+                  await Sharing.shareAsync(uri, {
+                    mimeType: "application/pdf",
+                    UTI: "com.adobe.pdf",
+                  });
                 } else {
                   Alert.alert("Error", "La función de compartir no está disponible");
                 }
@@ -1980,6 +2018,7 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:${e.tamanoF
 
   return (
     <SafeAreaView style={styles.container} edges={[]}>
+      <MedidorAlturaBoucher ref={medidorAlturaRef} />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.navigate("Inicio")}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.text.white} />
