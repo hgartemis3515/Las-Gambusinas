@@ -1,13 +1,14 @@
 # Instalación y actualización APK — App Mozos (Las Gambusinas)
 
-**Versión del documento:** 1.1  
-**Última actualización:** Mayo 2026  
-**App:** `appmozo` · package `com.carlos121.appmozo` · versión actual en repo `1.0.0` (`versionCode` 1)
+**Versión del documento:** 1.2  
+**Última actualización:** Junio 2026  
+**App:** `appmozo` · package `com.carlos121.appmozo` · versión actual en repo **`1.0.7`** (`versionCode` **7**, `runtimeVersion` **1.0.7**)
 
 **Propósito:** Guía operativa para instalar la app de mozos en tablets del restaurante y actualizarla cuando publiques un nuevo APK.
 
 | Documento | Contenido |
 |-----------|-----------|
+| **[ENTREGA_PLEXPERITY_JUNIO_2026.md](./ENTREGA_PLEXPERITY_JUNIO_2026.md)** | **Handoff Plexperity** — resumen de cambios abril–junio 2026 |
 | **[EXPO_EAS_APK_Y_ACTUALIZACIONES.md](./EXPO_EAS_APK_Y_ACTUALIZACIONES.md)** | Procedimiento completo Expo/EAS: crear APK, OTA sin Play Store, comandos |
 | **[NETWORK_ERROR_APK_VS_EXPO_GO.md](./NETWORK_ERROR_APK_VS_EXPO_GO.md)** | **Network Error** al configurar servidor en APK (HTTP / cleartext) |
 | [APP_MOZOS_DOCUMENTACION_COMPLETA.md](./APP_MOZOS_DOCUMENTACION_COMPLETA.md#-conversión-a-apk-nativo-y-funcionalidades-móviles-avanzadas) | Build nativo, Firebase, push |

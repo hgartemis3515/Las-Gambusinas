@@ -1,7 +1,7 @@
 # Documentación Completa - App de Mozos (Las Gambusinas)
 
-**Version:** 2.10  
-**Ultima Actualizacion:** Abril 2026  
+**Version:** 2.14  
+**Ultima Actualizacion:** Junio 2026  
 **Tecnologia:** React Native + Expo + Socket.io-client + AsyncStorage
 
 **Proposito del documento:** Analisis completo del app de mozos para Las Gambusinas: estructura, flujo de datos, integracion con backend y otras aplicaciones, librerias, funciones principales, problemas y propuestas de mejora. Documento alineado con el codebase actual (abril 2026). Incluye documentacion detallada de ComandaDetalleScreen, guía de conversión a APK nativo con notificaciones push, funcionamiento en segundo plano, y catálogo completo de eventos Socket.io.
@@ -10,7 +10,24 @@
 
 ## 📋 Historial de Cambios
 
-### v2.13 (Mayo 2026) - Network Error APK vs Expo Go
+### v2.14 (Junio 2026) - Entrega Plexperity / Boucher e impresión nativa
+
+- ✅ [ENTREGA_PLEXPERITY_JUNIO_2026.md](./ENTREGA_PLEXPERITY_JUNIO_2026.md) — Documento de handoff con todos los cambios abril–junio 2026
+- ✅ **v1.0.7:** PDF nativo 80 mm con `pdf-lib` (`utils/boucherPdfNative.js`); impresión Epson vía ePOS XML + TM Print Assistant (`utils/boucherTmPrint.js`)
+- ✅ **Servicio unificado:** `services/boucherPrint/index.js` — Imprimir / Compartir / Cancelar post-pago
+- ✅ **v1.0.6:** Medición altura boucher (`medidorAlturaBoucher.js`) — sin papel en blanco en TM-m30II
+- ✅ **Fix OrdenesScreen:** Tras elegir complemento no se reinicia el orden del plato buscado
+- ✅ **Fix Login:** Restaurar sesión desde AsyncStorage al abrir la app; `expo start --offline`
+
+### v2.13 (Mayo 2026) - Push, OTA, branding y distribución APK
+
+- ✅ **Push notifications operativas:** `services/pushNotifications.js`, preferencias por tipo, registro tras login
+- ✅ **OTA EAS Update:** `services/otaUpdates.js`, `runtimeVersion` alineado con APK
+- ✅ **Splash y logo:** `SplashScreen.js`, `PosLogo.js`, iconos Android actualizados
+- ✅ **Permisos:** `POST_NOTIFICATIONS`, cleartext HTTP para LAN
+- ✅ Guías actualizadas: [EXPO_EAS_APK_Y_ACTUALIZACIONES.md](./EXPO_EAS_APK_Y_ACTUALIZACIONES.md), [INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md](./INSTALACION_Y_ACTUALIZACION_APP_MOZOS.md)
+
+### v2.12 (Mayo 2026) - Network Error APK vs Expo Go
 
 - ✅ [NETWORK_ERROR_APK_VS_EXPO_GO.md](./NETWORK_ERROR_APK_VS_EXPO_GO.md) — Diagnóstico cleartext HTTP, localhost, IP LAN
 - ✅ Fix: `usesCleartextTraffic` en `AndroidManifest` release y `app.json`

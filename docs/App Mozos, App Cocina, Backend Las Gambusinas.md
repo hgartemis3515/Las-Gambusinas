@@ -1,14 +1,16 @@
 # Sistema de Notificaciones - App Mozos, App Cocina y Backend
 
-**Versión:** 1.0  
-**Última Actualización:** Abril 2026  
+**Versión:** 1.1  
+**Última Actualización:** Junio 2026  
 **Apps involucradas:** App Mozos, App Cocina, Backend Las Gambusinas
 
 ---
 
 ## Resumen Ejecutivo
 
-Este documento describe el sistema completo de notificaciones en tiempo real que conecta la App de Mozos con la App de Cocina a través del Backend. Incluye eventos WebSocket, push notifications y el flujo de alertas para "Plato Listo" (segundo plato).
+Este documento describe el sistema completo de notificaciones en tiempo real que conecta la App de Mozos con la App de Cocina a través del Backend. Incluye eventos WebSocket, push notifications (operativas desde mayo 2026) y el flujo de alertas para "Plato Listo".
+
+**Cambios recientes:** Push Expo operativo — ver [ENTREGA_PLEXPERITY_JUNIO_2026.md](./ENTREGA_PLEXPERITY_JUNIO_2026.md) (app mozos) y [backend ENTREGA_PLEXPERITY_JUNIO_2026.md](../../backend-gambusinas/docs/ENTREGA_PLEXPERITY_JUNIO_2026.md).
 
 ---
 
