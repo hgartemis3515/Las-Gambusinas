@@ -3,7 +3,7 @@
  * Componente modal para mostrar opciones después de un pago exitoso
  * 
  * @version 1.3
- * @description Muestra opciones: Registrar Propina, Imprimir, Ir al inicio
+ * @description Muestra opciones: Registrar Propina, Compartir, Ir al inicio
  *              Botón X superior derecho para cerrar y seguir cobrando (pagos parciales)
  */
 
@@ -129,13 +129,13 @@ const ModalPagoExitoso = ({
     opacity: buttonAnim2.value,
   }));
 
-  const handleImprimir = async () => {
+  const handleCompartir = async () => {
     if (!onImprimir) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await onImprimir();
     } catch (error) {
-      console.error("Error imprimiendo:", error);
+      console.error("Error compartiendo:", error);
     }
   };
 
@@ -169,11 +169,11 @@ const ModalPagoExitoso = ({
       style: buttonStyle0,
     },
     {
-      id: "imprimir",
-      icon: "printer",
-      label: "Imprimir",
+      id: "compartir",
+      icon: "share-variant",
+      label: "Compartir",
       color: "#8B5CF6",
-      onPress: handleImprimir,
+      onPress: handleCompartir,
       visible: !!onImprimir,
       style: buttonStyle1,
     },

@@ -1,9 +1,7 @@
 /**
- * Servicio unificado de boucher: Imprimir (ePOS XML) / Compartir (PDF 80mm).
+ * Servicio unificado de boucher: Compartir (PDF 80mm).
  */
 import { Alert } from 'react-native';
-import { generarXmlBoucher } from '../../utils/boucherEposXml';
-import { imprimirBoucherTmAssistant } from '../../utils/boucherTmPrint';
 import { compartirBoucherPdf } from '../../utils/boucherPdfShare';
 
 /**
@@ -23,41 +21,13 @@ export async function mostrarOpcionesBoucher(opts, { onStart, onEnd } = {}) {
 
   try {
     onStart?.();
-    const xml = generarXmlBoucher(opts);
-
-    return await new Promise((resolve) => {
-      Alert.alert('✅ Boucher Generado', '¿Qué deseas hacer?', [
-        {
-          text: 'Imprimir',
-          onPress: async () => {
-            try {
-              await imprimirBoucherTmAssistant(xml);
-            } catch (error) {
-              console.error('Error imprimiendo:', error);
-              Alert.alert('Error', 'No se pudo imprimir el boucher');
-            }
-            resolve(xml);
-          },
-        },
-        {
-          text: 'Compartir',
-          onPress: async () => {
-            try {
-              await compartirBoucherPdf(opts);
-            } catch (error) {
-              console.error('Error compartiendo:', error);
-              Alert.alert('Error', 'No se pudo compartir el boucher');
-            }
-            resolve(xml);
-          },
-        },
-        {
-          text: 'Cancelar',
-          style: 'cancel',
-          onPress: () => resolve(xml),
-        },
-      ]);
-    });
+    try {
+      await compartirBoucherPdf(opts);
+    } catch (error) {
+      console.error('Error compartiendo:', error);
+      Alert.alert('Error', 'No se pudo compartir el boucher');
+    }
+    return true;
   } catch (error) {
     console.error('Error generando boucher:', error);
     Alert.alert('Error', 'No se pudo generar el boucher');

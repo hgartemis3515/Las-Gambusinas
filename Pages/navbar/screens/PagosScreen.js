@@ -1060,7 +1060,7 @@ const PagosScreen = () => {
       // Si ya está pagada, solo generar el boucher
       Alert.alert(
         "Mesa ya Pagada",
-        "Esta mesa ya ha sido pagada. Solo puedes imprimir el boucher.",
+        "Esta mesa ya ha sido pagada. Solo puedes compartir el boucher.",
         [
           {
             text: "Generar Boucher",
@@ -2008,8 +2008,8 @@ const PagosScreen = () => {
                     disabled={isGenerating}
                     activeOpacity={0.8}
                   >
-                    <MaterialCommunityIcons name="printer" size={20} color="#FFFFFF" />
-                    <Text style={styles.parcialPrintText}>Imprimir</Text>
+                    <MaterialCommunityIcons name="share-variant" size={20} color="#FFFFFF" />
+                    <Text style={styles.parcialPrintText}>Compartir</Text>
                   </TouchableOpacity>
                 </View>
               );
