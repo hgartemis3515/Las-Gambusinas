@@ -12,7 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
+import axios from "../../../config/axiosConfig";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { themeLight, textIconos } from "../../../constants/theme";
@@ -28,6 +28,15 @@ import logger from "../../../utils/logger";
 import configuracionService from "../../../services/configuracionService";
 import { filtrarComandasActivas } from "../../../utils/comandaHelpers";
 import { mostrarOpcionesBoucher } from "../../../services/boucherPrint";
+import {
+  listarPlatosPagables,
+  listarPlatosEnPantallaPago,
+  buildPlatosSeleccionadosPayload,
+  parseBoucherResponse,
+  calcularSubtotalSeleccion,
+  calcularTotalesPreview,
+  toggleSeleccionarTodos,
+} from "../../../utils/pagoParcialHelpers";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -65,14 +74,49 @@ function filtrarComandasPagablesParaPago(comandasBackend, mesaIdStr, mesaNummesa
   });
 }
 
-/** Fuente alineada con ComandaDetalle: activas por mesa (sin depender del día) + fallback por fecha. */
-async function fetchComandasBackendParaMesa(mesaId, mesaNummesa) {
-  const mesaIdStr = mesaId != null ? String(mesaId) : '';
+/** Comandas del ciclo actual con platos entregados + ya pagados (pagos parciales). */
+async function fetchComandasCicloParaPagos(mesaId) {
+  if (!mesaId) return [];
   const comandaBase = apiConfig.isConfigured
     ? apiConfig.getEndpoint('/comanda')
     : COMANDASEARCH_API_GET;
+  const urls = [
+    `${comandaBase}/mesa/${mesaId}/para-pagos`,
+    `${comandaBase}/comandas-para-pagar/${mesaId}?incluirPagados=1`,
+  ];
+  for (const url of urls) {
+    try {
+      const res = await axios.get(url, {
+        timeout: 10000,
+        validateStatus: (status) => status < 500,
+      });
+      if (res.status === 404) continue;
+      if (res.status >= 400) break;
+      if (res.data?.success && Array.isArray(res.data.comandas)) {
+        return res.data.comandas;
+      }
+      if (Array.isArray(res.data?.comandas)) {
+        return res.data.comandas;
+      }
+    } catch (e) {
+      if (e.response?.status === 404) continue;
+      if (__DEV__) console.warn('[PAGOS] comandas ciclo pago:', url, e?.message);
+    }
+  }
+  return [];
+}
 
-  let comandasBackend = [];
+/** Fuente alineada con ComandaDetalle: ciclo actual + fallback por fecha. */
+async function fetchComandasBackendParaMesa(mesaId, mesaNummesa) {
+  const mesaIdStr = mesaId != null ? String(mesaId) : '';
+  let comandasBackend = await fetchComandasCicloParaPagos(mesaIdStr);
+  if (comandasBackend.length > 0) {
+    return comandasBackend;
+  }
+
+  const comandaBase = apiConfig.isConfigured
+    ? apiConfig.getEndpoint('/comanda')
+    : COMANDASEARCH_API_GET;
 
   if (mesaIdStr) {
     try {
@@ -276,6 +320,14 @@ const PagosScreen = () => {
   const [boucherData, setBoucherData] = useState(boucherFromParams || null);
   const [configMoneda, setConfigMoneda] = useState(null);
   const [plantillaVoucher, setPlantillaVoucher] = useState(null);
+  /** Claves de platos seleccionados para pago parcial (ver pagoParcialHelpers). */
+  const [platosSeleccionadosPago, setPlatosSeleccionadosPago] = useState([]);
+  const [totalRestante, setTotalRestante] = useState(null);
+  const [totalAcumuladoPagado, setTotalAcumuladoPagado] = useState(0);
+  const [hayPendienteTrasPago, setHayPendienteTrasPago] = useState(false);
+  /** Bouchers individuales de cada pago parcial (para imprimir por separado). */
+  const [bouchersParciales, setBouchersParciales] = useState([]);
+  const pedidoIdCicloRef = React.useRef(null);
 
   // Obtener socket del contexto
   const { subscribeToEvents, connected: socketConnected } = useSocket();
@@ -319,13 +371,95 @@ const PagosScreen = () => {
     cargarPlantillaVoucher();
   }, [cargarPlantillaVoucher]);
 
+  /** Headers JWT mozos (mismo token que login /admin/mozos/auth). */
+  const getHeadersAuth = React.useCallback(async () => {
+    return configuracionService.getMozoAuthHeaders();
+  }, []);
+
+  /** Boucher unificado: une todos los pagos parciales de la mesa (GET /boucher/by-mesa). */
+  const cargarBoucherConsolidadoMesa = React.useCallback(async (mesaId) => {
+    if (!mesaId) return null;
+    try {
+      const headers = await getHeadersAuth();
+      if (!headers.Authorization) return null;
+      const boucherURL = apiConfig.isConfigured
+        ? apiConfig.getEndpoint(`/boucher/by-mesa/${mesaId}`)
+        : `${BOUCHER_API}/by-mesa/${mesaId}`;
+      const res = await axios.get(boucherURL, { timeout: 10000, headers });
+      const consolidado = res.data;
+      if (Array.isArray(consolidado?.bouchersParciales)) {
+        setBouchersParciales(consolidado.bouchersParciales);
+      } else {
+        setBouchersParciales([]);
+      }
+      return consolidado;
+    } catch (e) {
+      if (__DEV__) console.warn('[PAGOS] No se pudo cargar boucher consolidado:', e?.message);
+      return null;
+    }
+  }, [getHeadersAuth]);
+
+  /** Lista vouchers de pagos parciales del pedido/ciclo actual (reemplaza lista, no acumula). */
+  const cargarBouchersParcialesMesa = React.useCallback(async (mesaId, comandaIds = []) => {
+    if (!mesaId) return [];
+    try {
+      const headers = await getHeadersAuth();
+      if (!headers.Authorization) return [];
+      const ids = (comandaIds || []).filter(Boolean).map((id) => String(id));
+      const qs = ids.length ? `?comandaIds=${ids.join(',')}` : '';
+      const comandaBase = apiConfig.isConfigured
+        ? apiConfig.getEndpoint('/comanda')
+        : COMANDASEARCH_API_GET;
+      const urls = [
+        `${comandaBase}/mesa/${mesaId}/bouchers-parciales${qs}`,
+        apiConfig.isConfigured
+          ? apiConfig.getEndpoint(`/boucher/mesa/${mesaId}/parciales${qs}`)
+          : `${BOUCHER_API}/mesa/${mesaId}/parciales${qs}`,
+      ];
+      for (const url of urls) {
+        try {
+          const res = await axios.get(url, {
+            timeout: 10000,
+            headers,
+            validateStatus: (status) => status < 500,
+          });
+          if (res.status === 404) continue;
+          if (res.status >= 400) break;
+          const pedidoId = res.data?.pedidoId ? String(res.data.pedidoId) : null;
+          if (pedidoId) {
+            pedidoIdCicloRef.current = pedidoId;
+          }
+          let lista = res.data?.bouchers || [];
+          if (pedidoId) {
+            lista = lista.filter((b) => {
+              const bp = b.pedido?._id || b.pedido;
+              return !bp || String(bp) === pedidoId;
+            });
+          }
+          setBouchersParciales(lista);
+          return lista;
+        } catch (inner) {
+          if (inner.response?.status === 404) continue;
+        }
+      }
+      setBouchersParciales([]);
+      return [];
+    } catch (e) {
+      if (__DEV__ && e.response?.status !== 404) {
+        console.warn('[PAGOS] vouchers parciales:', e?.message);
+      }
+      setBouchersParciales([]);
+      return [];
+    }
+  }, [getHeadersAuth]);
+
   // ❌ DESHABILITADO: No actualizar comandas desde WebSocket en PagosScreen
   // Backend = única fuente de verdad. Solo usar route.params
   // Los handlers de WebSocket pueden mezclar comandas antiguas con nuevas
+  // y causar loops infinitos de re-suscripción si tienen dependencias.
+  // El refresco de vouchers parciales se hace al enfocar la pantalla y tras cada pago.
   const handleComandaActualizada = React.useCallback((comanda) => {
     console.log('📥 [PAGOS] Comanda actualizada vía WebSocket (ignorada en PagosScreen):', comanda._id, 'Status:', comanda.status);
-    // NO actualizar estado local - usar solo route.params del backend
-    // Si se necesita actualizar, recargar desde InicioScreen con nuevo endpoint
   }, []);
 
   // ❌ DESHABILITADO: No agregar comandas desde WebSocket en PagosScreen
@@ -358,14 +492,33 @@ const PagosScreen = () => {
     });
 
     if (currentBoucher) {
-      // Si viene boucher desde "Imprimir Boucher", usar esos datos
-      console.log("✅ Boucher recibido desde navegación (Imprimir Boucher)");
-      setBoucherData(currentBoucher);
-      // Limpiar comandas cuando se recibe boucher
+      console.log("✅ Boucher recibido desde navegación (Imprimir Boucher) — recargando del servidor");
+      setBoucherData(null);
+      setBouchersParciales([]);
       setComandas([]);
-      if (currentBoucher.mesa) {
-        const mesa = typeof currentBoucher.mesa === 'object' ? currentBoucher.mesa : { _id: currentBoucher.mesa, nummesa: currentBoucher.numMesa };
-        setMesa(mesa);
+      pedidoIdCicloRef.current = null;
+
+      const mesaObj = currentBoucher.mesa
+        ? typeof currentBoucher.mesa === 'object'
+          ? currentBoucher.mesa
+          : { _id: currentBoucher.mesa, nummesa: currentBoucher.numMesa }
+        : null;
+      if (mesaObj) {
+        setMesa(mesaObj);
+      }
+      const mesaIdConsolidar = mesaObj?._id || currentBoucher.mesa;
+      if (mesaIdConsolidar) {
+        (async () => {
+          const consolidado = await cargarBoucherConsolidadoMesa(mesaIdConsolidar);
+          if (consolidado) {
+            setBoucherData(consolidado);
+          } else {
+            setBoucherData(currentBoucher);
+          }
+          await cargarBouchersParcialesMesa(mesaIdConsolidar);
+        })();
+      } else {
+        setBoucherData(currentBoucher);
       }
       if (currentBoucher.cliente) {
         const cliente = typeof currentBoucher.cliente === 'object' ? currentBoucher.cliente : { _id: currentBoucher.cliente };
@@ -408,6 +561,8 @@ const PagosScreen = () => {
       setTotal(currentTotal || 0); // SOLO este total del backend
       setBoucherData(null); // Limpiar boucher anterior si existe
       setClienteSeleccionado(null); // Limpiar cliente anterior
+      setBouchersParciales([]); // Limpiar vouchers de visitas anteriores
+      pedidoIdCicloRef.current = null;
       
       console.log("✅ [PAGOS] Estado LIMPIADO y actualizado SOLO con datos del backend:", {
         comandasEnEstado: currentComandas.length,
@@ -429,7 +584,65 @@ const PagosScreen = () => {
         setTotal(0);
       }
     }
-  }, [route.params]); // ✅ Dependencia: route.params completo para detectar cualquier cambio
+  }, [route.params, cargarBoucherConsolidadoMesa]); // ✅ Dependencia: route.params completo para detectar cualquier cambio
+
+  // Cargar vouchers parciales solo si ya hubo cobros parciales o la mesa está pagada
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token || cancelled) return;
+
+      const mesaEstado = (mesa?.estado || mesaParam?.estado || '').toLowerCase();
+      const yaHuboCobros =
+        totalAcumuladoPagado > 0 ||
+        hayPendienteTrasPago ||
+        mesaEstado === 'pagado' ||
+        bouchersParciales.length > 0;
+      if (!yaHuboCobros) return;
+
+      const mesaId =
+        mesa?._id ||
+        mesaParam?._id ||
+        boucherData?.mesa?._id ||
+        boucherData?.mesa ||
+        boucherFromParams?.mesa?._id ||
+        boucherFromParams?.mesa;
+      if (!mesaId) return;
+
+      const comandasFuente =
+        comandas?.length > 0 ? comandas : route.params?.comandasParaPagar || [];
+      const comandaIds = comandasFuente.map((c) => c._id).filter(Boolean);
+      await cargarBouchersParcialesMesa(mesaId, comandaIds);
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    mesa?._id,
+    mesa?.estado,
+    mesaParam?._id,
+    mesaParam?.estado,
+    comandas,
+    boucherData?.mesa,
+    boucherFromParams?.mesa,
+    cargarBouchersParcialesMesa,
+    route.params?.comandasParaPagar,
+    totalAcumuladoPagado,
+    hayPendienteTrasPago,
+    bouchersParciales.length,
+  ]);
+
+  const mostrarVouchersParciales = bouchersParciales.length > 0;
+  const simboloMoneda = configMoneda?.simboloMoneda || 'S/.';
+  const decimalesMoneda = configMoneda?.decimales ?? 2;
+
+  const formatearFechaVoucher = (b) =>
+    b?.fechaPagoString ||
+    (b?.fechaPago
+      ? moment(b.fechaPago).tz('America/Lima').format('DD/MM/YYYY HH:mm')
+      : '—');
 
   // ✅ Suscribirse a eventos Socket cuando la pantalla está enfocada (solo para actualizaciones en tiempo real)
   // También recargar datos si vienen nuevos params al enfocar la pantalla
@@ -468,17 +681,56 @@ const PagosScreen = () => {
         setTotal(currentTotal || 0); // SOLO este total
         setBoucherData(null); // Limpiar boucher anterior
         setClienteSeleccionado(null); // Limpiar cliente anterior
+        setBouchersParciales([]);
+        pedidoIdCicloRef.current = null;
       } else if (currentBoucher) {
-        console.log("🔄 [PAGOS] Actualizando boucher desde route.params al enfocar");
-        setBoucherData(currentBoucher);
-        // Limpiar comandas cuando se recibe boucher
+        console.log("🔄 [PAGOS] Recargando boucher del ciclo actual al enfocar");
+        setBoucherData(null);
+        setBouchersParciales([]);
         setComandas([]);
+        const mesaB = currentParams.mesa || currentBoucher.mesa;
+        const mesaObj = mesaB
+          ? typeof mesaB === 'object'
+            ? mesaB
+            : { _id: mesaB, nummesa: currentBoucher.numMesa }
+          : null;
+        if (mesaObj) setMesa(mesaObj);
+        const mesaIdB = mesaObj?._id || (typeof mesaB === 'string' ? mesaB : currentBoucher.mesa);
+        if (mesaIdB) {
+          cargarBoucherConsolidadoMesa(mesaIdB).then((consolidado) => {
+            setBoucherData(consolidado || currentBoucher);
+          });
+          cargarBouchersParcialesMesa(mesaIdB);
+        } else {
+          setBoucherData(currentBoucher);
+        }
       } else if (!currentBoucher && !currentComandas) {
         // Si no hay datos, limpiar estado
         console.log("🔄 [PAGOS] No hay datos en params - LIMPIANDO estado");
         setComandas([]);
         setMesa(null);
         setTotal(0);
+      }
+
+      const mesaIdFocus =
+        currentMesa?._id ||
+        currentParams.mesa?._id ||
+        currentBoucher?.mesa?._id ||
+        currentBoucher?.mesa;
+      if (mesaIdFocus) {
+        AsyncStorage.getItem('authToken').then((token) => {
+          if (!token) return;
+          const esImprimirBoucher = !!currentBoucher;
+          const yaHuboCobros =
+            esImprimirBoucher ||
+            totalAcumuladoPagado > 0 ||
+            hayPendienteTrasPago ||
+            (currentMesa?.estado || currentParams.mesa?.estado || '').toLowerCase() === 'pagado' ||
+            bouchersParciales.length > 0;
+          if (!yaHuboCobros) return;
+          const comandaIds = (currentComandas || []).map((c) => c._id).filter(Boolean);
+          cargarBouchersParcialesMesa(mesaIdFocus, comandaIds);
+        });
       }
 
       let syncCancelled = false;
@@ -520,7 +772,7 @@ const PagosScreen = () => {
           onNuevaComanda: null
         });
       };
-    }, [cargarPlantillaVoucher, handleComandaActualizada, handleNuevaComanda, subscribeToEvents, route.params])
+    }, [cargarPlantillaVoucher, cargarBouchersParcialesMesa, handleComandaActualizada, handleNuevaComanda, subscribeToEvents, route.params])
   );
 
   useEffect(() => {
@@ -665,6 +917,38 @@ const PagosScreen = () => {
     });
     return sub;
   }, [comandas, route.params]);
+
+  const platosEnPantalla = useMemo(() => {
+    const paramsParaCalc = route.params || {};
+    const comandasDeParams = paramsParaCalc.comandasParaPagar || [];
+    const comandasParaCalc = comandas.length > 0 ? comandas : comandasDeParams;
+    return listarPlatosEnPantallaPago(comandasParaCalc);
+  }, [comandas, route.params]);
+
+  const platosPagables = useMemo(
+    () => platosEnPantalla.filter((p) => !p.yaPagado),
+    [platosEnPantalla]
+  );
+
+  const todosPlatosPagablesSeleccionados = useMemo(() => {
+    if (platosPagables.length === 0) return false;
+    return platosPagables.every((p) => platosSeleccionadosPago.includes(p.key));
+  }, [platosPagables, platosSeleccionadosPago]);
+
+  const totalesPagoActual = useMemo(() => {
+    const sub = calcularSubtotalSeleccion(platosSeleccionadosPago, platosPagables);
+    return calcularTotalesPreview(sub, configMoneda);
+  }, [platosSeleccionadosPago, platosPagables, configMoneda]);
+
+  // Inicializar selección: todos los platos pagables al cargar comandas
+  useEffect(() => {
+    if (boucherData || boucherFromParams) return;
+    if (platosPagables.length === 0) {
+      setPlatosSeleccionadosPago([]);
+      return;
+    }
+    setPlatosSeleccionadosPago(platosPagables.map((p) => p.key));
+  }, [platosPagables, boucherData, boucherFromParams]);
 
   useEffect(() => {
     totalAnim.value = withTiming(totalCalculado, {
@@ -918,7 +1202,7 @@ const PagosScreen = () => {
   };
 
   // ✅ MEJORADO: try/catch/finally para evitar loading infinito
-  const procesarPagoConCliente = async (cliente) => {
+  const procesarPagoConCliente = async (cliente, omitirConfirmacionParcial = false) => {
     // ✅ Validaciones ANTES de activar loading
     if (!cliente || !cliente._id) {
       Alert.alert("Error", "No se pudo obtener la información del cliente. Por favor, intenta nuevamente.");
@@ -957,24 +1241,59 @@ const PagosScreen = () => {
       return;
     }
 
+    // Validar selección de platos para pago parcial
+    if (platosPagables.length > 0 && platosSeleccionadosPago.length === 0) {
+      Alert.alert(
+        "Sin selección",
+        "Selecciona al menos un plato para confirmar el pago."
+      );
+      return;
+    }
+
+    // Confirmación adicional cuando el pago es parcial (selección < 100% de platos pagables)
+    const esSeleccionParcial = platosPagables.length > 0 &&
+      platosSeleccionadosPago.length > 0 &&
+      platosSeleccionadosPago.length < platosPagables.length;
+    if (esSeleccionParcial && !omitirConfirmacionParcial) {
+      Alert.alert(
+        "Pago parcial",
+        `Cobrarás solo ${platosSeleccionadosPago.length} de ${platosPagables.length} plato(s) pendiente(s).\n\nEl resto quedará pendiente para un pago posterior. ¿Continuar?`,
+        [
+          { text: "Cancelar", style: "cancel" },
+          {
+            text: "Sí, cobrar parcial",
+            onPress: () => procesarPagoConCliente(cliente, true),
+          },
+        ]
+      );
+      return;
+    }
+
     // ✅ Activar loading DESPUÉS de validaciones
     setProcesandoPago(true);
     setMensajeCarga("Procesando pago...");
     
     try {
-      console.log("💳 [PAGO] Iniciando procesamiento:", {
+      const platosPayload = buildPlatosSeleccionadosPayload(
+        platosSeleccionadosPago,
+        platosPagables
+      );
+
+      if (platosPayload.length === 0) {
+        setProcesandoPago(false);
+        Alert.alert(
+          "Error",
+          "No hay platos válidos seleccionados. Recarga la pantalla e intenta de nuevo."
+        );
+        return;
+      }
+
+      console.log("💳 [PAGO] Iniciando procesamiento parcial:", {
         cliente: cliente.nombre || cliente._id,
-        clienteId: cliente._id?.slice(-6),
-        cantidadComandas: comandasFinales.length,
+        platosSeleccionados: platosPayload.length,
         mesa: mesaFinal.nummesa,
-        total: totalFinal
+        totalPreview: totalesPagoActual.total,
       });
-      
-      console.log("📋 [PAGO] Comandas para pagar (SOLO del backend):", comandasFinales.map(c => ({
-        _id: c._id?.slice(-6),
-        comandaNumber: c.comandaNumber,
-        status: c.status
-      })));
 
       // Obtener mozoId del contexto o de las comandas
       const mozoId = comandasFinales[0]?.mozos?._id || comandasFinales[0]?.mozos;
@@ -993,101 +1312,30 @@ const PagosScreen = () => {
         mesaIdFinal = mesaIdFinal.toString();
       }
       
-      // 🔥 CRÍTICO: Obtener comandas FRESCAS del backend ANTES de extraer IDs
-      // Esto asegura que usamos el estado más reciente después de eliminar platos
-      console.log("🔄 [PAGO] Obteniendo comandas frescas del backend (ignorando route.params si es necesario)...");
-      setMensajeCarga("Obteniendo comandas actualizadas del servidor...");
-      
-      // Obtener TODAS las comandas válidas de la mesa desde el backend (ignorar route.params)
-      const validacion = await validarComandasParaPago([], mesaIdFinal, mesaFinal.nummesa);
-      
-      if (validacion.validas.length === 0) {
-        // No hay comandas válidas en el backend
-        let mensaje = "No hay comandas válidas para pagar en esta mesa.";
-        
-        if (validacion.invalidas.length > 0) {
-          const razones = validacion.invalidas.map(c => {
-            if (c.eliminada === true) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} eliminada`;
-            if (c.status?.toLowerCase() === 'pagado') return `Comanda #${c.comandaNumber || c._id?.slice(-6)} ya pagada`;
-            if (!c.platos || c.platos.length === 0) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} sin platos`;
-            return `Comanda #${c.comandaNumber || c._id?.slice(-6)} inválida`;
-          });
-          mensaje += `\n\nComandas encontradas pero inválidas:\n${razones.join('\n')}`;
-        }
-        
-        // Comparar con route.params para informar al usuario
-        const comandasIdsDeParams = comandasFinales.map(c => {
-          let comandaId = c._id;
-          if (comandaId && typeof comandaId === 'object') {
-            comandaId = comandaId.toString();
-          }
-          return comandaId;
-        });
-        
-        if (comandasIdsDeParams.length > 0) {
-          console.warn(`⚠️ [PAGO] IDs de route.params que ya no son válidos:`, comandasIdsDeParams.map(id => id?.slice(-6)));
-          mensaje += `\n\nNota: Las comandas que intentaste pagar ya no están disponibles (posiblemente eliminadas después de eliminar platos).`;
-        }
-        
-        setProcesandoPago(false);
-        Alert.alert("Error", mensaje);
-        return;
-      }
-      
-      // 🔥 USAR SOLO las comandas válidas del backend (ignorar route.params si hay discrepancias)
-      const comandasIdsFinales = validacion.validas.map(c => {
-        const id = c._id?.toString() || c._id;
-        return id;
-      });
-      
-      // Comparar con route.params para logging
-      const comandasIdsDeParams = comandasFinales.map(c => {
-        let comandaId = c._id;
-        if (comandaId && typeof comandaId === 'object') {
-          comandaId = comandaId.toString();
-        }
-        return comandaId;
-      });
-      
-      const idsDiferentes = comandasIdsDeParams.filter(id => !comandasIdsFinales.includes(id));
-      if (idsDiferentes.length > 0) {
-        console.warn(`⚠️ [PAGO] IDs de route.params que ya no son válidos (usando comandas frescas del backend):`, idsDiferentes.map(id => id?.slice(-6)));
-        console.log(`✅ [PAGO] Usando ${comandasIdsFinales.length} comanda(s) válida(s) del backend en lugar de ${comandasIdsDeParams.length} de route.params`);
-        
-        // Informar al usuario si hay diferencias significativas
-        if (comandasIdsFinales.length < comandasIdsDeParams.length) {
-          const comandasEliminadas = comandasIdsDeParams.length - comandasIdsFinales.length;
-          Alert.alert(
-            "⚠️ Comandas actualizadas",
-            `${comandasEliminadas} comanda(s) ya no está(n) disponible(s) (posiblemente eliminadas). Procesando ${comandasIdsFinales.length} comanda(s) válida(s).`,
-            [{ text: "Continuar", onPress: () => {} }]
-          );
-        }
-      } else {
-        console.log(`✅ [PAGO] IDs de route.params coinciden con comandas válidas del backend`);
-      }
-      
       const boucherData = {
         mesaId: mesaIdFinal,
         mozoId: mozoId,
         clienteId: cliente._id,
-        comandasIds: comandasIdsFinales, // Solo comandas válidas
-        observaciones: comandasFinales.map(c => c.observaciones).filter(o => o).join("; ") || ""
+        platosSeleccionados: platosPayload,
+        observaciones:
+          comandasFinales.map((c) => c.observaciones).filter(Boolean).join("; ") || "",
       };
       
-      console.log("📤 [PAGO] Enviando al backend:", {
+      console.log("📤 [PAGO] Enviando al backend (parcial):", {
         mesaId: mesaIdFinal,
-        cantidadComandas: boucherData.comandasIds.length,
-        comandasIds: boucherData.comandasIds.map(id => id?.slice(-6))
+        platos: platosPayload.length,
       });
 
       setMensajeCarga("Creando boucher y procesando pago...");
       
       // ✅ POST con timeout y manejo de errores específico
       let boucherCreado;
+      let resumenPago = null;
       try {
+        const headers = await getHeadersAuth();
         const boucherResponse = await axios.post(boucherURL, boucherData, { 
-          timeout: 15000, // Aumentado a 15s para conexiones lentas
+          timeout: 15000,
+          headers,
           validateStatus: (status) => status < 500 // No lanzar error para 4xx
         });
         
@@ -1097,7 +1345,8 @@ const PagosScreen = () => {
           throw new Error(errorMsg);
         }
         
-        boucherCreado = boucherResponse.data;
+        boucherCreado = parseBoucherResponse(boucherResponse.data).boucher;
+        resumenPago = parseBoucherResponse(boucherResponse.data).resumen;
         
         if (!boucherCreado || !boucherCreado._id) {
           throw new Error("El backend no retornó un boucher válido");
@@ -1106,7 +1355,9 @@ const PagosScreen = () => {
         console.log("✅ [PAGO] Boucher creado exitosamente:", {
           boucherId: boucherCreado._id?.slice(-6),
           boucherNumber: boucherCreado.boucherNumber,
-          voucherId: boucherCreado.voucherId
+          voucherId: boucherCreado.voucherId,
+          parcial: boucherCreado.esPagoParcial,
+          pendiente: resumenPago?.totalPendiente,
         });
       } catch (postError) {
         let boucherRecoveredInCatch = false;
@@ -1151,7 +1402,10 @@ const PagosScreen = () => {
                   });
                   
                   // Actualizar boucherData con solo comandas válidas
-                  boucherData.comandasIds = comandasIdsValidas;
+                  boucherData.platosSeleccionados = buildPlatosSeleccionadosPayload(
+                    platosSeleccionadosPago,
+                    listarPlatosPagables(comandasFrescas.validas)
+                  );
                   
                   // Retry automático con comandas válidas
                   setMensajeCarga("Reintentando con comandas válidas del servidor...");
@@ -1164,7 +1418,9 @@ const PagosScreen = () => {
                     throw new Error(retryResponse.data?.message || `Error ${retryResponse.status}`);
                   }
                   
-                  boucherCreado = retryResponse.data;
+                  const parsedRetry = parseBoucherResponse(retryResponse.data);
+                  boucherCreado = parsedRetry.boucher;
+                  resumenPago = parsedRetry.resumen;
                   
                   if (!boucherCreado || !boucherCreado._id) {
                     throw new Error("El backend no retornó un boucher válido");
@@ -1187,14 +1443,10 @@ const PagosScreen = () => {
               // Hay comandas válidas, retry automático
               console.log(`🔄 [PAGO] Retry automático con ${comandasValidasDelError.length} comanda(s) válida(s)`);
               
-              // Extraer IDs de comandas válidas
-              const comandasIdsValidas = comandasValidasDelError.map(c => {
-                const id = c._id?.toString() || c._id || c;
-                return id;
-              });
-              
-              // Actualizar boucherData con solo comandas válidas
-              boucherData.comandasIds = comandasIdsValidas;
+              boucherData.platosSeleccionados = buildPlatosSeleccionadosPayload(
+                listarPlatosPagables(comandasValidasDelError).map((p) => p.key),
+                listarPlatosPagables(comandasValidasDelError)
+              );
               
               // Retry automático
               try {
@@ -1208,7 +1460,9 @@ const PagosScreen = () => {
                   throw new Error(retryResponse.data?.message || `Error ${retryResponse.status}`);
                 }
                 
-                boucherCreado = retryResponse.data;
+                const parsedRetry2 = parseBoucherResponse(retryResponse.data);
+                boucherCreado = parsedRetry2.boucher;
+                resumenPago = parsedRetry2.resumen;
                 
                 if (!boucherCreado || !boucherCreado._id) {
                   throw new Error("El backend no retornó un boucher válido");
@@ -1295,16 +1549,54 @@ const PagosScreen = () => {
       // NOTA: Si el retry fue exitoso, boucherCreado ya está asignado y no se lanzó error
 
       // Guardar boucher en estado local
+      let boucherParaUI = boucherCreado;
       if (boucherCreado && boucherCreado._id) {
         setBoucherData(boucherCreado);
       } else {
         throw new Error("No se pudo crear el boucher. Por favor, intenta nuevamente.");
       }
 
-      // ✅ MEJORADO: Actualizar estado de la mesa con verificación activa y reintentos
+      const mesaCompletamentePagadaEarly = resumenPago?.mesaPagadaCompletamente === true;
+      if (mesaCompletamentePagadaEarly && mesaIdFinal) {
+        const consolidado = await cargarBoucherConsolidadoMesa(mesaIdFinal);
+        if (consolidado?.platos?.length) {
+          boucherParaUI = consolidado;
+          setBoucherData(consolidado);
+        }
+      }
+
+      if (mesaIdFinal) {
+        await cargarBouchersParcialesMesa(mesaIdFinal);
+      }
+
+      if (resumenPago) {
+        setTotalRestante(resumenPago.totalPendiente ?? 0);
+        setHayPendienteTrasPago(!resumenPago.mesaPagadaCompletamente);
+        if (!resumenPago.mesaPagadaCompletamente && mesaIdFinal) {
+          try {
+            const comandasCiclo = await fetchComandasCicloParaPagos(mesaIdFinal);
+            if (comandasCiclo.length > 0) {
+              setComandas(comandasCiclo);
+            } else if (resumenPago.comandas?.length) {
+              setComandas(resumenPago.comandas);
+            }
+          } catch {
+            if (resumenPago.comandas?.length) {
+              setComandas(resumenPago.comandas);
+            }
+          }
+          setTotal(resumenPago.totalPendiente ?? 0);
+          setPlatosSeleccionadosPago([]);
+        }
+        setTotalAcumuladoPagado((prev) => prev + (Number(boucherCreado.total) || 0));
+      }
+
+      // Actualizar mesa a "pagado" solo si el backend confirma mesa 100% cobrada
+      const mesaCompletamentePagada = resumenPago?.mesaPagadaCompletamente === true;
+
       let mesaVerificadaComoPagada = false;
       
-      if (mesaFinal && mesaIdFinal) {
+      if (mesaFinal && mesaIdFinal && mesaCompletamentePagada) {
         setMensajeCarga("Confirmando pago...");
         
         const mesaUpdateURL = apiConfig.isConfigured 
@@ -1457,7 +1749,7 @@ const PagosScreen = () => {
           mesaId: mesaIdStr,
           mostrarMensajePago: true,
           mesaPagada: mesaPagadaPayload || buildMesaPagadaNavPayload(mesaFinal),
-          boucher: boucherCreado,
+          boucher: boucherParaUI,
         });
       };
 
@@ -1627,8 +1919,108 @@ const PagosScreen = () => {
         <View style={{ width: 24 }} />
       </View>
 
+      {/* Banner de progreso de pagos (visible cuando hay cobros parciales o restante) */}
+      {!boucherData && !boucherFromParams && (totalAcumuladoPagado > 0 || (totalRestante != null && totalRestante > 0)) && (
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 16,
+          paddingVertical: 10,
+          backgroundColor: (theme.colors?.surface || '#FFFFFF'),
+          borderBottomWidth: 1,
+          borderBottomColor: (theme.colors?.border || 'rgba(0,0,0,0.08)'),
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+            <MaterialCommunityIcons
+              name="cash-check"
+              size={18}
+              color={colors.primary}
+              style={{ marginRight: 8 }}
+            />
+            <Text style={{ fontSize: 13, color: theme.colors?.text?.primary || '#333', fontWeight: '600' }}>
+              Pagado: {configMoneda?.simboloMoneda || 'S/.'} {Number(totalAcumuladoPagado || 0).toFixed(configMoneda?.decimales ?? 2)}
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <MaterialCommunityIcons
+              name="cash-clock"
+              size={18}
+              color={(totalRestante != null && totalRestante > 0) ? '#EF4444' : '#16a34a'}
+              style={{ marginRight: 6 }}
+            />
+            <Text style={{
+              fontSize: 13,
+              fontWeight: '700',
+              color: (totalRestante != null && totalRestante > 0) ? '#EF4444' : '#16a34a',
+            }}>
+              Restante: {configMoneda?.simboloMoneda || 'S/.'} {Number(totalRestante || 0).toFixed(configMoneda?.decimales ?? 2)}
+            </Text>
+          </View>
+        </View>
+      )}
+
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {mostrarVouchersParciales && (
+          <View style={styles.parcialesCard}>
+            <View style={styles.parcialesHeader}>
+              <MaterialCommunityIcons
+                name="file-multiple"
+                size={22}
+                color={colors.primary}
+              />
+              <Text style={styles.parcialesTitle}>Vouchers por pago parcial</Text>
+            </View>
+            <Text style={styles.parcialesSubtitle}>
+              Cada cobro generó su propio voucher. Imprime el que necesites con los platos de ese pago.
+            </Text>
+            {bouchersParciales.map((b, idx) => {
+              const totalV = Number(b.total) || 0;
+              const platosNombres = (b.platos || [])
+                .map((p) => p.nombre || p.plato?.nombre || 'Plato')
+                .slice(0, 4);
+              const masPlatos = (b.platos?.length || 0) > 4;
+              return (
+                <View key={b._id || `parcial-${idx}`} style={styles.parcialItem}>
+                  <View style={styles.parcialItemBody}>
+                    <View style={styles.parcialItemTop}>
+                      <Text style={styles.parcialVoucherId}>{b.voucherId || '—'}</Text>
+                      <Text style={styles.parcialNumero}>#{b.boucherNumber ?? idx + 1}</Text>
+                    </View>
+                    <Text style={styles.parcialMeta}>
+                      {b.platos?.length || 0} plato(s) · {simboloMoneda}{' '}
+                      {totalV.toFixed(decimalesMoneda)}
+                    </Text>
+                    <Text style={styles.parcialFecha}>{formatearFechaVoucher(b)}</Text>
+                    {platosNombres.length > 0 && (
+                      <Text style={styles.parcialPlatos} numberOfLines={2}>
+                        {platosNombres.join(' · ')}
+                        {masPlatos ? '…' : ''}
+                      </Text>
+                    )}
+                  </View>
+                  <TouchableOpacity
+                    style={styles.parcialPrintBtn}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      generarBoucher(b);
+                    }}
+                    disabled={isGenerating}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialCommunityIcons name="printer" size={20} color="#FFFFFF" />
+                    <Text style={styles.parcialPrintText}>Imprimir</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
         <View style={styles.infoCard}>
+          {(boucherData || boucherFromParams)?.esConsolidado && (
+            <Text style={styles.infoConsolidadoLabel}>Resumen consolidado del pago</Text>
+          )}
           {(boucherData || boucherFromParams) && (
             <>
               <View style={styles.infoRow}>
@@ -1705,7 +2097,30 @@ const PagosScreen = () => {
         </View>
 
         <View style={styles.platosCard}>
-          <Text style={styles.sectionTitle}>Platos</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text style={styles.sectionTitle}>Platos</Text>
+            {!boucherData && !boucherFromParams && platosPagables.length > 0 && (
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setPlatosSeleccionadosPago(
+                    toggleSeleccionarTodos(platosSeleccionadosPago, platosPagables)
+                  );
+                }}
+                style={{ paddingVertical: 6, paddingHorizontal: 10 }}
+              >
+                <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 13 }}>
+                  {todosPlatosPagablesSeleccionados ? 'Deseleccionar todo' : 'Seleccionar todo'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {!boucherData && !boucherFromParams && totalRestante != null && totalRestante > 0 && (
+            <Text style={{ fontSize: 13, color: theme.colors?.text?.secondary, marginBottom: 8 }}>
+              Restante por cobrar: {configMoneda?.simboloMoneda || 'S/.'}{' '}
+              {Number(totalRestante).toFixed(configMoneda?.decimales ?? 2)}
+            </Text>
+          )}
           {(boucherData || boucherFromParams)?.platos ? (
             // Mostrar platos del boucher del backend
             (boucherData || boucherFromParams).platos.map((platoItem, index) => {
@@ -1743,114 +2158,116 @@ const PagosScreen = () => {
                 </View>
               );
             })
-          ) : (
-            // Mostrar platos de las comandas - usar route.params directamente si comandas está vacío
-            (() => {
-              // Leer route.params directamente para asegurar datos actualizados
-              const paramsParaRender = route.params || {};
-              const comandasDeParamsParaRender = paramsParaRender.comandasParaPagar || [];
-              const comandasParaMostrar = comandas.length > 0 ? comandas : comandasDeParamsParaRender;
-              
-              console.log("📋 [PAGOS] Renderizando platos:", {
-                usandoComandas: comandas.length > 0,
-                usandoComandasParaPagar: comandas.length === 0 && comandasDeParamsParaRender.length > 0,
-                cantidadComandas: comandasParaMostrar.length,
-                primeraComandaPlatos: comandasParaMostrar[0]?.platos?.length || 0,
-                primeraComandaId: comandasParaMostrar[0]?._id?.slice(-6) || 'N/A',
-                platosDetalle: comandasParaMostrar[0]?.platos?.map((p, i) => ({
-                  index: i,
-                  nombre: p.plato?.nombre || p.nombre || 'Sin nombre',
-                  precio: p.plato?.precio || p.precio || 0,
-                  tienePlato: !!p.plato,
-                  tieneNombre: !!(p.plato?.nombre || p.nombre)
-                })) || []
-              });
-              
-              if (comandasParaMostrar.length === 0) {
-                return (
-                  <View style={{ padding: 20, alignItems: 'center' }}>
-                    <Text style={{ color: theme.colors.text.secondary }}>
-                      No hay platos para mostrar
-                    </Text>
-                  </View>
-                );
-              }
-              
-              // Verificar que haya al menos una comanda con platos
-              const comandasConPlatos = comandasParaMostrar.filter(c => 
-                c.platos && Array.isArray(c.platos) && c.platos.length > 0
-              );
-              
-              if (comandasConPlatos.length === 0) {
-                return (
-                  <View style={{ padding: 20, alignItems: 'center' }}>
-                    <Text style={{ color: theme.colors.text.secondary }}>
-                      Las comandas no tienen platos disponibles
-                    </Text>
-                  </View>
-                );
-              }
-              
-              return comandasParaMostrar.map((comanda, comandaIndex) => {
-                // Verificar que la comanda tenga platos
-                if (!comanda.platos || !Array.isArray(comanda.platos) || comanda.platos.length === 0) {
-                  return null;
-                }
-                
-                return (
-                  <View key={comanda._id || comandaIndex}>
-                    {comandasParaMostrar.length > 1 && (
-                      <Text style={styles.comandaHeader}>
-                        Comanda #{comanda.comandaNumber || comanda._id?.slice(-6) || comandaIndex + 1}
-                      </Text>
-                    )}
-                    {comanda.platos.map((platoItem, index) => {
-                      // Manejar diferentes estructuras de platoItem
-                      const plato = platoItem.plato || platoItem;
-                      const cantidad = comanda.cantidades?.[index] || platoItem.cantidad || 1;
-                      const precio = plato?.precio || platoItem.precio || 0;
-                      const nombre = plato?.nombre || platoItem.nombre || "Plato";
-                      const subtotal = precio * cantidad;
-                      
-                      // 🔥 CORREGIDO: Solo mostrar platos no eliminados NI anulados
-                      // Los platos anulados desde cocina tienen eliminado=true Y anulado=true
-                      if (platoItem.eliminado || platoItem.anulado) {
-                        return null;
-                      }
-                      
-                      return (
-                        <View key={`${comandaIndex}-${index}`} style={styles.platoItem}>
-                          <View style={styles.platoInfo}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.platoNombre}>{nombre}</Text>
-                              {platoItem.complementosSeleccionados && platoItem.complementosSeleccionados.length > 0 && (
-                                <View style={{ marginTop: 2 }}>
-                                  {platoItem.complementosSeleccionados.map((comp, ci) => (
-                                    <Text
-                                      key={ci}
-                                      style={{
-                                        fontSize: 11,
-                                        color: theme.colors?.text?.secondary || '#6B7280',
-                                        fontStyle: 'italic',
-                                        lineHeight: 16,
-                                      }}
-                                    >
-                                      · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion} x{comp.cantidad || 1}
-                                    </Text>
-                                  ))}
-                                </View>
-                              )}
-                            </View>
-                            <Text style={styles.platoCantidad}>x{cantidad}</Text>
+          ) : platosEnPantalla.length > 0 ? (
+            platosEnPantalla.map((item) => {
+              const seleccionado = platosSeleccionadosPago.includes(item.key);
+              const yaPagado = item.yaPagado === true;
+              const fila = (
+                <>
+                  <MaterialCommunityIcons
+                    name={
+                      yaPagado
+                        ? 'checkbox-marked-circle'
+                        : seleccionado
+                          ? 'checkbox-marked'
+                          : 'checkbox-blank-outline'
+                    }
+                    size={22}
+                    color={
+                      yaPagado
+                        ? '#16a34a'
+                        : seleccionado
+                          ? colors.primary
+                          : theme.colors?.text?.secondary
+                    }
+                    style={{ marginRight: 8 }}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.platoInfo}>
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={[
+                            styles.platoNombre,
+                            yaPagado && { color: theme.colors?.text?.secondary },
+                          ]}
+                        >
+                          {item.nombre}
+                          {yaPagado ? '  · Pagado' : ''}
+                        </Text>
+                        {item.comandaNumber != null && (
+                          <Text style={{ fontSize: 11, color: theme.colors?.text?.secondary }}>
+                            Comanda #{item.comandaNumber}
+                          </Text>
+                        )}
+                        {item.complementosSeleccionados?.length > 0 && (
+                          <View style={{ marginTop: 2 }}>
+                            {item.complementosSeleccionados.map((comp, ci) => (
+                              <Text
+                                key={ci}
+                                style={{
+                                  fontSize: 11,
+                                  color: theme.colors?.text?.secondary || '#6B7280',
+                                  fontStyle: 'italic',
+                                }}
+                              >
+                                · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion} x
+                                {comp.cantidad || 1}
+                              </Text>
+                            ))}
                           </View>
-                          <Text style={styles.platoSubtotal}>{configMoneda?.simboloMoneda || 'S/.'} {subtotal.toFixed(configMoneda?.decimales ?? 2)}</Text>
-                        </View>
-                      );
-                    })}
+                        )}
+                      </View>
+                      <Text style={styles.platoCantidad}>x{item.cantidad}</Text>
+                    </View>
+                    <Text style={styles.platoSubtotal}>
+                      {configMoneda?.simboloMoneda || 'S/.'}{' '}
+                      {item.subtotal.toFixed(configMoneda?.decimales ?? 2)}
+                    </Text>
+                  </View>
+                </>
+              );
+
+              if (yaPagado) {
+                return (
+                  <View
+                    key={item.key}
+                    style={[
+                      styles.platoItem,
+                      { opacity: 0.85, backgroundColor: '#16a34a14' },
+                    ]}
+                  >
+                    {fila}
                   </View>
                 );
-              }).filter(Boolean); // Filtrar nulls
-            })()
+              }
+
+              return (
+                <TouchableOpacity
+                  key={item.key}
+                  style={[
+                    styles.platoItem,
+                    seleccionado && { backgroundColor: (theme.colors?.primary || colors.primary) + '12' },
+                  ]}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setPlatosSeleccionadosPago((prev) =>
+                      prev.includes(item.key)
+                        ? prev.filter((k) => k !== item.key)
+                        : [...prev, item.key]
+                    );
+                  }}
+                  activeOpacity={0.7}
+                >
+                  {fila}
+                </TouchableOpacity>
+              );
+            })
+          ) : (
+            <View style={{ padding: 20, alignItems: 'center' }}>
+              <Text style={{ color: theme.colors?.text?.secondary || '#6B7280' }}>
+                No hay platos entregados pendientes de pago
+              </Text>
+            </View>
           )}
         </View>
 
@@ -1890,7 +2307,9 @@ const PagosScreen = () => {
                 if (boucherData || boucherFromParams) {
                   return ((boucherData || boucherFromParams)?.subtotal || 0).toFixed(configMoneda?.decimales ?? 2);
                 }
-                // 🔥 FIX: Usar subtotalOriginal (pre-descuento) para mostrar siempre el subtotal real
+                if (platosSeleccionadosPago.length > 0) {
+                  return totalesPagoActual.subtotal.toFixed(configMoneda?.decimales ?? 2);
+                }
                 const base = subtotalOriginal > 0 ? subtotalOriginal : (total || 0);
                 const igvPct = configMoneda?.igvPorcentaje || 18;
                 const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
@@ -1912,7 +2331,9 @@ const PagosScreen = () => {
                 if (boucherData || boucherFromParams) {
                   return ((boucherData || boucherFromParams)?.igv || 0).toFixed(configMoneda?.decimales ?? 2);
                 }
-                // 🔥 FIX: Usar subtotalOriginal (pre-descuento) para IGV correcto
+                if (platosSeleccionadosPago.length > 0) {
+                  return totalesPagoActual.igv.toFixed(configMoneda?.decimales ?? 2);
+                }
                 const base = subtotalOriginal > 0 ? subtotalOriginal : (total || 0);
                 const igvPct = configMoneda?.igvPorcentaje || 18;
                 const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
@@ -1957,7 +2378,9 @@ const PagosScreen = () => {
                   const bTotal = bDescuento && boucher?.totalConDescuento != null ? boucher.totalConDescuento : (boucher?.total || 0);
                   return bTotal.toFixed(configMoneda?.decimales ?? 2);
                 }
-                // 🔥 FIX: Calcular total final usando subtotalOriginal y restando descuento
+                if (platosSeleccionadosPago.length > 0) {
+                  return totalesPagoActual.total.toFixed(configMoneda?.decimales ?? 2);
+                }
                 const base = subtotalOriginal > 0 ? subtotalOriginal : (total || 0);
                 const igvPct = configMoneda?.igvPorcentaje || 18;
                 const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
@@ -2006,30 +2429,30 @@ const PagosScreen = () => {
           </View>
         </TouchableOpacity>
 
-        {/* Solo mostrar botón "Pagar" si la mesa no está ya pagada */}
-        {mesa?.estado?.toLowerCase() !== "pagado" && (
+        {/* Botón "Pagar": solo si la mesa no está pagada Y hay platos cobrables pendientes Y no hay boucher consolidado */}
+        {mesa?.estado?.toLowerCase() !== "pagado" && platosPagables.length > 0 && !(boucherData || boucherFromParams) && (
           <TouchableOpacity
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               handlePagar();
             }}
-            disabled={isGenerating}
+            disabled={isGenerating || procesandoPago || platosSeleccionadosPago.length === 0}
             activeOpacity={0.8}
-            style={{ flex: 1, opacity: isGenerating ? 0.5 : 1 }}
+            style={{ flex: 1, opacity: isGenerating || procesandoPago || platosSeleccionadosPago.length === 0 ? 0.5 : 1 }}
           >
             <View style={[styles.buttonNew, { minHeight: 60 * escala, backgroundColor: colors.success }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 * escala }}>
                 <MaterialCommunityIcons name="cash-multiple" size={28 * escala} color="#FFFFFF" />
                 <Text style={{ color: '#FFFFFF', fontSize: 16 * escala, fontWeight: '700', includeFontPadding: false, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 2 }} numberOfLines={1}>
-                  Confirmar Pago
+                  Confirmar Pago{platosSeleccionadosPago.length > 0 ? ` (${platosSeleccionadosPago.length})` : ''}
                 </Text>
               </View>
             </View>
           </TouchableOpacity>
         )}
 
-        {/* Botón Registrar Propina - Solo cuando la mesa está pagada */}
-        {(boucherData || boucherFromParams) && mesa?.estado?.toLowerCase() === "pagado" && (
+        {/* Botón Registrar Propina: cuando hay boucher y la mesa está pagada o todos los platos están pagados */}
+        {(boucherData || boucherFromParams) && (mesa?.estado?.toLowerCase() === "pagado" || platosPagables.length === 0) && (
           <TouchableOpacity
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -2091,7 +2514,13 @@ const PagosScreen = () => {
       {/* Modal de Pago Exitoso */}
       <ModalPagoExitoso
         visible={modalPagoExitosoVisible}
-        onClose={() => setModalPagoExitosoVisible(false)}
+        onClose={() => {
+          setModalPagoExitosoVisible(false);
+          if (hayPendienteTrasPago || (totalRestante != null && totalRestante > 0)) {
+            setBoucherData(null);
+            setClienteSeleccionado(null);
+          }
+        }}
         boucherData={boucherData || boucherFromParams}
         mesaData={mesa}
         clienteData={clientePagoExitoso}
@@ -2187,6 +2616,105 @@ const PagosScreenStyles = (theme) => StyleSheet.create({
     padding: theme.spacing.lg,
     marginBottom: theme.spacing.md,
     ...theme.shadows.medium,
+  },
+  infoConsolidadoLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: theme.colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: theme.spacing.sm,
+  },
+  parcialesCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.primary + '33',
+    ...theme.shadows.medium,
+  },
+  parcialesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  parcialesTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: theme.colors.text.primary,
+  },
+  parcialesSubtitle: {
+    fontSize: 13,
+    color: theme.colors.text.secondary,
+    marginBottom: theme.spacing.md,
+    lineHeight: 18,
+  },
+  parcialItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border || '#E5E7EB',
+  },
+  parcialItemBody: {
+    flex: 1,
+    marginRight: theme.spacing.sm,
+  },
+  parcialItemTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  parcialVoucherId: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: theme.colors.text.primary,
+    letterSpacing: 0.5,
+  },
+  parcialNumero: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.text.secondary,
+  },
+  parcialMeta: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.colors.primary,
+    marginBottom: 2,
+  },
+  parcialFecha: {
+    fontSize: 11,
+    color: theme.colors.text.secondary,
+    marginBottom: 4,
+  },
+  parcialPlatos: {
+    fontSize: 11,
+    color: theme.colors.text.secondary,
+    fontStyle: 'italic',
+    lineHeight: 15,
+  },
+  parcialPrintBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: theme.borderRadius.md,
+    minWidth: 96,
+    justifyContent: 'center',
+  },
+  parcialPrintText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   infoRow: {
     flexDirection: "row",

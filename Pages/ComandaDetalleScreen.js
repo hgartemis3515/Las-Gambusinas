@@ -24,7 +24,7 @@ import { useSocket } from '../context/SocketContext';
 import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
-import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas } from '../utils/comandaHelpers';
+import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, filtrarComandasPorPedido, filtrarSoloPlatosPagados } from '../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
 
@@ -247,27 +247,54 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         ? apiConfig.getEndpoint('/comanda')
         : COMANDASEARCH_API_GET;
 
-      if (mesaIdRef) {
+      const mesaEstado = (mesa?.estado || '').toLowerCase();
+      let pedidoIdCiclo = null;
+      if ((mesaEstado === 'pagado' || mesaEstado === 'pagando') && mesaIdRef) {
         try {
-          const activasURL = `${comandaBase}/mesa/${mesaIdRef}/activas`;
-          const resActivas = await axios.get(activasURL, { timeout: 10000 });
-          if (resActivas.data?.success && Array.isArray(resActivas.data.comandas)) {
-            comandasMesa = resActivas.data.comandas;
+          const pagadasURL = `${comandaBase}/mesa/${mesaIdRef}/pagadas`;
+          const resPagadas = await axios.get(pagadasURL, { timeout: 10000 });
+          if (resPagadas.data?.success && Array.isArray(resPagadas.data.comandas)) {
+            pedidoIdCiclo = resPagadas.data.pedidoId || null;
+            let lista = resPagadas.data.comandas;
+            if (pedidoIdCiclo) {
+              lista = filtrarComandasPorPedido(lista, pedidoIdCiclo);
+            }
+            if (mesaEstado === 'pagado') {
+              lista = filtrarSoloPlatosPagados(lista);
+            }
+            comandasMesa = lista;
           }
         } catch (e) {
-          if (__DEV__) console.warn('[ComandaDetalle] /mesa/activas falló, se intentará por fecha:', e?.message);
+          if (__DEV__) console.warn('[ComandaDetalle] /mesa/pagadas:', e?.message);
         }
       }
 
       if (comandasMesa.length === 0) {
-        const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-        const comandasURL = `${comandaBase}/fecha/${currentDate}`;
-        const response = await axios.get(comandasURL, { timeout: 10000 });
-        const todasLasComandas = response.data || [];
-        comandasMesa = todasLasComandas.filter(comandaPerteneceAMesa);
+        if (mesaIdRef) {
+          try {
+            const activasURL = `${comandaBase}/mesa/${mesaIdRef}/activas`;
+            const resActivas = await axios.get(activasURL, { timeout: 10000 });
+            if (resActivas.data?.success && Array.isArray(resActivas.data.comandas)) {
+              comandasMesa = resActivas.data.comandas;
+            }
+          } catch (e) {
+            if (__DEV__) console.warn('[ComandaDetalle] /mesa/activas falló, se intentará por fecha:', e?.message);
+          }
+        }
+
+        if (comandasMesa.length === 0) {
+          const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
+          const comandasURL = `${comandaBase}/fecha/${currentDate}`;
+          const response = await axios.get(comandasURL, { timeout: 10000 });
+          const todasLasComandas = response.data || [];
+          comandasMesa = todasLasComandas.filter(comandaPerteneceAMesa);
+        }
       }
 
-      let comandasFinales = filtrarComandasActivas(comandasMesa);
+      let comandasFinales =
+        mesaEstado === 'pagado' || mesaEstado === 'pagando'
+          ? comandasMesa
+          : filtrarComandasActivas(comandasMesa);
 
       if ((filterByCliente || clienteId) && comandasFinales.length > 0 && clienteId) {
         const idStr = typeof clienteId === 'string' ? clienteId : clienteId?.toString?.() || '';
@@ -291,7 +318,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     } finally {
       setRefreshing(false);
     }
-  }, [mesaIdRef, mesaNumRef, comandaPerteneceAMesa, filterByCliente, clienteId]);
+  }, [mesaIdRef, mesaNumRef, comandaPerteneceAMesa, filterByCliente, clienteId, mesa?.estado]);
 
   // Marcar plato como entregado
   const handleMarcarPlatoEntregado = async (platoObj) => {

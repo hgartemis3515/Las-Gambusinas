@@ -53,6 +53,35 @@ export const filtrarComandasActivas = (comandas) => {
   return comandas.filter(esComandaActiva);
 };
 
+/** Acota comandas al pedido/ciclo actual cuando el API devuelve pedidoId. */
+export const filtrarComandasPorPedido = (comandas, pedidoId) => {
+  if (!pedidoId || !Array.isArray(comandas)) return comandas || [];
+  const pid = String(pedidoId);
+  return comandas.filter((c) => {
+    const p = c.pedido?._id ?? c.pedido;
+    return p == null || String(p) === pid;
+  });
+};
+
+/** Solo platos pagados (para Ver pedido en mesa pagada). */
+export const filtrarSoloPlatosPagados = (comandas) => {
+  if (!Array.isArray(comandas)) return [];
+  return comandas
+    .map((comanda) => {
+      const platos = [];
+      const cantidades = [];
+      (comanda.platos || []).forEach((p, i) => {
+        if (p.eliminado || p.anulado) return;
+        if ((p.estado || '').toLowerCase() !== 'pagado') return;
+        platos.push(p);
+        cantidades.push(comanda.cantidades?.[i] ?? p.cantidad ?? 1);
+      });
+      if (platos.length === 0) return null;
+      return { ...comanda, platos, cantidades };
+    })
+    .filter(Boolean);
+};
+
 /**
  * Filtra platos según estados permitidos
  * 

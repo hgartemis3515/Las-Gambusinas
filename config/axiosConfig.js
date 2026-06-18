@@ -6,24 +6,43 @@
  */
 
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiConfig from './apiConfig';
 
 // 🔥 CONFIGURACIÓN GLOBAL: Timeout 10s por defecto (evita bloqueos infinitos)
 axios.defaults.timeout = 10000; // 10 segundos máximo
 
-// Configurar interceptor para usar timeout de apiConfig si está disponible
+// Configurar interceptor para timeout + JWT de mozos en rutas /api
 axios.interceptors.request.use(
-  (config) => {
+  async (config) => {
     // Si no tiene timeout explícito, usar el de apiConfig o default
     if (!config.timeout) {
       config.timeout = apiConfig.timeout || 10000;
     }
-    
+
     // Asegurar que timeout nunca sea infinito
     if (config.timeout === 0 || !config.timeout) {
       config.timeout = 10000;
     }
-    
+
+    const url = config.url || '';
+    const esApi =
+      url.includes('/api/') ||
+      (apiConfig.baseURL && url.startsWith(apiConfig.baseURL));
+    if (esApi && !config.headers?.Authorization) {
+      try {
+        const token = await AsyncStorage.getItem('authToken');
+        if (token) {
+          config.headers = {
+            ...config.headers,
+            Authorization: `Bearer ${token}`,
+          };
+        }
+      } catch {
+        // Sin token: la petición sigue (endpoints públicos legacy)
+      }
+    }
+
     return config;
   },
   (error) => {

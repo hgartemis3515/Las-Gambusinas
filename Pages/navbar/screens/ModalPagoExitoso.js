@@ -2,9 +2,9 @@
  * ModalPagoExitoso.js
  * Componente modal para mostrar opciones después de un pago exitoso
  * 
- * @version 1.2
+ * @version 1.3
  * @description Muestra opciones: Registrar Propina, Imprimir, Ir al inicio
- *              Adaptado para dispositivos móviles en vertical y horizontal
+ *              Botón X superior derecho para cerrar y seguir cobrando (pagos parciales)
  */
 
 import React, { useEffect } from "react";
@@ -149,6 +149,11 @@ const ModalPagoExitoso = ({
     onIrAlInicio?.();
   };
 
+  const handleCerrar = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onClose?.();
+  };
+
   const simboloMoneda = boucherData?.configuracionIGV?.simboloMoneda || "S/";
   const totalBoucher = boucherData?.total || boucherData?.totalConDescuento || 0;
 
@@ -210,6 +215,17 @@ const ModalPagoExitoso = ({
           modalAnimatedStyle,
           dynamicStyles.modalContainer
         ]}>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={handleCerrar}
+            activeOpacity={0.7}
+            accessibilityLabel="Cerrar"
+            accessibilityRole="button"
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <MaterialCommunityIcons name="close" size={24} color="#6B7280" />
+          </TouchableOpacity>
+
           {/* Header compacto */}
           <View style={[styles.headerContainer, { paddingTop: dynamicStyles.headerPadding, paddingBottom: dynamicStyles.headerPadding }]}>
             <Animated.View style={[styles.successCircle, checkAnimatedStyle]}>
@@ -308,6 +324,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 16,
     elevation: 12,
+    position: "relative",
+  },
+  closeButton: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    zIndex: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
   },
   headerContainer: {
     alignItems: "center",

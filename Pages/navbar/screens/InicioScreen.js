@@ -1368,7 +1368,10 @@ const InicioScreen = () => {
           text: "📄 Imprimir Boucher",
           onPress: () => {
             if (boucherFromParams) {
-              navigation.navigate("Pagos", { boucher: boucherFromParams });
+              navigation.navigate("Pagos", {
+                boucher: boucherFromParams,
+                mesa: mesaPagada ? { ...mesaPagada, estado: 'pagado' } : undefined,
+              });
             } else {
               AsyncStorage.getItem("ultimoBoucher").then((s) => {
                 const b = s ? JSON.parse(s) : null;
@@ -2305,6 +2308,29 @@ const InicioScreen = () => {
         `La mesa ha sido pagada.${comandasParaBoucher.length !== comandasPagadas.length ? `\n\nSe mostrarán ${comandasParaBoucher.length} comanda(s) del cliente.` : ''}\n\n¿Qué deseas hacer?`,
         [
           {
+            text: "📋 Ver pedido",
+            onPress: async () => {
+              try {
+                const comandaBase = apiConfig.isConfigured
+                  ? apiConfig.getEndpoint('/comanda')
+                  : COMANDASEARCH_API_GET;
+                const res = await axios.get(`${comandaBase}/mesa/${mesa._id}/pagadas`, { timeout: 10000 });
+                const comandasPagadasApi = res.data?.comandas || [];
+                if (comandasPagadasApi.length === 0) {
+                  Alert.alert("Sin comandas", "No se encontraron comandas pagadas para esta mesa.");
+                  return;
+                }
+                navigation.navigate('ComandaDetalle', {
+                  mesa: { ...mesa, estado: 'pagado' },
+                  comandas: comandasPagadasApi,
+                });
+              } catch (error) {
+                console.error("❌ Error obteniendo comandas pagadas:", error);
+                Alert.alert("Error", "No se pudieron cargar las comandas pagadas de esta mesa.");
+              }
+            },
+          },
+          {
             text: "📄 Imprimir Boucher",
             onPress: async () => {
               try {
@@ -2339,7 +2365,10 @@ const InicioScreen = () => {
                 await AsyncStorage.setItem("mesaPago", JSON.stringify(mesa));
                 
                 // Navegar a PagosScreen con el boucher
-                navigation.navigate("Pagos", { boucher });
+                navigation.navigate("Pagos", {
+                  boucher,
+                  mesa: { ...mesa, estado: 'pagado' },
+                });
               } catch (error) {
                 console.error("❌ Error obteniendo boucher:", error);
                 
