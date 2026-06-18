@@ -339,7 +339,7 @@ const PagosScreen = () => {
         : `${apiConfig.getDefaultBaseURL?.() || 'http://localhost:3000/api'}/configuracion/voucher-plantilla`;
 
       const authHeaders = await configuracionService.getMozoAuthHeaders();
-      const response = await axios.get(baseURL, { timeout: 5000, headers: authHeaders });
+      const response = await axios.get(baseURL, { timeout: 15000, headers: authHeaders });
       if (response.data?.success && response.data.plantilla) {
         setPlantillaVoucher(response.data.plantilla);
         console.log('✅ Plantilla de voucher cargada:', {
