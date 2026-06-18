@@ -7,6 +7,7 @@ import {
   estimarAlturaPdfBoucher,
   envolverHtmlBoucherTicket,
 } from './boucherPrint';
+import { resolveLogoUrl } from './logoPlantilla';
 
 const escapeHtml = (str) =>
   String(str ?? '')
@@ -156,7 +157,8 @@ export function generarHtmlBoucher({
   if (b.mostrarEncabezado) {
     html += '<div class="ticket-block" style="text-align:center;width:100%;">';
     if (p.logo) {
-      html += `<img src="${escapeHtml(p.logo)}" style="max-width:100%;max-height:64px;margin:0 auto 4px;display:block;" alt="Logo">`;
+      const logoSrc = resolveLogoUrl(p.logo);
+      html += `<img src="${escapeHtml(logoSrc)}" style="max-width:100%;max-height:64px;margin:0 auto 4px;display:block;" alt="Logo">`;
     }
     html += `<div style="font-size:16px;font-weight:800;line-height:1.2;">${escapeHtml(censurar(p.restaurante?.nombre, v.nombre))}</div>`;
     html += `<div style="font-size:12px;font-weight:500;color:#444;line-height:1.3;">${escapeHtml(censurar(p.restaurante?.eslogan, v.eslogan))}</div>`;

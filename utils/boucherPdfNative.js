@@ -6,6 +6,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import moment from 'moment-timezone';
 import { PUNTOS_ANCHO } from './boucherPrint';
+import { loadLogoBytes } from './logoPlantilla';
 
 const MARGIN_X = 6;
 const CONTENT_W = PUNTOS_ANCHO - MARGIN_X * 2;
@@ -216,12 +217,10 @@ export async function generarPdfBoucherNativo(opts) {
   if (b.mostrarEncabezado) {
     if (p.logo) {
       try {
-        const res = await fetch(p.logo);
-        const buf = await res.arrayBuffer();
-        const lower = String(p.logo).toLowerCase();
-        const embedded = lower.includes('.png')
-          ? await pdfDoc.embedPng(buf)
-          : await pdfDoc.embedJpg(buf);
+        const { bytes, isPng } = await loadLogoBytes(p.logo);
+        const embedded = isPng
+          ? await pdfDoc.embedPng(bytes)
+          : await pdfDoc.embedJpg(bytes);
         const dims = embedded.scale(0.35);
         const imgH = Math.min(dims.height, 56);
         ops.unshift({
@@ -231,8 +230,8 @@ export async function generarPdfBoucherNativo(opts) {
           height: imgH,
         });
         addGap(4);
-      } catch (_) {
-        /* logo opcional */
+      } catch (err) {
+        if (__DEV__) console.warn('[BOUCHER] Logo no embebido en PDF:', err?.message);
       }
     }
     addWrapped(censurar(p.restaurante?.nombre, v.nombre), 'center', { bold: true, size: SIZE_HEADER });
