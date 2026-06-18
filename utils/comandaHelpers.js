@@ -127,7 +127,8 @@ export const filtrarPlatosPorEstado = (comandas, estadosPermitidos) => {
           index: index,
           eliminado: false,
           complementosSeleccionados: platoItem.complementosSeleccionados || [], // 🔥 NUEVO: Complementos del plato
-          notaEspecial: platoItem.notaEspecial || '' // 🔥 NUEVO: Nota especial del plato
+          notaEspecial: platoItem.notaEspecial || '', // 🔥 NUEVO: Nota especial del plato
+          tipoServicio: platoItem.tipoServicio || 'mesa' // NUEVO: Mesa vs Para llevar
         });
       }
     });
@@ -177,7 +178,8 @@ export const separarPlatosEditables = (comandas) => {
         index: index,
         comandaId: comanda._id,
         complementosSeleccionados: platoItem.complementosSeleccionados || [], // 🔥 NUEVO: Complementos del plato
-        notaEspecial: platoItem.notaEspecial || '' // 🔥 NUEVO: Nota especial del plato
+        notaEspecial: platoItem.notaEspecial || '', // 🔥 NUEVO: Nota especial del plato
+        tipoServicio: platoItem.tipoServicio || 'mesa' // NUEVO: Mesa vs Para llevar
       };
       
       if (estadoNormalizado === 'pedido' || estadoNormalizado === 'recoger') {

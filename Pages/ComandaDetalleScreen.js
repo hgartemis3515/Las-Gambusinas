@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   View, Text, StyleSheet, ScrollView, TouchableOpacity, 
   Alert, RefreshControl, ActivityIndicator, Modal, TextInput,
-  Dimensions, FlatList
+  Dimensions, FlatList, Switch
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -116,6 +116,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [searchPlato, setSearchPlato] = useState('');
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
+  // Tipo de servicio para los platos que se agreguen desde esta pantalla:
+  // 'mesa' (default, Switch OFF) o 'para_llevar' (Switch ON).
+  const [tipoServicioModal, setTipoServicioModal] = useState('mesa');
   
   // Estado para el modal de complementos (edición de comanda)
   const [platoParaComplementar, setPlatoParaComplementar] = useState(null);
@@ -196,7 +199,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           anuladoRazon: platoItem.anuladoRazon, // Motivo de anulación
           anuladoAt: platoItem.anuladoAt, // Fecha de anulación
           index: index, // Índice en la comanda original
-          complementosSeleccionados: platoItem.complementosSeleccionados || []
+          complementosSeleccionados: platoItem.complementosSeleccionados || [],
+          // NUEVO: Tipo de servicio (Mesa vs Para llevar). Default 'mesa' para comandas antiguas.
+          tipoServicio: platoItem.tipoServicio || 'mesa'
         };
         
         // 🔥 NUEVO: Incluir platos anulados para mostrarlos visualmente (pero marcados)
@@ -697,11 +702,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       precio: plato.precio,
       complementosSeleccionados: complementosNormalizados,
       notaEspecial,
+      tipoServicio: tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa', // NUEVO
     };
 
-    // Verificar si ya existe el mismo plato CON LOS MISMOS complementos
+    // Verificar si ya existe el mismo plato CON LOS MISMOS complementos Y mismo tipoServicio.
+    // Si cambia tipoServicio (uno mesa y otro para llevar), debe ir en línea separada.
     const existsWithSameComplements = platosEditados.find(p => {
       if (p.plato !== plato._id && p.plato?.toString() !== plato._id?.toString()) return false;
+
+      // NUEVO: comparar tipo de servicio
+      const pTipo = p.tipoServicio || 'mesa';
+      if (pTipo !== (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa')) return false;
 
       const pComps = p.complementosSeleccionados || [];
       const newComps = complementosNormalizados || [];
@@ -818,6 +829,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           plato: p.plato,
           platoId: platoCompleto?.id || p.platoId || null,
           estado: p.estado || 'pedido',
+          tipoServicio: p.tipoServicio === 'para_llevar' ? 'para_llevar' : 'mesa',
           complementosSeleccionados: p.complementosSeleccionados || [],
           notaEspecial: p.notaEspecial || ''
         };
@@ -1001,7 +1013,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         index: e.index,
         comandaId: e.comandaId,
         complementosSeleccionados: platoItem.complementosSeleccionados || [],
-        notaEspecial: platoItem.notaEspecial || ''
+        notaEspecial: platoItem.notaEspecial || '',
+        tipoServicio: platoItem.tipoServicio || e.tipoServicio || 'mesa' // NUEVO: Mesa vs Para llevar
       };
     }).filter(p => p !== null);
     
@@ -1931,7 +1944,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                       }
                     />
                     <View style={styles.modalPlatoInfo}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <Text style={[
                           styles.modalPlatoNombre, 
                           { 
@@ -1941,6 +1954,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                         ]}>
                           {plato.plato.nombre}
                         </Text>
+                        {plato.tipoServicio === 'para_llevar' && (
+                          <View style={styles.paraLlevarBadge}>
+                            <Text style={styles.paraLlevarBadgeText}>🥡 Para llevar</Text>
+                          </View>
+                        )}
                         <View style={[
                           styles.badgeEstado,
                           {
@@ -2208,6 +2226,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                             ]}>
                               {plato.nombre}
                             </Text>
+                            {plato.tipoServicio === 'para_llevar' && (
+                              <View style={styles.paraLlevarBadge}>
+                                <Text style={styles.paraLlevarBadgeText}>🥡 Para llevar</Text>
+                              </View>
+                            )}
                             {/* Mostrar complementos si existen */}
                             {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && (
                               <View style={{ marginTop: 2 }}>
@@ -2340,6 +2363,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                             ]}>
                               {plato.nombre}
                             </Text>
+                            {plato.tipoServicio === 'para_llevar' && (
+                              <View style={styles.paraLlevarBadge}>
+                                <Text style={styles.paraLlevarBadgeText}>🥡 Para llevar</Text>
+                              </View>
+                            )}
                             <View style={[styles.badgeEstado, { backgroundColor: coloresEstado.badgeColor }]}>
                               <Text style={[styles.badgeEstadoText, { color: coloresEstado.badgeTextColor }]}>
                                 {coloresEstado.textoEstado}
@@ -2370,6 +2398,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                     setTipoPlatoFiltro(null);
                     setSearchPlato('');
                     setCategoriaFiltro(null);
+                    setTipoServicioModal('mesa'); // Reset toggle al abrir agregar plato
                     Alert.alert(
                       'Agregar Plato',
                       'Selecciona el tipo de menú:',
@@ -2377,11 +2406,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                         { text: 'Cancelar', style: 'cancel' },
                         {
                           text: 'Desayuno',
-                          onPress: () => setTipoPlatoFiltro('platos-desayuno'),
+                          onPress: () => {
+                            setTipoPlatoFiltro('platos-desayuno');
+                            setTipoServicioModal('mesa');
+                          },
                         },
                         {
                           text: 'Carta Normal',
-                          onPress: () => setTipoPlatoFiltro('plato-carta normal'),
+                          onPress: () => {
+                            setTipoPlatoFiltro('plato-carta normal');
+                            setTipoServicioModal('mesa');
+                          },
                         },
                       ]
                     );
@@ -2393,6 +2428,51 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 
                 {tipoPlatoFiltro && (
                   <>
+                    <View style={[
+                      styles.tipoServicioRow,
+                      {
+                        backgroundColor: isDark ? '#374151' : (themeColors.colors?.surface || '#FFFFFF'),
+                        borderColor: isDark ? '#4B5563' : (themeColors.colors?.border || '#E5E7EB'),
+                      }
+                    ]}>
+                      <Text style={[
+                        styles.tipoServicioTipoMenu,
+                        { color: isDark ? '#F9FAFB' : (themeColors.colors?.text?.primary || '#1F2937') }
+                      ]}>
+                        {tipoPlatoFiltro === 'platos-desayuno' ? 'Desayuno' : 'Carta Normal'}
+                      </Text>
+                      <View style={styles.tipoServicioToggle}>
+                        <Text style={[
+                          styles.tipoServicioLabel,
+                          tipoServicioModal === 'mesa' && styles.tipoServicioLabelActive,
+                          // Mesa activo = amarillo · inactivo = gris
+                          { color: tipoServicioModal === 'mesa'
+                              ? '#F59E0B'
+                              : (isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || '#6B7280')) }
+                        ]}>
+                          Mesa
+                        </Text>
+                        <Switch
+                          value={tipoServicioModal === 'para_llevar'}
+                          onValueChange={(v) => setTipoServicioModal(v ? 'para_llevar' : 'mesa')}
+                          // Mesa (OFF) = amarillo · Para llevar (ON) = púrpura
+                          trackColor={{ false: '#F59E0B', true: '#8B5CF6' }}
+                          thumbColor="#FFFFFF"
+                          accessibilityLabel="Tipo de servicio: Mesa o Para llevar"
+                          accessibilityHint="Cambia el destino de los platos que agregues a continuación"
+                        />
+                        <Text style={[
+                          styles.tipoServicioLabel,
+                          tipoServicioModal === 'para_llevar' && styles.tipoServicioLabelActive,
+                          // Para llevar activo = púrpura · inactivo = gris
+                          { color: tipoServicioModal === 'para_llevar'
+                              ? '#8B5CF6'
+                              : (isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || '#6B7280')) }
+                        ]}>
+                          Para llevar
+                        </Text>
+                      </View>
+                    </View>
                     <TextInput
                       style={[
                         styles.searchInput,
@@ -2711,7 +2791,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                         ]}
                       >
                         <View style={{ flex: 1 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap' }}>
                             <Text style={[
                               styles.modalPlatoNombre,
                               { 
@@ -2721,6 +2801,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                             ]}>
                               {plato.plato?.nombre || 'Plato desconocido'}
                             </Text>
+                            {plato.tipoServicio === 'para_llevar' && (
+                              <View style={styles.paraLlevarBadge}>
+                                <Text style={styles.paraLlevarBadgeText}>🥡 Para llevar</Text>
+                              </View>
+                            )}
                             <View style={[
                               styles.badgeEstado,
                               {
@@ -3339,6 +3424,47 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
   },
+  // ===== NUEVO: Toggle Mesa / Para llevar y badge =====
+  tipoServicioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  tipoServicioTipoMenu: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  tipoServicioToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  tipoServicioLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tipoServicioLabelActive: {
+    fontWeight: '700',
+  },
+  paraLlevarBadge: {
+    backgroundColor: '#8B5CF6', // Púrpura
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 4,
+  },
+  paraLlevarBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  // ===== FIN NUEVO =====
   platoEditItemNoEditable: {
     backgroundColor: '#F3F4F6',
     opacity: 0.7,

@@ -2163,6 +2163,12 @@ const PagosScreen = () => {
                   <View style={styles.platoInfo}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.platoNombre}>{platoItem.nombre || "Plato"}</Text>
+                      {platoItem.tipoServicio === 'para_llevar' && (
+                        <View style={styles.paraLlevarBadge}>
+                          <MaterialCommunityIcons name="bag-personal" size={11} color="#FFFFFF" />
+                          <Text style={styles.paraLlevarBadgeText}>Para llevar</Text>
+                        </View>
+                      )}
                       {platoItem.complementosSeleccionados && platoItem.complementosSeleccionados.length > 0 && (
                         <View style={{ marginTop: 2 }}>
                           {platoItem.complementosSeleccionados.map((comp, ci) => (
@@ -2223,6 +2229,12 @@ const PagosScreen = () => {
                           {item.nombre}
                           {yaPagado ? '  · Pagado' : ''}
                         </Text>
+                        {item.tipoServicio === 'para_llevar' && (
+                          <View style={styles.paraLlevarBadge}>
+                            <MaterialCommunityIcons name="bag-personal" size={11} color="#FFFFFF" />
+                            <Text style={styles.paraLlevarBadgeText}>Para llevar</Text>
+                          </View>
+                        )}
                         {item.comandaNumber != null && (
                           <Text style={{ fontSize: 11, color: theme.colors?.text?.secondary }}>
                             Comanda #{item.comandaNumber}
@@ -2810,6 +2822,23 @@ const PagosScreenStyles = (theme) => StyleSheet.create({
   platoSubtotal: {
     fontSize: 14,
     color: theme.colors.primary,
+    fontWeight: "700",
+  },
+  // NUEVO: Badge Para llevar (púrpura) en la lista de platos
+  paraLlevarBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#8B5CF6",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginTop: 3,
+    gap: 3,
+    alignSelf: "flex-start",
+  },
+  paraLlevarBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
     fontWeight: "700",
   },
   observacionesCard: {

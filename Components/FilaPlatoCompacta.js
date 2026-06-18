@@ -64,6 +64,13 @@ const FilaPlatoCompacta = ({
         >
           {nombrePlato}
         </Text>
+        {/* NUEVO: Badge Para llevar debajo del nombre */}
+        {plato.tipoServicio === 'para_llevar' && (
+          <View style={styles.paraLlevarBadge}>
+            <MaterialCommunityIcons name="bag-personal" size={11} color="#FFFFFF" />
+            <Text style={styles.paraLlevarBadgeText}>Para llevar</Text>
+          </View>
+        )}
         {/* Complementos seleccionados */}
         {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && !esAnulado && (
           <View style={{ marginTop: 2, paddingLeft: 0 }}>
@@ -234,6 +241,23 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     textTransform: 'uppercase',
+  },
+  // NUEVO: Badge Para llevar (debajo del nombre del plato)
+  paraLlevarBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#8B5CF6', // Púrpura
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginTop: 3,
+    gap: 3,
+    alignSelf: 'flex-start',
+  },
+  paraLlevarBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
   },
 });
 

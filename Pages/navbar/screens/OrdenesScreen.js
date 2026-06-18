@@ -10,6 +10,7 @@ import {
   TextInput,
   ActivityIndicator,
   InteractionManager,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -173,6 +174,9 @@ const OrdenesScreen = ({ route }) => {
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
+  // Tipo de servicio para los platos que se agreguen desde el modal de menú:
+  // 'mesa' (default, Switch OFF) o 'para_llevar' (Switch ON).
+  const [tipoServicioModal, setTipoServicioModal] = useState('mesa');
   const [isSendingComanda, setIsSendingComanda] = useState(false);
   const [areas, setAreas] = useState([]);
   const [filtroAreaMesa, setFiltroAreaMesa] = useState("All"); // Filtro para el modal de mesas
@@ -409,6 +413,8 @@ const OrdenesScreen = ({ route }) => {
     setTipoPlatoFiltro(null);
     setCategoriaFiltro(null);
     setSearchPlato("");
+    // Resetear el toggle de tipo de servicio al cerrar el modal (default Mesa)
+    setTipoServicioModal('mesa');
     platosListScrollOffsetRef.current = 0;
     restaurarScrollPlatosRef.current = false;
   }, []);
@@ -430,12 +436,18 @@ const OrdenesScreen = ({ route }) => {
       instanceId, // ID único para esta instancia
       complementosElegidos: complementosNormalizados,
       notaEspecial: notaEspecial,
+      tipoServicio: tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa', // NUEVO: Mesa vs Para llevar
     };
 
-    // Verificar si ya existe el mismo plato CON LOS MISMOS complementos
+    // Verificar si ya existe el mismo plato CON LOS MISMOS complementos Y mismo tipoServicio.
+    // Si cambia tipoServicio (uno mesa y otro para llevar), debe ir en línea separada.
     const existsWithSameComplements = selectedPlatos.find(p => {
       // Si es el mismo plato base
       if (p._id !== plato._id) return false;
+
+      // NUEVO: comparar tipo de servicio
+      const pTipo = p.tipoServicio || 'mesa';
+      if (pTipo !== (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa')) return false;
 
       // Si ambos NO tienen complementos, son iguales
       const pComps = p.complementosElegidos || [];
@@ -743,6 +755,7 @@ const OrdenesScreen = ({ route }) => {
         plato: plato._id,
         platoId: plato.id || null,
         estado: "en_espera",
+        tipoServicio: plato.tipoServicio === 'para_llevar' ? 'para_llevar' : 'mesa',
         complementosSeleccionados: plato.complementosElegidos || [],
         notaEspecial: plato.notaEspecial || ""
       }));
@@ -946,6 +959,7 @@ const OrdenesScreen = ({ route }) => {
       setSelectedPlatos([]);
       setCantidades({});
       setObservaciones("");
+      setTipoServicioModal('mesa'); // Reset toggle tras envío exitoso
       
       // Esperar un momento antes de navegar para que el usuario vea el mensaje de éxito
       await new Promise(resolve => setTimeout(resolve, 800));
@@ -990,9 +1004,7 @@ const OrdenesScreen = ({ route }) => {
         setSelectedPlatos([]);
         setCantidades({});
         setObservaciones("");
-        
-        // Esperar un momento antes de navegar
-        await new Promise(resolve => setTimeout(resolve, 500));
+        setTipoServicioModal('mesa'); // Reset toggle tras envío (rama error-validado)
         
         // 🔥 CRÍTICO: Resetear estado ANTES de navegar
         setIsSendingComanda(false);
@@ -1195,11 +1207,20 @@ const OrdenesScreen = ({ route }) => {
               const subtotal = plato.precio * cantidad;
               const tieneComplementos = plato.complementosElegidos && plato.complementosElegidos.length > 0;
               const tieneNota = plato.notaEspecial && plato.notaEspecial.trim().length > 0;
-              
+              const esParaLlevar = plato.tipoServicio === 'para_llevar';
+
               return (
                 <View key={platoInstanceId} style={styles.platoItem}>
                   <View style={styles.platoInfo}>
-                    <Text style={styles.platoNombre}>{plato.nombre}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                      <Text style={styles.platoNombre}>{plato.nombre}</Text>
+                      {esParaLlevar && (
+                        <View style={styles.paraLlevarBadge}>
+                          <MaterialCommunityIcons name="bag-personal" size={12} color="#fff" />
+                          <Text style={styles.paraLlevarBadgeText}>Para llevar</Text>
+                        </View>
+                      )}
+                    </View>
                     
                     {/* Mostrar complementos si existen */}
                     {tieneComplementos && (
@@ -1310,6 +1331,7 @@ const OrdenesScreen = ({ route }) => {
               setTipoPlatoFiltro(null);
               setCategoriaFiltro(null);
               setSearchPlato("");
+              setTipoServicioModal('mesa'); // Reset toggle al abrir el modal
               platosListScrollOffsetRef.current = 0;
               restaurarScrollPlatosRef.current = false;
               setModalPlatosVisible(true);
@@ -1463,19 +1485,54 @@ const OrdenesScreen = ({ route }) => {
               </View>
             ) : (
               <>
-                <TouchableOpacity
-                  style={styles.changeTipoButton}
-                  onPress={() => {
-                    setTipoPlatoFiltro(null);
-                    setCategoriaFiltro(null);
-                    setSearchPlato("");
-                  }}
-                >
-                  <MaterialCommunityIcons name="arrow-left" size={20} color={theme.colors.text.white} />
-                  <Text style={styles.changeTipoButtonText}>
-                    {tipoPlatoFiltro === "platos-desayuno" ? "Desayuno" : "Carta Normal"}
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.tipoServicioRow}>
+                  <TouchableOpacity
+                    style={[styles.changeTipoButton, { flex: 1, marginBottom: 0 }]}
+                    onPress={() => {
+                      setTipoPlatoFiltro(null);
+                      setCategoriaFiltro(null);
+                      setSearchPlato("");
+                      setTipoServicioModal('mesa'); // Reset toggle al cambiar de tipo de menú
+                    }}
+                  >
+                    <MaterialCommunityIcons name="arrow-left" size={20} color={theme.colors.text.white} />
+                    <Text style={styles.changeTipoButtonText}>
+                      {tipoPlatoFiltro === "platos-desayuno" ? "Desayuno" : "Carta Normal"}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.tipoServicioToggle}>
+                    <Text
+                      style={[
+                        styles.tipoServicioLabel,
+                        tipoServicioModal === 'mesa' && styles.tipoServicioLabelActive,
+                        // Mesa activo = amarillo · inactivo = gris
+                        { color: tipoServicioModal === 'mesa' ? '#F59E0B' : theme.colors.text.secondary }
+                      ]}
+                    >
+                      Mesa
+                    </Text>
+                    <Switch
+                      value={tipoServicioModal === 'para_llevar'}
+                      onValueChange={(v) => setTipoServicioModal(v ? 'para_llevar' : 'mesa')}
+                      // Mesa (OFF) = amarillo · Para llevar (ON) = púrpura
+                      trackColor={{ false: '#F59E0B', true: '#8B5CF6' }}
+                      thumbColor="#FFFFFF"
+                      accessibilityLabel="Tipo de servicio: Mesa o Para llevar"
+                      accessibilityHint="Cambia el destino de los platos que agregues a continuación"
+                    />
+                    <Text
+                      style={[
+                        styles.tipoServicioLabel,
+                        tipoServicioModal === 'para_llevar' && styles.tipoServicioLabelActive,
+                        // Para llevar activo = púrpura · inactivo = gris
+                        { color: tipoServicioModal === 'para_llevar' ? '#8B5CF6' : theme.colors.text.secondary }
+                      ]}
+                    >
+                      Para llevar
+                    </Text>
+                  </View>
+                </View>
 
                 <View style={styles.searchInputWrapper}>
                   <TextInput
@@ -2181,6 +2238,49 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     fontWeight: "700",
     fontSize: 14,
   },
+  // ===== NUEVO: Toggle Mesa / Para llevar en el modal de menú =====
+  tipoServicioRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
+  },
+  tipoServicioToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.xs,
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 6,
+    borderRadius: theme.borderRadius.md,
+  },
+  tipoServicioLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: theme.colors.text.secondary,
+  },
+  tipoServicioLabelActive: {
+    // El color se aplica inline según Mesa (amarillo) o Para llevar (púrpura)
+    fontWeight: "700",
+  },
+  paraLlevarBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: '#8B5CF6', // Púrpura
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    gap: 4,
+  },
+  paraLlevarBadgeText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  // ===== FIN NUEVO =====
   emptyPlatosContainer: {
     padding: theme.spacing.xl,
     alignItems: "center",

@@ -66,6 +66,7 @@ export function listarPlatosEnPantallaPago(comandas) {
         subtotal: precio * cantidad,
         complementosSeleccionados: platoItem.complementosSeleccionados || [],
         notaEspecial: platoItem.notaEspecial || '',
+        tipoServicio: platoItem.tipoServicio || 'mesa',
         yaPagado: estado === 'pagado',
       });
     });
