@@ -930,6 +930,22 @@ const PagosScreen = () => {
     [platosEnPantalla]
   );
 
+  // ✅ FIX BUG: decidir la fuente de platos a renderizar en la sección "Platos".
+  // - Mientras hay pendiente tras pago (ciclo de pagos parciales en curso):
+  //   usar SIEMPRE `platosEnPantalla` (de comandas) para mostrar pendientes
+  //   seleccionables + ya pagados con check, y evitar que un boucher parcial
+  //   suelto (con solo los platos del último cobro) reemplace la lista.
+  // - Si la mesa está 100% pagada: usar `boucherData.platos` (consolidado con
+  //   todos los platos del ciclo) o `boucherFromParams.platos`.
+  // - Si no hay boucher con platos: caer a `platosEnPantalla`.
+  const boucherParaRender = boucherData || boucherFromParams;
+  const boucherTienePlatos = !!(boucherParaRender?.platos?.length);
+  const mesaPagadaFlag = (mesa?.estado || mesaParam?.estado || '').toLowerCase() === 'pagado';
+  const usarPlatosDeBoucher =
+    boucherTienePlatos &&
+    !hayPendienteTrasPago &&
+    (mesaPagadaFlag || platosPagables.length === 0);
+
   const todosPlatosPagablesSeleccionados = useMemo(() => {
     if (platosPagables.length === 0) return false;
     return platosPagables.every((p) => platosSeleccionadosPago.includes(p.key));
@@ -1572,7 +1588,13 @@ const PagosScreen = () => {
       if (resumenPago) {
         setTotalRestante(resumenPago.totalPendiente ?? 0);
         setHayPendienteTrasPago(!resumenPago.mesaPagadaCompletamente);
-        if (!resumenPago.mesaPagadaCompletamente && mesaIdFinal) {
+        // ✅ FIX BUG: refrescar comandas del ciclo SIEMPRE que haya mesaId.
+        // Antes solo se hacía cuando quedaba pendiente, por lo que tras el último
+        // pago parcial el estado `comandas` no se actualizaba y `platosEnPantalla`
+        // (fallback de render) quedaba desactualizado. Ahora también se refresca
+        // cuando la mesa quedó 100% pagada para que todos los platos aparezcan
+        // marcados como pagados aunque el consolidado falle.
+        if (mesaIdFinal) {
           try {
             const comandasCiclo = await fetchComandasCicloParaPagos(mesaIdFinal);
             if (comandasCiclo.length > 0) {
@@ -1585,6 +1607,8 @@ const PagosScreen = () => {
               setComandas(resumenPago.comandas);
             }
           }
+        }
+        if (!resumenPago.mesaPagadaCompletamente) {
           setTotal(resumenPago.totalPendiente ?? 0);
           setPlatosSeleccionadosPago([]);
         }
@@ -1754,8 +1778,12 @@ const PagosScreen = () => {
       };
 
       // Guardar datos para el modal y abrirlo
+      // ✅ FIX BUG: usar boucherParaUI (consolidado con todos los platos del ciclo)
+      // en lugar de boucherCreado (solo platos del último cobro).
+      // Sin esto, tras el último pago parcial la lista de Platos solo muestra el
+      // último plato pagado; el consolidado se cargó arriba pero se sobrescribía aquí.
       setClientePagoExitoso(cliente);
-      setBoucherData(boucherCreado);
+      setBoucherData(boucherParaUI);
       setModalPagoExitosoVisible(true);
       
     } catch (error) {
@@ -2121,8 +2149,9 @@ const PagosScreen = () => {
               {Number(totalRestante).toFixed(configMoneda?.decimales ?? 2)}
             </Text>
           )}
-          {(boucherData || boucherFromParams)?.platos ? (
-            // Mostrar platos del boucher del backend
+          {usarPlatosDeBoucher ? (
+            // Mostrar platos del boucher del backend (consolidado cuando la mesa
+            // está 100% pagada; boucher individual cuando es pago total legacy).
             (boucherData || boucherFromParams).platos.map((platoItem, index) => {
               const cantidad = platoItem.cantidad || 1;
               const precio = platoItem.precio || 0;
