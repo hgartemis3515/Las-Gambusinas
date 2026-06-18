@@ -8,6 +8,7 @@
 
 | Documento | Contenido |
 |-----------|-----------|
+| **[COMANDA_DETALLE_TIEMPO_REAL.md](./COMANDA_DETALLE_TIEMPO_REAL.md)** | **ComandaDetalle** — tiempo real, diagnóstico S24 vs Tab A11, bugs conocidos |
 | **[ENTREGA_PLEXPERITY_JUNIO_2026.md](./ENTREGA_PLEXPERITY_JUNIO_2026.md)** | **Handoff Plexperity** — resumen de cambios abril–junio 2026 |
 | **[EXPO_EAS_APK_Y_ACTUALIZACIONES.md](./EXPO_EAS_APK_Y_ACTUALIZACIONES.md)** | Procedimiento completo Expo/EAS: crear APK, OTA sin Play Store, comandos |
 | **[NETWORK_ERROR_APK_VS_EXPO_GO.md](./NETWORK_ERROR_APK_VS_EXPO_GO.md)** | **Network Error** al configurar servidor en APK (HTTP / cleartext) |
