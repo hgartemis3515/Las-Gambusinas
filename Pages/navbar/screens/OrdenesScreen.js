@@ -1600,6 +1600,12 @@ const OrdenesScreen = ({ route }) => {
                         .filter(p => p._id === plato._id)
                         .reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
                       
+                      // 🔥 Desglosar cantidad por tipo de servicio: mesa vs para llevar
+                      const instanciasMesa = selectedPlatos.filter(p => p._id === plato._id && (p.tipoServicio || 'mesa') === 'mesa');
+                      const instanciasLlevar = selectedPlatos.filter(p => p._id === plato._id && p.tipoServicio === 'para_llevar');
+                      const cantidadMesa = instanciasMesa.reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
+                      const cantidadLlevar = instanciasLlevar.reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
+                      
                       return (
                         <View key={plato._id} style={styles.platoModalItem}>
                           <View style={styles.platoModalInfo}>
@@ -1634,7 +1640,15 @@ const OrdenesScreen = ({ route }) => {
                             >
                               <MaterialCommunityIcons name="minus" size={14} color={theme.colors.text.white} />
                             </TouchableOpacity>
-                            <Text style={styles.cantidadTextSmall}>{cantidadTotal || 0}</Text>
+                            {/* Cantidad desglosada: mesa + llevar */}
+                            {cantidadLlevar > 0 ? (
+                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Text style={styles.cantidadTextSmall}>{cantidadMesa}</Text>
+                                <Text style={[styles.cantidadTextSmall, { color: '#8B5CF6', fontWeight: '700', marginLeft: 1 }]}>+{cantidadLlevar}</Text>
+                              </View>
+                            ) : (
+                              <Text style={styles.cantidadTextSmall}>{cantidadTotal || 0}</Text>
+                            )}
                             <TouchableOpacity
                               style={styles.cantidadButtonSmall}
                               onPress={() => {
