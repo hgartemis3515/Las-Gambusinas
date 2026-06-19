@@ -8,6 +8,7 @@ import {
   isComandaListaEnCocina,
   shouldNotifyMozoAsignado,
   notifyPlatoListoLocal,
+  notifyPlatoSalioLocal,
 } from '../services/pushNotifications';
 
 /**
@@ -456,6 +457,10 @@ const useSocketMozos = ({
       // Local solo si no hay push remota (Expo Go). APK: una sola notificación vía backend.
       if (data.nuevoEstado === 'recoger') {
         notifyPlatoListoLocal(data);
+      }
+      // SALIO: notificación local cuando el plato sale de cocina (listo para entregar al comensal)
+      if (data.nuevoEstado === 'salio') {
+        notifyPlatoSalioLocal(data);
       }
 
       // Pasar el evento al handler si existe (para actualización granular)

@@ -27,7 +27,7 @@ import { useWindowDimensions } from "react-native";
 import { useSocket } from "../../../context/SocketContext";
 import logger from "../../../utils/logger";
 import configuracionService from "../../../services/configuracionService";
-import { filtrarComandasActivas } from "../../../utils/comandaHelpers";
+import { filtrarComandasActivas, filtrarComandasPorIds } from "../../../utils/comandaHelpers";
 import { mostrarOpcionesBoucher } from "../../../services/boucherPrint";
 import {
   listarPlatosPagables,
@@ -48,6 +48,19 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+
+/** Filtra bouchers que referencian al menos una comanda del pedido actual. */
+function filtrarBouchersPorComandaIds(bouchers, comandaIds) {
+  const ids = (comandaIds || []).map((id) => String(id)).filter(Boolean);
+  if (!ids.length) return bouchers || [];
+  const set = new Set(ids);
+  return (bouchers || []).filter((b) =>
+    (b.comandas || []).some((c) => {
+      const cid = (c?._id || c)?.toString?.();
+      return cid && set.has(cid);
+    })
+  );
+}
 
 /** Comandas listas para cobrar (misma mesa, no pagada, platos no anulados). */
 function filtrarComandasPagablesParaPago(comandasBackend, mesaIdStr, mesaNummesa) {
@@ -76,14 +89,16 @@ function filtrarComandasPagablesParaPago(comandasBackend, mesaIdStr, mesaNummesa
 }
 
 /** Comandas del ciclo actual con platos entregados + ya pagados (pagos parciales). */
-async function fetchComandasCicloParaPagos(mesaId) {
+async function fetchComandasCicloParaPagos(mesaId, comandaIds = []) {
   if (!mesaId) return [];
   const comandaBase = apiConfig.isConfigured
     ? apiConfig.getEndpoint('/comanda')
     : COMANDASEARCH_API_GET;
+  const ids = (comandaIds || []).filter(Boolean).map((id) => String(id));
+  const idsQuery = ids.length ? `?comandaIds=${ids.join(',')}` : '';
   const urls = [
-    `${comandaBase}/mesa/${mesaId}/para-pagos`,
-    `${comandaBase}/comandas-para-pagar/${mesaId}?incluirPagados=1`,
+    `${comandaBase}/mesa/${mesaId}/para-pagos${idsQuery}`,
+    `${comandaBase}/comandas-para-pagar/${mesaId}?incluirPagados=1${ids.length ? `&comandaIds=${ids.join(',')}` : ''}`,
   ];
   for (const url of urls) {
     try {
@@ -108,11 +123,11 @@ async function fetchComandasCicloParaPagos(mesaId) {
 }
 
 /** Fuente alineada con ComandaDetalle: ciclo actual + fallback por fecha. */
-async function fetchComandasBackendParaMesa(mesaId, mesaNummesa) {
+async function fetchComandasBackendParaMesa(mesaId, mesaNummesa, comandaIds = []) {
   const mesaIdStr = mesaId != null ? String(mesaId) : '';
-  let comandasBackend = await fetchComandasCicloParaPagos(mesaIdStr);
+  let comandasBackend = await fetchComandasCicloParaPagos(mesaIdStr, comandaIds);
   if (comandasBackend.length > 0) {
-    return comandasBackend;
+    return filtrarComandasPorIds(comandasBackend, comandaIds);
   }
 
   const comandaBase = apiConfig.isConfigured
@@ -149,7 +164,7 @@ async function fetchComandasBackendParaMesa(mesaId, mesaNummesa) {
     });
   }
 
-  return filtrarComandasActivas(comandasBackend);
+  return filtrarComandasPorIds(filtrarComandasActivas(comandasBackend), comandaIds);
 }
 
 /** Snapshot para Inicio tras pago: incluye etiqueta de mesa y grupo (evita tarjeta verde sin nombre). */
@@ -332,6 +347,8 @@ const PagosScreen = () => {
   /** Bouchers individuales de cada pago parcial (para imprimir por separado). */
   const [bouchersParciales, setBouchersParciales] = useState([]);
   const pedidoIdCicloRef = React.useRef(null);
+  /** IDs de comandas del pedido actual (ancla para no mezclar visitas anteriores). */
+  const comandaIdsCicloRef = React.useRef([]);
 
   // Obtener socket del contexto
   const { subscribeToEvents, connected: socketConnected } = useSocket();
@@ -380,19 +397,21 @@ const PagosScreen = () => {
     return configuracionService.getMozoAuthHeaders();
   }, []);
 
-  /** Boucher unificado: une todos los pagos parciales de la mesa (GET /boucher/by-mesa). */
-  const cargarBoucherConsolidadoMesa = React.useCallback(async (mesaId) => {
+  /** Boucher unificado: une todos los pagos parciales del pedido actual (GET /boucher/by-mesa). */
+  const cargarBoucherConsolidadoMesa = React.useCallback(async (mesaId, comandaIds = []) => {
     if (!mesaId) return null;
     try {
       const headers = await getHeadersAuth();
       if (!headers.Authorization) return null;
+      const ids = (comandaIds || []).filter(Boolean).map((id) => String(id));
+      const qs = ids.length ? `?comandaIds=${ids.join(',')}` : '';
       const boucherURL = apiConfig.isConfigured
-        ? apiConfig.getEndpoint(`/boucher/by-mesa/${mesaId}`)
-        : `${BOUCHER_API}/by-mesa/${mesaId}`;
+        ? apiConfig.getEndpoint(`/boucher/by-mesa/${mesaId}${qs}`)
+        : `${BOUCHER_API}/by-mesa/${mesaId}${qs}`;
       const res = await axios.get(boucherURL, { timeout: 10000, headers });
       const consolidado = res.data;
       if (Array.isArray(consolidado?.bouchersParciales)) {
-        setBouchersParciales(consolidado.bouchersParciales);
+        setBouchersParciales(filtrarBouchersPorComandaIds(consolidado.bouchersParciales, ids));
       } else {
         setBouchersParciales([]);
       }
@@ -439,6 +458,9 @@ const PagosScreen = () => {
               const bp = b.pedido?._id || b.pedido;
               return !bp || String(bp) === pedidoId;
             });
+          }
+          if (ids.length) {
+            lista = filtrarBouchersPorComandaIds(lista, ids);
           }
           setBouchersParciales(lista);
           return lista;
@@ -512,14 +534,18 @@ const PagosScreen = () => {
       }
       const mesaIdConsolidar = mesaObj?._id || currentBoucher.mesa;
       if (mesaIdConsolidar) {
+        const idsCiclo =
+          comandaIdsCicloRef.current.length > 0
+            ? comandaIdsCicloRef.current
+            : (currentParams.comandaIdsCiclo || []).map(String);
         (async () => {
-          const consolidado = await cargarBoucherConsolidadoMesa(mesaIdConsolidar);
+          const consolidado = await cargarBoucherConsolidadoMesa(mesaIdConsolidar, idsCiclo);
           if (consolidado) {
             setBoucherData(consolidado);
           } else {
             setBoucherData(currentBoucher);
           }
-          await cargarBouchersParcialesMesa(mesaIdConsolidar);
+          await cargarBouchersParcialesMesa(mesaIdConsolidar, idsCiclo);
         })();
       } else {
         setBoucherData(currentBoucher);
@@ -560,6 +586,11 @@ const PagosScreen = () => {
       
       // ✅ LIMPIAR estado anterior y usar SOLO los datos del backend (route.params)
       // Crear nuevos objetos/arrays para forzar actualización completa
+      const idsCiclo =
+        (currentParams.comandaIdsCiclo?.length
+          ? currentParams.comandaIdsCiclo
+          : currentComandas.map((c) => c._id).filter(Boolean)) || [];
+      comandaIdsCicloRef.current = idsCiclo.map((id) => String(id));
       setComandas([...currentComandas]); // SOLO estas comandas del backend
       setMesa({ ...currentMesa }); // SOLO esta mesa del backend
       setTotal(currentTotal || 0); // SOLO este total del backend
@@ -697,6 +728,11 @@ const PagosScreen = () => {
         })));
         
         // ✅ LIMPIAR estado anterior y usar SOLO los datos del backend
+        const idsCiclo =
+          (currentParams.comandaIdsCiclo?.length
+            ? currentParams.comandaIdsCiclo
+            : currentComandas.map((c) => c._id).filter(Boolean)) || [];
+        comandaIdsCicloRef.current = idsCiclo.map((id) => String(id));
         setComandas([...currentComandas]); // SOLO estas comandas
         setMesa({ ...currentMesa }); // SOLO esta mesa
         setTotal(currentTotal || 0); // SOLO este total
@@ -718,10 +754,14 @@ const PagosScreen = () => {
         if (mesaObj) setMesa(mesaObj);
         const mesaIdB = mesaObj?._id || (typeof mesaB === 'string' ? mesaB : currentBoucher.mesa);
         if (mesaIdB) {
-          cargarBoucherConsolidadoMesa(mesaIdB).then((consolidado) => {
+          const idsCiclo =
+            comandaIdsCicloRef.current.length > 0
+              ? comandaIdsCicloRef.current
+              : (currentParams.comandaIdsCiclo || []).map(String);
+          cargarBoucherConsolidadoMesa(mesaIdB, idsCiclo).then((consolidado) => {
             setBoucherData(consolidado || currentBoucher);
           });
-          cargarBouchersParcialesMesa(mesaIdB);
+          cargarBouchersParcialesMesa(mesaIdB, idsCiclo);
         } else {
           setBoucherData(currentBoucher);
         }
@@ -756,17 +796,21 @@ const PagosScreen = () => {
 
       let syncCancelled = false;
       if (currentMesa?._id && !currentBoucher && currentComandas?.length > 0) {
-        // 🔥 PPA: No re-sincronizar comandas desde el backend cuando es pago adelantado
-        // Las comandas PPA ya vienen filtradas del backend (endpoint dedicado)
-        // y la re-sincronización puede traer platos de otras comandas o ciclos
-        if (currentParams.origen === 'PagoAdelantado') {
-          console.log("⏭️ [PAGOS] Pago Adelantado - omitiendo re-sincronización de comandas");
+        // No re-sincronizar con el ciclo completo de mesa: mezcla pedidos anteriores.
+        // ComandaDetalle e Inicio ya envían comandas filtradas por comandaIds.
+        if (
+          currentParams.origen === 'PagoAdelantado' ||
+          currentParams.origen === 'ComandaDetalle' ||
+          comandaIdsCicloRef.current.length > 0
+        ) {
+          console.log('⏭️ [PAGOS] Omitiendo re-sincronización amplia (ciclo acotado por comandaIds)');
         } else {
         (async () => {
           try {
             const backend = await fetchComandasBackendParaMesa(
               currentMesa._id,
-              currentMesa.nummesa
+              currentMesa.nummesa,
+              comandaIdsCicloRef.current
             );
             if (syncCancelled) return;
             const validas = filtrarComandasPagablesParaPago(
@@ -774,18 +818,19 @@ const PagosScreen = () => {
               String(currentMesa._id),
               currentMesa.nummesa
             );
-            if (validas.length > 0) {
+            const acotadas = filtrarComandasPorIds(validas, comandaIdsCicloRef.current);
+            if (acotadas.length > 0) {
               console.log(
-                `🔄 [PAGOS] Sincronización automática al enfocar: ${validas.length} comanda(s) desde servidor`
+                `🔄 [PAGOS] Sincronización automática al enfocar: ${acotadas.length} comanda(s) desde servidor`
               );
-              setComandas(validas);
+              setComandas(acotadas);
               setMesa({ ...currentMesa });
             }
           } catch (e) {
             if (__DEV__) console.warn("[PAGOS] Sync al enfocar:", e?.message);
           }
         })();
-        } // fin else (PPA skip)
+        } // fin else sync amplio
       }
 
       subscribeToEvents({
@@ -1653,8 +1698,12 @@ const PagosScreen = () => {
       }
 
       const mesaCompletamentePagadaEarly = resumenPago?.mesaPagadaCompletamente === true;
+      const idsCicloPago =
+        comandaIdsCicloRef.current.length > 0
+          ? comandaIdsCicloRef.current
+          : comandasFinales.map((c) => c._id).filter(Boolean).map(String);
       if (mesaCompletamentePagadaEarly && mesaIdFinal) {
-        const consolidado = await cargarBoucherConsolidadoMesa(mesaIdFinal);
+        const consolidado = await cargarBoucherConsolidadoMesa(mesaIdFinal, idsCicloPago);
         if (consolidado?.platos?.length) {
           boucherParaUI = consolidado;
           setBoucherData(consolidado);
@@ -1662,7 +1711,7 @@ const PagosScreen = () => {
       }
 
       if (mesaIdFinal) {
-        await cargarBouchersParcialesMesa(mesaIdFinal);
+        await cargarBouchersParcialesMesa(mesaIdFinal, idsCicloPago);
       }
 
       if (resumenPago) {
@@ -1676,15 +1725,24 @@ const PagosScreen = () => {
         // marcados como pagados aunque el consolidado falle.
         if (mesaIdFinal) {
           try {
-            const comandasCiclo = await fetchComandasCicloParaPagos(mesaIdFinal);
-            if (comandasCiclo.length > 0) {
-              setComandas(comandasCiclo);
+            const idsCiclo = comandaIdsCicloRef.current.length
+              ? comandaIdsCicloRef.current
+              : comandasFinales.map((c) => c._id).filter(Boolean).map(String);
+            const comandasCiclo = await fetchComandasCicloParaPagos(mesaIdFinal, idsCiclo);
+            const acotadas = filtrarComandasPorIds(comandasCiclo, idsCiclo);
+            if (acotadas.length > 0) {
+              setComandas(acotadas);
             } else if (resumenPago.comandas?.length) {
-              setComandas(resumenPago.comandas);
+              setComandas(filtrarComandasPorIds(resumenPago.comandas, idsCiclo));
             }
           } catch {
             if (resumenPago.comandas?.length) {
-              setComandas(resumenPago.comandas);
+              setComandas(
+                filtrarComandasPorIds(
+                  resumenPago.comandas,
+                  comandaIdsCicloRef.current
+                )
+              );
             }
           }
         }

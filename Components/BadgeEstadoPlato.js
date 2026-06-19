@@ -26,9 +26,15 @@ const BadgeEstadoPlato = ({ estado }) => {
       texto: 'Recoger',
       icon: '🍽️'
     },
+    salio: {
+      color: '#FFFFFF',       // Blanco
+      bgColor: '#10B981',     // Verde
+      texto: 'Salió',
+      icon: '🚶'
+    },
     entregado: {
-      color: '#10B981',       // Verde
-      bgColor: '#D1FAE5',     // Verde claro
+      color: '#FFFFFF',       // Blanco
+      bgColor: '#065F46',     // Verde oscuro
       texto: 'Entregado',
       icon: '✅'
     },

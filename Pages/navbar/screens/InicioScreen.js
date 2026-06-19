@@ -1172,8 +1172,12 @@ const InicioScreen = () => {
         (p.estado || '').toLowerCase() === 'recoger'
       );
       
-      // Verificar si hay algún plato en "recoger" (algunos listos)
-      const hayPlatosRecoger = platosActivos.some(p => (p.estado || '').toLowerCase() === 'recoger');
+      // SALIO: Verificar si hay algún plato en "recoger" o "salio" (listos / salieron de cocina)
+      // La mesa debe seguir en "preparado" mientras haya platos por entregar
+      const hayPlatosRecoger = platosActivos.some(p => {
+        const e = (p.estado || '').toLowerCase();
+        return e === 'recoger' || e === 'salio';
+      });
       
       // Verificar si hay platos pendientes (pedido o en_espera)
       const hayPlatosPendientes = platosActivos.some(p => 
@@ -1862,7 +1866,11 @@ const InicioScreen = () => {
           if (!c.platos || c.platos.length === 0) return false;
           // 🔥 CORREGIDO: Filtrar platos eliminados Y anulados
           const activos = c.platos.filter(p => p.eliminado !== true && p.anulado !== true);
-          return activos.length > 0 && activos.every(p => (p.estado || '').toLowerCase() === "recoger");
+          // SALIO: la comanda está "preparada" si todos los platos están en recoger o salio
+          return activos.length > 0 && activos.every(p => {
+            const e = (p.estado || '').toLowerCase();
+            return e === "recoger" || e === "salio";
+          });
         });
         const hayComandasEntregadas = comandasMesa.some(c => {
           const status = (c.status || '').toLowerCase();
@@ -1878,7 +1886,7 @@ const InicioScreen = () => {
           console.log(`⚠️ Mesa ${mesa.nummesa} tiene estado "preparado" pero no hay comandas preparadas/entregadas - Recalculando estado`);
           const hayComandasActivas = comandasMesa.some(c => {
             const status = (c.status || '').toLowerCase();
-            return status === 'en_espera' || status === 'recoger' || status === 'entregado';
+            return status === 'en_espera' || status === 'recoger' || status === 'salio' || status === 'entregado';
           });
           if (hayComandasActivas) {
             return "Pedido";
@@ -1901,7 +1909,11 @@ const InicioScreen = () => {
       if (!c.platos || c.platos.length === 0) return false;
       // 🔥 CORREGIDO: Filtrar platos eliminados Y anulados
       const activos = c.platos.filter(p => p.eliminado !== true && p.anulado !== true);
-      return activos.length > 0 && activos.every(p => (p.estado || '').toLowerCase() === "recoger");
+      // SALIO: la comanda está "preparada" si todos los platos están en recoger o salio
+      return activos.length > 0 && activos.every(p => {
+        const e = (p.estado || '').toLowerCase();
+        return e === "recoger" || e === "salio";
+      });
     });
     // Verificar si hay comandas listas para pagar (status entregado o todos los platos entregados)
     const hayEntregadas = comandasMesa.some(c => {
@@ -2203,10 +2215,12 @@ const InicioScreen = () => {
         console.log(`   ${idx + 1}. Comanda #${c.comandaNumber} - Status: ${c.status} - Cliente: ${tieneCliente} - ${c.platos?.length || 0} plato(s)`);
       });
       
-      const comandaPreparada = comandasOrdenadas.find(c => 
-        c.status?.toLowerCase() === "recoger" || 
-        (c.platos && c.platos.some(p => p.estado === "recoger"))
-      );
+      const comandaPreparada = comandasOrdenadas.find(c => {
+        const st = c.status?.toLowerCase();
+        // SALIO: considerar recoger y salio como comanda preparada
+        return st === "recoger" || st === "salio" ||
+          (c.platos && c.platos.some(p => p.estado === "recoger" || p.estado === "salio"));
+      });
       
       // Obtener el mozo de la primera comanda (más reciente) para validar
       const primeraComanda = comandasOrdenadas[0];
@@ -2274,7 +2288,8 @@ const InicioScreen = () => {
       const comandasActivas = todasComandasMesa.filter(c =>
         c.status?.toLowerCase() === "pedido" ||
         c.status?.toLowerCase() === "en_espera" ||
-        c.status?.toLowerCase() === "recoger"
+        c.status?.toLowerCase() === "recoger" ||
+        c.status?.toLowerCase() === "salio"
       );
 
       // Buscar boucher del PPA si existe
@@ -6339,7 +6354,9 @@ const InicioScreen = () => {
                     const paramsParaPagos = {
                       mesa: response.data.mesa,
                       comandasParaPagar: response.data.comandas,
-                      totalPendiente: response.data.totalPendiente
+                      comandaIdsCiclo: response.data.comandas.map((c) => c._id).filter(Boolean),
+                      totalPendiente: response.data.totalPendiente,
+                      origen: 'Inicio',
                     };
                     
                     console.log('📋 [PAGAR] Parámetros a pasar:', {

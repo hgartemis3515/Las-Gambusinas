@@ -16,7 +16,11 @@ const FilaPlatoCompacta = ({
   estilos 
 }) => {
   const subtotal = (plato.precio * plato.cantidad).toFixed(2);
-  const puedeMarcarEntregado = plato.estado === 'recoger' && !plato.anulado;
+  // SALIO: El mozo solo puede entregar platos que ya salieron de cocina (estado 'salio').
+  // 'recoger' pasa a ser solo aviso informativo (sin checkbox).
+  const esSalio = plato.estado === 'salio' && !plato.anulado;
+  const esSoloAviso = plato.estado === 'recoger' && !plato.anulado;
+  const puedeMarcarEntregado = esSalio;
   const nombrePlato = plato.plato?.nombre || 'Plato desconocido';
   
   // 🔥 NUEVO: Estilos especiales para plato anulado
@@ -123,16 +127,20 @@ const FilaPlatoCompacta = ({
               </Text>
             </View>
           </View>
-        ) : puedeMarcarEntregado ? (
+        ) : esSalio ? (
+          /* SALIO: Checkbox resaltante — el plato salió de cocina y puede entregarse */
           <TouchableOpacity
-            style={styles.checkboxButton}
+            style={[
+              styles.checkboxButtonResaltante,
+              seleccionado && styles.checkboxButtonResaltanteActivo,
+            ]}
             onPress={handleToggle}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            {/* 🔥 NUEVO: Checkbox que refleja estado de selección */}
             <MaterialCommunityIcons 
-              name={seleccionado ? "checkbox-marked" : "checkbox-blank-outline"} 
-              size={20} 
-              color={seleccionado ? "#10B981" : "#F59E0B"} 
+              name={seleccionado ? "checkbox-marked-circle" : "checkbox-blank-circle-outline"} 
+              size={26} 
+              color={seleccionado ? "#10B981" : "#065F46"} 
             />
             <View style={[styles.badge, { backgroundColor: estilosAplicar.badgeFondo }]}>
               <Text style={[styles.badgeText, { color: estilosAplicar.badgeTexto }]}>
@@ -140,9 +148,19 @@ const FilaPlatoCompacta = ({
               </Text>
             </View>
           </TouchableOpacity>
+        ) : esSoloAviso ? (
+          /* RECOGER: Solo aviso informativo, sin checkbox (aún no salió de cocina) */
+          <View style={styles.avisoContainer}>
+            <MaterialCommunityIcons name="bell-outline" size={16} color="#F59E0B" />
+            <View style={[styles.badge, { backgroundColor: estilosAplicar.badgeFondo }]}>
+              <Text style={[styles.badgeText, { color: estilosAplicar.badgeTexto }]}>
+                {estilosAplicar.textoEstado}
+              </Text>
+            </View>
+          </View>
         ) : plato.estado === 'entregado' ? (
           <View style={styles.entregadoContainer}>
-            <MaterialCommunityIcons name="check-circle" size={18} color="#10B981" />
+            <MaterialCommunityIcons name="check-circle" size={18} color="#047857" />
             <View style={[styles.badge, { backgroundColor: estilosAplicar.badgeFondo }]}>
               <Text style={[styles.badgeText, { color: estilosAplicar.badgeTexto }]}>
                 {estilosAplicar.textoEstado}
@@ -218,6 +236,24 @@ const styles = StyleSheet.create({
     color: '#059669',
   },
   checkboxButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  // SALIO: Checkbox resaltante con halo verde para llamar la atención del mozo
+  checkboxButtonResaltante: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)', // halo verde suave
+  },
+  checkboxButtonResaltanteActivo: {
+    backgroundColor: 'rgba(16, 185, 129, 0.28)', // más saturado al seleccionar
+  },
+  avisoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,

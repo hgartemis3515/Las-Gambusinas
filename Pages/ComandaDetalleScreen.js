@@ -50,10 +50,17 @@ const obtenerEstilosPorEstado = (estado) => {
       badgeTexto: '#FFFFFF',
       textoEstado: 'RECOGER'
     },
-    entregado: {
+    salio: {
       fondo: '#D1FAE5',
       borde: '#10B981',
       badgeFondo: '#10B981',
+      badgeTexto: '#FFFFFF',
+      textoEstado: 'SALIÓ'
+    },
+    entregado: {
+      fondo: '#047857',
+      borde: '#065F46',
+      badgeFondo: '#065F46',
       badgeTexto: '#FFFFFF',
       textoEstado: 'ENTREGADO'
     },
@@ -220,7 +227,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       });
     });
 
-    const ordenPrioridad = { recoger: 1, pedido: 2, entregado: 3, pagado: 4 };
+    // SALIO: los platos listos para entregar (salio) van primero, luego recoger (aviso)
+    const ordenPrioridad = { salio: 1, recoger: 2, pedido: 3, en_espera: 3, entregado: 4, pagado: 5 };
     platos.sort((a, b) => {
       const prioridadA = ordenPrioridad[a.estado] || 99;
       const prioridadB = ordenPrioridad[b.estado] || 99;
@@ -338,10 +346,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
   // Marcar plato como entregado
   const handleMarcarPlatoEntregado = async (platoObj) => {
-    if (platoObj.estado !== 'recoger' && platoObj.estado !== 'pedido') {
+    // SALIO: el mozo solo puede entregar platos que ya salieron de cocina
+    if (platoObj.estado !== 'salio') {
       Alert.alert(
         'Estado Inválido',
-        'Solo se pueden marcar como entregados los platos que están listos para recoger.',
+        'Solo se pueden entregar los platos que ya salieron de cocina (estado "Salió").',
         [{ text: 'Entendido' }]
       );
       return;
@@ -471,7 +480,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           nuevaComanda.platos = nuevosPlatos;
           nuevasComandas[comandaIndex] = nuevaComanda;
           try {
-            if (data.nuevoEstado === 'recoger') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            // SALIO: haptic de éxito cuando el plato sale de cocina o está listo para recoger
+            if (data.nuevoEstado === 'recoger' || data.nuevoEstado === 'salio') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           } catch (_) {}
           return nuevasComandas;
@@ -638,6 +648,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Validaciones para habilitación de botones
   const platosEnPedido = todosLosPlatos.filter(p => p.estado === 'pedido');
   const platosEnRecoger = todosLosPlatos.filter(p => p.estado === 'recoger');
+  // SALIO: platos que ya salieron de cocina y pueden entregarse al comensal
+  const platosEnSalio = todosLosPlatos.filter(p => p.estado === 'salio');
   const platosEntregados = todosLosPlatos.filter(p => p.estado === 'entregado');
   const platosPagados = todosLosPlatos.filter(p => p.estado === 'pagado');
   
@@ -663,8 +675,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     && platosActivosLlevar.every(p => (p.estado || '').toLowerCase() === 'entregado');
   const puedeConfirmarEntrega = reglasPPA.composicion === 'solo_para_llevar' && todosEntregadosLlevar;
   
-  // Condición para mostrar botón Entregar: hay platos en estado "recoger"
-  const puedeEntregar = platosEnRecoger.length > 0;
+  // SALIO: Condición para mostrar botón Entregar: hay platos en estado "salio"
+  // (recoger ya no habilita la entrega; el mozo espera a que cocina confirme la salida)
+  const puedeEntregar = platosEnSalio.length > 0;
   
   // Obtener platos disponibles
   const obtenerPlatos = async () => {
@@ -1487,11 +1500,23 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         Alert.alert('Error', 'No hay comandas para pagar en esta mesa.');
         return;
       }
+
+      const idsSolicitados = new Set(comandas.map((c) => String(c._id)).filter(Boolean));
+      const comandasParaPago = idsSolicitados.size > 0
+        ? response.data.comandas.filter((c) => idsSolicitados.has(String(c._id)))
+        : response.data.comandas;
+
+      if (comandasParaPago.length === 0) {
+        Alert.alert('Error', 'No hay comandas para pagar en esta mesa.');
+        return;
+      }
       
       // Navegar a PagosScreen
+      const comandaIdsCiclo = comandas.map((c) => c._id).filter(Boolean);
       navigation.navigate('Pagos', {
         mesa: response.data.mesa,
-        comandasParaPagar: response.data.comandas,
+        comandasParaPagar: comandasParaPago,
+        comandaIdsCiclo,
         totalPendiente: response.data.totalPendiente,
         origen: 'ComandaDetalle'
       });
@@ -2016,12 +2041,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               </TouchableOpacity>
             )}
             
-            {/* Botón Entregar - Solo visible si hay platos en estado "recoger" */}
+            {/* SALIO: Botón Entregar - Solo visible si hay platos en estado "salio" */}
             {puedeEntregar && (
               <TouchableOpacity
                 style={[
                   styles.actionButton, 
-                  { backgroundColor: platosSeleccionadosEntregar.length > 0 ? '#F59E0B' : '#9CA3AF' }, // Amarillo si hay selección
+                  { backgroundColor: platosSeleccionadosEntregar.length > 0 ? '#065F46' : '#9CA3AF' }, // Verde oscuro si hay selección
                   platosSeleccionadosEntregar.length === 0 && styles.actionButtonDisabled,
                 ]}
                 onPress={handleEntregarPlatos}
@@ -2370,7 +2395,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               }
             ]}>
               <Text style={[styles.leyendaText, { color: isDark ? '#D1D5DB' : (themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280') }]}>
-                🔵 Celeste: Pedido | 🟡 Amarillo: Listo para recoger | 🟢 Verde: Entregado
+                🔵 Celeste: Pedido | 🟡 Amarillo: Recoger | 🟢 Verde: Salió (entregar) | 🟩 Verde oscuro: Entregado
               </Text>
             </View>
             

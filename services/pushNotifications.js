@@ -12,6 +12,7 @@ export const PUSH_NOTIFICATIONS_PREF_KEY = 'mozos_push_notifications_enabled';
 
 // --- Sub-preferencias de notificaciones ---
 export const PUSH_PREF_PLATO_LISTO = 'mozos_push_plato_listo';
+export const PUSH_PREF_PLATO_SALIO = 'mozos_push_plato_salio';
 export const PUSH_PREF_COMANDA_LISTA = 'mozos_push_comanda_lista';
 export const PUSH_PREF_SONIDO = 'mozos_push_sonido';
 export const PUSH_PREF_VIBRACION = 'mozos_push_vibracion';
@@ -36,6 +37,17 @@ export async function getPushPlatoListoEnabled() {
 
 export async function setPushPlatoListoEnabled(enabled) {
   await AsyncStorage.setItem(PUSH_PREF_PLATO_LISTO, enabled ? 'true' : 'false');
+}
+
+/** SALIO: Preferencia: notificar cuando un plato cambia a "salio" (salió de cocina) */
+export async function getPushPlatoSalioEnabled() {
+  const v = await AsyncStorage.getItem(PUSH_PREF_PLATO_SALIO);
+  if (v === null) return true;
+  return v === 'true';
+}
+
+export async function setPushPlatoSalioEnabled(enabled) {
+  await AsyncStorage.setItem(PUSH_PREF_PLATO_SALIO, enabled ? 'true' : 'false');
 }
 
 /** Preferencia: notificar cuando una comanda entera cambia a "recoger" */
@@ -73,6 +85,7 @@ export async function setPushVibracionEnabled(enabled) {
 
 const CHANNEL_DEFAULT = 'default';
 const CHANNEL_PLATO_LISTO = 'plato-listo';
+const CHANNEL_PLATO_SALIO = 'plato-salio';
 
 const isExpoGo = Constants.appOwnership === 'expo';
 
@@ -180,6 +193,58 @@ export async function notifyPlatoListoLocal(data) {
   );
 }
 
+/** SALIO: mensaje de notificación cuando el plato sale de cocina */
+export function buildPlatoSalioMessage(nombrePlato, mesaNumero) {
+  const nombre = nombrePlato || 'Un plato';
+  const mesa = mesaNumero != null && mesaNumero !== '' ? mesaNumero : '?';
+  return `${nombre} salió de cocina. Mesa ${mesa}`;
+}
+
+/**
+ * SALIO: Punto único de notificación local cuando un plato sale de cocina (recoger → salio).
+ * Diferenciado del "plato listo": indica al mozo que ya puede entregar al comensal.
+ */
+export async function notifyPlatoSalioLocal(data) {
+  if (!(await shouldUseLocalPlatoListoPush())) return;
+
+  // Respetar preferencia específica de "salió de cocina"
+  if (!(await getPushPlatoSalioEnabled())) return;
+
+  const ok = await shouldNotifyMozoAsignado({ comanda: data.comanda, mozoId: data.mozoId });
+  if (!ok) return;
+
+  const comandaId = data.comandaId?.toString?.() || data.comandaId;
+  const platoId = data.platoId?.toString?.() || data.platoId;
+  const key = `plato-salio-${comandaId}-${platoId}`;
+  const now = Date.now();
+  if (recentLocalPush.get(key) && now - recentLocalPush.get(key) < LOCAL_DEDUPE_MS) return;
+  recentLocalPush.set(key, now);
+
+  const mesaNumero =
+    data.mesaNumero ?? data.comanda?.mesas?.nummesa ?? data.comanda?.mesas?.numero ?? null;
+  const nombrePlato =
+    data.platoNombre ||
+    findNombrePlatoEnComanda(data.comanda, platoId) ||
+    'Un plato';
+
+  await showLocalPush(
+    '🚶 Plato Salió de Cocina',
+    buildPlatoSalioMessage(nombrePlato, mesaNumero),
+    {
+      mesaId: data.mesaId,
+      mesaNumero,
+      mozoId: data.mozoId,
+      platoId,
+      platoNombre: nombrePlato,
+      type: 'plato-salio',
+      comandaId,
+    },
+    CHANNEL_PLATO_SALIO,
+    'plato',
+    { comanda: data.comanda, mozoId: data.mozoId }
+  );
+}
+
 export function configureNotificationBehavior() {
   if (Platform.OS === 'web') return;
   Notifications.setNotificationHandler({
@@ -202,6 +267,12 @@ async function ensureAndroidChannels() {
     });
     await Notifications.setNotificationChannelAsync(CHANNEL_PLATO_LISTO, {
       name: 'Platos listos',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+    });
+    // SALIO: canal dedicado para "plato salió de cocina"
+    await Notifications.setNotificationChannelAsync(CHANNEL_PLATO_SALIO, {
+      name: 'Platos salieron de cocina',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
     });

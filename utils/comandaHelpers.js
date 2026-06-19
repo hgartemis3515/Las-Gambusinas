@@ -63,6 +63,17 @@ export const filtrarComandasPorPedido = (comandas, pedidoId) => {
   });
 };
 
+/** Acota comandas a un subconjunto explícito de IDs (visita / pedido actual). */
+export const filtrarComandasPorIds = (comandas, comandaIds) => {
+  if (!Array.isArray(comandas)) return [];
+  if (!Array.isArray(comandaIds) || comandaIds.length === 0) return comandas;
+  const set = new Set(comandaIds.map((id) => String(id)));
+  return comandas.filter((c) => {
+    const id = c?._id?.toString?.() || c?._id;
+    return id && set.has(String(id));
+  });
+};
+
 /** Solo platos pagados (para Ver pedido en mesa pagada). */
 export const filtrarSoloPlatosPagados = (comandas) => {
   if (!Array.isArray(comandas)) return [];
@@ -182,7 +193,7 @@ export const separarPlatosEditables = (comandas) => {
         tipoServicio: platoItem.tipoServicio || 'mesa' // NUEVO: Mesa vs Para llevar
       };
       
-      if (estadoNormalizado === 'pedido' || estadoNormalizado === 'recoger') {
+      if (estadoNormalizado === 'pedido' || estadoNormalizado === 'recoger' || estadoNormalizado === 'salio') {
         editables.push(platoObj);
       } else {
         noEditables.push(platoObj);
@@ -232,7 +243,7 @@ export const calcularTotales = (platos) => {
  * @returns {boolean}
  */
 export const detectarPlatosPreparados = (platosSeleccionados) => {
-  return platosSeleccionados.some(p => p.estado === 'recoger');
+  return platosSeleccionados.some(p => p.estado === 'recoger' || p.estado === 'salio');
 };
 
 /**
@@ -265,7 +276,8 @@ export const obtenerEstadoMesa = (mesa, comandas) => {
     return 'libre';
   }
   
-  // Determinar estado según prioridad: recoger > pedido > entregado > pagado
+  // Determinar estado según prioridad: salio > recoger > pedido > entregado > pagado
+  const haySalio = todosLosPlatos.some(p => p.estado === 'salio');
   const hayRecoger = todosLosPlatos.some(p => p.estado === 'recoger');
   const hayPedido = todosLosPlatos.some(p => p.estado === 'pedido' || p.estado === 'en_espera');
   const todosEntregados = todosLosPlatos.every(p => p.estado === 'entregado');
@@ -273,7 +285,7 @@ export const obtenerEstadoMesa = (mesa, comandas) => {
   
   if (todosPagados) return 'pagado';
   if (todosEntregados) return 'entregado';
-  if (hayRecoger) return 'preparado';
+  if (haySalio || hayRecoger) return 'preparado';
   if (hayPedido) return 'pedido';
   
   return mesa?.estado || 'libre';
@@ -305,11 +317,19 @@ export const obtenerColoresPorEstado = (estado, isDark = false) => {
       badgeTextColor: '#FFFFFF',
       textoEstado: 'RECOGER'
     },
-    entregado: {
+    salio: {
       backgroundColor: '#D1FAE5',
       textColor: '#065F46',
       borderColor: '#10B981',
       badgeColor: '#10B981',
+      badgeTextColor: '#FFFFFF',
+      textoEstado: 'SALIÓ'
+    },
+    entregado: {
+      backgroundColor: '#047857',
+      textColor: '#FFFFFF',
+      borderColor: '#065F46',
+      badgeColor: '#065F46',
       badgeTextColor: '#FFFFFF',
       textoEstado: 'ENTREGADO'
     },
@@ -392,11 +412,20 @@ export const obtenerColoresEstadoAdaptados = (estado, isDark = false, esEditable
         textoEstado: 'RECOGER',
         priceColor: '#10B981', // Verde
       },
-      entregado: {
+      salio: {
         backgroundColor: '#D1FAE5', // Verde pastel
         textColor: '#065F46', // Verde oscuro
-        borderColor: '#6EE7B7', // Verde claro
+        borderColor: '#10B981', // Verde medio
         badgeColor: '#10B981', // Verde
+        badgeTextColor: '#FFFFFF', // Blanco
+        textoEstado: 'SALIÓ',
+        priceColor: '#10B981', // Verde
+      },
+      entregado: {
+        backgroundColor: '#047857', // Verde esmeralda oscuro
+        textColor: '#FFFFFF', // Blanco
+        borderColor: '#065F46', // Verde muy oscuro
+        badgeColor: '#065F46', // Verde muy oscuro
         badgeTextColor: '#FFFFFF', // Blanco
         textoEstado: 'ENTREGADO',
         priceColor: '#10B981', // Verde
@@ -456,12 +485,21 @@ export const obtenerColoresEstadoAdaptados = (estado, isDark = false, esEditable
       textoEstado: 'RECOGER',
       priceColor: '#6EE7B7', // Verde claro brillante
     },
-    entregado: {
-      backgroundColor: '#047857', // Verde esmeralda saturado
+    salio: {
+      backgroundColor: '#065F46', // Verde oscuro saturado
       textColor: '#FFFFFF', // Blanco puro
       borderColor: '#10B981', // Verde brillante
-      badgeColor: '#34D399', // Verde brillante
-      badgeTextColor: '#064E3B', // Verde muy oscuro para contraste
+      badgeColor: '#10B981', // Verde brillante
+      badgeTextColor: '#FFFFFF', // Blanco
+      textoEstado: 'SALIÓ',
+      priceColor: '#6EE7B7', // Verde claro brillante
+    },
+    entregado: {
+      backgroundColor: '#047857', // Verde esmeralda oscuro
+      textColor: '#FFFFFF', // Blanco puro
+      borderColor: '#065F46', // Verde muy oscuro
+      badgeColor: '#065F46', // Verde muy oscuro
+      badgeTextColor: '#FFFFFF', // Blanco
       textoEstado: 'ENTREGADO',
       priceColor: '#6EE7B7', // Verde claro brillante
     },

@@ -22,6 +22,8 @@ import {
   isExpoGoPushLimited,
   getPushPlatoListoEnabled,
   setPushPlatoListoEnabled,
+  getPushPlatoSalioEnabled,
+  setPushPlatoSalioEnabled,
   getPushComandaListaEnabled,
   setPushComandaListaEnabled,
   getPushSonidoEnabled,
@@ -38,6 +40,7 @@ const NotificationsScreen = () => {
 
   const [pushEnabled, setPushEnabled] = useState(true);
   const [pushPlatoListo, setPushPlatoListo] = useState(true);
+  const [pushPlatoSalio, setPushPlatoSalio] = useState(true);
   const [pushComandaLista, setPushComandaLista] = useState(true);
   const [pushSonido, setPushSonido] = useState(true);
   const [pushVibracion, setPushVibracion] = useState(true);
@@ -49,6 +52,7 @@ const NotificationsScreen = () => {
     (async () => {
       setPushEnabled(await getPushNotificationsPrefEnabled());
       setPushPlatoListo(await getPushPlatoListoEnabled());
+      setPushPlatoSalio(await getPushPlatoSalioEnabled());
       setPushComandaLista(await getPushComandaListaEnabled());
       setPushSonido(await getPushSonidoEnabled());
       setPushVibracion(await getPushVibracionEnabled());
@@ -131,6 +135,31 @@ const NotificationsScreen = () => {
                   }}
                   trackColor={{ false: '#767577', true: theme.colors.primary }}
                   thumbColor={pushPlatoListo ? theme.colors.text.white : '#f4f3f4'}
+                />
+              </View>
+            </View>
+
+            {/* Plato salió de cocina */}
+            <View style={styles.card}>
+              <View style={styles.cardRow}>
+                <View style={[styles.iconCircle, { backgroundColor: '#10B98120' }]}>
+                  <MaterialCommunityIcons name="walk" size={20} color="#10B981" />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.cardTitle}>🚶 Plato salió de cocina</Text>
+                  <Text style={styles.cardDesc}>
+                    Cuando un plato sale de cocina y está listo para entregar al comensal
+                  </Text>
+                </View>
+                <Switch
+                  value={pushPlatoSalio}
+                  onValueChange={async (v) => {
+                    Haptics.selectionAsync();
+                    setPushPlatoSalio(v);
+                    await setPushPlatoSalioEnabled(v);
+                  }}
+                  trackColor={{ false: '#767577', true: theme.colors.primary }}
+                  thumbColor={pushPlatoSalio ? theme.colors.text.white : '#f4f3f4'}
                 />
               </View>
             </View>
