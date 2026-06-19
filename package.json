@@ -1,6 +1,6 @@
 {
   "name": "appmozo",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
@@ -10,6 +10,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "build:apk:preview": "eas build --platform android --profile preview",
+    "build:apk:production": "eas build --platform android --profile production",
     "eas-build-post-install": "node -e \"require('fs').rmSync('android/build',{recursive:true,force:true});require('fs').rmSync('android/.gradle',{recursive:true,force:true});\"",
     "update:preview": "eas update --channel preview",
     "update:production": "eas update --channel production"
