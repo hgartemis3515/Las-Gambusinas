@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -19,124 +19,174 @@ import { useTheme } from "../context/ThemeContext";
 import { colors } from "../constants/colors";
 import * as Haptics from 'expo-haptics';
 import { CLIENTES_API, apiConfig } from "../apiConfig";
+import {
+  METODOS_PAGO,
+  MONEDA_DEFAULT,
+  simboloMoneda,
+  labelMetodoPago,
+  parseMonto,
+  calcularVueltoPreview,
+  convertirMoneda,
+  formatearMontoConMoneda,
+  requiereEfectivo,
+  validarEfectivo,
+} from "../utils/pagoMetodoHelpers";
 
-const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
+const ModalClientes = ({
+  visible,
+  onClose,
+  onClienteSeleccionado,
+  // Nuevas props de pago (opcionales para compatibilidad, pero recomendadas)
+  onPagoConfirmado,
+  totalACobrar = 0,
+  tipoCambioUsd = null,
+  permitirUsd = false,
+  decimales = 2,
+}) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || {};
   const styles = modalStyles(theme);
   const { width } = useWindowDimensions();
   const escala = width < 390 ? 0.88 : 1;
 
+  // Estado de cliente (original)
   const [dni, setDni] = useState("");
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
-  const [esInvitado, setEsInvitado] = useState(true); // Por defecto invitado
+  const [esInvitado, setEsInvitado] = useState(true);
   const [loading, setLoading] = useState(false);
 
+  // Estado de pago
+  const [monedaSeleccionada, setMonedaSeleccionada] = useState(MONEDA_DEFAULT); // 'PEN' | 'USD'
+  const [metodoPago, setMetodoPago] = useState(null); // 'efectivo' | 'digital' | 'tarjeta'
+  const [montoRecibidoStr, setMontoRecibidoStr] = useState("");
+
+  // Total en la moneda seleccionada
+  const totalEnMoneda = useMemo(() => {
+    return convertirMoneda(totalACobrar, monedaSeleccionada, tipoCambioUsd);
+  }, [totalACobrar, monedaSeleccionada, tipoCambioUsd]);
+
+  const montoRecibidoNum = useMemo(() => parseMonto(montoRecibidoStr), [montoRecibidoStr]);
+
+  const vueltoPreview = useMemo(() => {
+    if (metodoPago !== 'efectivo') return null;
+    if (totalEnMoneda == null) return null;
+    return calcularVueltoPreview(totalEnMoneda, montoRecibidoNum);
+  }, [metodoPago, totalEnMoneda, montoRecibidoNum]);
+
+  const validacionEfectivo = useMemo(() => {
+    if (metodoPago !== 'efectivo' || totalEnMoneda == null) return { ok: true };
+    return validarEfectivo(totalEnMoneda, montoRecibidoNum);
+  }, [metodoPago, totalEnMoneda, montoRecibidoNum]);
+
+  // USD disponible solo si el admin lo permitió Y hay tipo de cambio válido
+  const usdDisponible = permitirUsd === true && tipoCambioUsd != null && tipoCambioUsd > 0;
+
+  const puedeContinuar = useMemo(() => {
+    if (!metodoPago) return false;
+    if (metodoPago === 'efectivo') {
+      if (totalEnMoneda == null) return false;
+      if (!validacionEfectivo.ok) return false;
+    }
+    return true;
+  }, [metodoPago, totalEnMoneda, validacionEfectivo]);
+
+  const resetEstadoPago = () => {
+    setMonedaSeleccionada(MONEDA_DEFAULT);
+    setMetodoPago(null);
+    setMontoRecibidoStr("");
+  };
+
   const handleContinuar = async () => {
+    if (!metodoPago) {
+      Alert.alert("Falta método de pago", "Selecciona un método de pago para continuar.");
+      return;
+    }
+    if (metodoPago === 'efectivo' && !validacionEfectivo.ok) {
+      Alert.alert("Monto insuficiente", validacionEfectivo.mensaje);
+      return;
+    }
+
     setLoading(true);
     try {
       let clienteData = null;
 
-      // Usar apiConfig para obtener la URL dinámica
-      const clientesURL = apiConfig.isConfigured 
+      const clientesURL = apiConfig.isConfigured
         ? apiConfig.getEndpoint('/clientes')
         : CLIENTES_API;
 
-      // Si está marcado como invitado o no hay ningún dato, crear invitado
       if (esInvitado || (!dni && !nombre && !telefono)) {
-        // Crear cliente invitado automáticamente
-        console.log("🆕 Creando cliente invitado automático...");
-        const response = await axios.post(clientesURL, {}, { 
-          timeout: 10000, // Aumentado de 5000 a 10000ms
-          validateStatus: (status) => status < 500 // Aceptar errores 4xx sin lanzar excepción
+        const response = await axios.post(clientesURL, {}, {
+          timeout: 10000,
+          validateStatus: (status) => status < 500
         });
         clienteData = response.data;
-        console.log("✅ Cliente invitado creado:", clienteData.nombre);
       } else {
-        // Crear cliente registrado con los datos proporcionados
         const datosCliente = {};
-        
-        // Lógica: Si solo hay DNI, nombre = "Invitado" y sin teléfono
         if (dni && !nombre && !telefono) {
           datosCliente.dni = dni.trim();
           datosCliente.nombre = "Invitado";
-          // No se asigna teléfono
-        }
-        // Si solo hay Nombre, no hay DNI ni teléfono
-        else if (nombre && !dni && !telefono) {
+        } else if (nombre && !dni && !telefono) {
           datosCliente.nombre = nombre.trim();
-          // No se asigna DNI ni teléfono
-        }
-        // Si hay cualquier combinación de campos, usar los que estén llenos
-        else {
+        } else {
           if (dni && dni.trim()) datosCliente.dni = dni.trim();
           if (nombre && nombre.trim()) datosCliente.nombre = nombre.trim();
           if (telefono && telefono.trim()) datosCliente.telefono = telefono.trim();
         }
-
-        console.log("📝 Creando cliente registrado con datos:", datosCliente);
-        const response = await axios.post(clientesURL, datosCliente, { 
-          timeout: 10000, // Aumentado de 5000 a 10000ms
-          validateStatus: (status) => status < 500 // Aceptar errores 4xx sin lanzar excepción
+        const response = await axios.post(clientesURL, datosCliente, {
+          timeout: 10000,
+          validateStatus: (status) => status < 500
         });
         clienteData = response.data;
-        console.log("✅ Cliente registrado creado:", clienteData.nombre);
       }
 
-      // Llamar callback con el cliente seleccionado
-      onClienteSeleccionado(clienteData);
+      // Construir payload de pago
+      const datosPago = {
+        cliente: clienteData,
+        metodoPago,
+        montoRecibido: requiereEfectivo(metodoPago)
+          ? Math.round(montoRecibidoNum * 100) / 100
+          : null,
+        vuelto: requiereEfectivo(metodoPago) ? vueltoPreview : null,
+        moneda: monedaSeleccionada,
+        tipoCambioUsdUsado: monedaSeleccionada === 'USD' ? tipoCambioUsd : null,
+        totalEnMonedaCobro: totalEnMoneda,
+      };
+
+      // Callback legacy (compatibilidad) — entrega el cliente solo
+      if (onClienteSeleccionado) onClienteSeleccionado(clienteData);
+      // Callback nuevo preferido — entrega cliente + datos de pago
+      if (onPagoConfirmado) onPagoConfirmado(datosPago);
 
       // Limpiar formulario
       setDni("");
       setNombre("");
       setTelefono("");
       setEsInvitado(true);
-      
-      // ✅ Resetear loading después de éxito
+      resetEstadoPago();
       setLoading(false);
     } catch (error) {
-      console.error("❌ Error al crear cliente:", error);
-      
-      // ✅ SIEMPRE resetear loading en caso de error
       setLoading(false);
-      
-      // Manejo mejorado de errores de red
-      const isNetworkError = error.code === 'ECONNABORTED' || 
-                             error.code === 'ECONNREFUSED' ||
-                             error.message?.includes('Network Error') ||
-                             error.message?.includes('timeout') ||
-                             !error.response;
-      
+      const isNetworkError = error.code === 'ECONNABORTED' ||
+        error.code === 'ECONNREFUSED' ||
+        error.message?.includes('Network Error') ||
+        error.message?.includes('timeout') ||
+        !error.response;
       if (isNetworkError) {
         Alert.alert(
           "Error de Conexión",
-          "No se pudo crear el cliente debido a un error de red. Por favor, verifica tu conexión e intenta nuevamente.",
+          "No se pudo crear el cliente debido a un error de red. Verifica tu conexión e intenta nuevamente.",
           [
-            { 
-              text: "Reintentar", 
-              onPress: () => {
-                // Pequeño delay antes de reintentar para evitar loop infinito
-                setTimeout(() => handleContinuar(), 500);
-              }
-            },
-            { 
-              text: "Cancelar", 
-              style: "cancel"
-            }
+            { text: "Reintentar", onPress: () => setTimeout(() => handleContinuar(), 500) },
+            { text: "Cancelar", style: "cancel" }
           ]
         );
       } else {
-        // Error del servidor (no de red)
         const status = error.response?.status || 500;
         const errorMessage = error.response?.data?.message || error.message || "Error desconocido";
-        Alert.alert(
-          "Error",
-          `No se pudo crear el cliente (Error ${status}): ${errorMessage}`
-        );
+        Alert.alert("Error", `No se pudo crear el cliente (Error ${status}): ${errorMessage}`);
       }
     } finally {
-      // ✅ GARANTIZAR que el loading siempre se resetee (doble seguridad)
       setLoading(false);
     }
   };
@@ -146,7 +196,30 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
     setNombre("");
     setTelefono("");
     setEsInvitado(true);
-    onClose();
+    resetEstadoPago();
+    onClose && onClose();
+  };
+
+  const handleToggleMoneda = (nuevaMoneda) => {
+    if (nuevaMoneda === monedaSeleccionada) return;
+    if (nuevaMoneda === 'USD' && !usdDisponible) {
+      const motivo = !permitirUsd
+        ? 'El cobro en dólares no está habilitado. Pide al administrador que active "Permitir USD" en Configuración → Moneda y Precios.'
+        : 'No se ha configurado un tipo de cambio USD válido. Pide al administrador que lo defina en Configuración → Moneda y Precios.';
+      Alert.alert("USD no disponible", motivo);
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setMonedaSeleccionada(nuevaMoneda);
+    setMontoRecibidoStr("");
+  };
+
+  const handleSeleccionarMetodo = (metodo) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setMetodoPago(metodo);
+    if (metodo !== 'efectivo') {
+      setMontoRecibidoStr("");
+    }
   };
 
   return (
@@ -164,7 +237,7 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Información del Cliente</Text>
+              <Text style={styles.modalTitle}>Información del pago</Text>
               <TouchableOpacity onPress={handleCancelar} style={styles.closeButton}>
                 <MaterialCommunityIcons name="close" size={24} color="#333333" />
               </TouchableOpacity>
@@ -177,6 +250,139 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
               showsVerticalScrollIndicator={true}
             >
               <View style={styles.modalBody}>
+                {/* Total a cobrar */}
+                <View style={styles.totalCobroContainer}>
+                  <Text style={styles.totalCobroLabel}>Total a cobrar:</Text>
+                  <Text style={styles.totalCobroValue}>
+                    {totalEnMoneda == null
+                      ? '—'
+                      : formatearMontoConMoneda(totalEnMoneda, monedaSeleccionada, decimales)}
+                  </Text>
+                </View>
+
+                {/* Selector de moneda (toggle) */}
+                <View style={styles.bloqueSeccion}>
+                  <Text style={styles.bloqueLabel}>Moneda</Text>
+                  <View style={styles.toggleMonedaContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.toggleMonedaOpcion,
+                        monedaSeleccionada === 'PEN' && styles.toggleMonedaOpcionActiva,
+                      ]}
+                      onPress={() => handleToggleMoneda('PEN')}
+                      disabled={loading}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={[
+                          styles.toggleMonedaTexto,
+                          monedaSeleccionada === 'PEN' && styles.toggleMonedaTextoActivo,
+                        ]}
+                      >
+                        Soles (PEN)
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.toggleMonedaOpcion,
+                        monedaSeleccionada === 'USD' && styles.toggleMonedaOpcionActiva,
+                        !usdDisponible && styles.toggleMonedaOpcionDisabled,
+                      ]}
+                      onPress={() => handleToggleMoneda('USD')}
+                      disabled={loading || !usdDisponible}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={[
+                          styles.toggleMonedaTexto,
+                          monedaSeleccionada === 'USD' && styles.toggleMonedaTextoActivo,
+                          !usdDisponible && styles.toggleMonedaTextoDisabled,
+                        ]}
+                      >
+                        Dólares (USD)
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  {!usdDisponible && (
+                    <Text style={styles.notaMoneda}>
+                      {permitirUsd
+                        ? 'USD no disponible: define un tipo de cambio válido en Configuración.'
+                        : 'USD bloqueado: pide al admin activar "Permitir USD" en Configuración.'}
+                    </Text>
+                  )}
+                  {monedaSeleccionada === 'USD' && usdDisponible && (
+                    <Text style={styles.notaMoneda}>
+                      Tipo de cambio: 1 USD = S/. {Number(tipoCambioUsd).toFixed(2)}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Método de pago */}
+                <View style={styles.bloqueSeccion}>
+                  <Text style={styles.bloqueLabel}>Método de pago *</Text>
+                  <View style={styles.metodosContainer}>
+                    {METODOS_PAGO.map((m) => {
+                      const activo = metodoPago === m.value;
+                      return (
+                        <TouchableOpacity
+                          key={m.value}
+                          style={[
+                            styles.metodoOpcion,
+                            activo && styles.metodoOpcionActiva,
+                          ]}
+                          onPress={() => handleSeleccionarMetodo(m.value)}
+                          disabled={loading}
+                          activeOpacity={0.8}
+                        >
+                          <View style={[styles.radioExterno, activo && styles.radioExternoActivo]}>
+                            {activo && <View style={styles.radioInterno} />}
+                          </View>
+                          <Text style={[styles.metodoTexto, activo && styles.metodoTextoActivo]}>
+                            {m.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Bloque efectivo: monto recibido + vuelto */}
+                {requiereEfectivo(metodoPago) && (
+                  <View style={styles.bloqueEfectivo}>
+                    <View style={styles.inputContainer}>
+                      <MaterialCommunityIcons
+                        name="cash"
+                        size={20}
+                        color={theme.colors?.primary || "#667eea"}
+                        style={styles.inputIcon}
+                      />
+                      <TextInput
+                        style={[styles.input, { color: "#333333", fontSize: 16 }]}
+                        placeholder={`Con cuánto pagará (${simboloMoneda(monedaSeleccionada)})`}
+                        value={montoRecibidoStr}
+                        onChangeText={setMontoRecibidoStr}
+                        keyboardType="decimal-pad"
+                        placeholderTextColor="#999999"
+                        returnKeyType="done"
+                      />
+                    </View>
+                    {totalEnMoneda != null && (
+                      <View style={styles.vueltoContainer}>
+                        <Text style={styles.vueltoLabel}>Vuelto:</Text>
+                        <Text style={styles.vueltoValue}>
+                          {formatearMontoConMoneda(vueltoPreview ?? 0, monedaSeleccionada, decimales)}
+                        </Text>
+                      </View>
+                    )}
+                    {!validacionEfectivo.ok && (
+                      <Text style={styles.errorInline}>{validacionEfectivo.mensaje}</Text>
+                    )}
+                  </View>
+                )}
+
+                {/* Separador */}
+                <View style={styles.separadorSecciones} />
+
                 {/* Checkbox para Invitado */}
                 <TouchableOpacity
                   style={styles.checkboxContainer}
@@ -197,11 +403,10 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
                   </Text>
                 </TouchableOpacity>
 
-                {/* Formulario opcional */}
+                {/* Formulario opcional de cliente */}
                 <View style={styles.formContainer}>
                   <Text style={styles.formTitle}>Registrar datos del cliente:</Text>
 
-                  {/* Nombre primero */}
                   <View style={styles.inputContainer}>
                     <MaterialCommunityIcons
                       name="account"
@@ -224,7 +429,6 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
                     />
                   </View>
 
-                  {/* DNI segundo */}
                   <View style={styles.inputContainer}>
                     <MaterialCommunityIcons
                       name="card-account-details"
@@ -247,7 +451,6 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
                     />
                   </View>
 
-                  {/* Teléfono tercero */}
                   <View style={styles.inputContainer}>
                     <MaterialCommunityIcons
                       name="phone"
@@ -298,11 +501,17 @@ const ModalClientes = ({ visible, onClose, onClienteSeleccionado }) => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   handleContinuar();
                 }}
-                disabled={loading}
+                disabled={loading || !puedeContinuar}
                 activeOpacity={0.8}
                 style={{ flex: 1 }}
               >
-                <View style={[styles.buttonNew, { minHeight: 52 * escala, backgroundColor: colors.success }, loading && styles.buttonDisabled]}>
+                <View
+                  style={[
+                    styles.buttonNew,
+                    { minHeight: 52 * escala, backgroundColor: colors.success },
+                    (loading || !puedeContinuar) && styles.buttonDisabled,
+                  ]}
+                >
                   {loading ? (
                     <ActivityIndicator color="#FFFFFF" />
                   ) : (
@@ -373,12 +582,167 @@ const modalStyles = (theme) => StyleSheet.create({
     padding: 20,
     backgroundColor: "#FFFFFF",
   },
-  modalSubtitle: {
-    fontSize: 14,
-    color: theme.colors?.text?.light || "#666",
-    marginBottom: 20,
-    textAlign: "center",
+  // Total a cobrar
+  totalCobroContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#F0F4FF",
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: theme.colors?.primary ? `${theme.colors.primary}33` : "#667eea33",
   },
+  totalCobroLabel: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#333333",
+  },
+  totalCobroValue: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: theme.colors?.primary || "#667eea",
+  },
+  // Bloques genéricos
+  bloqueSeccion: {
+    marginBottom: 16,
+  },
+  bloqueLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333333",
+    marginBottom: 10,
+  },
+  separadorSecciones: {
+    height: 1,
+    backgroundColor: "#E0E0E0",
+    marginVertical: 14,
+  },
+  // Toggle moneda
+  toggleMonedaContainer: {
+    flexDirection: "row",
+    backgroundColor: "#F0F0F0",
+    borderRadius: 10,
+    padding: 4,
+  },
+  toggleMonedaOpcion: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderRadius: 8,
+  },
+  toggleMonedaOpcionActiva: {
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  toggleMonedaOpcionDisabled: {
+    opacity: 0.45,
+  },
+  toggleMonedaTexto: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#666666",
+  },
+  toggleMonedaTextoActivo: {
+    color: theme.colors?.primary || "#667eea",
+  },
+  toggleMonedaTextoDisabled: {
+    color: "#999999",
+  },
+  notaMoneda: {
+    fontSize: 12,
+    color: "#888888",
+    marginTop: 8,
+    fontStyle: "italic",
+  },
+  // Métodos de pago
+  metodosContainer: {
+    flexDirection: "column",
+    gap: 8,
+  },
+  metodoOpcion: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderWidth: 1.5,
+    borderColor: "#DDDDDD",
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+  },
+  metodoOpcionActiva: {
+    borderColor: theme.colors?.primary || "#667eea",
+    backgroundColor: "#F0F4FF",
+  },
+  radioExterno: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: "#CCCCCC",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  radioExternoActivo: {
+    borderColor: theme.colors?.primary || "#667eea",
+  },
+  radioInterno: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: theme.colors?.primary || "#667eea",
+  },
+  metodoTexto: {
+    fontSize: 15,
+    color: "#333333",
+    fontWeight: "500",
+  },
+  metodoTextoActivo: {
+    fontWeight: "700",
+    color: theme.colors?.primary || "#667eea",
+  },
+  // Bloque efectivo
+  bloqueEfectivo: {
+    backgroundColor: "#FAFAFA",
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#E5E5E5",
+  },
+  vueltoContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E5E5",
+  },
+  vueltoLabel: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#333333",
+  },
+  vueltoValue: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: colors.success,
+  },
+  errorInline: {
+    fontSize: 13,
+    color: colors.danger,
+    marginTop: 8,
+    fontWeight: "500",
+  },
+  // Cliente
   checkboxContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -441,45 +805,6 @@ const modalStyles = (theme) => StyleSheet.create({
     borderTopColor: "#E0E0E0",
     backgroundColor: "#FFFFFF",
   },
-  button: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 15,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    overflow: 'visible',
-    minHeight: 48,
-    marginHorizontal: 5,
-  },
-  buttonCancel: {
-    backgroundColor: theme.colors?.background?.light || "#f5f5f5",
-  },
-  buttonCancelText: {
-    color: "#333333",
-    fontSize: 16,
-    fontWeight: "600",
-    flexShrink: 0,
-    includeFontPadding: false,
-    textShadowColor: 'rgba(0,0,0,0.1)',
-    textShadowOffset: {width: 0, height: 1},
-    textShadowRadius: 1,
-  },
-  buttonContinue: {
-    backgroundColor: theme.colors?.primary || "#667eea",
-  },
-  buttonContinueText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-    marginLeft: 8,
-    flexShrink: 0,
-    includeFontPadding: false,
-    textShadowColor: 'rgba(0,0,0,0.3)',
-    textShadowOffset: {width: 0, height: 1},
-    textShadowRadius: 2,
-  },
   buttonNew: {
     flexDirection: "row",
     justifyContent: "center",
@@ -495,9 +820,8 @@ const modalStyles = (theme) => StyleSheet.create({
     elevation: 6,
   },
   buttonDisabled: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
 });
 
 export default ModalClientes;
-

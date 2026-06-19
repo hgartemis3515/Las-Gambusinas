@@ -137,6 +137,20 @@ export async function generarPdfBoucherNativo(opts) {
   const igvPorcentaje =
     boucher?.configuracionIGV?.igvPorcentaje || configMoneda?.igvPorcentaje || 18;
 
+  // 🔥 Símbolo de moneda según la moneda de cobro del boucher (PEN/USD)
+  const monedaCobro = boucher?.moneda || 'PEN';
+  const simboloMonedaCobro = monedaCobro === 'USD' ? '$' : simboloMoneda;
+  // 🔥 Etiqueta de método de pago + moneda
+  const metodoPagoLabelBoucher = (() => {
+    const label = boucher?.metodoPagoLabel || (
+      boucher?.metodoPago === 'efectivo' ? 'Efectivo'
+      : boucher?.metodoPago === 'digital' ? 'YAPE/PLIN'
+      : boucher?.metodoPago === 'tarjeta' ? 'CRÉDITO/DÉBITO'
+      : 'Efectivo'
+    );
+    return `${label} (${monedaCobro})`;
+  })();
+
   const primeraComanda = usarBoucherBackend ? null : comandas[0];
   const fechaPedido = usarBoucherBackend
     ? moment(boucher.fechaPedido || boucher.createdAt).tz('America/Lima')
@@ -325,7 +339,11 @@ export async function generarPdfBoucherNativo(opts) {
     addWrapped(`Son: ${numeroALetras(totalFinal)}`, 'left', { size: SIZE_SM });
   }
 
-  addLabel('Pago', boucher?.metodoPago || 'Efectivo');
+  addLabel('Pago', metodoPagoLabelBoucher);
+  if (boucher?.metodoPago === 'efectivo' && boucher?.montoRecibido != null) {
+    addPad('Recibido:', `${simboloMonedaCobro} ${Number(boucher.montoRecibido).toFixed(2)}`);
+    addPad('Vuelto:', `${simboloMonedaCobro} ${Number(boucher.vuelto ?? 0).toFixed(2)}`, { bold: true });
+  }
 
   if (b.mostrarDatosCliente) {
     addRule();

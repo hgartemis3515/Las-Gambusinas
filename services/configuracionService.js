@@ -107,6 +107,10 @@ export const obtenerConfigMoneda = async () => {
         simboloMoneda: config.simboloMoneda || 'S/.',
         decimales: config.decimales ?? 2,
         posicionSimbolo: config.posicionSimbolo || 'antes',
+        // Permitir cobro en USD (llave maestra del toggle de moneda en el modal de pago)
+        permitirUsd: config.permitirUsd === true,
+        // Tipo de cambio USD (PEN por 1 USD). null si no está configurado.
+        tipoCambioUsd: config.tipoCambioUsd ?? null,
         igvPorcentaje: config.igvPorcentaje ?? 18,
         preciosIncluyenIGV: config.preciosIncluyenIGV || false,
         nombreImpuestoPrincipal: config.nombreImpuestoPrincipal || 'IGV',

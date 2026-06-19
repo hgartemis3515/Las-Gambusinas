@@ -115,6 +115,20 @@ export function generarXmlBoucher({
   const igvPorcentaje =
     boucher?.configuracionIGV?.igvPorcentaje || configMoneda?.igvPorcentaje || 18;
 
+  // 🔥 Símbolo de moneda según la moneda de cobro del boucher (PEN/USD)
+  const monedaCobro = boucher?.moneda || 'PEN';
+  const simboloMonedaCobro = monedaCobro === 'USD' ? '$' : simboloMoneda;
+  // 🔥 Etiqueta de método de pago + moneda
+  const metodoPagoLabelBoucher = (() => {
+    const label = boucher?.metodoPagoLabel || (
+      boucher?.metodoPago === 'efectivo' ? 'Efectivo'
+      : boucher?.metodoPago === 'digital' ? 'YAPE/PLIN'
+      : boucher?.metodoPago === 'tarjeta' ? 'CRÉDITO/DÉBITO'
+      : 'Efectivo'
+    );
+    return `${label} (${monedaCobro})`;
+  })();
+
   const primeraComanda = usarBoucherBackend ? null : comandas[0];
   const fechaPedido = usarBoucherBackend
     ? moment(boucher.fechaPedido || boucher.createdAt).tz('America/Lima')
@@ -292,7 +306,11 @@ export function generarXmlBoucher({
     parts.push(texto(`Son: ${numeroALetras(totalFinal)}`));
   }
 
-  parts.push(lineaEtiqueta('Pago', boucher?.metodoPago || 'Efectivo'));
+  parts.push(lineaEtiqueta('Pago', metodoPagoLabelBoucher));
+  if (boucher?.metodoPago === 'efectivo' && boucher?.montoRecibido != null) {
+    parts.push(texto(`Recibido: ${simboloMonedaCobro} ${Number(boucher.montoRecibido).toFixed(2)}`, 'align="right"'));
+    parts.push(texto(`Vuelto: ${simboloMonedaCobro} ${Number(boucher.vuelto ?? 0).toFixed(2)}`, 'align="right" em="true"'));
+  }
 
   if (b.mostrarDatosCliente) {
     parts.push(divider());

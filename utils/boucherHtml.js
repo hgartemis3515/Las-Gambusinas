@@ -99,6 +99,20 @@ export function generarHtmlBoucher({
   const igvPorcentaje =
     boucher?.configuracionIGV?.igvPorcentaje || configMoneda?.igvPorcentaje || 18;
 
+  // 🔥 Símbolo de moneda según la moneda de cobro del boucher (PEN/USD)
+  const monedaCobro = boucher?.moneda || 'PEN';
+  const simboloMonedaCobro = monedaCobro === 'USD' ? '$' : simboloMoneda;
+  // 🔥 Etiqueta de método de pago + moneda
+  const metodoPagoLabelBoucher = (() => {
+    const label = boucher?.metodoPagoLabel || (
+      boucher?.metodoPago === 'efectivo' ? 'Efectivo'
+      : boucher?.metodoPago === 'digital' ? 'YAPE/PLIN'
+      : boucher?.metodoPago === 'tarjeta' ? 'CRÉDITO/DÉBITO'
+      : 'Efectivo'
+    );
+    return `${label} (${monedaCobro})`;
+  })();
+
   const primeraComanda = usarBoucherBackend ? null : comandas[0];
   const fechaPedido = usarBoucherBackend
     ? moment(boucher.fechaPedido || boucher.createdAt).tz('America/Lima')
@@ -277,7 +291,11 @@ export function generarHtmlBoucher({
     html += `<div style="font-style:italic;font-size:11px;margin-top:4px;line-height:1.3;width:100%;">Son: ${escapeHtml(numeroALetras(totalFinal))}</div>`;
   }
 
-  html += `<div style="margin-top:4px;font-size:12px;width:100%;">Pago: ${escapeHtml(boucher?.metodoPago || 'Efectivo')}</div>`;
+  html += `<div style="margin-top:4px;font-size:12px;width:100%;">Pago: ${escapeHtml(metodoPagoLabelBoucher)}</div>`;
+  if (boucher?.metodoPago === 'efectivo' && boucher?.montoRecibido != null) {
+    html += `<div style="margin-top:2px;font-size:12px;width:100%;">Recibido: ${escapeHtml(simboloMonedaCobro)} ${Number(boucher.montoRecibido).toFixed(2)}</div>`;
+    html += `<div style="margin-top:2px;font-size:13px;font-weight:700;width:100%;">Vuelto: ${escapeHtml(simboloMonedaCobro)} ${Number(boucher.vuelto ?? 0).toFixed(2)}</div>`;
+  }
 
   if (b.mostrarDatosCliente) {
     html += `<div style="border-top:1px dashed #333;margin:${e.espacioDivider || 8}px 0;width:100%;"></div>`;

@@ -637,6 +637,23 @@ const PagosScreen = () => {
   const mostrarVouchersParciales = bouchersParciales.length > 0;
   const simboloMoneda = configMoneda?.simboloMoneda || 'S/.';
   const decimalesMoneda = configMoneda?.decimales ?? 2;
+  // 🔥 Tipo de cambio USD y permiso desde la configuración del sistema
+  const tipoCambioUsd = configMoneda?.tipoCambioUsd ?? null;
+  const permitirUsd = configMoneda?.permitirUsd === true;
+
+  // 🔥 Datos de pago seleccionados en el modal (método, moneda, monto, vuelto)
+  const [datosPagoSeleccionado, setDatosPagoSeleccionado] = useState(null);
+
+  // Total a cobrar en la moneda base (PEN) que se pasará al modal.
+  // Respeta IGV y pago parcial usando totalesPagoActual.
+  const totalBaseCobro = useMemo(() => {
+    if (totalesPagoActual?.total != null) return totalesPagoActual.total;
+    const paramsParaTotal = route.params || {};
+    const totalParam = (paramsParaTotal.totalPendiente != null ? paramsParaTotal.totalPendiente : null) ?? total ?? 0;
+    const igvPorcentaje = configMoneda?.igvPorcentaje || 18;
+    const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
+    return incluyeIGV ? totalParam : totalParam * (1 + igvPorcentaje / 100);
+  }, [totalesPagoActual, route.params, total, configMoneda]);
 
   const formatearFechaVoucher = (b) =>
     b?.fechaPagoString ||
@@ -1218,10 +1235,17 @@ const PagosScreen = () => {
   };
 
   // ✅ MEJORADO: try/catch/finally para evitar loading infinito
-  const procesarPagoConCliente = async (cliente, omitirConfirmacionParcial = false) => {
+  const procesarPagoConCliente = async (cliente, datosPago = null, omitirConfirmacionParcial = false) => {
     // ✅ Validaciones ANTES de activar loading
     if (!cliente || !cliente._id) {
       Alert.alert("Error", "No se pudo obtener la información del cliente. Por favor, intenta nuevamente.");
+      return;
+    }
+
+    // ✅ Usar datosPago pasados o el estado (cuando retry invoca sin datosPago)
+    const pagoDatos = datosPago || datosPagoSeleccionado || null;
+    if (!pagoDatos || !pagoDatos.metodoPago) {
+      Alert.alert("Error", "Debe seleccionar un método de pago antes de continuar.");
       return;
     }
 
@@ -1278,7 +1302,7 @@ const PagosScreen = () => {
           { text: "Cancelar", style: "cancel" },
           {
             text: "Sí, cobrar parcial",
-            onPress: () => procesarPagoConCliente(cliente, true),
+            onPress: () => procesarPagoConCliente(cliente, pagoDatos, true),
           },
         ]
       );
@@ -1335,6 +1359,14 @@ const PagosScreen = () => {
         platosSeleccionados: platosPayload,
         observaciones:
           comandasFinales.map((c) => c.observaciones).filter(Boolean).join("; ") || "",
+        // 🔥 Datos de pago (método, moneda, monto recibido, vuelto)
+        metodoPago: pagoDatos.metodoPago,
+        moneda: pagoDatos.moneda || 'PEN',
+        tipoCambioUsd: pagoDatos.moneda === 'USD' ? (pagoDatos.tipoCambioUsdUsado || tipoCambioUsd) : null,
+        ...(pagoDatos.metodoPago === 'efectivo' && {
+          montoRecibido: pagoDatos.montoRecibido,
+          vuelto: pagoDatos.vuelto,
+        }),
       };
       
       console.log("📤 [PAGO] Enviando al backend (parcial):", {
@@ -1827,7 +1859,8 @@ const PagosScreen = () => {
     }
   };
 
-  const handleClienteSeleccionado = (cliente) => {
+  const handlePagoConfirmado = (datosPago) => {
+    const cliente = datosPago?.cliente;
     // ✅ Validar cliente antes de continuar
     if (!cliente || !cliente._id) {
       Alert.alert("Error", "No se pudo obtener la información del cliente. Por favor, intenta nuevamente.");
@@ -1836,39 +1869,45 @@ const PagosScreen = () => {
 
     // ✅ Cerrar modal inmediatamente
     setModalClienteVisible(false);
-    
-    // ✅ Calcular total correctamente (usar route.params si está disponible)
-    const paramsParaTotal = route.params || {};
-    // FIX: No usar || porque 0 es válido (descuento 100%)
-    const totalParaMostrar = (paramsParaTotal.totalPendiente != null ? paramsParaTotal.totalPendiente : null) ?? total ?? 0;
-    
-    // Usar configuración de moneda para el cálculo
-    const igvPorcentaje = configMoneda?.igvPorcentaje || 18;
+
+    // ✅ Guardar datos de pago seleccionados
+    setDatosPagoSeleccionado(datosPago);
+
+    // ✅ Calcular total y etiqueta para el Alert usando la moneda elegida en el modal
+    const simbolo = datosPago?.moneda === 'USD' ? '$' : (configMoneda?.simboloMoneda || 'S/.');
     const decimales = configMoneda?.decimales ?? 2;
-    const simbolo = configMoneda?.simboloMoneda || 'S/.';
-    const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
-    
-    let totalFinal;
-    if (incluyeIGV) {
-      // Los precios ya incluyen IGV - el total es el precio tal cual
-      totalFinal = totalParaMostrar;
-    } else {
-      // Los precios NO incluyen IGV - sumar IGV
-      totalFinal = totalParaMostrar * (1 + igvPorcentaje / 100);
+    const totalAlert =
+      datosPago?.totalEnMonedaCobro != null ? datosPago.totalEnMonedaCobro : totalBaseCobro;
+    const totalFormateado = Number(totalAlert).toFixed(decimales);
+
+    const metodoLabel = (() => {
+      switch (datosPago?.metodoPago) {
+        case 'efectivo': return 'Efectivo';
+        case 'digital': return 'YAPE/PLIN';
+        case 'tarjeta': return 'CRÉDITO/DÉBITO';
+        default: return '';
+      }
+    })();
+
+    let vueltoLinea = '';
+    if (datosPago?.metodoPago === 'efectivo' && datosPago?.vuelto != null) {
+      vueltoLinea = `\nVuelto: ${simbolo} ${Number(datosPago.vuelto).toFixed(decimales)}`;
     }
-    
-    const totalFormateado = totalFinal.toFixed(decimales);
-    
+
     // ✅ Mostrar confirmación antes de procesar el pago
     Alert.alert(
       "Confirmar Pago",
-      `¿Deseas continuar con el pago para el cliente ${cliente.nombre || "Invitado"}?\n\nTotal: ${simbolo} ${totalFormateado}`,
+      `¿Deseas continuar con el pago para el cliente ${cliente.nombre || "Invitado"}?\n\n` +
+      `Total: ${simbolo} ${totalFormateado}` +
+      (metodoLabel ? `\nMétodo: ${metodoLabel}` : '') +
+      vueltoLinea,
       [
         {
           text: "NO",
           style: "cancel",
           onPress: () => {
             setClienteSeleccionado(null);
+            setDatosPagoSeleccionado(null);
           }
         },
         {
@@ -1876,12 +1915,17 @@ const PagosScreen = () => {
           onPress: () => {
             // ✅ Guardar cliente seleccionado y procesar
             setClienteSeleccionado(cliente);
-            // Procesar el pago con el cliente seleccionado
-            procesarPagoConCliente(cliente);
+            // Procesar el pago con el cliente y los datos de pago
+            procesarPagoConCliente(cliente, datosPago);
           }
         }
       ]
     );
+  };
+
+  // 🔥 Compatibilidad legacy: si algo invoca onClienteSeleccionado directamente
+  const handleClienteSeleccionado = (cliente) => {
+    handlePagoConfirmado({ cliente, metodoPago: null, montoRecibido: null, vuelto: null, moneda: 'PEN', totalEnMonedaCobro: totalBaseCobro });
   };
 
   // Si no hay comandas ni boucher, mostrar pantalla vacía
@@ -2514,11 +2558,16 @@ const PagosScreen = () => {
         )}
       </View>
 
-      {/* Modal de Clientes */}
+      {/* Modal de Clientes / Información del pago */}
       <ModalClientes
         visible={modalClienteVisible}
         onClose={() => setModalClienteVisible(false)}
         onClienteSeleccionado={handleClienteSeleccionado}
+        onPagoConfirmado={handlePagoConfirmado}
+        totalACobrar={totalBaseCobro}
+        tipoCambioUsd={tipoCambioUsd}
+        permitirUsd={permitirUsd}
+        decimales={decimalesMoneda}
       />
 
       {/* Modal de Propinas */}
