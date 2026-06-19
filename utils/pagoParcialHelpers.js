@@ -41,15 +41,27 @@ export function listarPlatosPagables(comandas) {
   return items;
 }
 
-/** Lista para UI de Pagos: entregados (seleccionables) + pagados (solo lectura con check). */
-export function listarPlatosEnPantallaPago(comandas) {
+/** Lista para UI de Pagos: entregados (seleccionables) + pagados (solo lectura con check).
+ *  Si esPagoAdelantado=true, también incluye platos en pedido/en_espera (elegibles para PPA). */
+export function listarPlatosEnPantallaPago(comandas, esPagoAdelantado = false) {
   const items = [];
   (comandas || []).forEach((comanda) => {
     const comandaId = comanda._id?.toString?.() || comanda._id;
     (comanda.platos || []).forEach((platoItem, index) => {
       if (platoItem.eliminado || platoItem.anulado) return;
       const estado = (platoItem.estado || '').toLowerCase();
-      if (estado !== 'entregado' && estado !== 'pagado') return;
+      // Platos pagados siempre se muestran
+      if (estado === 'pagado') {
+        // OK, se muestra como ya pagado
+      } else if (estado === 'entregado') {
+        // OK, se muestra como entregado seleccionable
+      } else if (esPagoAdelantado && (estado === 'pedido' || estado === 'en_espera')) {
+        // OK, en modo PPA se muestran platos pendientes
+      } else if (esPagoAdelantado && platoItem.pagoAdelantado?.estadoTicket === 'pendiente_aprobacion') {
+        // OK, platos con TPA pendiente aún se muestran en PPA
+      } else {
+        return; // No mostrar este estado
+      }
       const plato = platoItem.plato || platoItem;
       const cantidad = comanda.cantidades?.[index] || platoItem.cantidad || 1;
       const precio = plato?.precio || platoItem.precio || 0;

@@ -1216,8 +1216,9 @@ const InicioScreen = () => {
             const mesaAnterior = nuevas[index];
             const estadoAnterior = mesaAnterior.estado;
             
-            // Solo actualizar si el estado es diferente y no es un estado especial (pagado, pagando, reservado)
-            const estadosEspeciales = ['pagado', 'pagando', 'reservado'];
+            // Solo actualizar si el estado es diferente y no es un estado especial (pagado, pagando, reservado, pendiente_pago)
+            // pendiente_pago: PPA registrado — no debe ser sobrescrito por comanda-actualizada hasta que cocina apruebe/rechace
+            const estadosEspeciales = ['pagado', 'pagando', 'reservado', 'pendiente_pago'];
             if (nuevoEstadoMesa && estadoAnterior?.toLowerCase() !== nuevoEstadoMesa && !estadosEspeciales.includes(estadoAnterior?.toLowerCase())) {
               console.log(`🎨 [ANIMACION] Mesa ${mesaNum} cambiará de "${estadoAnterior}" a "${nuevoEstadoMesa}"`);
               nuevas[index] = { ...mesaAnterior, estado: nuevoEstadoMesa };
@@ -1817,6 +1818,11 @@ const InicioScreen = () => {
       return mesa.estado.charAt(0).toUpperCase() + mesa.estado.slice(1).toLowerCase();
     }
 
+    // Prioridad 1.5: si la mesa está en "pendiente_pago" (pago adelantado registrado), mostrarla naranja
+    if (mesa.estado && mesa.estado.toLowerCase() === "pendiente_pago") {
+      return "Pendiente de pago";
+    }
+
     // Prioridad 2: si la mesa está reservada, mostrarla morada aunque no tenga comandas
     // Esto es importante porque una reserva no crea comanda hasta que el mozo asignado la active
     if (mesa.estado && mesa.estado.toLowerCase() === "reservado") {
@@ -2041,6 +2047,9 @@ const InicioScreen = () => {
         return theme.colors.mesaEstado.pagado || "#4CAF50"; // Verde
       case "pagando":
         return theme.colors.mesaEstado.pagando || "#00C851"; // Verde
+      case "pendiente_pago":
+      case "pendiente de pago":
+        return theme.colors.mesaEstado.pendiente_pago || "#FF9800"; // Naranja
       case "reservado":
         return theme.colors.mesaEstado.reservado || "#9C27B0"; // Morado
       default:
@@ -2259,6 +2268,49 @@ const InicioScreen = () => {
         });
         console.log(`✅ Navegando a ComandaDetalle con ${comandasOrdenadas.length} comanda(s) activa(s)`);
       }
+    } else if (estado === "Pendiente de pago" || estado?.toLowerCase() === "pendiente_pago") {
+      // Mesa con Pago Adelantado registrado - mostrar opciones de Imprimir Ticket y Ver Pedido
+      const todasComandasMesa = getTodasComandasPorMesa(mesa.nummesa);
+      const comandasActivas = todasComandasMesa.filter(c =>
+        c.status?.toLowerCase() === "pedido" ||
+        c.status?.toLowerCase() === "en_espera" ||
+        c.status?.toLowerCase() === "recoger"
+      );
+
+      // Buscar boucher del PPA si existe
+      const boucherPPA = mesa.boucher || null;
+
+      Alert.alert(
+        `Mesa ${mesa.nummesa} - Pendiente de Pago`,
+        `Esta mesa tiene un pago adelantado registrado, esperando aprobación de cocina.`,
+        [
+          {
+            text: "Imprimir Ticket",
+            onPress: () => {
+              navigation.navigate("Pagos", {
+                mesa: mesa,
+                comandasParaPagar: comandasActivas,
+                totalPendiente: mesa.totalPendiente,
+                origen: "PagoAdelantado",
+              });
+            }
+          },
+          {
+            text: "Ver Pedido",
+            onPress: () => {
+              navigation.navigate("ComandaDetalle", {
+                mesa,
+                comandas: comandasActivas,
+                origen: "PagoAdelantado",
+              });
+            }
+          },
+          {
+            text: "Cerrar",
+            style: "cancel"
+          }
+        ]
+      );
     } else if (estado === "Pagado" || estado?.toLowerCase() === "pagado") {
       // Mesa en estado Pagado - mostrar opciones de Imprimir Boucher y Liberar
       const todasComandasMesa = getTodasComandasPorMesa(mesa.nummesa);

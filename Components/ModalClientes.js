@@ -153,10 +153,16 @@ const ModalClientes = ({
         totalEnMonedaCobro: totalEnMoneda,
       };
 
-      // Callback legacy (compatibilidad) — entrega el cliente solo
-      if (onClienteSeleccionado) onClienteSeleccionado(clienteData);
-      // Callback nuevo preferido — entrega cliente + datos de pago
-      if (onPagoConfirmado) onPagoConfirmado(datosPago);
+      // Solo usar el callback nuevo (onPagoConfirmado) que incluye cliente + datos de pago.
+      // No llamar onClienteSeleccionado porque PagosScreen pasa ambos callbacks,
+      // y handleClienteSeleccionado termina llamando handlePagoConfirmado también,
+      // causando doble alerta de confirmación.
+      if (onPagoConfirmado) {
+        onPagoConfirmado(datosPago);
+      } else if (onClienteSeleccionado) {
+        // Fallback legacy solo si onPagoConfirmado no está definido
+        onClienteSeleccionado(clienteData);
+      }
 
       // Limpiar formulario
       setDni("");

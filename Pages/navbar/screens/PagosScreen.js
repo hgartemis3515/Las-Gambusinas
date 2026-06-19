@@ -18,6 +18,7 @@ import { useTheme } from "../../../context/ThemeContext";
 import { themeLight, textIconos } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
 import { COMANDA_API, MESAS_API_UPDATE, COMANDASEARCH_API_GET, BOUCHER_API, CLIENTES_API, SELECTABLE_API_GET, DISHES_API, apiConfig } from "../../../apiConfig";
+import { getFallbackApiBase } from "../../../config/envDefaults";
 import ModalClientes from "../../../Components/ModalClientes";
 import ModalRegistrarPropina from "./ModalRegistrarPropina";
 import ModalPagoExitoso from "./ModalPagoExitoso";
@@ -305,6 +306,9 @@ const PagosScreen = () => {
   // IMPORTANTE: Leer route.params directamente en cada render para Tab Navigator
   const routeParams = route.params || {};
   const { mesa: mesaParam, comandasParaPagar, totalPendiente: _totalPendiente, boucher: boucherFromParams } = routeParams;
+  
+  // 🔥 PAGO ADELANTADO (PPA): Detectar modo PPA desde origen
+  const esPagoAdelantado = routeParams.origen === 'PagoAdelantado';
   
   const [comandas, setComandas] = useState([]);
   const [mesa, setMesa] = useState(null);
@@ -752,6 +756,12 @@ const PagosScreen = () => {
 
       let syncCancelled = false;
       if (currentMesa?._id && !currentBoucher && currentComandas?.length > 0) {
+        // 🔥 PPA: No re-sincronizar comandas desde el backend cuando es pago adelantado
+        // Las comandas PPA ya vienen filtradas del backend (endpoint dedicado)
+        // y la re-sincronización puede traer platos de otras comandas o ciclos
+        if (currentParams.origen === 'PagoAdelantado') {
+          console.log("⏭️ [PAGOS] Pago Adelantado - omitiendo re-sincronización de comandas");
+        } else {
         (async () => {
           try {
             const backend = await fetchComandasBackendParaMesa(
@@ -775,6 +785,7 @@ const PagosScreen = () => {
             if (__DEV__) console.warn("[PAGOS] Sync al enfocar:", e?.message);
           }
         })();
+        } // fin else (PPA skip)
       }
 
       subscribeToEvents({
@@ -939,7 +950,7 @@ const PagosScreen = () => {
     const paramsParaCalc = route.params || {};
     const comandasDeParams = paramsParaCalc.comandasParaPagar || [];
     const comandasParaCalc = comandas.length > 0 ? comandas : comandasDeParams;
-    return listarPlatosEnPantallaPago(comandasParaCalc);
+    return listarPlatosEnPantallaPago(comandasParaCalc, esPagoAdelantado);
   }, [comandas, route.params]);
 
   const platosPagables = useMemo(
@@ -1342,9 +1353,14 @@ const PagosScreen = () => {
       }
 
       // ✅ USAR ENDPOINT POST /boucher con comandasIds - Backend valida y procesa todo
-      const boucherURL = apiConfig.isConfigured 
-        ? apiConfig.getEndpoint('/boucher')
-        : BOUCHER_API;
+      // 🔥 PAGO ADELANTADO (PPA): Redirigir a endpoint dedicado si es PPA
+      const boucherURL = esPagoAdelantado
+        ? (apiConfig.isConfigured 
+            ? apiConfig.getEndpoint('/pago-adelantado')
+            : `${getFallbackApiBase()}/pago-adelantado`)
+        : (apiConfig.isConfigured 
+            ? apiConfig.getEndpoint('/boucher')
+            : BOUCHER_API);
       
       // Extraer IDs de mesa de forma segura
       let mesaIdFinal = mesaFinal._id;
@@ -1367,6 +1383,8 @@ const PagosScreen = () => {
           montoRecibido: pagoDatos.montoRecibido,
           vuelto: pagoDatos.vuelto,
         }),
+        // 🔥 PAGO ADELANTADO (PPA): flag para diferenciar de pago normal
+        ...(esPagoAdelantado && { esPagoAdelantado: true }),
       };
       
       console.log("📤 [PAGO] Enviando al backend (parcial):", {
@@ -1581,7 +1599,10 @@ const PagosScreen = () => {
               const detalles = errorData.details ? `\n\nDetalles: ${JSON.stringify(errorData.details)}` : '';
               throw new Error(`Datos inválidos: ${backendError}${detalles}`);
             } else if (status === 500) {
-              throw new Error("Error en el servidor. Por favor, intenta nuevamente o contacta al administrador.");
+              // 🔥 DEBUG: Mostrar error del backend completo para diagnóstico
+              const backendError500 = errorData.error || errorData.message || errorMsg;
+              console.error('❌ [PAGO] Error 500 del backend:', JSON.stringify(errorData));
+              throw new Error(`Error en el servidor: ${backendError500}. Intenta nuevamente o contacta al administrador.`);
             } else {
               throw new Error(`Error ${status}: ${errorMsg}`);
             }
@@ -1602,6 +1623,33 @@ const PagosScreen = () => {
         setBoucherData(boucherCreado);
       } else {
         throw new Error("No se pudo crear el boucher. Por favor, intenta nuevamente.");
+      }
+
+      // 🔥 PAGO ADELANTADO (PPA): Flujo especial - no marcar mesa como pagada
+      if (esPagoAdelantado) {
+        setProcesandoPago(false);
+        setMensajeCarga("Procesando pago...");
+
+        // Mostrar mensaje de PPA registrado, esperando aprobación de cocina
+        Alert.alert(
+          "Pago Adelantado Registrado",
+          `El pago adelantado para la Mesa ${mesaFinal?.nummesa || '?'} ha sido registrado correctamente.\n\n` +
+          `Voucher: ${boucherCreado.voucherId || boucherCreado.boucherNumber || 'N/A'}\n` +
+          `Total: S/. ${(boucherCreado.total || 0).toFixed(2)}\n\n` +
+          `Esperando aprobación de cocina para que los platos entren a preparación.`,
+          [
+            {
+              text: "Entendido",
+              onPress: () => {
+                setComandas([]);
+                setMesa(null);
+                setBoucherData(null);
+                navigation.navigate("Inicio", { refresh: true });
+              },
+            },
+          ]
+        );
+        return; // Salir del flujo normal de pago
       }
 
       const mesaCompletamentePagadaEarly = resumenPago?.mesaPagadaCompletamente === true;
@@ -1895,12 +1943,20 @@ const PagosScreen = () => {
     }
 
     // ✅ Mostrar confirmación antes de procesar el pago
+    const tituloConfirmacion = esPagoAdelantado ? "Confirmar Pago Adelantado" : "Confirmar Pago";
+    const mensajeConfirmacion = esPagoAdelantado
+      ? `¿Deseas confirmar el pago adelantado para el cliente ${cliente.nombre || "Invitado"}?\n\n` +
+        `Total: ${simbolo} ${totalFormateado}` +
+        (metodoLabel ? `\nMétodo: ${metodoLabel}` : '') +
+        `\n\nLos platos entrarán a cocina tras la aprobación de este ticket.`
+      : `¿Deseas continuar con el pago para el cliente ${cliente.nombre || "Invitado"}?\n\n` +
+        `Total: ${simbolo} ${totalFormateado}` +
+        (metodoLabel ? `\nMétodo: ${metodoLabel}` : '') +
+        vueltoLinea;
+
     Alert.alert(
-      "Confirmar Pago",
-      `¿Deseas continuar con el pago para el cliente ${cliente.nombre || "Invitado"}?\n\n` +
-      `Total: ${simbolo} ${totalFormateado}` +
-      (metodoLabel ? `\nMétodo: ${metodoLabel}` : '') +
-      vueltoLinea,
+      tituloConfirmacion,
+      mensajeConfirmacion,
       [
         {
           text: "NO",
@@ -1913,9 +1969,7 @@ const PagosScreen = () => {
         {
           text: "SÍ",
           onPress: () => {
-            // ✅ Guardar cliente seleccionado y procesar
             setClienteSeleccionado(cliente);
-            // Procesar el pago con el cliente y los datos de pago
             procesarPagoConCliente(cliente, datosPago);
           }
         }
@@ -2529,7 +2583,7 @@ const PagosScreen = () => {
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 * escala }}>
                 <MaterialCommunityIcons name="cash-multiple" size={28 * escala} color="#FFFFFF" />
                 <Text style={{ color: '#FFFFFF', fontSize: 16 * escala, fontWeight: '700', includeFontPadding: false, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 2 }} numberOfLines={1}>
-                  Confirmar Pago{platosSeleccionadosPago.length > 0 ? ` (${platosSeleccionadosPago.length})` : ''}
+                  {esPagoAdelantado ? 'Confirmar Pago Adelantado' : `Confirmar Pago${platosSeleccionadosPago.length > 0 ? ` (${platosSeleccionadosPago.length})` : ''}`}
                 </Text>
               </View>
             </View>

@@ -11,6 +11,7 @@ const baseTheme = {
     pedido: '#2196F3',       // Azul - Pedido
     preparado: '#FFC107',    // Amarillo - Preparado
     pagando: '#00C851',      // Verde - Pagando
+    pendiente_pago: '#FF9800', // Naranja - Pendiente de pago (PPA)
     reservado: '#9C27B0',    // Morado - Reservado
   },
   spacing: {

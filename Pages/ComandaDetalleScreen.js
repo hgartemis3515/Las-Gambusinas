@@ -27,12 +27,13 @@ import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, filtrarComandasPorPedido, filtrarSoloPlatosPagados } from '../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
+import { clasificarComandaPorTipoServicio, obtenerPlatosElegiblesPPA, getReglasBotonesComandaDetalle, buildPlatosPayloadPPA } from '../helpers/pagoAdelantadoHelpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Función para obtener estilos por estado
 const obtenerEstilosPorEstado = (estado) => {
-  const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado;
+  const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado === 'pendiente_pago' ? 'pendiente_pago' : estado;
   
   const estilos = {
     pedido: {
@@ -62,6 +63,13 @@ const obtenerEstilosPorEstado = (estado) => {
       badgeFondo: '#6B7280',
       badgeTexto: '#FFFFFF',
       textoEstado: 'PAGADO'
+    },
+    pendiente_pago: {
+      fondo: '#FFF3E0',
+      borde: '#FF9800',
+      badgeFondo: '#FF9800',
+      badgeTexto: '#FFFFFF',
+      textoEstado: 'PENDIENTE'
     }
   };
   
@@ -126,6 +134,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // Estados para selección de platos a entregar
   const [platosSeleccionadosEntregar, setPlatosSeleccionadosEntregar] = useState([]); // Platos seleccionados para entregar
+  const [confirmandoEntrega, setConfirmandoEntrega] = useState(false); // 🔥 PARA LLEVAR: pantalla de carga al confirmar entrega
   
   // Estados para descuento (solo admin/supervisor)
   const [modalDescuentoVisible, setModalDescuentoVisible] = useState(false);
@@ -201,7 +210,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           index: index, // Índice en la comanda original
           complementosSeleccionados: platoItem.complementosSeleccionados || [],
           // NUEVO: Tipo de servicio (Mesa vs Para llevar). Default 'mesa' para comandas antiguas.
-          tipoServicio: platoItem.tipoServicio || 'mesa'
+          tipoServicio: platoItem.tipoServicio || 'mesa',
+          // PPA: preservar info de pago adelantado para mostrar estado "PENDIENTE" (naranja)
+          pagoAdelantado: platoItem.pagoAdelantado || null
         };
         
         // 🔥 NUEVO: Incluir platos anulados para mostrarlos visualmente (pero marcados)
@@ -638,6 +649,19 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Permitir nueva comanda si la mesa está en estados normales O si viene de una reserva
   const puedeNuevaComanda = mesa?.estado === 'pedido' || mesa?.estado === 'preparado' || mesa?.estado === 'recoger' || mesa?.estado === 'reservado' || reserva;
   const puedePagar = todosLosPlatos.length > 0 && todosLosPlatos.every(p => p.estado === 'entregado' || p.estado === 'pagado');
+  
+  // 🔥 PAGO ADELANTADO (PPA): Reglas de habilitación de botones
+  const reglasPPA = getReglasBotonesComandaDetalle(todosLosPlatos);
+  // Sobrescribir puedePagar con regla PPA: en solo_para_llevar, Pagar se deshabilita
+  const puedePagarNormal = puedePagar && reglasPPA.composicion !== 'solo_para_llevar';
+
+  // 🔥 PARA LLEVAR: Botón "Confirmar entrega".
+  // Solo se habilita para comandas 100% "para llevar" cuyos platos activos
+  // están TODOS en estado "entregado". Cierra la comanda y libera la mesa.
+  const platosActivosLlevar = todosLosPlatos.filter(p => !p.eliminado && !p.anulado);
+  const todosEntregadosLlevar = platosActivosLlevar.length > 0
+    && platosActivosLlevar.every(p => (p.estado || '').toLowerCase() === 'entregado');
+  const puedeConfirmarEntrega = reglasPPA.composicion === 'solo_para_llevar' && todosEntregadosLlevar;
   
   // Condición para mostrar botón Entregar: hay platos en estado "recoger"
   const puedeEntregar = platosEnRecoger.length > 0;
@@ -1479,6 +1503,136 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
   
   // ============================================
+  // PAGO ADELANTADO (PPA)
+  // ============================================
+  const handlePagoAdelantado = async () => {
+    const platosElegibles = reglasPPA.platosElegibles;
+    if (platosElegibles.length === 0) {
+      Alert.alert('Sin platos elegibles', 'No hay platos disponibles para pago adelantado en esta comanda.');
+      return;
+    }
+    try {
+      // Corregir estados de comandas antes de consultar
+      if (comandas.length > 0) {
+        await Promise.all(comandas.map((c) => verificarYActualizarEstadoComanda(c, axios)));
+      }
+      const mesaId = mesa?._id || mesaIdRef;
+
+      // Intentar primero el endpoint dedicado de PPA, y si falla usar el endpoint de comandas activas
+      let comandasPPA = null;
+      let mesaData = null;
+
+      try {
+        // Intentar con el endpoint dedicado de PPA
+        const ppaEndpoint = apiConfig.isConfigured
+          ? `${apiConfig.getEndpoint('/comanda')}/comandas-para-pago-adelantado/${mesaId}`
+          : `${getFallbackApiBase()}/comanda/comandas-para-pago-adelantado/${mesaId}`;
+        const idsQuery = comandas.length > 0
+          ? '?' + comandas.map(c => `comandaIds=${c._id}`).filter(Boolean).join('&')
+          : '';
+        const authToken = await AsyncStorage.getItem('authToken');
+        const headers = authToken ? { Authorization: `Bearer ${authToken}` } : {};
+        const ppaResponse = await axios.get(`${ppaEndpoint}${idsQuery}`, { headers, timeout: 5000 });
+        if (ppaResponse.data?.success && ppaResponse.data?.comandas?.length > 0) {
+          comandasPPA = ppaResponse.data.comandas;
+          mesaData = ppaResponse.data.mesa;
+        }
+      } catch (ppaError) {
+        console.warn('[PPA] Endpoint dedicado no disponible, usando comandas activas como fallback');
+      }
+
+      // Fallback: usar comandas activas de la mesa y filtrar en el frontend
+      if (!comandasPPA) {
+        const activasEndpoint = apiConfig.isConfigured
+          ? apiConfig.getEndpoint('/comanda/mesa/' + mesaId + '/activas')
+          : `${getFallbackApiBase()}/comanda/mesa/${mesaId}/activas`;
+        const authToken = await AsyncStorage.getItem('authToken');
+        const headers = authToken ? { Authorization: `Bearer ${authToken}` } : {};
+        const activasResponse = await axios.get(activasEndpoint, { headers, timeout: 8000 });
+        if (activasResponse.data?.comandas?.length > 0) {
+          // Filtrar solo comandas con platos elegibles para PPA
+          comandasPPA = activasResponse.data.comandas.filter(comanda => {
+            const platosComanda = (comanda.platos || []).filter(p => !p.eliminado && !p.anulado);
+            return platosComanda.some(p => {
+              const estado = (p.estado || '').toLowerCase();
+              if (['recoger', 'entregado', 'pagado'].includes(estado)) return false;
+              if (p.pagoAdelantado?.estadoTicket === 'pendiente_aprobacion' || p.pagoAdelantado?.estadoTicket === 'aprobado') return false;
+              return true;
+            });
+          });
+        }
+      }
+
+      if (!comandasPPA || comandasPPA.length === 0) {
+        Alert.alert('Sin platos elegibles', 'No hay comandas con platos disponibles para pago adelantado.');
+        return;
+      }
+      // Navegar a PagosScreen con origen PPA
+      navigation.navigate('Pagos', {
+        mesa: mesaData || mesa,
+        comandasParaPagar: comandasPPA,
+        totalPendiente: comandasPPA.reduce((sum, c) => sum + (c.totalPendiente || c.total || 0), 0),
+        origen: 'PagoAdelantado',
+      });
+    } catch (error) {
+      console.error('Error al obtener comandas para pago adelantado:', error);
+      Alert.alert('Error', 'No se pudieron obtener las comandas para pago adelantado.');
+    }
+  };
+  
+  // ============================================
+  // CONFIRMAR ENTREGA (PARA LLEVAR)
+  // ============================================
+  const handleConfirmarEntrega = () => {
+    const mesaId = mesa?._id || mesaIdRef;
+    if (!mesaId) {
+      Alert.alert('Error', 'No se pudo identificar la mesa.');
+      return;
+    }
+    Alert.alert(
+      'Confirmar entrega',
+      '¿Confirmas que el pedido para llevar fue entregado al cliente? La mesa quedará libre para nuevos pedidos.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Sí, confirmar',
+          style: 'default',
+          onPress: async () => {
+            setConfirmandoEntrega(true);
+            try {
+              const endpoint = apiConfig.isConfigured
+                ? `${apiConfig.getEndpoint('/pago-adelantado')}/confirmar-entrega`
+                : `${getFallbackApiBase()}/pago-adelantado/confirmar-entrega`;
+              const authToken = await AsyncStorage.getItem('authToken');
+              const headers = authToken ? { Authorization: `Bearer ${authToken}` } : {};
+              const comandaIds = comandas.map(c => c._id).filter(Boolean);
+              const response = await axios.put(
+                endpoint,
+                { mesaId, comandaIds },
+                { headers, timeout: 15000 }
+              );
+
+              if (response.data?.success) {
+                // Pequeña espera para que el usuario perciba la verificación
+                await new Promise(resolve => setTimeout(resolve, 800));
+                setConfirmandoEntrega(false);
+                navigation.navigate('Inicio', { refresh: true });
+              } else {
+                setConfirmandoEntrega(false);
+                Alert.alert('Error', response.data?.error || 'No se pudo confirmar la entrega.');
+              }
+            } catch (error) {
+              setConfirmandoEntrega(false);
+              const msg = error.response?.data?.error || 'No se pudo confirmar la entrega. Intenta nuevamente.';
+              Alert.alert('Error', msg);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // ============================================
   // FUNCIONES PARA ENTREGA DE PLATOS
   // ============================================
   
@@ -1620,7 +1774,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // Renderizar fila de plato
   const renderFilaPlato = ({ item: plato, index }) => {
-    const estilos = obtenerEstilosPorEstado(plato.estado);
+    // Si el plato tiene pago adelantado pendiente, mostrar estado PENDIENTE en naranja
+    const estadoPlato = (plato.pagoAdelantado?.estadoTicket === 'pendiente_aprobacion')
+      ? 'pendiente_pago'
+      : plato.estado;
+    const estilos = obtenerEstilosPorEstado(estadoPlato);
     // 🔥 CRÍTICO: Usar _id del subdocumento (único por instancia) para distinguir platos duplicados
     const platoKey = plato._id || `${plato.platoId}-${plato.index}`;
     const estaSeleccionado = platosSeleccionadosEntregar.some(p => {
@@ -1803,14 +1961,44 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               style={[
                 styles.actionButton, 
                 { backgroundColor: '#059669' }, // Verde intenso en ambos modos
-                !puedePagar && styles.actionButtonDisabled
+                !puedePagarNormal && styles.actionButtonDisabled
               ]}
               onPress={handlePagar}
-              disabled={!puedePagar}
+              disabled={!puedePagarNormal}
             >
               <MaterialCommunityIcons name="cash" size={20} color="#fff" />
               <Text style={styles.actionButtonText}>Pagar</Text>
             </TouchableOpacity>
+
+            {/* 🔥 PARA LLEVAR: Botón Confirmar entrega (comanda 100% para llevar con PPA aprobado) */}
+            {puedeConfirmarEntrega && (
+              <TouchableOpacity
+                style={[
+                  styles.actionButton,
+                  { backgroundColor: '#0EA5E9' }, // Celeste para confirmar entrega
+                ]}
+                onPress={handleConfirmarEntrega}
+              >
+                <MaterialCommunityIcons name="package-variant-closed-check" size={20} color="#fff" />
+                <Text style={styles.actionButtonText}>Confirmar entrega</Text>
+              </TouchableOpacity>
+            )}
+            
+            {/* 🔥 Botón Pago Adelantado (PPA) */}
+            {reglasPPA.mostrarPagoAdelantado && (
+              <TouchableOpacity
+                style={[
+                  styles.actionButton,
+                  { backgroundColor: '#7C3AED' }, // Violeta para PPA
+                  reglasPPA.pagoAdelantadoDisabled && styles.actionButtonDisabled
+                ]}
+                onPress={handlePagoAdelantado}
+                disabled={reglasPPA.pagoAdelantadoDisabled}
+              >
+                <MaterialCommunityIcons name="wallet-outline" size={20} color="#fff" />
+                <Text style={styles.actionButtonText}>Pago Adelantado</Text>
+              </TouchableOpacity>
+            )}
             
             {/* Botón Descuento - Solo visible para admin/supervisor */}
             {puedeAplicarDescuento && (
@@ -1867,6 +2055,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           <Text style={styles.loadingText}>Procesando...</Text>
         </View>
       )}
+
+      {/* 🔥 PARA LLEVAR: Pantalla de carga al confirmar entrega */}
+      {confirmandoEntrega && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#0EA5E9" />
+          <Text style={styles.loadingText}>Confirmando entrega...</Text>
+          <Text style={[styles.loadingText, { fontSize: 13, opacity: 0.8, marginTop: 4 }]}>
+            Verificando el pedido y liberando la mesa
+          </Text>
+        </View>
+      )}
       
       {/* Modal Eliminar Platos */}
       <Modal
@@ -1902,7 +2101,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   const pKey = p._id || `${p.platoId}-${p.index}`;
                   return pKey === platoKey && p.comandaId === plato.comandaId;
                 });
-                const estilos = obtenerEstilosPorEstado(plato.estado);
+                const estilos = obtenerEstilosPorEstado(plato.pagoAdelantado?.estadoTicket === 'pendiente_aprobacion' ? 'pendiente_pago' : plato.estado);
                 
                 return (
                     <TouchableOpacity
@@ -2763,7 +2962,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 </Text>
                 <ScrollView style={{ maxHeight: 200, marginBottom: 12 }}>
                   {platosEliminablesComanda.map((plato, index) => {
-                    const estilos = obtenerEstilosPorEstado(plato.estado);
+                    const estilos = obtenerEstilosPorEstado(plato.pagoAdelantado?.estadoTicket === 'pendiente_aprobacion' ? 'pendiente_pago' : plato.estado);
                     return (
                       <View
                         key={`${plato.comandaId}-${plato.platoId}-${index}`}

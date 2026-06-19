@@ -367,7 +367,7 @@ export const obtenerColoresPorEstado = (estado, isDark = false) => {
  * @returns {Object} Colores adaptados
  */
 export const obtenerColoresEstadoAdaptados = (estado, isDark = false, esEditable = true) => {
-  const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado;
+  const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado === 'pendiente_pago' ? 'pendiente_pago' : estado;
   
   // ============================================
   // MODO CLARO - Colores pastel con texto oscuro
@@ -409,6 +409,15 @@ export const obtenerColoresEstadoAdaptados = (estado, isDark = false, esEditable
         badgeTextColor: '#FFFFFF', // Blanco
         textoEstado: 'PAGADO',
         priceColor: '#6B7280', // Gris
+      },
+      pendiente_pago: {
+        backgroundColor: '#FFF3E0', // Naranja pastel
+        textColor: '#E65100', // Naranja oscuro
+        borderColor: '#FFB74D', // Naranja claro
+        badgeColor: '#FF9800', // Naranja
+        badgeTextColor: '#FFFFFF', // Blanco
+        textoEstado: 'PENDIENTE',
+        priceColor: '#FF9800', // Naranja
       },
     };
     
@@ -464,6 +473,15 @@ export const obtenerColoresEstadoAdaptados = (estado, isDark = false, esEditable
       badgeTextColor: '#1F2937', // Gris muy oscuro
       textoEstado: 'PAGADO',
       priceColor: '#9CA3AF', // Gris claro
+    },
+    pendiente_pago: {
+      backgroundColor: '#E65100', // Naranja saturado
+      textColor: '#FFFFFF', // Blanco puro
+      borderColor: '#FF9800', // Naranja brillante
+      badgeColor: '#FFB74D', // Naranja claro
+      badgeTextColor: '#BF360C', // Naranja muy oscuro
+      textoEstado: 'PENDIENTE',
+      priceColor: '#FFB74D', // Naranja claro
     },
   };
   
