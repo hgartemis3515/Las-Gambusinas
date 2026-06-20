@@ -14,6 +14,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import moment from 'moment-timezone';
 import { PUNTOS_ANCHO } from './boucherPrint';
 import { loadLogoBytes } from './logoPlantilla';
+import { formatComandasNumbersLabel } from './comandaHtml';
 
 const MARGIN_X = 6;
 const CONTENT_W = PUNTOS_ANCHO - MARGIN_X * 2;
@@ -158,9 +159,12 @@ export async function generarPdfComandaNativo(opts) {
     addWrapped(p.encabezado?.titulo || 'COMANDA', 'center', { bold: true, size: SIZE_TITLE });
     addRule();
 
-    // Número de comanda centrado
-    if (datos.comandaNumero) {
-      addWrapped(`#${datos.comandaNumero}`, 'center', { bold: true, size: SIZE_BODY });
+    // Número de comanda centrado (soporta agrupación #81+#82)
+    const numeroDisplay = datos.comandaNumeroDisplay
+      || formatComandasNumbersLabel(datos.comandasNumbers)
+      || (datos.comandaNumero != null ? `#${datos.comandaNumero}` : '');
+    if (numeroDisplay) {
+      addWrapped(numeroDisplay, 'center', { bold: true, size: SIZE_BODY });
     }
   }
 

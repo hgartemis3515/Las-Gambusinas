@@ -13,7 +13,7 @@
  *    generaba un boucher ahora debe generar una COMANDA."
  */
 import { Alert, Platform } from 'react-native';
-import { generarHtmlComanda, mapComandaATicket } from '../../utils/comandaHtml';
+import { generarHtmlComanda, mapComandaATicket, aplicarComandaNumeroDisplay, formatComandasNumbersLabel } from '../../utils/comandaHtml';
 import { compartirComandaPdf } from '../../utils/comandaPdfShare';
 import apiConfig from '../../config/apiConfig';
 
@@ -66,13 +66,19 @@ export async function mostrarOpcionesComanda(opts, { onStart, onEnd } = {}) {
 
     // Construir datos del ticket usando mapComandaATicket
     const primeraComanda = comandas[0];
-    const datos = primeraComanda
+    let datos = primeraComanda
       ? mapComandaATicket(primeraComanda, boucher, configMoneda)
       : mapComandaATicket(
           { platos: boucher?.platos || [], comandaNumber: boucher?.comandasNumbers?.[0], observaciones: boucher?.observaciones, createdAt: boucher?.fechaPedido || boucher?.fechaPago },
           boucher,
           configMoneda
         );
+
+    // Enriquecer con números agrupados del boucher si hay varias comandas
+    const comandasNumbers = boucher?.comandasNumbers
+      || comandas.map(c => c.comandaNumber).filter(n => n != null)
+      || (datos.comandaNumero ? [datos.comandaNumero] : []);
+    datos = aplicarComandaNumeroDisplay({ ...datos, comandasNumbers });
 
     const serverOrigin = apiConfig.getDefaultBaseURL?.() || 'http://localhost:3000';
 

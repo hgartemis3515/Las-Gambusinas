@@ -26,6 +26,41 @@ const ETIQUETAS_DEFAULT_COMANDA = {
 };
 
 /**
+ * Formatea números de comanda para el campo visible del ticket.
+ * Una comanda  → "#81"
+ * Varias       → "#81+#82"   (orden ascendente, sin duplicados)
+ *
+ * @param {Array<number|string|null|undefined>} comandasNumbers
+ * @returns {string} ej. "#81+#82" o "" si no hay números válidos
+ */
+export function formatComandasNumbersLabel(comandasNumbers) {
+  const nums = [...new Set(
+    (comandasNumbers || [])
+      .map((n) => (n != null && n !== '' ? Number(n) : NaN))
+      .filter((n) => !Number.isNaN(n))
+  )].sort((a, b) => a - b);
+
+  if (nums.length === 0) return '';
+  return nums.map((n) => `#${n}`).join('+');
+}
+
+/**
+ * Aplica display agrupado sobre payload ticket-imprimible o mapComandaATicket.
+ * Calcula comandaNumeroDisplay a partir de comandasNumbers si existen.
+ *
+ * @param {Object} datos - Datos mapeados de comanda
+ * @returns {Object} datos con campo adicional comandaNumeroDisplay
+ */
+export function aplicarComandaNumeroDisplay(datos) {
+  const label = formatComandasNumbersLabel(datos.comandasNumbers);
+  if (label) {
+    return { ...datos, comandaNumeroDisplay: label };
+  }
+  const fallback = datos.comandaNumero != null ? `#${datos.comandaNumero}` : '';
+  return { ...datos, comandaNumeroDisplay: fallback };
+}
+
+/**
  * Genera el HTML interior de una comanda térmica 80mm.
  * No incluye el wrapper <html>/<style> — eso lo hace envolverHtmlBoucherTicket.
  *
@@ -79,8 +114,13 @@ export function generarHtmlComanda({ datos, plantilla, serverOrigin }) {
   // === DATOS COMANDA ===
   if (bloques.mostrarDatosComanda !== false) {
     html += '<div style="margin-bottom:4px;">';
-    if (vis.comandaNumero !== false && datos.comandaNumero) {
-      html += fila(etiquetas.comandaNumero, String(datos.comandaNumero));
+    if (vis.comandaNumero !== false) {
+      const numeroEtiqueta = datos.comandaNumeroDisplay
+        || formatComandasNumbersLabel(datos.comandasNumbers)
+        || (datos.comandaNumero != null ? `#${datos.comandaNumero}` : '');
+      if (numeroEtiqueta) {
+        html += fila(etiquetas.comandaNumero, numeroEtiqueta);
+      }
     }
     if (vis.fechaPedido !== false && datos.fechaPedido) {
       html += fila(etiquetas.fechaPedido, formatFecha(datos.fechaPedido));
@@ -227,8 +267,11 @@ function formatFecha(date) {
  * Se usa tanto en App Mozos como en el dashboard.
  */
 export function mapComandaATicket(comanda, boucherOpcional, config = {}) {
+  const comandasNumbers = boucherOpcional?.comandasNumbers
+    || (comanda.comandaNumber ? [comanda.comandaNumber] : []);
   return {
     comandaNumero: comanda.comandaNumber || comanda.comandaNumber || null,
+    comandasNumbers,
     fechaPedido: comanda.createdAt || comanda.fechaPedido || new Date(),
     mesa: comanda.mesaNumero || comanda.mesas?.nummesa || (typeof comanda.mesa === 'object' ? comanda.mesa?.nummesa : comanda.mesa) || null,
     mozo: comanda.mozoNombre || comanda.mozos?.name || (typeof comanda.mozo === 'object' ? comanda.mozo?.name : comanda.mozo) || null,
