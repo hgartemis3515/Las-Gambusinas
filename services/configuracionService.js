@@ -120,6 +120,23 @@ export const obtenerConfigMoneda = async () => {
 };
 
 /**
+ * PLAN_PLANTILLA_COMANDAS: indica si el botón/acciones de imprimir comanda están
+ * habilitados para los mozos. Por defecto false (configuración desmarcada).
+ * Backend: configuracionSistema.mozos.botonImprimirComanda.
+ *
+ * @returns {Promise<boolean>} true si imprimir comanda está habilitado para mozos
+ */
+export const imprimirComandaHabilitadoMozos = async () => {
+    try {
+        const config = await obtenerConfiguracion();
+        return config?.mozos?.botonImprimirComanda === true;
+    } catch (e) {
+        // Ante error de configuración, mantener el comportamiento por defecto: deshabilitado.
+        return false;
+    }
+};
+
+/**
  * Configuración por defecto (fallback)
  */
 export const getConfiguracionPorDefecto = () => ({

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { imprimirComandaHabilitadoMozos } from "../../../services/configuracionService";
 import {
   View,
   Text,
@@ -548,6 +549,15 @@ const InicioScreen = () => {
   const theme = themeContext?.theme || themeLight;
   const { width, height } = useWindowDimensions();
   const [mesas, setMesas] = useState([]);
+  // PLAN_PLANTILLA_COMANDAS: imprimir comanda deshabilitado por defecto.
+  // Se habilita desde configuracion.html > Mozos > Botón de impresión de comandas.
+  const [imprimirComandaHabilitado, setImprimirComandaHabilitado] = useState(false);
+
+  // Cargar flag de configuración: ¿imprimir comanda habilitado para mozos?
+  useEffect(() => {
+    imprimirComandaHabilitadoMozos().then(setImprimirComandaHabilitado).catch(() => {});
+  }, []);
+
   const [comandas, setComandas] = useState([]);
   const [reservas, setReservas] = useState([]); // Reservas activas para mostrar mozo en mesas reservadas
   const [modalEditVisible, setModalEditVisible] = useState(false);
@@ -2426,7 +2436,7 @@ const InicioScreen = () => {
               }
             },
           },
-          {
+          ...(imprimirComandaHabilitado ? [{
             text: "🖨️ Imprimir Comanda",
             onPress: async () => {
               // Navegar a Pagos con comandas para reimprimir comanda
@@ -2438,7 +2448,7 @@ const InicioScreen = () => {
                 soloImprimirComanda: true,
               });
             },
-          },
+          }] : []),
           {
             text: "🔄 Liberar",
             onPress: () => handleLiberarMesa(mesa)
@@ -2451,37 +2461,39 @@ const InicioScreen = () => {
       );
     } else if (estado === "Pendiente de aprobación" || estado?.toLowerCase() === "pendiente_aprobar") {
       // PLAN_PLANTILLA_COMANDAS: mesa en verde claro esperando aprobación de cocina
+      const pendienteAprobacionButtons = [
+        {
+          text: "📋 Ver pedido",
+          onPress: () => {
+            const comandasMesa = getComandasPorMesa(mesa.nummesa);
+            if (comandasMesa.length > 0) {
+              navigation.navigate('ComandaDetalle', {
+                mesa,
+                comandas: comandasMesa,
+              });
+            }
+          }
+        },
+      ];
+      if (imprimirComandaHabilitado) {
+        pendienteAprobacionButtons.push({
+          text: "🖨️ Imprimir Comanda",
+          onPress: () => {
+            const comandasMesa = getComandasPorMesa(mesa.nummesa);
+            navigation.navigate("Pagos", {
+              mesa,
+              comandasParaPagar: comandasMesa,
+              origen: "Inicio",
+              soloImprimirComanda: true,
+            });
+          }
+        });
+      }
+      pendienteAprobacionButtons.push({ text: "Cerrar", style: "cancel" });
       Alert.alert(
         `Mesa ${mesa.nummesa} — Pendiente de Aprobación`,
         "La comanda fue registrada y el pago procesado. Cocina debe aprobarla antes de preparar los platos.\n\n¿Qué deseas hacer?",
-        [
-          {
-            text: "📋 Ver pedido",
-            onPress: () => {
-              const comandasMesa = getComandasPorMesa(mesa.nummesa);
-              if (comandasMesa.length > 0) {
-                navigation.navigate('ComandaDetalle', {
-                  mesa,
-                  comandas: comandasMesa,
-                });
-              }
-            }
-          },
-          {
-            text: "🖨️ Imprimir Comanda",
-            onPress: () => {
-              // Navegar a Pagos para reimprimir comanda (la plantilla de comanda se usará allí)
-              const comandasMesa = getComandasPorMesa(mesa.nummesa);
-              navigation.navigate("Pagos", {
-                mesa,
-                comandasParaPagar: comandasMesa,
-                origen: "Inicio",
-                soloImprimirComanda: true,
-              });
-            }
-          },
-          { text: "Cerrar", style: "cancel" }
-        ]
+        pendienteAprobacionButtons
       );
     } else if (estado === "Reportado" || estado?.toLowerCase() === "reportado") {
       // PLAN_PLANTILLA_COMANDAS: mesa reportada por cocina (rojo), con motivo

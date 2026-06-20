@@ -339,6 +339,9 @@ const PagosScreen = () => {
   const [boucherData, setBoucherData] = useState(boucherFromParams || null);
   const [configMoneda, setConfigMoneda] = useState(null);
   const [plantillaVoucher, setPlantillaVoucher] = useState(null);
+  // PLAN_PLANTILLA_COMANDAS: si los mozos tienen habilitado el botón de imprimir comanda.
+  // Por defecto false (deshabilitado hasta que se active desde configuracion.html).
+  const [imprimirComandaHabilitado, setImprimirComandaHabilitado] = useState(false);
   /** Claves de platos seleccionados para pago parcial (ver pagoParcialHelpers). */
   const [platosSeleccionadosPago, setPlatosSeleccionadosPago] = useState([]);
   const [totalRestante, setTotalRestante] = useState(null);
@@ -386,6 +389,12 @@ const PagosScreen = () => {
         });
       } catch (error) {
         console.error('Error al cargar configuración de moneda:', error);
+      }
+      try {
+        const habilitado = await configuracionService.imprimirComandaHabilitadoMozos();
+        setImprimirComandaHabilitado(habilitado);
+      } catch (e) {
+        // Mantener false por defecto
       }
     };
     cargarConfiguracion();
@@ -1146,25 +1155,27 @@ const PagosScreen = () => {
     const mesaYaPagada = mesa.estado?.toLowerCase() === "pagado" || mesa.estado?.toLowerCase() === "pendiente_aprobar";
     
     if (mesaYaPagada) {
-      // Si ya está pagada o pendiente de aprobación, solo generar la comanda
+      // Si ya está pagada o pendiente de aprobación, solo generar la comanda si está habilitado
       const estadoLabel = mesa.estado?.toLowerCase() === "pendiente_aprobar" ? "Pendiente de Aprobación" : "Pagada";
+      const alertButtons = [];
+      if (imprimirComandaHabilitado) {
+        alertButtons.push({
+          text: "Imprimir Comanda",
+          onPress: async () => {
+            await generarComanda();
+          }
+        });
+      }
+      alertButtons.push({
+        text: imprimirComandaHabilitado ? "Cancelar" : "OK",
+        style: "cancel"
+      });
       Alert.alert(
         `Mesa ${mesa.nummesa} — ${estadoLabel}`,
         mesa.estado?.toLowerCase() === "pendiente_aprobar"
-          ? "La comanda está registrada y espera aprobación de cocina. Puedes reimprimir la comanda."
-          : "La mesa ya ha sido pagada y aprobada. Puedes reimprimir la comanda.",
-        [
-          {
-            text: "Imprimir Comanda",
-            onPress: async () => {
-              await generarComanda();
-            }
-          },
-          {
-            text: "Cancelar",
-            style: "cancel"
-          }
-        ]
+          ? "La comanda está registrada y espera aprobación de cocina."
+          : "La mesa ya ha sido pagada y aprobada.",
+        alertButtons
       );
       return;
     }
@@ -2496,6 +2507,10 @@ const PagosScreen = () => {
       </ScrollView>
 
       <View style={[styles.buttonsContainer, { paddingHorizontal: 20 * escala, gap: 16 * escala }]}>
+        {/* PLAN_PLANTILLA_COMANDAS: el botón de imprimir comanda solo se muestra si
+            la configuración del backend (mozos.botonImprimirComanda) lo habilita.
+            Por defecto está desmarcado (false). */}
+        {imprimirComandaHabilitado && (
         <TouchableOpacity
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -2518,6 +2533,7 @@ const PagosScreen = () => {
             )}
           </View>
         </TouchableOpacity>
+        )}
 
         {/* Botón "Pagar": solo si la mesa no está pagada Y hay platos cobrables pendientes Y no hay boucher consolidado */}
         {mesa?.estado?.toLowerCase() !== "pagado" && platosPagables.length > 0 && !(boucherData || boucherFromParams) && (
@@ -2619,7 +2635,7 @@ const PagosScreen = () => {
         boucherData={boucherData || boucherFromParams}
         mesaData={mesa}
         clienteData={clientePagoExitoso}
-        onImprimir={() => generarComanda(boucherData || boucherFromParams)}
+        onImprimir={imprimirComandaHabilitado ? () => generarComanda(boucherData || boucherFromParams) : null}
         onRegistrarPropina={() => {
           setModalPagoExitosoVisible(false);
           setModalPropinaVisible(true);
