@@ -6,13 +6,16 @@ const baseTheme = {
   warning: '#FF9500',        // Naranja para advertencias
   // Estados de mesas
   mesaEstado: {
-    libre: '#9E9E9E',        // Gris - Libre
-    esperando: '#FFC107',    // Amarillo - Esperando
-    pedido: '#2196F3',       // Azul - Pedido
-    preparado: '#FFC107',    // Amarillo - Preparado
-    pagando: '#00C851',      // Verde - Pagando
-    pendiente_pago: '#FF9800', // Naranja - Pendiente de pago (PPA)
-    reservado: '#9C27B0',    // Morado - Reservado
+    libre: '#9E9E9E',            // Gris - Libre
+    esperando: '#FFC107',        // Amarillo - Esperando
+    pedido: '#2196F3',           // Azul - Pedido
+    preparado: '#FFC107',        // Amarillo - Preparado
+    pagando: '#00C851',          // Verde claro - Pagando
+    pendiente_pago: '#FF9800',   // Naranja - Pendiente de pago (PPA)
+    pendiente_aprobar: '#FF9800',// Naranja saturado - Pendiente de aprobación (cocina)
+    pagado: '#2E7D32',           // Verde oscuro - Aprobado por cocina
+    reportado: '#F44336',        // Rojo - Reportado por cocina
+    reservado: '#9C27B0',        // Morado - Reservado
   },
   spacing: {
     xs: 4,

@@ -640,6 +640,71 @@ const useSocketMozos = ({
       }
     });
 
+    // ========== PLAN_PLANTILLA_COMANDAS: Eventos de aprobación y reporte ==========
+
+    // Evento: Ticket de aprobación nuevo (mesa pasa a pendiente_aprobar)
+    socket.on('ticket-aprobacion-nuevo', (data) => {
+      console.log('🎫 [MOZOS] Ticket de aprobación nuevo:', data.ticketNumber, 'Mesa:', data.numMesa);
+      if (onMesaActualizada && data.mesaId) {
+        // Refrescar mesas para que InicioScreen muestre verde claro
+        onMesaActualizada({ _id: data.mesaId, estado: 'pendiente_aprobar', nummesa: data.numMesa });
+      }
+      if (onSocketStatus) {
+        setConnectionStatus('online-active');
+        onSocketStatus({ connected: true, status: 'online-active' });
+        setTimeout(() => {
+          setConnectionStatus('conectado');
+          onSocketStatus({ connected: true, status: 'conectado' });
+        }, 2000);
+      }
+    });
+
+    // Evento: Comanda aprobada por cocina (mesa pasa a pagado, verde oscuro)
+    socket.on('comanda-aprobada', (data) => {
+      console.log('✅ [MOZOS] Comanda aprobada:', data.ticketNumber, 'Mesa:', data.numMesa);
+      if (onMesaActualizada && data.mesaId) {
+        onMesaActualizada({ _id: data.mesaId, estado: 'pagado', nummesa: data.numMesa });
+      }
+      // También refrescar comandas si el callback existe
+      if (onComandaActualizada) {
+        // Refrescar la lista completa de comandas del día
+        onComandaActualizada({ _id: 'refresh', status: 'pagado' });
+      }
+      if (onSocketStatus) {
+        setConnectionStatus('online-active');
+        onSocketStatus({ connected: true, status: 'online-active' });
+        setTimeout(() => {
+          setConnectionStatus('conectado');
+          onSocketStatus({ connected: true, status: 'conectado' });
+        }, 2000);
+      }
+    });
+
+    // Evento: Mesa reportada por cocina (mesa en rojo)
+    socket.on('mesa-reportada', (data) => {
+      console.log('🔴 [MOZOS] Mesa reportada:', data.numMesa, 'Motivo:', data.motivo);
+      if (onMesaActualizada && data.mesa) {
+        onMesaActualizada(data.mesa);
+      } else if (onMesaActualizada && data.mesaId) {
+        onMesaActualizada({
+          _id: data.mesaId,
+          estado: 'reportado',
+          nummesa: data.numMesa,
+          motivoReporte: data.motivo,
+        });
+      }
+      if (onSocketStatus) {
+        setConnectionStatus('online-active');
+        onSocketStatus({ connected: true, status: 'online-active' });
+        setTimeout(() => {
+          setConnectionStatus('conectado');
+          onSocketStatus({ connected: true, status: 'conectado' });
+        }, 2000);
+      }
+    });
+
+    // ========== FIN EVENTOS PLAN_PLANTILLA_COMANDAS ==========
+
     // ========== EVENTO DE MAPA ACTUALIZADO ==========
     
     // Evento: Mapa de mesas actualizado (admin guardó cambios)

@@ -1066,6 +1066,11 @@ const InicioScreen = () => {
   const handleMesaActualizada = useCallback(async (mesa) => {
     console.log('📥 [MOZOS] Mesa actualizada vía WebSocket:', mesa.nummesa, 'Estado:', mesa.estado);
     
+    // PLAN_PLANTILLA_COMANDAS: guardar motivo de reporte para mostrar en alert
+    if (mesa.estado?.toLowerCase() === 'reportado' && mesa.motivoReporte) {
+      motivosReporteRef.current[mesa.nummesa || mesa._id] = mesa.motivoReporte;
+    }
+    
     // Actualizar estado local (esto disparará re-render y animaciones)
     setMesas(prev => {
       const index = prev.findIndex(m => {
@@ -1370,7 +1375,7 @@ const InicioScreen = () => {
 
       Alert.alert("✅ Pago confirmado", `${subtitulo}\n\n¿Qué deseas hacer?`, [
         {
-          text: "📄 Imprimir Boucher",
+          text: "📄 Imprimir Comanda",
           onPress: () => {
             if (boucherFromParams) {
               navigation.navigate("Pagos", {
@@ -1723,6 +1728,8 @@ const InicioScreen = () => {
   // Re-fetch al reconectar: cuando socket pasa de desconectado a conectado
   // Ref para evitar log spam de mesas desincronizadas
   const mesasDesyncLoggedRef = useRef(new Set());
+  // PLAN_PLANTILLA_COMANDAS: Guardar motivos de reporte por mesa para mostrar en alerts
+  const motivosReporteRef = useRef({}); // { mesaNummesa: 'motivo' }
   
   const prevSocketConnectedRef = useRef(socketConnected);
   useEffect(() => {
@@ -1817,6 +1824,23 @@ const InicioScreen = () => {
   }, [mesas, comandas, obtenerComandasMesa]);
 
   const getEstadoMesa = (mesa) => {
+    // PLAN_PLANTILLA_COMANDAS: prioridad 0 — si el backend marcó la mesa como "libre",
+    // mostrarla Libre SIEMPRE aunque queden comandas huérfanas en el state local (se limpian
+    // al liberar via cleanup en mesas.repository.js, pero el state de React puede estar desactualizado).
+    if (mesa.estado && mesa.estado.toLowerCase() === "libre") {
+      return "Libre";
+    }
+
+    // PLAN_PLANTILLA_COMANDAS: estados de aprobación de cocina
+    // pendiente_aprobar = pago registrado, esperando aprobación de cocina (verde claro)
+    if (mesa.estado && mesa.estado.toLowerCase() === "pendiente_aprobar") {
+      return "Pendiente de aprobación";
+    }
+    // reportado = cocina reportó un problema (rojo)
+    if (mesa.estado && mesa.estado.toLowerCase() === "reportado") {
+      return "Reportado";
+    }
+
     // Prioridad 1: si el backend marcó la mesa como "pagado", mostrarla verde aunque no haya comandas activas
     if (mesa.estado && (mesa.estado.toLowerCase() === "pagado" || mesa.estado.toLowerCase() === "pagando")) {
       return mesa.estado.charAt(0).toUpperCase() + mesa.estado.slice(1).toLowerCase();
@@ -2055,13 +2079,18 @@ const InicioScreen = () => {
         return theme.colors.mesaEstado.pedido || "#2196F3"; // Azul
       case "preparado":
         return theme.colors.mesaEstado.preparado || "#FFC107"; // Amarillo
+      case "pendiente_aprobar":
+      case "pendiente de aprobación":
+        return theme.colors.mesaEstado.pendiente_aprobar || "#FF9800"; // Naranja saturado - esperando aprobación
       case "pagado":
-        return theme.colors.mesaEstado.pagado || "#4CAF50"; // Verde
+        return theme.colors.mesaEstado.pagado || "#2E7D32"; // Verde oscuro (aprobado por cocina)
       case "pagando":
         return theme.colors.mesaEstado.pagando || "#00C851"; // Verde
       case "pendiente_pago":
       case "pendiente de pago":
         return theme.colors.mesaEstado.pendiente_pago || "#FF9800"; // Naranja
+      case "reportado":
+        return theme.colors.mesaEstado.reportado || "#F44336"; // Rojo
       case "reservado":
         return theme.colors.mesaEstado.reservado || "#9C27B0"; // Morado
       default:
@@ -2300,7 +2329,7 @@ const InicioScreen = () => {
         `Esta mesa tiene un pago adelantado registrado, esperando aprobación de cocina.`,
         [
           {
-            text: "Imprimir Ticket",
+            text: "Imprimir Comanda",
             onPress: () => {
               navigation.navigate("Pagos", {
                 mesa: mesa,
@@ -2327,7 +2356,7 @@ const InicioScreen = () => {
         ]
       );
     } else if (estado === "Pagado" || estado?.toLowerCase() === "pagado") {
-      // Mesa en estado Pagado - mostrar opciones de Imprimir Boucher y Liberar
+      // Mesa en estado Pagado - mostrar opciones de Imprimir Comanda y Liberar
       const todasComandasMesa = getTodasComandasPorMesa(mesa.nummesa);
       // Obtener todas las comandas pagadas de la mesa
       const comandasPagadas = todasComandasMesa.filter(c => 
@@ -2353,7 +2382,7 @@ const InicioScreen = () => {
       }
       
       // Filtrar comandas por cliente: si hay comandas con cliente, solo mostrar las del mismo cliente
-      let comandasParaBoucher = comandasPagadas;
+      let comandasParaComanda = comandasPagadas;
       if (comandasPagadas.length > 0) {
         // Obtener el cliente de la primera comanda pagada que tenga cliente
         const primeraComandaConCliente = comandasPagadas.find(c => c.cliente?._id || c.cliente);
@@ -2361,18 +2390,18 @@ const InicioScreen = () => {
           const clienteId = primeraComandaConCliente.cliente?._id || primeraComandaConCliente.cliente;
           if (clienteId) {
             // Filtrar solo las comandas del mismo cliente
-            comandasParaBoucher = comandasPagadas.filter(c => {
+            comandasParaComanda = comandasPagadas.filter(c => {
               const comandaClienteId = c.cliente?._id || c.cliente;
               return comandaClienteId && comandaClienteId.toString() === clienteId.toString();
             });
-            console.log(`🔍 Filtrando comandas por cliente: ${comandasParaBoucher.length} de ${comandasPagadas.length} comandas pertenecen al mismo cliente`);
+            console.log(`🔍 Filtrando comandas por cliente: ${comandasParaComanda.length} de ${comandasPagadas.length} comandas pertenecen al mismo cliente`);
           }
         }
       }
       
       Alert.alert(
-        `Mesa ${mesa.nummesa} - Pagado`,
-        `La mesa ha sido pagada.${comandasParaBoucher.length !== comandasPagadas.length ? `\n\nSe mostrarán ${comandasParaBoucher.length} comanda(s) del cliente.` : ''}\n\n¿Qué deseas hacer?`,
+        `Mesa ${mesa.nummesa} — Pagado`,
+        `La comanda fue aprobada por cocina. Puedes liberar la mesa cuando corresponda.${comandasParaComanda.length !== comandasPagadas.length ? `\n\nSe mostrarán ${comandasParaComanda.length} comanda(s) del cliente.` : ''}\n\n¿Qué deseas hacer?`,
         [
           {
             text: "📋 Ver pedido",
@@ -2398,62 +2427,17 @@ const InicioScreen = () => {
             },
           },
           {
-            text: "📄 Imprimir Boucher",
+            text: "🖨️ Imprimir Comanda",
             onPress: async () => {
-              try {
-                // Verificar que la mesa esté en estado "pagado"
-                if (mesa.estado?.toLowerCase() !== "pagado") {
-                  Alert.alert(
-                    "Error",
-                    "Solo se puede imprimir el boucher de mesas que están en estado 'Pagado'.",
-                    [{ text: "OK" }]
-                  );
-                  return;
-                }
-
-                console.log(`🔍 Obteniendo boucher de la mesa ${mesa.nummesa} (ID: ${mesa._id})`);
-                
-                // Llamar al nuevo endpoint para obtener el boucher de la mesa
-                const boucherURL = apiConfig.isConfigured 
-                  ? apiConfig.getEndpoint(`/boucher/by-mesa/${mesa._id}`)
-                  : `${getFallbackApiBase()}/boucher/by-mesa/${mesa._id}`;
-                
-                const boucherResponse = await axios.get(boucherURL, { timeout: 10000 });
-                const boucher = boucherResponse.data;
-                
-                console.log("✅ Boucher obtenido:", {
-                  voucherId: boucher.voucherId,
-                  boucherNumber: boucher.boucherNumber,
-                  total: boucher.total
-                });
-                
-                // Guardar boucher en AsyncStorage para que PagosScreen lo use
-                await AsyncStorage.setItem("boucherParaImprimir", JSON.stringify(boucher));
-                await AsyncStorage.setItem("mesaPago", JSON.stringify(mesa));
-                
-                // Navegar a PagosScreen con el boucher
-                navigation.navigate("Pagos", {
-                  boucher,
-                  mesa: { ...mesa, estado: 'pagado' },
-                });
-              } catch (error) {
-                console.error("❌ Error obteniendo boucher:", error);
-                
-                if (error.response?.status === 404) {
-                  Alert.alert(
-                    "Boucher no encontrado",
-                    "No se encontró ningún boucher pagado para esta mesa. Verifica que se haya realizado el pago correctamente.",
-                    [{ text: "OK" }]
-                  );
-                } else {
-                  Alert.alert(
-                    "Error",
-                    "No se pudo obtener el boucher. Por favor, intente nuevamente.",
-                    [{ text: "OK" }]
-                  );
-                }
-              }
-            }
+              // Navegar a Pagos con comandas para reimprimir comanda
+              const comandasMesa = getComandasPorMesa(mesa.nummesa);
+              navigation.navigate("Pagos", {
+                mesa,
+                comandasParaPagar: comandasMesa,
+                origen: "Inicio",
+                soloImprimirComanda: true,
+              });
+            },
           },
           {
             text: "🔄 Liberar",
@@ -2463,6 +2447,75 @@ const InicioScreen = () => {
             text: "Cancelar",
             style: "cancel"
           }
+        ]
+      );
+    } else if (estado === "Pendiente de aprobación" || estado?.toLowerCase() === "pendiente_aprobar") {
+      // PLAN_PLANTILLA_COMANDAS: mesa en verde claro esperando aprobación de cocina
+      Alert.alert(
+        `Mesa ${mesa.nummesa} — Pendiente de Aprobación`,
+        "La comanda fue registrada y el pago procesado. Cocina debe aprobarla antes de preparar los platos.\n\n¿Qué deseas hacer?",
+        [
+          {
+            text: "📋 Ver pedido",
+            onPress: () => {
+              const comandasMesa = getComandasPorMesa(mesa.nummesa);
+              if (comandasMesa.length > 0) {
+                navigation.navigate('ComandaDetalle', {
+                  mesa,
+                  comandas: comandasMesa,
+                });
+              }
+            }
+          },
+          {
+            text: "🖨️ Imprimir Comanda",
+            onPress: () => {
+              // Navegar a Pagos para reimprimir comanda (la plantilla de comanda se usará allí)
+              const comandasMesa = getComandasPorMesa(mesa.nummesa);
+              navigation.navigate("Pagos", {
+                mesa,
+                comandasParaPagar: comandasMesa,
+                origen: "Inicio",
+                soloImprimirComanda: true,
+              });
+            }
+          },
+          { text: "Cerrar", style: "cancel" }
+        ]
+      );
+    } else if (estado === "Reportado" || estado?.toLowerCase() === "reportado") {
+      // PLAN_PLANTILLA_COMANDAS: mesa reportada por cocina (rojo), con motivo
+      // Obtener motivo del reporte si está disponible (viene por socket mesa-reportada)
+      const motivoReporte = mesa.motivoReporte || mesa.reporteMotivo || motivosReporteRef.current[mesa.nummesa || mesa._id] || "Sin detalle";
+      Alert.alert(
+        `Mesa ${mesa.nummesa} — Reportada`,
+        `Cocina reportó un problema con esta comanda.\n\nMotivo: "${motivoReporte}"\n\n¿Qué deseas hacer?`,
+        [
+          {
+            text: "📋 Ver pedido",
+            onPress: () => {
+              const comandasMesa = getComandasPorMesa(mesa.nummesa);
+              if (comandasMesa.length > 0) {
+                navigation.navigate('ComandaDetail', {
+                  mesa,
+                  comandas: comandasMesa,
+                });
+              }
+            }
+          },
+          {
+            text: "🖨️ Imprimir Comanda",
+            onPress: () => {
+              const comandasMesa = getComandasPorMesa(mesa.nummesa);
+              navigation.navigate("Pagos", {
+                mesa,
+                comandasParaPagar: comandasMesa,
+                origen: "Inicio",
+                soloImprimirComanda: true,
+              });
+            }
+          },
+          { text: "Cerrar", style: "cancel" }
         ]
       );
     } else {
@@ -3322,6 +3375,16 @@ const InicioScreen = () => {
               try {
                 await AsyncStorage.multiRemove(["ultimoBoucher", "mesaPagada"]);
               } catch (e) { /* ignorar */ }
+
+              // PLAN_PLANTILLA_COMANDAS: purgar del state local las comandas de esta mesa.
+              // El backend ya las marca IsActive=false + status='completado' al liberar,
+              // pero el state de React puede seguir mostrándolas hasta el próximo fetch.
+              // Esto previene el "fantasma" de mesa Libre con comandas activas en mapa.
+              setComandas(prev => prev.filter(c => {
+                const cmid = c.mesas?._id ?? c.mesas;
+                return !cmid || String(cmid) !== String(mesaId);
+              }));
+
               Alert.alert("✅", `Mesa ${mesa.nummesa} liberada exitosamente.\n\nLa mesa está ahora disponible para otros mozos.`);
               // Actualizar datos
               obtenerComandasHoy();

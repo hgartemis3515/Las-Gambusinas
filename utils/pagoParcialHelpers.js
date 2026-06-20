@@ -55,8 +55,12 @@ export function listarPlatosEnPantallaPago(comandas, esPagoAdelantado = false) {
         // OK, se muestra como ya pagado
       } else if (estado === 'entregado') {
         // OK, se muestra como entregado seleccionable
-      } else if (esPagoAdelantado && (estado === 'pedido' || estado === 'en_espera')) {
-        // OK, en modo PPA se muestran platos pendientes
+      } else if (estado === 'pendiente' || estado === 'pendiente_aprobar') {
+        // OK, platos pendientes de aprobación (esperando cocina) siempre se muestran
+      } else if (estado === 'pedido') {
+        // OK, platos en pedido (cocina aprobó, entraron al KDS) se muestran para reimprimir comanda
+      } else if (esPagoAdelantado && (estado === 'en_espera')) {
+        // OK, en modo PPA se muestran platos en espera
       } else if (esPagoAdelantado && platoItem.pagoAdelantado?.estadoTicket === 'pendiente_aprobacion') {
         // OK, platos con TPA pendiente aún se muestran en PPA
       } else {

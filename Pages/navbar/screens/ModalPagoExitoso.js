@@ -129,13 +129,13 @@ const ModalPagoExitoso = ({
     opacity: buttonAnim2.value,
   }));
 
-  const handleCompartir = async () => {
+  const handleImprimirComanda = async () => {
     if (!onImprimir) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await onImprimir();
     } catch (error) {
-      console.error("Error compartiendo:", error);
+      console.error("Error imprimiendo comanda:", error);
     }
   };
 
@@ -157,7 +157,7 @@ const ModalPagoExitoso = ({
   const simboloMoneda = boucherData?.configuracionIGV?.simboloMoneda || "S/";
   const totalBoucher = boucherData?.total || boucherData?.totalConDescuento || 0;
 
-  // Opciones del modal - orden fijo para mapear a los estilos animados
+  // Opciones del modal - PLAN_PLANTILLA_COMANDAS: "Imprimir comanda" en lugar de "Compartir boucher"
   const opciones = [
     {
       id: "propina",
@@ -169,11 +169,11 @@ const ModalPagoExitoso = ({
       style: buttonStyle0,
     },
     {
-      id: "compartir",
-      icon: "share-variant",
-      label: "Compartir",
-      color: "#8B5CF6",
-      onPress: handleCompartir,
+      id: "comanda",
+      icon: "printer",
+      label: "Imprimir Comanda",
+      color: "#2563EB",
+      onPress: handleImprimirComanda,
       visible: !!onImprimir,
       style: buttonStyle1,
     },
@@ -249,7 +249,7 @@ const ModalPagoExitoso = ({
                 <Text style={styles.infoValue}>#{mesaData?.nummesa || mesaData?.numMesa || "-"}</Text>
                 <View style={styles.separator} />
                 <MaterialCommunityIcons name="receipt" size={16} color="#666" />
-                <Text style={styles.infoLabel}>Boucher:</Text>
+                <Text style={styles.infoLabel}>Comanda:</Text>
                 <Text style={styles.infoValue}>#{boucherData?.boucherNumber || boucherData?.voucherId || "-"}</Text>
               </View>
               <View style={styles.infoRow}>

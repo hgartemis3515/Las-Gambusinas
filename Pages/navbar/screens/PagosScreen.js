@@ -28,7 +28,7 @@ import { useSocket } from "../../../context/SocketContext";
 import logger from "../../../utils/logger";
 import configuracionService from "../../../services/configuracionService";
 import { filtrarComandasActivas, filtrarComandasPorIds } from "../../../utils/comandaHelpers";
-import { mostrarOpcionesBoucher } from "../../../services/boucherPrint";
+import { mostrarOpcionesComanda } from "../../../services/comandaPrint";
 import {
   listarPlatosPagables,
   listarPlatosEnPantallaPago,
@@ -1126,9 +1126,9 @@ const PagosScreen = () => {
     etiquetasDefault: PLANTILLA_DEFAULT.etiquetas,
   });
 
-  const generarBoucher = async (boucher = null) => {
+  const generarComanda = async (boucher = null) => {
     const opts = construirOptsBoucher(boucher);
-    return mostrarOpcionesBoucher(opts, {
+    return mostrarOpcionesComanda(opts, {
       onStart: () => setIsGenerating(true),
       onEnd: () => setIsGenerating(false),
     });
@@ -1142,19 +1142,22 @@ const PagosScreen = () => {
       return;
     }
 
-    // Verificar si la mesa ya está en estado "pagado"
-    const mesaYaPagada = mesa.estado?.toLowerCase() === "pagado";
+    // Verificar si la mesa ya está en estado "pagado" o "pendiente_aprobar"
+    const mesaYaPagada = mesa.estado?.toLowerCase() === "pagado" || mesa.estado?.toLowerCase() === "pendiente_aprobar";
     
     if (mesaYaPagada) {
-      // Si ya está pagada, solo generar el boucher
+      // Si ya está pagada o pendiente de aprobación, solo generar la comanda
+      const estadoLabel = mesa.estado?.toLowerCase() === "pendiente_aprobar" ? "Pendiente de Aprobación" : "Pagada";
       Alert.alert(
-        "Mesa ya Pagada",
-        "Esta mesa ya ha sido pagada. Solo puedes compartir el boucher.",
+        `Mesa ${mesa.nummesa} — ${estadoLabel}`,
+        mesa.estado?.toLowerCase() === "pendiente_aprobar"
+          ? "La comanda está registrada y espera aprobación de cocina. Puedes reimprimir la comanda."
+          : "La mesa ya ha sido pagada y aprobada. Puedes reimprimir la comanda.",
         [
           {
-            text: "Generar Boucher",
+            text: "Imprimir Comanda",
             onPress: async () => {
-              await generarBoucher();
+              await generarComanda();
             }
           },
           {
@@ -1753,131 +1756,19 @@ const PagosScreen = () => {
         setTotalAcumuladoPagado((prev) => prev + (Number(boucherCreado.total) || 0));
       }
 
-      // Actualizar mesa a "pagado" solo si el backend confirma mesa 100% cobrada
-      const mesaCompletamentePagada = resumenPago?.mesaPagadaCompletamente === true;
-
-      let mesaVerificadaComoPagada = false;
-      
-      if (mesaFinal && mesaIdFinal && mesaCompletamentePagada) {
-        setMensajeCarga("Confirmando pago...");
-        
-        const mesaUpdateURL = apiConfig.isConfigured 
-          ? `${apiConfig.getEndpoint('/mesas')}/${mesaIdFinal}/estado`
-          : `${MESAS_API_UPDATE}/${mesaIdFinal}/estado`;
-        
-        // Usar endpoint /mesas (GET individual por :id usa campo mesasId personalizado, no _id)
-        const mesaGetURL = apiConfig.isConfigured 
-          ? apiConfig.getEndpoint('/mesas')
-          : MESAS_API_UPDATE;
-        
-        // Función helper para verificar el estado de la mesa vía GET directo al backend
-        // IMPORTANTE: GET /mesas/:id busca por campo "mesasId" personalizado, no por "_id" de MongoDB
-        // Por eso usamos GET /mesas y filtramos por _id
-        const verificarEstadoMesa = async () => {
-          try {
-            const response = await axios.get(mesaGetURL, { 
-              timeout: 5000,
-              // Headers para evitar caché
-              headers: {
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
-              }
-            });
-            
-            // El endpoint devuelve un array de mesas
-            const mesas = response.data;
-            const mesaIdStr = mesaIdFinal?.toString();
-            
-            // Buscar la mesa por _id
-            const mesaEncontrada = mesas.find(m => 
-              m._id?.toString() === mesaIdStr || m._id === mesaIdFinal
-            );
-            
-            if (!mesaEncontrada) {
-              console.warn(`⚠️ [VERIFICACIÓN] Mesa ${mesaIdStr?.slice(-6)} no encontrada en la lista`);
-              return false;
-            }
-            
-            const estadoActual = mesaEncontrada.estado?.toLowerCase();
-            console.log(`🔍 [VERIFICACIÓN] Estado actual de mesa ${mesaFinal.nummesa}: "${estadoActual}"`);
-            return estadoActual === 'pagado';
-          } catch (error) {
-            console.error(`❌ [VERIFICACIÓN] Error obteniendo estado de mesa:`, error.message);
-            return false;
-          }
-        };
-        
-        // Función helper para actualizar el estado de la mesa
-        const actualizarEstadoMesa = async () => {
-          try {
-            await axios.put(
-              mesaUpdateURL,
-              { estado: "pagado" },
-              { timeout: 5000 }
-            );
-            return true;
-          } catch (error) {
-            console.error(`❌ [ACTUALIZACIÓN] Error actualizando mesa:`, error.message);
-            return false;
-          }
-        };
-        
-        const MAX_REINTENTOS = 5;
-        const DELAY_REINTENTO = 1000; // 1 segundo entre reintentos
-        
-        for (let intento = 1; intento <= MAX_REINTENTOS; intento++) {
-          console.log(`🔄 [MESA] Intento ${intento}/${MAX_REINTENTOS} - Actualizando mesa ${mesaFinal.nummesa} a "pagado"...`);
-          
-          // Actualizar mensaje del overlay
-          if (intento === 1) {
-            setMensajeCarga("Confirmando pago...");
-          } else {
-            setMensajeCarga(`Confirmando pago (intento ${intento}/${MAX_REINTENTOS})...`);
-          }
-          
-          // 1. Intentar actualizar el estado
-          const actualizacionExitosa = await actualizarEstadoMesa();
-          
-          if (!actualizacionExitosa) {
-            console.warn(`⚠️ [MESA] Falló la actualización en intento ${intento}`);
-            if (intento < MAX_REINTENTOS) {
-              // Esperar antes de reintentar
-              await new Promise(resolve => setTimeout(resolve, DELAY_REINTENTO));
-            }
-            continue;
-          }
-          
-          // 2. Verificar que el estado realmente cambió (GET directo al backend)
-          setMensajeCarga("Verificando estado de mesa...");
-          console.log(`🔍 [MESA] Verificando estado de mesa ${mesaFinal.nummesa}...`);
-          
-          // Pausa para dar tiempo al backend (latencia / réplicas)
-          await new Promise(resolve => setTimeout(resolve, 800));
-          
-          const estadoVerificado = await verificarEstadoMesa();
-          
-          if (estadoVerificado) {
-            mesaVerificadaComoPagada = true;
-            console.log(`✅ [MESA] Mesa ${mesaFinal.nummesa} verificada como "pagado"`);
-            setMensajeCarga("¡Pago confirmado!");
-            // Actualizar estado local de la mesa
-            setMesa(prev => prev ? { ...prev, estado: "pagado" } : null);
-            break;
-          } else {
-            console.warn(`⚠️ [MESA] Verificación falló en intento ${intento} - Estado no es "pagado"`);
-            if (intento < MAX_REINTENTOS) {
-              console.log(`🔄 [MESA] Reintentando en ${DELAY_REINTENTO}ms...`);
-              await new Promise(resolve => setTimeout(resolve, DELAY_REINTENTO));
-            }
-          }
-        }
-        
-        // Si después de todos los reintentos no se verificó, mostrar advertencia pero continuar
-        if (!mesaVerificadaComoPagada) {
-          console.warn(`⚠️ [MESA] No se pudo verificar el estado "pagado" después de ${MAX_REINTENTOS} intentos`);
-          // Continuar de todas formas para no bloquear al mozo
-          setMensajeCarga("¡Pago procesado!");
-        }
+      // PLAN_PLANTILLA_COMANDAS: Mesa pasa a "pendiente_aprobar" tras pago normal.
+      // El backend ya creó el TicketAprobacion y emitió socket ticket-aprobacion-nuevo.
+      // Cocina aprobará → socket comanda-aprobada → mesa → "pagado".
+      // No forzar mesa a "pagado" localmente; el socket actualizará InicioScreen.
+      const mesaEstado = resumenPago?.mesaEstado || boucherCreado?.mesaEstado;
+      if (mesaEstado === 'pendiente_aprobar' || mesaEstado === 'pagado' || mesaEstado === 'reportado') {
+        console.log(`🎫 [MESA] Estado devuelto por backend: "${mesaEstado}" — actualización vía socket`);
+        setMesa(prev => prev ? { ...prev, estado: mesaEstado } : null);
+      } else if (resumenPago?.mesaPagadaCompletamente) {
+        // Fallback: si el backend no devuelve mesaEstado pero la mesa está completamente pagada,
+        // asumimos pendiente_aprobar (nuevo flujo) si no es PPA
+        console.log(`🎫 [MESA] Mesa completamente pagada — pendiente_aprobar (fallback)`);
+        setMesa(prev => prev ? { ...prev, estado: 'pendiente_aprobar' } : null);
       }
 
       // ✅ Guardar boucher y mesa para InicioScreen (mensaje post-pago, imprimir, liberar)
@@ -1894,10 +1785,12 @@ const PagosScreen = () => {
       setProcesandoPago(false);
       setMensajeCarga("Procesando pago...");
 
-      // ✅ Construir mensaje según estado de verificación
-      const estadoMesaMsg = mesaVerificadaComoPagada 
-        ? `La mesa ${mesaFinal.nummesa} está en estado 'Pagado' (verificado).`
-        : `⚠️ La mesa ${mesaFinal.nummesa} podría tardar unos segundos en actualizarse.`;
+      // ✅ Construir mensaje según estado de mesa
+      const estadoMesaMsg = mesaEstado === 'pendiente_aprobar'
+        ? `Mesa ${mesaFinal.nummesa} — Comanda registrada. Cocina debe aprobar antes de preparar.`
+        : mesaEstado === 'pagado'
+          ? `La mesa ${mesaFinal.nummesa} está en estado 'Pagado' (aprobado por cocina).`
+          : `⚠️ La mesa ${mesaFinal.nummesa} podría tardar unos segundos en actualizarse.`;
 
       // Mostrar modal de pago exitoso con opciones
       const irAlInicio = () => {
@@ -2187,7 +2080,7 @@ const PagosScreen = () => {
                     style={styles.parcialPrintBtn}
                     onPress={() => {
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      generarBoucher(b);
+                      generarComanda(b);
                     }}
                     disabled={isGenerating}
                     activeOpacity={0.8}
@@ -2606,7 +2499,7 @@ const PagosScreen = () => {
         <TouchableOpacity
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            generarBoucher(boucherData || boucherFromParams);
+            generarComanda(boucherData || boucherFromParams);
           }}
           disabled={isGenerating}
           activeOpacity={0.8}
@@ -2619,7 +2512,7 @@ const PagosScreen = () => {
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 * escala }}>
                 <MaterialCommunityIcons name="file-document-outline" size={28 * escala} color="#FFFFFF" />
                 <Text style={{ color: '#FFFFFF', fontSize: 16 * escala, fontWeight: '700', includeFontPadding: false, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 2 }} numberOfLines={1}>
-                  Generar Boucher
+                  Imprimir Comanda
                 </Text>
               </View>
             )}
@@ -2726,7 +2619,7 @@ const PagosScreen = () => {
         boucherData={boucherData || boucherFromParams}
         mesaData={mesa}
         clienteData={clientePagoExitoso}
-        onImprimir={() => generarBoucher(boucherData || boucherFromParams)}
+        onImprimir={() => generarComanda(boucherData || boucherFromParams)}
         onRegistrarPropina={() => {
           setModalPagoExitosoVisible(false);
           setModalPropinaVisible(true);

@@ -7,7 +7,7 @@
  */
 
 /** Estados que indican comanda cerrada (fin de ciclo de servicio) */
-const ESTADOS_COMANDA_CERRADA = ['pagado', 'completado', 'cerrado', 'cancelado'];
+const ESTADOS_COMANDA_CERRADA = ['pagado', 'completado', 'cerrado', 'cancelado', 'anulado'];
 
 /**
  * Determina si una comanda está activa (en ciclo de servicio actual, sin pago/boucher).

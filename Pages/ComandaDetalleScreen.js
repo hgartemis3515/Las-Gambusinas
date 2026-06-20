@@ -24,7 +24,7 @@ import { useSocket } from '../context/SocketContext';
 import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
-import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, filtrarComandasPorPedido, filtrarSoloPlatosPagados } from '../utils/comandaHelpers';
+import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, filtrarComandasPorPedido } from '../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
 import { clasificarComandaPorTipoServicio, obtenerPlatosElegiblesPPA, getReglasBotonesComandaDetalle, buildPlatosPayloadPPA } from '../helpers/pagoAdelantadoHelpers';
@@ -32,10 +32,29 @@ import { clasificarComandaPorTipoServicio, obtenerPlatosElegiblesPPA, getReglasB
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Función para obtener estilos por estado
-const obtenerEstilosPorEstado = (estado) => {
-  const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado === 'pendiente_pago' ? 'pendiente_pago' : estado;
+// PLAN_PLANTILLA_COMANDAS: cuando la mesa está 'pagado' (cocina aprobó), los platos cobrados
+// pueden seguir en estado 'pedido' o 'pendiente' en BD (porque el KDS los necesita en 'pedido').
+// En ese caso, mostrarlos visualmente como 'PAGADO/COBRADO' si tienen tiempos.pagado registrado.
+const obtenerEstilosPorEstado = (estado, opciones = {}) => {
+  const estadoRaw = (estado || '').toString().toLowerCase();
+
+  // Si la mesa está pagada y el plato fue cobrado (tiene tiempos.pagado), forzar vista PAGADO
+  // para cualquier estado operativo (pedido/pendiente/en_espera/recoger/salio/entregado).
+  if (opciones.mesaPagada && opciones.tieneTiempoPagado &&
+      ['pendiente', 'pedido', 'en_espera', 'recoger', 'salio', 'entregado', 'pagado'].includes(estadoRaw)) {
+    estado = 'pagado';
+  }
+
+  const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado === 'pendiente_pago' ? 'pendiente_pago' : estado === 'pendiente_aprobar' ? 'pendiente_aprobar' : estado === 'pendiente' ? 'pendiente_aprobar' : estado;
   
   const estilos = {
+    pendiente_aprobar: {
+      fondo: '#FFF3E0',
+      borde: '#FF9800',
+      badgeFondo: '#FF9800',
+      badgeTexto: '#FFFFFF',
+      textoEstado: 'PENDIENTE'
+    },
     pedido: {
       fondo: '#DBEAFE',
       borde: '#3B82F6',
@@ -283,9 +302,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             if (pedidoIdCiclo) {
               lista = filtrarComandasPorPedido(lista, pedidoIdCiclo);
             }
-            if (mesaEstado === 'pagado') {
-              lista = filtrarSoloPlatosPagados(lista);
-            }
+            // PLAN_PLANTILLA_COMANDAS: el backend ya filtra los platos relevantes en
+            // /mesa/:id/pagadas (mapComandasSoloPlatosPagados incluye pedido|pendiente|entregado...).
+            // NO aplicar filtrarSoloPlatosPagados aquí: descartaría platos en 'pedido' que
+            // acabamos de aprobar en cocina y el mozo debe verlos como "cobrado".
             comandasMesa = lista;
           }
         } catch (e) {
@@ -1803,7 +1823,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     const estadoPlato = (plato.pagoAdelantado?.estadoTicket === 'pendiente_aprobacion')
       ? 'pendiente_pago'
       : plato.estado;
-    const estilos = obtenerEstilosPorEstado(estadoPlato);
+    // PLAN_PLANTILLA_COMANDAS: si la mesa está pagada, mostrar el plato como COBRADO
+    // aunque su estado BD sea 'pedido'/'pendiente' (KDS). Solo si tiene tiempos.pagado.
+    const mesaEstado = (mesa?.estado || '').toLowerCase();
+    const estilos = obtenerEstilosPorEstado(estadoPlato, {
+      mesaPagada: mesaEstado === 'pagado' || mesaEstado === 'pagando',
+      tieneTiempoPagado: !!plato.tiempos?.pagado,
+    });
     // 🔥 CRÍTICO: Usar _id del subdocumento (único por instancia) para distinguir platos duplicados
     const platoKey = plato._id || `${plato.platoId}-${plato.index}`;
     const estaSeleccionado = platosSeleccionadosEntregar.some(p => {
