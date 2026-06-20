@@ -292,7 +292,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
       const mesaEstado = (mesa?.estado || '').toLowerCase();
       let pedidoIdCiclo = null;
-      if ((mesaEstado === 'pagado' || mesaEstado === 'pagando') && mesaIdRef) {
+      if ((mesaEstado === 'pagado' || mesaEstado === 'pagando' || mesaEstado === 'pendiente_aprobar') && mesaIdRef) {
         try {
           const pagadasURL = `${comandaBase}/mesa/${mesaIdRef}/pagadas`;
           const resPagadas = await axios.get(pagadasURL, { timeout: 10000 });
@@ -314,24 +314,30 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       }
 
       if (comandasMesa.length === 0) {
-        if (mesaIdRef) {
-          try {
-            const activasURL = `${comandaBase}/mesa/${mesaIdRef}/activas`;
-            const resActivas = await axios.get(activasURL, { timeout: 10000 });
-            if (resActivas.data?.success && Array.isArray(resActivas.data.comandas)) {
-              comandasMesa = resActivas.data.comandas;
+        // PLAN_PLANTILLA_COMANDAS: en mesa pagado/pendiente_aprobar, SOLO usar /pagadas.
+        // NO caer en fallback /activas ni /fecha/hoy — esos traen comandas de visitas
+        // anteriores que ya fueron cerradas (IsActive=false, status=completado) y que
+        // no pertenecen al ciclo actual, mostrando "platos antiguos" al mozo.
+        if (mesaEstado !== 'pagado' && mesaEstado !== 'pagando' && mesaEstado !== 'pendiente_aprobar') {
+          if (mesaIdRef) {
+            try {
+              const activasURL = `${comandaBase}/mesa/${mesaIdRef}/activas`;
+              const resActivas = await axios.get(activasURL, { timeout: 10000 });
+              if (resActivas.data?.success && Array.isArray(resActivas.data.comandas)) {
+                comandasMesa = resActivas.data.comandas;
+              }
+            } catch (e) {
+              if (__DEV__) console.warn('[ComandaDetalle] /mesa/activas falló, se intentará por fecha:', e?.message);
             }
-          } catch (e) {
-            if (__DEV__) console.warn('[ComandaDetalle] /mesa/activas falló, se intentará por fecha:', e?.message);
           }
-        }
 
-        if (comandasMesa.length === 0) {
-          const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-          const comandasURL = `${comandaBase}/fecha/${currentDate}`;
-          const response = await axios.get(comandasURL, { timeout: 10000 });
-          const todasLasComandas = response.data || [];
-          comandasMesa = todasLasComandas.filter(comandaPerteneceAMesa);
+          if (comandasMesa.length === 0) {
+            const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
+            const comandasURL = `${comandaBase}/fecha/${currentDate}`;
+            const response = await axios.get(comandasURL, { timeout: 10000 });
+            const todasLasComandas = response.data || [];
+            comandasMesa = todasLasComandas.filter(comandaPerteneceAMesa);
+          }
         }
       }
 
