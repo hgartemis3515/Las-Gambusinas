@@ -2,7 +2,7 @@
   "expo": {
     "name": "appmozo",
     "slug": "appmozo",
-    "version": "1.0.16",
+    "version": "1.0.17",
     "runtimeVersion": "1.0.15",
     "updates": {
       "url": "https://u.expo.dev/afcea184-5e43-4fc0-8fb9-553db952ce44",
@@ -25,7 +25,7 @@
       "supportsTablet": true
     },
     "android": {
-      "versionCode": 16,
+      "versionCode": 17,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F8F4ED"
