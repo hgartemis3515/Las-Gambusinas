@@ -255,7 +255,7 @@ const ModalPagoExitoso = ({
               <View style={styles.infoRow}>
                 <MaterialCommunityIcons name="account" size={16} color="#666" />
                 <Text style={styles.infoLabel}>Cliente:</Text>
-                <Text style={styles.infoValue}>{clienteData?.nombre || clienteData?.name || "Invitado"}</Text>
+                <Text style={styles.infoValue}>{clienteData?.nombre || clienteData?.name || "Cliente"}</Text>
                 <View style={styles.separator} />
                 <Text style={[styles.totalValue, { marginLeft: 'auto' }]}>
                   {simboloMoneda} {totalBoucher.toFixed(2)}

@@ -1907,11 +1907,11 @@ const PagosScreen = () => {
     // ✅ Mostrar confirmación antes de procesar el pago
     const tituloConfirmacion = esPagoAdelantado ? "Confirmar Pago Adelantado" : "Confirmar Pago";
     const mensajeConfirmacion = esPagoAdelantado
-      ? `¿Deseas confirmar el pago adelantado para el cliente ${cliente.nombre || "Invitado"}?\n\n` +
+      ? `¿Deseas confirmar el pago adelantado para el cliente ${cliente.nombre || "Cliente"}?\n\n` +
         `Total: ${simbolo} ${totalFormateado}` +
         (metodoLabel ? `\nMétodo: ${metodoLabel}` : '') +
         `\n\nLos platos entrarán a cocina tras la aprobación de este ticket.`
-      : `¿Deseas continuar con el pago para el cliente ${cliente.nombre || "Invitado"}?\n\n` +
+      : `¿Deseas continuar con el pago para el cliente ${cliente.nombre || "Cliente"}?\n\n` +
         `Total: ${simbolo} ${totalFormateado}` +
         (metodoLabel ? `\nMétodo: ${metodoLabel}` : '') +
         vueltoLinea;

@@ -125,7 +125,7 @@ const ModalClientes = ({
         const datosCliente = {};
         if (dni && !nombre && !telefono) {
           datosCliente.dni = dni.trim();
-          datosCliente.nombre = "Invitado";
+          datosCliente.nombre = "Cliente";
         } else if (nombre && !dni && !telefono) {
           datosCliente.nombre = nombre.trim();
         } else {
@@ -405,7 +405,7 @@ const ModalClientes = ({
                     )}
                   </View>
                   <Text style={styles.checkboxLabel}>
-                    Continuar como Invitado (se generará automáticamente)
+                    Continuar como Cliente (se generará automáticamente)
                   </Text>
                 </TouchableOpacity>
 
