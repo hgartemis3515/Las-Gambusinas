@@ -396,6 +396,17 @@ const MesaAnimada = React.memo(({
       // Pagado: mantener legible el número / nombre del mozo (evitar “tarjeta vacía”)
       pulseScale.value = withTiming(1, { duration: 300 });
       opacity.value = withTiming(1, { duration: 300 });
+    } else if (estadoLower === "entregado") {
+      // Entregado: pulse suave y estable para indicar "listo para cobrar" sin distraer
+      pulseScale.value = withRepeat(
+        withSequence(
+          withTiming(1.03, { duration: 1200 }),
+          withTiming(1, { duration: 1200 })
+        ),
+        -1,
+        true
+      );
+      translateX.value = 0;
     } else {
       // Para otros estados, sin animación
       pulseScale.value = 1;
@@ -1182,6 +1193,13 @@ const InicioScreen = () => {
       // Calcular el nuevo estado de la mesa basado en los platos de esta comanda actualizada
       const platosActivos = (comanda.platos || []).filter(p => !p.eliminado && !p.anulado);
       
+      // Verificar si la comanda sigue siendo activa (no pagada, no cancelada)
+      const status = (comanda.status || '').toLowerCase();
+      const comandaActiva = !['pagado', 'completado', 'cerrado', 'cancelado'].includes(status) && 
+                           comanda.IsActive !== false && 
+                           !comanda.eliminado && 
+                           !comanda.boucherId;
+      
       // Verificar si TODOS los platos activos están en "recoger" (comanda lista para entregar)
       const todosPlatosRecoger = platosActivos.length > 0 && platosActivos.every(p => 
         (p.estado || '').toLowerCase() === 'recoger'
@@ -1193,29 +1211,32 @@ const InicioScreen = () => {
         const e = (p.estado || '').toLowerCase();
         return e === 'recoger' || e === 'salio';
       });
-      
+
+      // Verificar si TODOS los platos activos están en "entregado" (listo para cobrar)
+      const todosPlatosEntregados = platosActivos.length > 0 && platosActivos.every(p =>
+        (p.estado || '').toLowerCase() === 'entregado'
+      );
+
+      // Si el status de la comanda ya viene como 'entregado' desde el backend, forzar estado mesa 'entregado'
+      const comandaStatusEntregado = status === 'entregado';
+
       // Verificar si hay platos pendientes (pedido o en_espera)
       const hayPlatosPendientes = platosActivos.some(p => 
         (p.estado || '').toLowerCase() === 'pedido' || (p.estado || '').toLowerCase() === 'en_espera'
       );
       
-      // Verificar si la comanda sigue siendo activa (no pagada, no cancelada)
-      const status = (comanda.status || '').toLowerCase();
-      const comandaActiva = !['pagado', 'completado', 'cerrado', 'cancelado'].includes(status) && 
-                           comanda.IsActive !== false && 
-                           !comanda.eliminado && 
-                           !comanda.boucherId;
-      
       // Determinar el estado de la mesa:
-      // - Si la comanda está activa y todos los platos están en recoger → "preparado"
-      // - Si la comanda está activa y hay platos en recoger (pero no todos) → "preparado"
+      // - Si la comanda está activa y todos los platos están entregados → "entregado" (lista para cobrar)
+      // - Si la comanda está activa y hay platos en recoger/salio → "preparado"
       // - Si la comanda está activa y hay platos pendientes → "pedido"
       // - Si la comanda ya no está activa → no cambiar el estado
       let nuevoEstadoMesa = null;
       
       if (comandaActiva && platosActivos.length > 0) {
-        // Si hay platos en recoger (todos o algunos), la mesa está "preparado"
-        if (hayPlatosRecoger) {
+        // Si todos los platos están entregados (o el status de la comanda es 'entregado'), la mesa está "entregado"
+        if (todosPlatosEntregados || comandaStatusEntregado) {
+          nuevoEstadoMesa = 'entregado';
+        } else if (hayPlatosRecoger) {
           nuevoEstadoMesa = 'preparado';
         } else if (hayPlatosPendientes) {
           nuevoEstadoMesa = 'pedido';
@@ -1834,6 +1855,31 @@ const InicioScreen = () => {
   }, [mesas, comandas, obtenerComandasMesa]);
 
   const getEstadoMesa = (mesa) => {
+    // FIX BUG (Mesa Libre tras entregar todos los platos):
+    // Antes, si el backend decía "libre" la mesa se mostraba Libre sin mirar comandas.
+    // El backend podía enviar "libre" erróneamente (bloque legacy en cambiarEstadoPlato, ya corregido).
+    // Defensivamente: si hay comandas activas con TODOS sus platos entregados (status 'entregado'),
+    // forzamos "Entregado" aunque el backend diga "libre".
+    const comandasMesaParaFix = getComandasPorMesa(mesa.nummesa);
+    const hayComandasEntregadasFix = comandasMesaParaFix.some(c => {
+      if (!c || c.IsActive === false) return false;
+      const status = (c.status || '').toLowerCase();
+      if (status === 'entregado') return true;
+      if (!c.platos || c.platos.length === 0) return false;
+      const activos = c.platos.filter(p => p.eliminado !== true && p.anulado !== true);
+      return activos.length > 0 && activos.every(p => (p.estado || '').toLowerCase() === 'entregado');
+    });
+    if (hayComandasEntregadasFix) {
+      // Verificación adicional: que la comanda no esté cerrada/pagada
+      const algunaActiva = comandasMesaParaFix.some(c => {
+        const status = (c.status || '').toLowerCase();
+        return c.IsActive !== false && !['pagado', 'completado', 'cancelado', 'cerrado'].includes(status);
+      });
+      if (algunaActiva) {
+        return "Entregado";
+      }
+    }
+
     // PLAN_PLANTILLA_COMANDAS: prioridad 0 — si el backend marcó la mesa como "libre",
     // mostrarla Libre SIEMPRE aunque queden comandas huérfanas en el state local (se limpian
     // al liberar via cleanup en mesas.repository.js, pero el state de React puede estar desactualizado).
@@ -1856,7 +1902,12 @@ const InicioScreen = () => {
       return mesa.estado.charAt(0).toUpperCase() + mesa.estado.slice(1).toLowerCase();
     }
 
-    // Prioridad 1.5: si la mesa está en "pendiente_pago" (pago adelantado registrado), mostrarla naranja
+    // Prioridad 1.5: si la mesa está en "entregado" (todos los platos entregados, listo para cobrar)
+    if (mesa.estado && mesa.estado.toLowerCase() === "entregado") {
+      return "Entregado";
+    }
+
+    // Prioridad 1.6: si la mesa está en "pendiente_pago" (pago adelantado registrado), mostrarla naranja
     if (mesa.estado && mesa.estado.toLowerCase() === "pendiente_pago") {
       return "Pendiente de pago";
     }
@@ -1868,22 +1919,22 @@ const InicioScreen = () => {
     }
 
     // Fuente única: comandas activas de la mesa
-    const comandasMesa = getComandasPorMesa(mesa.nummesa);
+    const comandasMesa = comandasMesaParaFix;
 
     // 🔥 CORREGIDO: Si no hay comandas activas localmente, cruzar con el estado de la mesa desde el backend
     // Esto previene que una mesa aparezca como "Libre" cuando hay desincronización de datos
     if (comandasMesa.length === 0) {
-      // Si el backend tiene la mesa como "pedido" o "preparado", dar prioridad a ese estado
+      // Si el backend tiene la mesa como "pedido", "preparado" o "entregado", dar prioridad a ese estado
       // (puede haber comandas activas que no llegaron por Socket o que están en caché desactualizado)
       if (mesa.estado) {
         const estadoBackend = mesa.estado.toLowerCase();
-        if (estadoBackend === "pedido" || estadoBackend === "preparado") {
+        if (estadoBackend === "pedido" || estadoBackend === "preparado" || estadoBackend === "entregado") {
           // Log solo una vez por mesa (usando ref para tracking)
           if (!mesasDesyncLoggedRef.current.has(mesa.nummesa)) {
             console.log(`⚠️ [DESYNC] Mesa ${mesa.nummesa} sin comandas locales pero backend dice "${estadoBackend}"`);
             mesasDesyncLoggedRef.current.add(mesa.nummesa);
           }
-          return estadoBackend.charAt(0).toUpperCase() + estadoBackend.slice(1);
+          return estadoBackend === "entregado" ? "Entregado" : (estadoBackend.charAt(0).toUpperCase() + estadoBackend.slice(1));
         }
       }
       return "Libre";
@@ -1895,7 +1946,7 @@ const InicioScreen = () => {
       const estadoLower = mesa.estado.toLowerCase();
       
       if (comandasMesa.length > 0) {
-        // Verificar si hay comandas realmente preparadas (todos los platos en "recoger") o listas para pagar (entregado)
+        // Verificar si hay comandas realmente preparadas (todos los platos en "recoger" o "salio")
         const hayComandasPreparadas = comandasMesa.some(c => {
           if (!c.platos || c.platos.length === 0) return false;
           // 🔥 CORREGIDO: Filtrar platos eliminados Y anulados
@@ -1928,9 +1979,9 @@ const InicioScreen = () => {
             return "Libre";
           }
         }
-        // Si hay comandas entregadas (listas para pagar), mantener Preparado para que la mesa siga accesible
+        // Si hay comandas entregadas (listas para pagar), mostrar Entregado (verde) para distinguir de Preparado
         if (hayComandasEntregadas) {
-          return "Preparado";
+          return "Entregado";
         }
       }
       
@@ -1959,7 +2010,9 @@ const InicioScreen = () => {
       return activos.length > 0 && activos.every(p => (p.estado || '').toLowerCase() === 'entregado');
     });
 
-    if (hayPreparadas || hayEntregadas) return "Preparado";
+    // Prioridad: Entregado (todos platos entregados) > Preparado (recoger/salio) > Pedido
+    if (hayEntregadas) return "Entregado";
+    if (hayPreparadas) return "Preparado";
     return "Pedido";
   };
 
@@ -2089,6 +2142,8 @@ const InicioScreen = () => {
         return theme.colors.mesaEstado.pedido || "#2196F3"; // Azul
       case "preparado":
         return theme.colors.mesaEstado.preparado || "#FFC107"; // Amarillo
+      case "entregado":
+        return theme.colors.mesaEstado.entregado || "#00C851"; // Verde - todos los platos entregados, listo para cobrar
       case "pendiente_aprobar":
       case "pendiente de aprobación":
         return theme.colors.mesaEstado.pendiente_aprobar || "#FF9800"; // Naranja saturado - esperando aprobación
@@ -2234,8 +2289,9 @@ const InicioScreen = () => {
           );
         }
       }
-    } else if (estado === "Preparado" || estado?.toLowerCase() === "preparado") {
+    } else if (estado === "Preparado" || estado === "Entregado" || estado?.toLowerCase() === "preparado" || estado?.toLowerCase() === "entregado") {
       // Obtener TODAS las comandas activas de la mesa (no solo las preparadas)
+      // Nota: "Entregado" se trata igual que "Preparado" — el mozo puede ver platos y pagar.
       const comandasMesa = getComandasPorMesa(mesa.nummesa);
       
       // Ordenar comandas por fecha de creación (más recientes primero)

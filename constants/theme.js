@@ -9,7 +9,8 @@ const baseTheme = {
     libre: '#9E9E9E',            // Gris - Libre
     esperando: '#FFC107',        // Amarillo - Esperando
     pedido: '#2196F3',           // Azul - Pedido
-    preparado: '#FFC107',        // Amarillo - Preparado
+    preparado: '#FFC107',        // Amarillo - Preparado (platos en salio/recoger)
+    entregado: '#00C851',        // Verde - Entregado (todos los platos entregados, listo para cobrar)
     pagando: '#00C851',          // Verde claro - Pagando
     pendiente_pago: '#FF9800',   // Naranja - Pendiente de pago (PPA)
     pendiente_aprobar: '#FF9800',// Naranja saturado - Pendiente de aprobación (cocina)
