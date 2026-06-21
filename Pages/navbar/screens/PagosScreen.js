@@ -691,17 +691,6 @@ const PagosScreen = () => {
   // 🔥 Datos de pago seleccionados en el modal (método, moneda, monto, vuelto)
   const [datosPagoSeleccionado, setDatosPagoSeleccionado] = useState(null);
 
-  // Total a cobrar en la moneda base (PEN) que se pasará al modal.
-  // Respeta IGV y pago parcial usando totalesPagoActual.
-  const totalBaseCobro = useMemo(() => {
-    if (totalesPagoActual?.total != null) return totalesPagoActual.total;
-    const paramsParaTotal = route.params || {};
-    const totalParam = (paramsParaTotal.totalPendiente != null ? paramsParaTotal.totalPendiente : null) ?? total ?? 0;
-    const igvPorcentaje = configMoneda?.igvPorcentaje || 18;
-    const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
-    return incluyeIGV ? totalParam : totalParam * (1 + igvPorcentaje / 100);
-  }, [totalesPagoActual, route.params, total, configMoneda]);
-
   const formatearFechaVoucher = (b) =>
     b?.fechaPagoString ||
     (b?.fechaPago
@@ -1008,7 +997,7 @@ const PagosScreen = () => {
     const comandasDeParams = paramsParaCalc.comandasParaPagar || [];
     const comandasParaCalc = comandas.length > 0 ? comandas : comandasDeParams;
     return listarPlatosEnPantallaPago(comandasParaCalc, esPagoAdelantado);
-  }, [comandas, route.params]);
+  }, [comandas, route.params, esPagoAdelantado]);
 
   const platosPagables = useMemo(
     () => platosEnPantalla.filter((p) => !p.yaPagado),
@@ -1037,9 +1026,22 @@ const PagosScreen = () => {
   }, [platosPagables, platosSeleccionadosPago]);
 
   const totalesPagoActual = useMemo(() => {
-    const sub = calcularSubtotalSeleccion(platosSeleccionadosPago, platosPagables);
+    const sub = calcularSubtotalSeleccion(platosSeleccionadosPago, platosEnPantalla);
     return calcularTotalesPreview(sub, configMoneda);
-  }, [platosSeleccionadosPago, platosPagables, configMoneda]);
+  }, [platosSeleccionadosPago, platosEnPantalla, configMoneda]);
+
+  // Total a cobrar en la moneda base (PEN) que se pasará al modal.
+  // Prioriza el total de los platos seleccionados (pago parcial / PPA).
+  const totalBaseCobro = useMemo(() => {
+    if (platosSeleccionadosPago.length > 0) {
+      return totalesPagoActual?.total ?? 0;
+    }
+    const paramsParaTotal = route.params || {};
+    const totalParam = (paramsParaTotal.totalPendiente != null ? paramsParaTotal.totalPendiente : null) ?? total ?? 0;
+    const igvPorcentaje = configMoneda?.igvPorcentaje || 18;
+    const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
+    return incluyeIGV ? totalParam : totalParam * (1 + igvPorcentaje / 100);
+  }, [platosSeleccionadosPago, totalesPagoActual, route.params, total, configMoneda]);
 
   // Inicializar selección: todos los platos pagables al cargar comandas
   useEffect(() => {
@@ -1332,7 +1334,13 @@ const PagosScreen = () => {
     // Si no hay comandas en params, usar estado local (fallback)
     const comandasFinales = comandasParaPagar.length > 0 ? comandasParaPagar : comandas;
     const mesaFinal = mesaParaPago || mesa;
-    const totalFinal = totalPendienteParams > 0 ? totalPendienteParams : total;
+    const totalCobroSeleccion = totalesPagoActual?.total ?? 0;
+    const totalFinal =
+      platosSeleccionadosPago.length > 0
+        ? totalCobroSeleccion
+        : totalPendienteParams > 0
+          ? totalPendienteParams
+          : total;
 
     // FIX: Verificar si hay descuento aplicado (permite total=0 con descuento 100%)
     const tieneDescuento = comandasFinales.some(c => c.descuento > 0);
@@ -1368,9 +1376,14 @@ const PagosScreen = () => {
       platosSeleccionadosPago.length > 0 &&
       platosSeleccionadosPago.length < platosPagables.length;
     if (esSeleccionParcial && !omitirConfirmacionParcial) {
+      const simboloParcial = configMoneda?.simboloMoneda || 'S/.';
+      const decsParcial = configMoneda?.decimales ?? 2;
+      const totalParcialStr = totalCobroSeleccion.toFixed(decsParcial);
       Alert.alert(
         "Pago parcial",
-        `Cobrarás solo ${platosSeleccionadosPago.length} de ${platosPagables.length} plato(s) pendiente(s).\n\nEl resto quedará pendiente para un pago posterior. ¿Continuar?`,
+        `Cobrarás solo ${platosSeleccionadosPago.length} de ${platosPagables.length} plato(s) pendiente(s).\n\n` +
+          `Total a cobrar: ${simboloParcial} ${totalParcialStr}\n\n` +
+          `El resto quedará pendiente para un pago posterior. ¿Continuar?`,
         [
           { text: "Cancelar", style: "cancel" },
           {
@@ -1405,7 +1418,7 @@ const PagosScreen = () => {
         cliente: cliente.nombre || cliente._id,
         platosSeleccionados: platosPayload.length,
         mesa: mesaFinal.nummesa,
-        totalPreview: totalesPagoActual.total,
+        totalPreview: totalesPagoActual?.total,
       });
 
       // Obtener mozoId del contexto o de las comandas

@@ -28,6 +28,7 @@ import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparado
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
 import { clasificarComandaPorTipoServicio, obtenerPlatosElegiblesPPA, getReglasBotonesComandaDetalle, buildPlatosPayloadPPA } from '../helpers/pagoAdelantadoHelpers';
+import { calcularSubtotalPlatosPagables } from '../utils/pagoParcialHelpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -1622,7 +1623,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       navigation.navigate('Pagos', {
         mesa: mesaData || mesa,
         comandasParaPagar: comandasPPA,
-        totalPendiente: comandasPPA.reduce((sum, c) => sum + (c.totalPendiente || c.total || 0), 0),
+        totalPendiente: calcularSubtotalPlatosPagables(comandasPPA, true),
         origen: 'PagoAdelantado',
       });
     } catch (error) {
