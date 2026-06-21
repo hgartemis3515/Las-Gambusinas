@@ -16,6 +16,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { COMANDASEARCH_API_GET, COMANDA_API_SEARCH_BY_DATE, COMANDA_API, SELECTABLE_API_GET, DISHES_API, AREAS_API, apiConfig } from "../../../apiConfig";
 import moment from "moment-timezone";
+import { editarEliminarTomadasPorCocinaHabilitadoMozos } from "../../../services/configuracionService";
+import { comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from "../../../utils/comandaHelpers";
 
 const ThirdScreen = () => {
   const [comandas, setComandas] = useState([]);
@@ -28,6 +30,7 @@ const ThirdScreen = () => {
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
+  const [permitirEditarEliminarTomadas, setPermitirEditarEliminarTomadas] = useState(false);
   const [modalMesasVisible, setModalMesasVisible] = useState(false);
   const [areas, setAreas] = useState([]);
   const [filtroAreaMesa, setFiltroAreaMesa] = useState("All"); // Filtro para el modal de mesas
@@ -36,6 +39,9 @@ const ThirdScreen = () => {
     loadUserData();
     fetchComandas();
     obtenerAreas();
+    editarEliminarTomadasPorCocinaHabilitadoMozos()
+      .then(setPermitirEditarEliminarTomadas)
+      .catch(() => {});
     const interval = setInterval(fetchComandas, 3000);
     return () => clearInterval(interval);
   }, [fecha]);
@@ -125,6 +131,11 @@ const ThirdScreen = () => {
       return;
     }
 
+    if (comandaBloqueadaPorCocina(comanda, permitirEditarEliminarTomadas)) {
+      Alert.alert("En preparación", mensajeBloqueoCocina(comanda), [{ text: "Entendido" }]);
+      return;
+    }
+
     console.log("📋 Comanda a editar:", JSON.stringify(comanda, null, 2));
     console.log("🍽️ Platos en comanda:", comanda.platos);
     
@@ -188,6 +199,11 @@ const ThirdScreen = () => {
       return;
     }
 
+    if (comandaBloqueadaPorCocina(comanda, permitirEditarEliminarTomadas)) {
+      Alert.alert("En preparación", mensajeBloqueoCocina(comanda), [{ text: "Entendido" }]);
+      return;
+    }
+
     Alert.alert(
       "⚠️ Eliminar Comanda",
       `¿Estás seguro de eliminar la comanda #${comanda.comandaNumber || comanda._id.slice(-4)}?`,
@@ -207,7 +223,8 @@ const ThirdScreen = () => {
               fetchComandas();
             } catch (error) {
               console.error("Error eliminando comanda:", error);
-              Alert.alert("Error", "No se pudo eliminar la comanda");
+              const bloqueo = obtenerErrorBloqueoCocina(error);
+              Alert.alert(bloqueo ? "En preparación" : "Error", bloqueo || "No se pudo eliminar la comanda");
             }
           },
         },
@@ -382,7 +399,7 @@ const ThirdScreen = () => {
     const statusIcon = getStatusIcon(item.status);
     const comandaMozoId = item.mozos?._id || item.mozos?.id;
     const usuarioId = userInfo?._id || userInfo?.id;
-    const puedeEditar = comandaMozoId === usuarioId;
+    const puedeEditar = comandaMozoId === usuarioId && !comandaBloqueadaPorCocina(item, permitirEditarEliminarTomadas);
     
     // Helper para obtener nombre de mesa con soporte para mesas juntadas
     const nombreMesa = item.mesas?.nombreCombinado || (item.mesas?.nummesa ? `M${item.mesas.nummesa}` : "N/A");

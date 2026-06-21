@@ -24,7 +24,7 @@ import { useSocket } from '../context/SocketContext';
 import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
-import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, filtrarComandasPorPedido } from '../utils/comandaHelpers';
+import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, filtrarComandasPorPedido, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
 import { clasificarComandaPorTipoServicio, obtenerPlatosElegiblesPPA, getReglasBotonesComandaDetalle, buildPlatosPayloadPPA } from '../helpers/pagoAdelantadoHelpers';
@@ -130,6 +130,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // Estado para configuración de moneda
   const [configMoneda, setConfigMoneda] = useState(null);
+  // Regla cocina: por defecto bloqueo activo (config desmarcada)
+  const [permitirEditarEliminarTomadas, setPermitirEditarEliminarTomadas] = useState(false);
   
   // Estados para modales
   const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
@@ -188,13 +190,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   useEffect(() => {
     const loadConfiguracion = async () => {
       try {
-        const config = await configuracionService.obtenerConfigMoneda();
+        const [config, permitirTomadas] = await Promise.all([
+          configuracionService.obtenerConfigMoneda(),
+          configuracionService.editarEliminarTomadasPorCocinaHabilitadoMozos()
+        ]);
         setConfigMoneda(config);
-        console.log('✅ Configuración de moneda cargada en ComandaDetalle:', {
-          igv: config.igvPorcentaje,
-          incluyeIGV: config.preciosIncluyenIGV,
-          simbolo: config.simboloMoneda
-        });
+        setPermitirEditarEliminarTomadas(permitirTomadas);
       } catch (error) {
         console.error('Error cargando configuración de moneda:', error);
       }
@@ -238,6 +239,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           complementosSeleccionados: platoItem.complementosSeleccionados || [],
           // NUEVO: Tipo de servicio (Mesa vs Para llevar). Default 'mesa' para comandas antiguas.
           tipoServicio: platoItem.tipoServicio || 'mesa',
+          procesandoPor: platoItem.procesandoPor || null,
           // PPA: preservar info de pago adelantado para mostrar estado "PENDIENTE" (naranja)
           pagoAdelantado: platoItem.pagoAdelantado || null
         };
@@ -540,6 +542,21 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       }
     });
 
+    const refrescarSiNuestraComanda = (data) => {
+      const comandasActuales = comandasRef.current;
+      const esNuestraComanda = data?.comandaId && comandasActuales.some(c => {
+        const cId = c._id?.toString?.() || c._id;
+        const dId = data.comandaId?.toString?.() || data.comandaId;
+        return cId === dId;
+      });
+      if (esNuestraComanda) refrescarComandasRef.current?.();
+    };
+
+    socket.on('plato-procesando', refrescarSiNuestraComanda);
+    socket.on('plato-liberado', refrescarSiNuestraComanda);
+    socket.on('comanda-procesando', refrescarSiNuestraComanda);
+    socket.on('comanda-liberada', refrescarSiNuestraComanda);
+
     socket.on('comanda-eliminada', (data) => {
       const comandasActuales = comandasRef.current;
       const esNuestraMesa = data.mesaId && mesaId && (data.mesaId.toString() === mesaId.toString() || data.mesaId === mesaId);
@@ -622,6 +639,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       socket.off('plato-agregado');
       socket.off('plato-entregado');
       socket.off('comanda-actualizada');
+      socket.off('plato-procesando');
+      socket.off('plato-liberado');
+      socket.off('comanda-procesando');
+      socket.off('comanda-liberada');
       socket.off('comanda-eliminada');
       socket.off('plato-anulado');
       socket.off('comanda-anulada');
@@ -674,17 +695,21 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // Validaciones para habilitación de botones
   const platosEnPedido = todosLosPlatos.filter(p => p.estado === 'pedido');
+  const platosEnPedidoSinBloqueoCocina = permitirEditarEliminarTomadas
+    ? platosEnPedido
+    : platosEnPedido.filter(p => !p.procesandoPor?.cocineroId && !comandas.some(c =>
+      c._id === p.comandaId && comandaTomadaPorCocina(c)
+    ));
+  const hayBloqueoCocinaEnComandas = !permitirEditarEliminarTomadas && comandas.some(c => comandaBloqueadaPorCocina(c, false));
   const platosEnRecoger = todosLosPlatos.filter(p => p.estado === 'recoger');
   // SALIO: platos que ya salieron de cocina y pueden entregarse al comensal
   const platosEnSalio = todosLosPlatos.filter(p => p.estado === 'salio');
   const platosEntregados = todosLosPlatos.filter(p => p.estado === 'entregado');
   const platosPagados = todosLosPlatos.filter(p => p.estado === 'pagado');
   
-  const puedeEditar = platosEnPedido.length > 0;
-  // IMPORTANTE: Solo se pueden eliminar platos en estado "Pedido"
-  // Los platos en estado "Recoger" ya están listos y no deben eliminarse
-  const puedeEliminarPlatos = platosEnPedido.length > 0;
-  const puedeEliminarComanda = comandas.length > 0 && comandas[0].status !== 'pagado';
+  const puedeEditar = platosEnPedidoSinBloqueoCocina.length > 0;
+  const puedeEliminarPlatos = platosEnPedidoSinBloqueoCocina.length > 0;
+  const puedeEliminarComanda = comandas.length > 0 && comandas[0].status !== 'pagado' && !hayBloqueoCocinaEnComandas;
   // Permitir nueva comanda si la mesa está en estados normales O si viene de una reserva
   const puedeNuevaComanda = mesa?.estado === 'pedido' || mesa?.estado === 'preparado' || mesa?.estado === 'recoger' || mesa?.estado === 'reservado' || reserva;
   const puedePagar = todosLosPlatos.length > 0 && todosLosPlatos.every(p => p.estado === 'entregado' || p.estado === 'pagado');
@@ -1031,15 +1056,27 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // Funciones de acciones
   const handleEditarComanda = async () => {
-    // NOTA: Los platos EDITABLES incluyen estados 'pedido' y 'recoger'
-    // Esto permite editar platos que aún no han sido entregados
-    // Ver separarPlatosEditables() en utils/comandaHelpers.js
+    if (!puedeEditar) {
+      const comandaBloq = comandas.find(c => comandaBloqueadaPorCocina(c, permitirEditarEliminarTomadas));
+      Alert.alert('En preparación', mensajeBloqueoCocina(comandaBloq || comandas[0]), [{ text: 'Entendido' }]);
+      return;
+    }
+
     const { editables, noEditables } = separarPlatosEditables(comandas);
+    const editablesFiltrados = permitirEditarEliminarTomadas
+      ? editables
+      : editables.filter((e) => {
+          const comanda = comandas.find((c) => c._id === e.comandaId);
+          const platoItem = comanda?.platos?.[e.index];
+          return !platoBloqueadoPorCocina(platoItem, comanda, permitirEditarEliminarTomadas);
+        });
     
-    if (editables.length === 0) {
+    if (editablesFiltrados.length === 0) {
       Alert.alert(
         'Sin Platos Editables',
-        'No hay platos que puedan editarse. Los platos entregados no pueden modificarse.',
+        hayBloqueoCocinaEnComandas
+          ? mensajeBloqueoCocina(comandas.find(c => comandaBloqueadaPorCocina(c, false)) || comandas[0])
+          : 'No hay platos que puedan editarse. Los platos entregados no pueden modificarse.',
         [{ text: 'Entendido' }]
       );
       return;
@@ -1055,7 +1092,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     setCategoriaFiltro(null);
     
     // Preparar platos editados (solo editables) con datos completos
-    const platosEditadosPreparados = editables.map(e => {
+    const platosEditadosPreparados = editablesFiltrados.map(e => {
       // Buscar el plato completo en la comanda original
       const comanda = comandas.find(c => c._id === e.comandaId);
       if (!comanda || !comanda.platos) return null;
@@ -1082,7 +1119,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       };
     }).filter(p => p !== null);
     
-    setPlatosEditables(editables);
+    setPlatosEditables(editablesFiltrados);
     setPlatosNoEditables(noEditables);
     setPlatosEditados(platosEditadosPreparados);
     setObservacionesEditadas(comandas[0]?.observaciones || '');
@@ -1091,15 +1128,27 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
   
   const handleEliminarPlatos = () => {
-    // Usar función de utilidad para filtrar platos eliminables
-    // IMPORTANTE: Solo se pueden eliminar platos en estado "Pedido"
-    // Los platos en estado "Recoger" ya están listos para retiro/entrega y no deben eliminarse
-    const platosEliminables = filtrarPlatosPorEstado(comandas, ['pedido']);
+    if (!puedeEliminarPlatos) {
+      const comandaBloq = comandas.find(c => comandaBloqueadaPorCocina(c, permitirEditarEliminarTomadas));
+      Alert.alert('En preparación', mensajeBloqueoCocina(comandaBloq || comandas[0]), [{ text: 'Entendido' }]);
+      return;
+    }
+
+    let platosEliminables = filtrarPlatosPorEstado(comandas, ['pedido']);
+    if (!permitirEditarEliminarTomadas) {
+      platosEliminables = platosEliminables.filter((p) => {
+        const comanda = comandas.find((c) => c._id === p.comandaId);
+        const platoItem = comanda?.platos?.[p.index];
+        return !platoBloqueadoPorCocina(platoItem, comanda, false);
+      });
+    }
     
     if (platosEliminables.length === 0) {
       Alert.alert(
         'Sin Platos Eliminables',
-        'No hay platos en estado Pedido para eliminar. Solo se pueden eliminar platos que aún no han sido preparados.'
+        hayBloqueoCocinaEnComandas
+          ? mensajeBloqueoCocina(comandas.find(c => comandaBloqueadaPorCocina(c, false)) || comandas[0])
+          : 'No hay platos en estado Pedido para eliminar. Solo se pueden eliminar platos que aún no han sido preparados.'
       );
       return;
     }
@@ -1274,8 +1323,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         // El servidor respondió con un código de estado fuera del rango 2xx
         console.error('Status:', error.response.status);
         console.error('Data:', error.response.data);
-        errorMsg = error.response.data?.message || error.response.data?.error || `Error del servidor (${error.response.status})`;
-        Alert.alert('Error del Servidor', errorMsg);
+        const bloqueoCocina = obtenerErrorBloqueoCocina(error);
+        errorMsg = bloqueoCocina || error.response.data?.message || error.response.data?.error || `Error del servidor (${error.response.status})`;
+        Alert.alert(bloqueoCocina ? 'En preparación' : 'Error del Servidor', errorMsg);
       } else if (error.request) {
         // La petición fue hecha pero no se recibió respuesta
         console.error('Request hecho pero sin respuesta');
@@ -1296,7 +1346,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   const handleEliminarComanda = () => {
     if (!puedeEliminarComanda) {
-      Alert.alert('Error', 'No se puede eliminar esta comanda.');
+      if (hayBloqueoCocinaEnComandas) {
+        const comandaBloq = comandas.find(c => comandaBloqueadaPorCocina(c, false));
+        Alert.alert('En preparación', mensajeBloqueoCocina(comandaBloq || comandas[0]), [{ text: 'Entendido' }]);
+      } else {
+        Alert.alert('Error', 'No se puede eliminar esta comanda.');
+      }
       return;
     }
     
@@ -1452,8 +1507,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         // El servidor respondió con un código de estado fuera del rango 2xx
         console.error('Status:', error.response.status);
         console.error('Data:', error.response.data);
-        errorMsg = error.response.data?.message || error.response.data?.error || `Error del servidor (${error.response.status})`;
-        Alert.alert('Error del Servidor', errorMsg);
+        const bloqueoCocina = obtenerErrorBloqueoCocina(error);
+        errorMsg = bloqueoCocina || error.response.data?.message || error.response.data?.error || `Error del servidor (${error.response.status})`;
+        Alert.alert(bloqueoCocina ? 'En preparación' : 'Error del Servidor', errorMsg);
       } else if (error.request) {
         // La petición fue hecha pero no se recibió respuesta
         console.error('Request hecho pero sin respuesta');

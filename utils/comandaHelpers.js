@@ -605,3 +605,57 @@ export const formatearComplementosCompacto = (complementosSeleccionados, maxLeng
   return resultado;
 };
 
+// ========== BLOQUEO COCINA: comandas/platos tomados por cocinero (procesandoPor) ==========
+
+export const tieneProcesandoPorCocina = (procesandoPor) => {
+  const id = procesandoPor?.cocineroId;
+  if (id == null) return false;
+  const str = String(id).trim();
+  return str !== '' && str !== 'null' && str !== 'undefined';
+};
+
+export const comandaTomadaPorCocina = (comanda) =>
+  tieneProcesandoPorCocina(comanda?.procesandoPor);
+
+export const platoTomadoPorCocina = (platoItem) =>
+  tieneProcesandoPorCocina(platoItem?.procesandoPor);
+
+export const comandaTienePlatosTomadosPorCocina = (comanda) => {
+  if (!comanda?.platos || !Array.isArray(comanda.platos)) return false;
+  return comanda.platos.some((p) => !p?.eliminado && platoTomadoPorCocina(p));
+};
+
+/**
+ * @param {boolean} permitirEditarEliminarTomadas - config mozos.permitirEditarEliminarTomadasPorCocina
+ */
+export const comandaBloqueadaPorCocina = (comanda, permitirEditarEliminarTomadas = false) => {
+  if (permitirEditarEliminarTomadas || !comanda) return false;
+  return comandaTomadaPorCocina(comanda) || comandaTienePlatosTomadosPorCocina(comanda);
+};
+
+export const platoBloqueadoPorCocina = (platoItem, comanda, permitirEditarEliminarTomadas = false) => {
+  if (permitirEditarEliminarTomadas) return false;
+  if (comandaTomadaPorCocina(comanda)) return true;
+  return platoTomadoPorCocina(platoItem);
+};
+
+export const mensajeBloqueoCocina = (comanda, platoItem = null) => {
+  if (comandaTomadaPorCocina(comanda)) {
+    const alias = comanda.procesandoPor?.alias || comanda.procesandoPor?.nombre || 'cocina';
+    return `La comanda está siendo preparada por ${alias}. No puedes modificarla.`;
+  }
+  const proc = platoItem?.procesandoPor;
+  if (platoTomadoPorCocina(platoItem)) {
+    const alias = proc?.alias || proc?.nombre || 'cocina';
+    return `Este plato está siendo preparado por ${alias}. No puedes modificarlo.`;
+  }
+  return 'Esta comanda o plato está en preparación en cocina y no puede modificarse.';
+};
+
+export const obtenerErrorBloqueoCocina = (error) => {
+  const data = error?.response?.data;
+  if (data?.codigo === 'COMANDA_TOMADA_COCINA' || data?.message?.includes('preparad')) {
+    return data.message || mensajeBloqueoCocina();
+  }
+  return null;
+};

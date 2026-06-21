@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { imprimirComandaHabilitadoMozos } from "../../../services/configuracionService";
+import { imprimirComandaHabilitadoMozos, editarEliminarTomadasPorCocinaHabilitadoMozos } from "../../../services/configuracionService";
 import {
   View,
   Text,
@@ -46,7 +46,7 @@ import { MotiPressable } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { slideInRightDelay, springConfig } from "../../../constants/animations";
 import { LinearGradient } from 'expo-linear-gradient';
-import { filtrarComandasActivas } from '../../../utils/comandaHelpers';
+import { filtrarComandasActivas, comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../../../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
 import MesaMapView from '../../../Components/MesaMapView';
 
@@ -563,10 +563,12 @@ const InicioScreen = () => {
   // PLAN_PLANTILLA_COMANDAS: imprimir comanda deshabilitado por defecto.
   // Se habilita desde configuracion.html > Mozos > Botón de impresión de comandas.
   const [imprimirComandaHabilitado, setImprimirComandaHabilitado] = useState(false);
+  const [permitirEditarEliminarTomadas, setPermitirEditarEliminarTomadas] = useState(false);
 
-  // Cargar flag de configuración: ¿imprimir comanda habilitado para mozos?
+  // Cargar flags de configuración del sistema
   useEffect(() => {
     imprimirComandaHabilitadoMozos().then(setImprimirComandaHabilitado).catch(() => {});
+    editarEliminarTomadasPorCocinaHabilitadoMozos().then(setPermitirEditarEliminarTomadas).catch(() => {});
   }, []);
 
   const [comandas, setComandas] = useState([]);
@@ -2942,6 +2944,11 @@ const InicioScreen = () => {
   // ========== FIN FUNCIONES JUNTAR/SEPARAR ==========
 
   const handleEditarComanda = async (comanda) => {
+    if (comandaBloqueadaPorCocina(comanda, permitirEditarEliminarTomadas)) {
+      Alert.alert('En preparación', mensajeBloqueoCocina(comanda), [{ text: 'Entendido' }]);
+      return;
+    }
+
     await obtenerPlatos();
     
     const platosEditados = comanda.platos.map((p, index) => {
@@ -3486,6 +3493,12 @@ const InicioScreen = () => {
       return;
     }
 
+    const comandaBloqueada = comandasMesa.find(c => comandaBloqueadaPorCocina(c, permitirEditarEliminarTomadas));
+    if (comandaBloqueada) {
+      Alert.alert('En preparación', mensajeBloqueoCocina(comandaBloqueada), [{ text: 'Entendido' }]);
+      return;
+    }
+
     // Guardar comandas y abrir modal
     setComandasAEliminar(comandasMesa);
     setMotivoEliminacionComanda("");
@@ -3504,6 +3517,11 @@ const InicioScreen = () => {
     
     if (!comandaActiva) {
       Alert.alert("Error", "No se encontró una comanda activa");
+      return;
+    }
+
+    if (comandaBloqueadaPorCocina(comandaActiva, permitirEditarEliminarTomadas)) {
+      Alert.alert('En preparación', mensajeBloqueoCocina(comandaActiva), [{ text: 'Entendido' }]);
       return;
     }
 
@@ -4259,6 +4277,11 @@ const InicioScreen = () => {
       return;
     }
 
+    if (comandaBloqueadaPorCocina(ultimaComanda, permitirEditarEliminarTomadas)) {
+      Alert.alert('En preparación', mensajeBloqueoCocina(ultimaComanda), [{ text: 'Entendido' }]);
+      return;
+    }
+
     // Guardar comanda y abrir modal
     setComandaAEliminar(ultimaComanda);
     setMotivoEliminacionComanda("");
@@ -4674,6 +4697,11 @@ const InicioScreen = () => {
   };
 
   const handleEliminarComanda = async (comanda, mesa) => {
+    if (comandaBloqueadaPorCocina(comanda, permitirEditarEliminarTomadas)) {
+      Alert.alert('En preparación', mensajeBloqueoCocina(comanda), [{ text: 'Entendido' }]);
+      return;
+    }
+
     // Si la comanda está en estado "pedido" (en_espera), usar modal con auditoría
     const estadoComanda = comanda.status?.toLowerCase();
     if (estadoComanda === 'pedido' || estadoComanda === 'en_espera' || estadoComanda === 'en espera') {

@@ -137,6 +137,22 @@ export const imprimirComandaHabilitadoMozos = async () => {
 };
 
 /**
+ * Si true, los mozos pueden editar/eliminar comandas o platos tomados por cocina.
+ * Por defecto false (config desmarcada): protección activa — mozo bloqueado si hay procesandoPor.
+ * Backend: configuracionSistema.mozos.permitirEditarEliminarTomadasPorCocina.
+ *
+ * @returns {Promise<boolean>}
+ */
+export const editarEliminarTomadasPorCocinaHabilitadoMozos = async () => {
+    try {
+        const config = await obtenerConfiguracion();
+        return config?.mozos?.permitirEditarEliminarTomadasPorCocina === true;
+    } catch (e) {
+        return false;
+    }
+};
+
+/**
  * Configuración por defecto (fallback)
  */
 export const getConfiguracionPorDefecto = () => ({
@@ -267,6 +283,8 @@ export default {
     obtenerConfiguracion,
     obtenerConfigMoneda,
     getConfiguracionPorDefecto,
+    imprimirComandaHabilitadoMozos,
+    editarEliminarTomadasPorCocinaHabilitadoMozos,
     calcularTotales,
     formatearMonto,
     formatearMontoAsync,
