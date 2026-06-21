@@ -40,6 +40,12 @@ const ModalPagoExitoso = ({
   onImprimir,
   onRegistrarPropina,
   onIrAlInicio,
+  // BUG_PAGOS_PARCIALES_APROBACION_COCINA (Fase 5):
+  // Modo pago parcial: cambia título/mensaje y muestra "Seguir cobrando".
+  esPagoParcial = false,
+  // cobroCompleto = true cuando ya no quedan platos por cobrar (pero faltan aprobaciones).
+  cobroCompleto = false,
+  onSeguirCobrando,
 }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
@@ -154,11 +160,37 @@ const ModalPagoExitoso = ({
     onClose?.();
   };
 
+  const handleSeguirCobrando = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onSeguirCobrando?.();
+  };
+
   const simboloMoneda = boucherData?.configuracionIGV?.simboloMoneda || "S/";
   const totalBoucher = boucherData?.total || boucherData?.totalConDescuento || 0;
 
+  // BUG_PAGOS_PARCIALES_APROBACION_COCINA (Fase 5): título y subtítulo según tipo de cobro
+  const tituloModal = esPagoParcial
+    ? (cobroCompleto ? "Cobro Completado" : "Pago Parcial Registrado")
+    : "¡Pago Exitoso!";
+  const subtituloModal = esPagoParcial
+    ? (cobroCompleto
+        ? "Se cobró todo el pedido. Esperando aprobación de cocina de los envíos restantes para liberar la mesa."
+        : "Los platos seleccionados fueron enviados a cocina. Puede seguir cobrando el resto cuando quiera.")
+    : null;
+
   // Opciones del modal - PLAN_PLANTILLA_COMANDAS: "Imprimir comanda" en lugar de "Compartir boucher"
+  // BUG_PAGOS_PARCIALES_APROBACION_COCINA (Fase 5): "Seguir cobrando" en pagos parciales.
   const opciones = [
+    {
+      id: "seguir_cobrando",
+      icon: "cart-plus",
+      label: "Seguir cobrando",
+      color: "#16A34A",
+      onPress: handleSeguirCobrando,
+      // Visible solo en pago parcial cuando aún quedan platos por cobrar
+      visible: !!onSeguirCobrando && esPagoParcial && !cobroCompleto,
+      style: buttonStyle0,
+    },
     {
       id: "propina",
       icon: "cash-plus",
@@ -236,7 +268,10 @@ const ModalPagoExitoso = ({
               />
             </Animated.View>
             <Animated.View style={slideAnimatedStyle}>
-              <Text style={styles.title}>¡Pago Exitoso!</Text>
+              <Text style={styles.title}>{tituloModal}</Text>
+              {subtituloModal ? (
+                <Text style={styles.subtitle}>{subtituloModal}</Text>
+              ) : null}
             </Animated.View>
           </View>
 
@@ -352,6 +387,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#1F2937",
     textAlign: "center",
+  },
+  subtitle: {
+    fontSize: 12,
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 6,
+    paddingHorizontal: 12,
+    lineHeight: 16,
   },
   infoContainer: {
     padding: 12,

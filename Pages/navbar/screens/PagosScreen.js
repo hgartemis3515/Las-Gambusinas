@@ -347,6 +347,9 @@ const PagosScreen = () => {
   const [totalRestante, setTotalRestante] = useState(null);
   const [totalAcumuladoPagado, setTotalAcumuladoPagado] = useState(0);
   const [hayPendienteTrasPago, setHayPendienteTrasPago] = useState(false);
+  // BUG_PAGOS_PARCIALES_APROBACION_COCINA (Fase 5): flags para el modal post-pago
+  const [ultimoPagoFueParcial, setUltimoPagoFueParcial] = useState(false);
+  const [ultimoCobroCompleto, setUltimoCobroCompleto] = useState(false);
   /** Bouchers individuales de cada pago parcial (para imprimir por separado). */
   const [bouchersParciales, setBouchersParciales] = useState([]);
   const pedidoIdCicloRef = React.useRef(null);
@@ -1826,6 +1829,11 @@ const PagosScreen = () => {
       // último plato pagado; el consolidado se cargó arriba pero se sobrescribía aquí.
       setClientePagoExitoso(cliente);
       setBoucherData(boucherParaUI);
+      // BUG_PAGOS_PARCIALES_APROBACION_COCINA (Fase 5):
+      // Informar al modal si este cobro fue parcial y si ya se cobró todo el pedido
+      // (aunque falten aprobaciones de cocina) para mostrar el mensaje/botón correctos.
+      setUltimoPagoFueParcial(Boolean(boucherCreado?.esPagoParcial));
+      setUltimoCobroCompleto(Boolean(resumenPago?.cobroCompleto ?? resumenPago?.mesaPagadaCompletamente));
       setModalPagoExitosoVisible(true);
       
     } catch (error) {
@@ -2625,6 +2633,16 @@ const PagosScreen = () => {
       {/* Modal de Pago Exitoso */}
       <ModalPagoExitoso
         visible={modalPagoExitosoVisible}
+        esPagoParcial={ultimoPagoFueParcial}
+        cobroCompleto={ultimoCobroCompleto}
+        onSeguirCobrando={() => {
+          // BUG_PAGOS_PARCIALES_APROBACION_COCINA (Fase 5):
+          // Permanecer en PagosScreen para seguir cobrando el resto.
+          setModalPagoExitosoVisible(false);
+          setBoucherData(null);
+          setClienteSeleccionado(null);
+          setPlatosSeleccionadosPago([]);
+        }}
         onClose={() => {
           setModalPagoExitosoVisible(false);
           if (hayPendienteTrasPago || (totalRestante != null && totalRestante > 0)) {

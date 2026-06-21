@@ -83,7 +83,13 @@ export function listarPlatosEnPantallaPago(comandas, esPagoAdelantado = false) {
         complementosSeleccionados: platoItem.complementosSeleccionados || [],
         notaEspecial: platoItem.notaEspecial || '',
         tipoServicio: platoItem.tipoServicio || 'mesa',
-        yaPagado: estado === 'pagado',
+        // BUG_PAGOS_PARCIALES_APROBACION_COCINA (Fase 5):
+        // Un plato está "cobrado" tanto si ya fue aprobado por cocina ('pagado')
+        // como si está esperando aprobación ('pendiente'). En ambos casos no debe
+        // ser re-seleccionable en PagosScreen.
+        yaPagado: estado === 'pagado' || estado === 'pendiente',
+        // Estado para UI: distinguir "enviado a cocina" de "aprobado"
+        estadoCobro: estado === 'pagado' ? 'aprobado' : estado === 'pendiente' ? 'enviado_cocina' : null,
       });
     });
   });
