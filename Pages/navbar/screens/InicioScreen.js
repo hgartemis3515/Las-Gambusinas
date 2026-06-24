@@ -48,6 +48,8 @@ import { slideInRightDelay, springConfig } from "../../../constants/animations";
 import { LinearGradient } from 'expo-linear-gradient';
 import { filtrarComandasActivas, comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../../../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
+// Hook catálogo de tipos de plato (dinámico desde backend)
+import useTiposPlato from "../../../hooks/useTiposPlato";
 import MesaMapView from '../../../Components/MesaMapView';
 
 /** Evita que un evento WebSocket con campos undefined borre datos ya mostrados en la tarjeta. */
@@ -586,6 +588,8 @@ const InicioScreen = () => {
   const [seccionActiva, setSeccionActiva] = useState(null);
   const [mesaSeleccionada, setMesaSeleccionada] = useState(null);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
+  // Catálogo dinámico de tipos de plato desde el backend
+  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo } = useTiposPlato();
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [eliminandoUltimaComanda, setEliminandoUltimaComanda] = useState(false);
@@ -3392,11 +3396,11 @@ const InicioScreen = () => {
   };
 
   const categorias = tipoPlatoFiltro
-    ? [...new Set(platos.filter(p => p.tipo === tipoPlatoFiltro).map(p => p.categoria))].filter(Boolean)
+    ? [...new Set(platos.filter(p => p.tipo === tipoPlatoFiltro || (tipoPlatoFiltro === 'plato-carta normal' && p.tipo === 'carta-normal') || (tipoPlatoFiltro === 'carta-normal' && p.tipo === 'plato-carta normal')).map(p => p.categoria))].filter(Boolean)
     : [];
-  
+
   const platosFiltrados = platos.filter(p => {
-    const matchTipo = !tipoPlatoFiltro || p.tipo === tipoPlatoFiltro;
+    const matchTipo = !tipoPlatoFiltro || p.tipo === tipoPlatoFiltro || (tipoPlatoFiltro === 'plato-carta normal' && p.tipo === 'carta-normal') || (tipoPlatoFiltro === 'carta-normal' && p.tipo === 'plato-carta normal');
     const matchSearch = !searchPlato || p.nombre.toLowerCase().includes(searchPlato.toLowerCase());
     const matchCategoria = !categoriaFiltro || p.categoria === categoriaFiltro;
     return matchTipo && matchSearch && matchCategoria;
@@ -5769,14 +5773,15 @@ const InicioScreen = () => {
                       "Selecciona el tipo de menú:",
                       [
                         { text: "Cancelar", style: "cancel" },
-                        {
-                          text: "Desayuno",
-                          onPress: () => setTipoPlatoFiltro("platos-desayuno"),
-                        },
-                        {
-                          text: "Carta Normal",
-                          onPress: () => setTipoPlatoFiltro("carta-normal"),
-                        },
+                        ...(tiposPlatoCatalogo.length > 0
+                          ? tiposPlatoCatalogo.map((t) => ({
+                              text: t.nombre || t.slug,
+                              onPress: () => setTipoPlatoFiltro(t.slug),
+                            }))
+                          : [
+                              { text: "Desayuno", onPress: () => setTipoPlatoFiltro("platos-desayuno") },
+                              { text: "Carta Normal", onPress: () => setTipoPlatoFiltro("plato-carta normal") },
+                            ]),
                       ]
                     );
                   }}

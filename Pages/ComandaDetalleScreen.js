@@ -17,6 +17,8 @@ import BadgeEstadoPlato from '../Components/BadgeEstadoPlato';
 import FilaPlatoCompacta from '../Components/FilaPlatoCompacta';
 import HeaderComandaDetalle from '../Components/HeaderComandaDetalle';
 import ModalComplementos from '../Components/ModalComplementos';
+// Hook catálogo de tipos de plato (dinámico desde backend)
+import useTiposPlato from '../hooks/useTiposPlato';
 
 // Contextos y configuración
 import { useTheme } from '../context/ThemeContext';
@@ -152,6 +154,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [platosNoEditables, setPlatosNoEditables] = useState([]);
   const [searchPlato, setSearchPlato] = useState('');
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
+  // Catálogo dinámico de tipos de plato desde el backend
+  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo } = useTiposPlato();
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   // Tipo de servicio para los platos que se agreguen desde esta pantalla:
   // 'mesa' (default, Switch OFF) o 'para_llevar' (Switch ON).
@@ -2717,20 +2721,30 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                       'Selecciona el tipo de menú:',
                       [
                         { text: 'Cancelar', style: 'cancel' },
-                        {
-                          text: 'Desayuno',
-                          onPress: () => {
-                            setTipoPlatoFiltro('platos-desayuno');
-                            setTipoServicioModal('mesa');
-                          },
-                        },
-                        {
-                          text: 'Carta Normal',
-                          onPress: () => {
-                            setTipoPlatoFiltro('plato-carta normal');
-                            setTipoServicioModal('mesa');
-                          },
-                        },
+                        ...(tiposPlatoCatalogo.length > 0
+                          ? tiposPlatoCatalogo.map((t) => ({
+                              text: t.nombre || t.slug,
+                              onPress: () => {
+                                setTipoPlatoFiltro(t.slug);
+                                setTipoServicioModal('mesa');
+                              },
+                            }))
+                          : [
+                              {
+                                text: 'Desayuno',
+                                onPress: () => {
+                                  setTipoPlatoFiltro('platos-desayuno');
+                                  setTipoServicioModal('mesa');
+                                },
+                              },
+                              {
+                                text: 'Carta Normal',
+                                onPress: () => {
+                                  setTipoPlatoFiltro('plato-carta normal');
+                                  setTipoServicioModal('mesa');
+                                },
+                              },
+                            ]),
                       ]
                     );
                   }}
@@ -2752,7 +2766,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                         styles.tipoServicioTipoMenu,
                         { color: isDark ? '#F9FAFB' : (themeColors.colors?.text?.primary || '#1F2937') }
                       ]}>
-                        {tipoPlatoFiltro === 'platos-desayuno' ? 'Desayuno' : 'Carta Normal'}
+                        {labelForTipo(tipoPlatoFiltro) || 'Tipo'}
                       </Text>
                       <View style={styles.tipoServicioToggle}>
                         <Text style={[
@@ -2860,7 +2874,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                           { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }
                         ]}>
                           {tipoPlatoFiltro 
-                            ? `No hay platos disponibles en ${tipoPlatoFiltro === 'platos-desayuno' ? 'Desayuno' : 'Carta Normal'}`
+                            ? `No hay platos disponibles en ${labelForTipo(tipoPlatoFiltro) || tipoPlatoFiltro}`
                             : 'No hay platos disponibles'}
                         </Text>
                       ) : (

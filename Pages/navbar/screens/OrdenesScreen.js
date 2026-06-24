@@ -27,6 +27,8 @@ import moment from "moment-timezone";
 import debounce from "lodash.debounce";
 // Componente de modal de complementos
 import ModalComplementos from "../../../Components/ModalComplementos";
+// Hook catálogo de tipos de plato (dinámico desde backend)
+import useTiposPlato from "../../../hooks/useTiposPlato";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -35,6 +37,17 @@ import Animated, {
   withRepeat,
   Easing,
 } from 'react-native-reanimated';
+
+// Map slug -> MaterialCommunityIcons name (fallback por si el catálogo no trae icono)
+function _iconForTipo(slug) {
+  if (!slug) return null;
+  if (slug === 'platos-desayuno') return 'coffee';
+  if (slug === 'plato-carta normal' || slug === 'carta-normal') return 'silverware-fork-knife';
+  if (slug === 'platos-cena') return 'moon-waning-crescent';
+  if (slug === 'platos-almuerzo') return 'food-apple';
+  if (slug === 'platos-bar') return 'glass-cocktail';
+  return null;
+}
 
 // Componente de Overlay de Carga Animado
 const AnimatedOverlay = ({ mensaje }) => {
@@ -174,6 +187,8 @@ const OrdenesScreen = ({ route }) => {
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
+  // Catálogo dinámico de tipos de plato desde el backend
+  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo } = useTiposPlato();
   // Tipo de servicio para los platos que se agreguen desde el modal de menú:
   // 'mesa' (default, Switch OFF) o 'para_llevar' (Switch ON).
   const [tipoServicioModal, setTipoServicioModal] = useState('mesa');
@@ -1467,20 +1482,39 @@ const OrdenesScreen = ({ route }) => {
               <View style={styles.tipoSelectorContainer}>
                 <Text style={styles.tipoSelectorTitle}>Selecciona el tipo de menú</Text>
                 <View style={styles.tipoButtonsContainer}>
-                  <TouchableOpacity
-                    style={styles.tipoButton}
-                    onPress={() => setTipoPlatoFiltro("platos-desayuno")}
-                  >
-                    <MaterialCommunityIcons name="coffee" size={48} color={theme.colors.text.white} />
-                    <Text style={styles.tipoButtonText}>DESAYUNO</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.tipoButton}
-                    onPress={() => setTipoPlatoFiltro("plato-carta normal")}
-                  >
-                    <MaterialCommunityIcons name="silverware-fork-knife" size={48} color={theme.colors.text.white} />
-                    <Text style={styles.tipoButtonText}>CARTA</Text>
-                  </TouchableOpacity>
+                  {tiposPlatoCatalogo.length > 0 ? (
+                    tiposPlatoCatalogo.map((t) => (
+                      <TouchableOpacity
+                        key={t.slug}
+                        style={styles.tipoButton}
+                        onPress={() => setTipoPlatoFiltro(t.slug)}
+                      >
+                        <MaterialCommunityIcons
+                          name={_iconForTipo(t.slug) || "silverware-fork-knife"}
+                          size={48}
+                          color={theme.colors.text.white}
+                        />
+                        <Text style={styles.tipoButtonText}>{(t.nombreCorto || t.nombre || "").toUpperCase()}</Text>
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        style={styles.tipoButton}
+                        onPress={() => setTipoPlatoFiltro("platos-desayuno")}
+                      >
+                        <MaterialCommunityIcons name="coffee" size={48} color={theme.colors.text.white} />
+                        <Text style={styles.tipoButtonText}>DESAYUNO</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.tipoButton}
+                        onPress={() => setTipoPlatoFiltro("plato-carta normal")}
+                      >
+                        <MaterialCommunityIcons name="silverware-fork-knife" size={48} color={theme.colors.text.white} />
+                        <Text style={styles.tipoButtonText}>CARTA</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
               </View>
             ) : (
@@ -1497,7 +1531,7 @@ const OrdenesScreen = ({ route }) => {
                   >
                     <MaterialCommunityIcons name="arrow-left" size={20} color={theme.colors.text.white} />
                     <Text style={styles.changeTipoButtonText}>
-                      {tipoPlatoFiltro === "platos-desayuno" ? "Desayuno" : "Carta Normal"}
+                      {labelForTipo(tipoPlatoFiltro) || "Tipo"}
                     </Text>
                   </TouchableOpacity>
 

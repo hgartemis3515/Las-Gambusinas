@@ -18,6 +18,8 @@ import { COMANDASEARCH_API_GET, COMANDA_API_SEARCH_BY_DATE, COMANDA_API, SELECTA
 import moment from "moment-timezone";
 import { editarEliminarTomadasPorCocinaHabilitadoMozos } from "../../../services/configuracionService";
 import { comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from "../../../utils/comandaHelpers";
+// Hook catálogo de tipos de plato (dinámico desde backend)
+import useTiposPlato from "../../../hooks/useTiposPlato";
 
 const ThirdScreen = () => {
   const [comandas, setComandas] = useState([]);
@@ -28,6 +30,8 @@ const ThirdScreen = () => {
   const [mesas, setMesas] = useState([]);
   const [platos, setPlatos] = useState([]);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
+  // Catálogo dinámico de tipos de plato desde el backend
+  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo } = useTiposPlato();
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [permitirEditarEliminarTomadas, setPermitirEditarEliminarTomadas] = useState(false);
@@ -376,11 +380,11 @@ const ThirdScreen = () => {
   };
 
   const categorias = tipoPlatoFiltro
-    ? [...new Set(platos.filter(p => p.tipo === tipoPlatoFiltro).map(p => p.categoria))].filter(Boolean)
+    ? [...new Set(platos.filter(p => p.tipo === tipoPlatoFiltro || (tipoPlatoFiltro === 'plato-carta normal' && p.tipo === 'carta-normal') || (tipoPlatoFiltro === 'carta-normal' && p.tipo === 'plato-carta normal')).map(p => p.categoria))].filter(Boolean)
     : [];
-  
+
   const platosFiltrados = platos.filter(p => {
-    const matchTipo = !tipoPlatoFiltro || p.tipo === tipoPlatoFiltro;
+    const matchTipo = !tipoPlatoFiltro || p.tipo === tipoPlatoFiltro || (tipoPlatoFiltro === 'plato-carta normal' && p.tipo === 'carta-normal') || (tipoPlatoFiltro === 'carta-normal' && p.tipo === 'plato-carta normal');
     const matchSearch = !searchPlato || p.nombre.toLowerCase().includes(searchPlato.toLowerCase());
     const matchCategoria = !categoriaFiltro || p.categoria === categoriaFiltro;
     return matchTipo && matchSearch && matchCategoria;
@@ -562,14 +566,15 @@ const ThirdScreen = () => {
                       "Selecciona el tipo de menú:",
                       [
                         { text: "Cancelar" },
-                        {
-                          text: "Desayuno",
-                          onPress: () => setTipoPlatoFiltro("platos-desayuno"),
-                        },
-                        {
-                          text: "Carta Normal",
-                          onPress: () => setTipoPlatoFiltro("carta-normal"),
-                        },
+                        ...(tiposPlatoCatalogo.length > 0
+                          ? tiposPlatoCatalogo.map((t) => ({
+                              text: t.nombre || t.slug,
+                              onPress: () => setTipoPlatoFiltro(t.slug),
+                            }))
+                          : [
+                              { text: "Desayuno", onPress: () => setTipoPlatoFiltro("platos-desayuno") },
+                              { text: "Carta Normal", onPress: () => setTipoPlatoFiltro("plato-carta normal") },
+                            ]),
                       ]
                     );
                   }}

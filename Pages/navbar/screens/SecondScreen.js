@@ -34,6 +34,17 @@ import Animated, {
 import { MotiPressable, MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { slideInUpCart, fadeInDownPlato, springConfig, moneyEasing } from "../../../constants/animations";
+// Hook catálogo de tipos de plato (dinámico desde backend)
+import useTiposPlato from "../../../hooks/useTiposPlato";
+
+// Map slug -> MaterialCommunityIcons name (fallback)
+function _iconForTipo(slug) {
+  if (!slug) return null;
+  if (slug === 'platos-desayuno') return 'coffee';
+  if (slug === 'plato-carta normal' || slug === 'carta-normal') return 'silverware-fork-knife';
+  if (slug === 'platos-cena') return 'moon-waning-crescent';
+  return null;
+}
 
 const SecondScreen = () => {
   const [userInfo, setUserInfo] = useState(null);
@@ -48,6 +59,8 @@ const SecondScreen = () => {
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null); // "platos-desayuno" o "carta-normal"
+  // Catálogo dinámico de tipos de plato desde el backend
+  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo } = useTiposPlato();
   const [isSendingComanda, setIsSendingComanda] = useState(false);
   const [areas, setAreas] = useState([]);
   const [filtroAreaMesa, setFiltroAreaMesa] = useState("All"); // Filtro para el modal de mesas
@@ -460,12 +473,12 @@ const SecondScreen = () => {
 
   // Filtrar categorías solo del tipo seleccionado
   const categorias = tipoPlatoFiltro
-    ? [...new Set(platos.filter(p => p.tipo === tipoPlatoFiltro).map(p => p.categoria))].filter(Boolean)
+    ? [...new Set(platos.filter(p => p.tipo === tipoPlatoFiltro || (tipoPlatoFiltro === 'plato-carta normal' && p.tipo === 'carta-normal') || (tipoPlatoFiltro === 'carta-normal' && p.tipo === 'plato-carta normal')).map(p => p.categoria))].filter(Boolean)
     : [];
   
   // Filtrar platos por tipo, búsqueda y categoría
   const platosFiltrados = platos.filter(p => {
-    const matchTipo = !tipoPlatoFiltro || p.tipo === tipoPlatoFiltro;
+    const matchTipo = !tipoPlatoFiltro || p.tipo === tipoPlatoFiltro || (tipoPlatoFiltro === 'plato-carta normal' && p.tipo === 'carta-normal') || (tipoPlatoFiltro === 'carta-normal' && p.tipo === 'plato-carta normal');
     const matchSearch = !searchPlato || p.nombre.toLowerCase().includes(searchPlato.toLowerCase());
     const matchCategoria = !categoriaFiltro || p.categoria === categoriaFiltro;
     return matchTipo && matchSearch && matchCategoria;
@@ -760,26 +773,44 @@ const SecondScreen = () => {
               <View style={styles.tipoSelectorContainer}>
                 <Text style={styles.tipoSelectorTitle}>Selecciona el tipo de menú:</Text>
                 <View style={styles.tipoButtonsContainer}>
-                  <TouchableOpacity
-                    style={styles.tipoButton}
-                    onPress={() => {
-                      setTipoPlatoFiltro("platos-desayuno");
-                      console.log("🍳 Tipo seleccionado: Desayuno");
-                    }}
-                  >
-                    <MaterialCommunityIcons name="coffee" size={40} color="#FFFFFF" />
-                    <Text style={styles.tipoButtonText}>DESAYUNO</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.tipoButton}
-                    onPress={() => {
-                      setTipoPlatoFiltro("carta-normal");
-                      console.log("🍽️ Tipo seleccionado: Carta Normal");
-                    }}
-                  >
-                    <MaterialCommunityIcons name="silverware-fork-knife" size={40} color="#FFFFFF" />
-                    <Text style={styles.tipoButtonText}>CARTA NORMAL</Text>
-                  </TouchableOpacity>
+                  {tiposPlatoCatalogo.length > 0 ? (
+                    tiposPlatoCatalogo.map((t) => (
+                      <TouchableOpacity
+                        key={t.slug}
+                        style={styles.tipoButton}
+                        onPress={() => {
+                          setTipoPlatoFiltro(t.slug);
+                          console.log(`🍽️ Tipo seleccionado: ${t.nombre}`);
+                        }}
+                      >
+                        <MaterialCommunityIcons name={_iconForTipo(t.slug) || "silverware-fork-knife"} size={40} color="#FFFFFF" />
+                        <Text style={styles.tipoButtonText}>{(t.nombreCorto || t.nombre || "").toUpperCase()}</Text>
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        style={styles.tipoButton}
+                        onPress={() => {
+                          setTipoPlatoFiltro("platos-desayuno");
+                          console.log("🍳 Tipo seleccionado: Desayuno");
+                        }}
+                      >
+                        <MaterialCommunityIcons name="coffee" size={40} color="#FFFFFF" />
+                        <Text style={styles.tipoButtonText}>DESAYUNO</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.tipoButton}
+                        onPress={() => {
+                          setTipoPlatoFiltro("plato-carta normal");
+                          console.log("🍽️ Tipo seleccionado: Carta Normal");
+                        }}
+                      >
+                        <MaterialCommunityIcons name="silverware-fork-knife" size={40} color="#FFFFFF" />
+                        <Text style={styles.tipoButtonText}>CARTA NORMAL</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
               </View>
             ) : (
@@ -795,7 +826,7 @@ const SecondScreen = () => {
                 >
                   <MaterialCommunityIcons name="arrow-left" size={20} color="#FFFFFF" />
                   <Text style={styles.changeTipoButtonText}>
-                    Cambiar tipo ({tipoPlatoFiltro === "platos-desayuno" ? "Desayuno" : "Carta Normal"})
+                    Cambiar tipo ({labelForTipo(tipoPlatoFiltro) || "Tipo"})
                   </Text>
                 </TouchableOpacity>
 
