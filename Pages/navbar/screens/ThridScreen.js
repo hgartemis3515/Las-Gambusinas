@@ -380,11 +380,26 @@ const ThirdScreen = () => {
   };
 
   const categorias = tipoPlatoFiltro
-    ? [...new Set(platos.filter(p => p.tipo === tipoPlatoFiltro || (tipoPlatoFiltro === 'plato-carta normal' && p.tipo === 'carta-normal') || (tipoPlatoFiltro === 'carta-normal' && p.tipo === 'plato-carta normal')).map(p => p.categoria))].filter(Boolean)
+    const _tipoNormalizado = (t) => (t || '').trim().toLowerCase();
+  const platoEsDeTipo = (p, slug) => {
+    if (!slug) return true;
+    const target = _tipoNormalizado(slug);
+    const mismoSlug = (t) => {
+      const nt = _tipoNormalizado(t);
+      return nt === target
+        || (target === 'plato-carta normal' && nt === 'carta-normal')
+        || (target === 'carta-normal' && nt === 'plato-carta normal');
+    };
+    if (Array.isArray(p?.tipos) && p.tipos.length) return p.tipos.some(mismoSlug);
+    return mismoSlug(p?.tipo);
+  };
+
+  const categorias = tipoPlatoFiltro
+    ? [...new Set(platos.filter(p => platoEsDeTipo(p, tipoPlatoFiltro)).map(p => p.categoria))].filter(Boolean)
     : [];
 
   const platosFiltrados = platos.filter(p => {
-    const matchTipo = !tipoPlatoFiltro || p.tipo === tipoPlatoFiltro || (tipoPlatoFiltro === 'plato-carta normal' && p.tipo === 'carta-normal') || (tipoPlatoFiltro === 'carta-normal' && p.tipo === 'plato-carta normal');
+    const matchTipo = !tipoPlatoFiltro || platoEsDeTipo(p, tipoPlatoFiltro);
     const matchSearch = !searchPlato || p.nombre.toLowerCase().includes(searchPlato.toLowerCase());
     const matchCategoria = !categoriaFiltro || p.categoria === categoriaFiltro;
     return matchTipo && matchSearch && matchCategoria;

@@ -851,13 +851,22 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // Función de normalización de tipos (igual que en OrdenesScreen)
   const tipoNormalizado = (t) => (t || '').trim().toLowerCase();
-  
+
+  // Devuelve true si el plato pertenece al tipo indicado, considerando
+  // tanto el campo legacy `tipo` (string) como el array `tipos` (1 o más).
+  const platoEsDeTipo = (p, slug) => {
+    if (!slug) return true;
+    const target = tipoNormalizado(slug);
+    if (Array.isArray(p?.tipos) && p.tipos.length) {
+      return p.tipos.some((t) => tipoNormalizado(t) === target);
+    }
+    return tipoNormalizado(p?.tipo) === target;
+  };
+
   // Filtrar platos para el modal de edición
-  // Usa normalización para comparar tipos de manera flexible
   const platosFiltrados = platos.filter(p => {
     if (!tipoPlatoFiltro) return false;
-    // Normalizar ambos tipos para comparación flexible
-    if (tipoNormalizado(p.tipo) !== tipoNormalizado(tipoPlatoFiltro)) return false;
+    if (!platoEsDeTipo(p, tipoPlatoFiltro)) return false;
     // Verificar stock disponible
     const disponible = (p.stock == null || p.stock === undefined || Number(p.stock) > 0);
     if (!disponible) return false;
@@ -867,8 +876,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     if (categoriaFiltro && p.categoria !== categoriaFiltro) return false;
     return true;
   });
-  
-  const categorias = [...new Set(platos.filter(p => tipoNormalizado(p.tipo) === tipoNormalizado(tipoPlatoFiltro)).map(p => p.categoria))].filter(Boolean);
+
+  const categorias = [...new Set(platos.filter(p => platoEsDeTipo(p, tipoPlatoFiltro)).map(p => p.categoria))].filter(Boolean);
   
   // Guardar edición
   const handleGuardarEdicion = async () => {

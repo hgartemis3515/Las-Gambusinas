@@ -1090,15 +1090,27 @@ const OrdenesScreen = ({ route }) => {
   }, [modalMesasVisible]);
 
   const tipoNormalizado = (t) => (t || '').trim().toLowerCase();
+
+  // Devuelve true si el plato pertenece al tipo indicado, considerando
+  // tanto el campo legacy `tipo` (string) como el array `tipos` (1 o más).
+  const platoEsDeTipo = (p, slug) => {
+    if (!slug) return true;
+    const target = tipoNormalizado(slug);
+    if (Array.isArray(p?.tipos) && p.tipos.length) {
+      return p.tipos.some((t) => tipoNormalizado(t) === target);
+    }
+    return tipoNormalizado(p?.tipo) === target;
+  };
+
   const categorias = tipoPlatoFiltro
-    ? [...new Set(platos.filter(p => tipoNormalizado(p.tipo) === tipoNormalizado(tipoPlatoFiltro)).map(p => p.categoria))].filter(Boolean)
+    ? [...new Set(platos.filter(p => platoEsDeTipo(p, tipoPlatoFiltro)).map(p => p.categoria))].filter(Boolean)
     : [];
 
   // Platos disponibles (tipo + stock > 0)
   const platosPorTipoDisponibles = useMemo(
     () =>
       platos.filter((p) => {
-        const matchTipo = !tipoPlatoFiltro || tipoNormalizado(p.tipo) === tipoNormalizado(tipoPlatoFiltro);
+        const matchTipo = !tipoPlatoFiltro || platoEsDeTipo(p, tipoPlatoFiltro);
         const disponible = (p.stock == null || p.stock === undefined || Number(p.stock) > 0);
         return matchTipo && disponible;
       }),
