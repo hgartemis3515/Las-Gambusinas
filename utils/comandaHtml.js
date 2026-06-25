@@ -192,6 +192,14 @@ export function generarHtmlComanda({ datos, plantilla, serverOrigin }) {
     html += '<div style="font-weight:bold;font-size:' + (fontSize + 2) + 'px;text-align:right;margin:4px 0;">';
     html += `${etiquetas.total}: ${datos.moneda === 'USD' ? '$' : 'S/.'}${(datos.total || 0).toFixed(2)}`;
     html += '</div>';
+
+    // Bloque efectivo: monto recibido + vuelto (solo si método de pago es efectivo)
+    const simboloMoneda = datos.moneda === 'USD' ? '$' : 'S/.';
+    if (String(datos.tipoPago || '').toLowerCase() === 'efectivo' && (datos.montoRecibido != null || datos.vuelto != null)) {
+      html += `<div style="font-size:${fontSize}px;text-align:right;padding:2px 0 1px;">Recibido: ${simboloMoneda}${(datos.montoRecibido || 0).toFixed(2)}</div>`;
+      html += `<div style="font-size:${fontSize + 1}px;font-weight:bold;text-align:right;padding:1px 0;">Vuelto: ${simboloMoneda}${(datos.vuelto || 0).toFixed(2)}</div>`;
+    }
+
     html += divider();
   }
 
@@ -302,5 +310,7 @@ export function mapComandaATicket(comanda, boucherOpcional, config = {}) {
       dni: comanda.cliente?.dni || (typeof boucherOpcional?.cliente === 'object' ? boucherOpcional.cliente?.dni : null) || '',
     },
     voucherId: boucherOpcional?.voucherId || boucherOpcional?.boucherNumber || null,
+    montoRecibido: boucherOpcional?.montoRecibido ?? null,
+    vuelto: boucherOpcional?.vuelto ?? null,
   };
 }
