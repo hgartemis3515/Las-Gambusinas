@@ -220,7 +220,7 @@ const SecondScreen = () => {
     let total = 0;
     selectedPlatos.forEach(plato => {
       const cantidad = cantidades[plato._id] || 1;
-      total += plato.precio * cantidad;
+      total += (plato.precioUnitario != null ? Number(plato.precioUnitario) : Number(plato.precio || 0)) * cantidad;
     });
     return total.toFixed(2);
   };
@@ -231,7 +231,7 @@ const SecondScreen = () => {
     let total = 0;
     selectedPlatos.forEach(plato => {
       const cantidad = cantidades[plato._id] || 1;
-      total += plato.precio * cantidad;
+      total += (plato.precioUnitario != null ? Number(plato.precioUnitario) : Number(plato.precio || 0)) * cantidad;
     });
     return total;
   }, [selectedPlatos, cantidades]);
@@ -555,7 +555,7 @@ const SecondScreen = () => {
             </Text>
             {selectedPlatos.map((plato, index) => {
               const cantidad = cantidades[plato._id] || 1;
-              const subtotal = plato.precio * cantidad;
+              const subtotal = (plato.precioUnitario != null ? Number(plato.precioUnitario) : Number(plato.precio || 0)) * cantidad;
               return (
                 <Animated.View
                   key={plato._id}

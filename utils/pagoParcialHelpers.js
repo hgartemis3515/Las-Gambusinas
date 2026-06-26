@@ -4,6 +4,12 @@
 
 /** Precio unitario de una línea de plato (soporta ref poblada o sin poblar). */
 export function resolverPrecioLineaPlato(platoItem) {
+  // v3.0: priorizar precioUnitario snapshot (precio base + extras de complementos).
+  // Si existe (comandas creadas tras la implementación v3), se usa directo.
+  if (platoItem?.precioUnitario != null) {
+    const v = Number(platoItem.precioUnitario);
+    if (Number.isFinite(v) && v >= 0) return v;
+  }
   const platoRef = platoItem?.plato;
   if (platoRef && typeof platoRef === 'object' && platoRef.precio != null) {
     return Number(platoRef.precio) || 0;

@@ -15,7 +15,7 @@ const FilaPlatoCompacta = ({
   seleccionado = false,
   estilos 
 }) => {
-  const subtotal = (plato.precio * plato.cantidad).toFixed(2);
+  const subtotal = ((plato.precioUnitario != null ? Number(plato.precioUnitario) : Number(plato.precio || 0)) * plato.cantidad).toFixed(2);
   // SALIO: El mozo solo puede entregar platos que ya salieron de cocina (estado 'salio').
   // 'recoger' pasa a ser solo aviso informativo (sin checkbox).
   const esSalio = plato.estado === 'salio' && !plato.anulado;

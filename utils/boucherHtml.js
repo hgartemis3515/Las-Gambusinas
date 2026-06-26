@@ -228,7 +228,7 @@ export function generarHtmlBoucher({
     html += '<th style="text-align:right;width:20%;font-size:12px;">P.Unit</th>';
     html += '<th style="text-align:right;width:20%;font-size:12px;">Total</th></tr></thead><tbody>';
 
-    const filaPlato = (nombre, cantidad, precio, subtotalPlato, complementos = []) => {
+    const filaPlato = (nombre, cantidad, precio, subtotalPlato, complementos = [], flagsResumen = null) => {
       html += '<tr>';
       html += `<td style="vertical-align:top;font-size:12px;overflow-wrap:break-word;padding:2px 4px 2px 0;">${escapeHtml(nombre)}</td>`;
       html += `<td style="text-align:center;vertical-align:top;font-size:12px;padding:2px 0;">${cantidad}</td>`;
@@ -243,6 +243,34 @@ export function generarHtmlBoucher({
         if (comp.precio > 0) html += ` (+${comp.precio.toFixed(2)})`;
         html += '</td></tr>';
       });
+
+      // v3.0: fila de resumen de complementos si el plato lo activa
+      if (flagsResumen && flagsResumen.mostrar && complementos.length > 0) {
+        const mostrarCantidad = flagsResumen.mostrarCantidad !== false;
+        const mostrarMontoExtra = flagsResumen.mostrarMontoExtra !== false;
+        let totalUnidades = 0;
+        let extra = 0;
+        for (const c of complementos) {
+          const cant = Math.max(1, Number(c.cantidad) || 1);
+          totalUnidades += cant;
+          extra += (Number(c.precio) || 0) * cant;
+        }
+        if (totalUnidades > 0) {
+          const partes = [];
+          if (mostrarCantidad) {
+            partes.push(`${totalUnidades} ${totalUnidades === 1 ? 'ud.' : 'uds.'}`);
+          }
+          if (mostrarMontoExtra && extra > 0) {
+            partes.push(`(+${extra.toFixed(2)})`);
+          }
+          const textoResumen = partes.join(' ').trim();
+          if (textoResumen) {
+            html += '<tr><td colspan="4" style="font-size:11px;font-weight:600;color:#333;padding:1px 0 2px 8px;border-top:1px dotted #999;">';
+            html += `Σ Complementos: ${escapeHtml(textoResumen)}`;
+            html += '</td></tr>';
+          }
+        }
+      }
     };
 
     if (usarBoucherBackend) {
@@ -250,12 +278,21 @@ export function generarHtmlBoucher({
         const cantidad = platoItem.cantidad || 1;
         const precio = platoItem.precio || 0;
         const subtotalPlato = platoItem.subtotal || precio * cantidad;
+        // v3.0: construir flags de resumen desde snapshot del plato en la comanda
+        const flagsResumen = platoItem.mostrarResumenComplementos
+          ? {
+              mostrar: true,
+              mostrarCantidad: platoItem.resumenComplementosImpresion?.mostrarCantidad !== false,
+              mostrarMontoExtra: platoItem.resumenComplementosImpresion?.mostrarMontoExtra !== false
+            }
+          : null;
         filaPlato(
           platoItem.nombre || 'Plato',
           cantidad,
           precio,
           subtotalPlato,
-          platoItem.complementosSeleccionados || []
+          platoItem.complementosSeleccionados || [],
+          flagsResumen
         );
       });
     } else {
@@ -264,12 +301,20 @@ export function generarHtmlBoucher({
           const plato = platoItem.plato || platoItem;
           const cantidad = comanda.cantidades?.[index] || 1;
           const precio = plato.precio || 0;
+          const flagsResumen = platoItem.mostrarResumenComplementos
+            ? {
+                mostrar: true,
+                mostrarCantidad: platoItem.resumenComplementosImpresion?.mostrarCantidad !== false,
+                mostrarMontoExtra: platoItem.resumenComplementosImpresion?.mostrarMontoExtra !== false
+              }
+            : null;
           filaPlato(
             plato.nombre || 'Plato',
             cantidad,
             precio,
             precio * cantidad,
-            platoItem.complementosSeleccionados || []
+            platoItem.complementosSeleccionados || [],
+            flagsResumen
           );
         });
       });

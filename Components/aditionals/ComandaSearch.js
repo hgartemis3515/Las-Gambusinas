@@ -62,7 +62,9 @@ const ComandaSearch = () => {
   const calcularTotal = (platos, cantidades) => {
     let total = 0;
     platos.forEach((plato, index) => {
-      total += plato.plato.precio * cantidades[index];
+      // v3.0: priorizar precioUnitario snapshot (incluye extras de complementos)
+      const precio = plato.precioUnitario != null ? Number(plato.precioUnitario) : (plato.plato?.precio || plato.precio || 0);
+      total += precio * cantidades[index];
     });
     return total;
   };

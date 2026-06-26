@@ -175,6 +175,35 @@ export function generarHtmlComanda({ datos, plantilla, serverOrigin }) {
           if (mostrarPrecios) html += '<td></td>';
           html += '</tr>';
         }
+
+        // v3.0: fila de resumen agregado si el plato lo activa
+        if (prod.mostrarResumenComplementos) {
+          const flags = prod.resumenComplementosImpresion || {};
+          const mostrarCantidad = flags.mostrarCantidad !== false;
+          const mostrarMontoExtra = flags.mostrarMontoExtra !== false;
+          let totalUnidades = 0;
+          let extra = 0;
+          for (const c of prod.complementos) {
+            const cant = Math.max(1, Number(c.cantidad) || 1);
+            totalUnidades += cant;
+            extra += (Number(c.precio) || 0) * cant;
+          }
+          if (totalUnidades > 0) {
+            const partes = [];
+            if (mostrarCantidad) {
+              partes.push(`${totalUnidades} ${totalUnidades === 1 ? 'ud.' : 'uds.'}`);
+            }
+            if (mostrarMontoExtra && extra > 0) {
+              partes.push(`(+S/.${extra.toFixed(2)})`);
+            }
+            const textoResumen = partes.join(' ').trim();
+            if (textoResumen) {
+              html += '<tr style="color:#444;font-size:' + (fontSize - 2) + 'px;font-weight:600;">';
+              html += `<td colspan="${mostrarPrecios ? 3 : 2}" style="padding:1px 0 0 10px;border-top:1px dotted #aaa;">Σ Complementos: ${escapeHtml(textoResumen)}</td>`;
+              html += '</tr>';
+            }
+          }
+        }
       }
       // Nota especial
       if (prod.notaEspecial) {

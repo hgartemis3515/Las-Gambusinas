@@ -435,15 +435,17 @@ const OrdenesScreen = ({ route }) => {
   }, []);
 
   // Función para agregar un plato sin complementos (comportamiento original)
-  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = "") => {
+  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitarioV3 = null, extraComplementosV3 = null) => {
     // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
     const instanceId = `${plato._id}_${Date.now()}`;
 
     // v2.0: Normalizar complementos seleccionados (asegurar que tengan cantidad)
+    // v3.0: preservar precio del extra (snapshot) si vino del Modal
     const complementosNormalizados = complementosSeleccionados.map(comp => ({
       grupo: comp.grupo,
       opcion: comp.opcion,
-      cantidad: comp.cantidad || 1 // Si no tiene cantidad, asumir 1 (legacy)
+      cantidad: comp.cantidad || 1, // Si no tiene cantidad, asumir 1 (legacy)
+      ...(comp.precio != null ? { precio: Number(comp.precio) || 0 } : {})
     }));
 
     const platoConComplementos = {
@@ -452,6 +454,9 @@ const OrdenesScreen = ({ route }) => {
       complementosElegidos: complementosNormalizados,
       notaEspecial: notaEspecial,
       tipoServicio: tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa', // NUEVO: Mesa vs Para llevar
+      // v3.0: precio unitario con extras (para mostrar subtotal correcto al mozo antes de enviar)
+      ...(precioUnitarioV3 != null ? { precioUnitario: Number(precioUnitarioV3) } : {}),
+      ...(extraComplementosV3 != null ? { extraComplementos: Number(extraComplementosV3) } : {}),
     };
 
     // Verificar si ya existe el mismo plato CON LOS MISMOS complementos Y mismo tipoServicio.
@@ -498,10 +503,11 @@ const OrdenesScreen = ({ route }) => {
   };
 
   // Función para confirmar complementos desde el modal
-  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial }) => {
+  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos }) => {
     if (platoParaComplementar) {
       const nombre = platoParaComplementar.nombre;
-      agregarPlatoSinComplementos(platoParaComplementar, complementosSeleccionados, notaEspecial);
+      // v3.0: pasar totales pre-calculados desde ModalComplementos
+      agregarPlatoSinComplementos(platoParaComplementar, complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos);
       Alert.alert("✅", `${nombre} agregado`);
       cerrarModalComplementosYReabrirMenu();
     }
@@ -526,7 +532,9 @@ const OrdenesScreen = ({ route }) => {
     let total = 0;
     selectedPlatos.forEach(plato => {
       const cantidad = cantidades[plato.instanceId || plato._id] || 1;
-      total += plato.precio * cantidad;
+      // v3.0: usar precioUnitario (base + extras) si está disponible
+      const precio = plato.precioUnitario != null ? Number(plato.precioUnitario) : Number(plato.precio || 0);
+      total += precio * cantidad;
     });
     return total.toFixed(2);
   };
@@ -1231,7 +1239,9 @@ const OrdenesScreen = ({ route }) => {
             selectedPlatos.map((plato) => {
               const platoInstanceId = plato.instanceId || plato._id;
               const cantidad = cantidades[platoInstanceId] || 1;
-              const subtotal = plato.precio * cantidad;
+              // v3.0: usar precioUnitario si está disponible
+              const precioLinea = plato.precioUnitario != null ? Number(plato.precioUnitario) : Number(plato.precio || 0);
+              const subtotal = precioLinea * cantidad;
               const tieneComplementos = plato.complementosElegidos && plato.complementosElegidos.length > 0;
               const tieneNota = plato.notaEspecial && plato.notaEspecial.trim().length > 0;
               const esParaLlevar = plato.tipoServicio === 'para_llevar';

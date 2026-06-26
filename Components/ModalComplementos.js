@@ -12,6 +12,12 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
 import { themeLight } from "../constants/theme";
+import {
+  normalizarOpcion,
+  getNombreOpcion,
+  getPrecioOpcion,
+  calcularPrecioUnitarioConComplementos,
+} from "../utils/precioComplementos";
 
 /**
  * Modal para seleccionar complementos/variantes de un plato
@@ -242,20 +248,58 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     return Object.values(estadoGrupos).some(e => !e.esValido);
   }, [estadoGrupos]);
 
+  // v3.0: Cálculo de precios en tiempo real
+  // - Si plato.complementosAfectanPrecio === false, los extras son informativos (no suman).
+  // - El footer muestra base + extras = unitario.
+  const afectanPrecio = plato?.complementosAfectanPrecio !== false;
+  const basePlato = Number(plato?.precio) || 0;
+
+  const preciosResumen = useMemo(() => {
+    const seleccionesParaCalc = [];
+    Object.entries(seleccionesPorGrupo).forEach(([grupoNombre, opciones]) => {
+      const grupoConfig = complementos.find((g) => g.grupo === grupoNombre);
+      Object.entries(opciones).forEach(([opcion, cantidad]) => {
+        if (cantidad > 0) {
+          const precioOpcion = grupoConfig ? getPrecioOpcion(grupoConfig, opcion) : 0;
+          seleccionesParaCalc.push({
+            grupo: grupoNombre,
+            opcion,
+            cantidad,
+            precio: afectanPrecio ? precioOpcion : 0,
+          });
+        }
+      });
+    });
+    const calc = calcularPrecioUnitarioConComplementos(
+      basePlato,
+      seleccionesParaCalc,
+      { afectanPrecio }
+    );
+    return {
+      extra: calc.extraComplementos,
+      unitario: calc.precioUnitario,
+      tieneExtras: calc.extraComplementos > 0,
+    };
+  }, [seleccionesPorGrupo, complementos, basePlato, afectanPrecio]);
+
   // Confirmar y agregar el plato con complementos
   const handleConfirmar = () => {
     if (!obligatoriosCompletos || hayErrores) return;
 
     // Construir array de complementos seleccionados
+    // v3.0: incluir precio snapshot (respetando complementosAfectanPrecio del plato)
     const complementosSeleccionados = [];
     
     Object.entries(seleccionesPorGrupo).forEach(([grupoNombre, opciones]) => {
+      const grupoConfig = complementos.find((g) => g.grupo === grupoNombre);
       Object.entries(opciones).forEach(([opcion, cantidad]) => {
         if (cantidad > 0) {
+          const precioOpcion = grupoConfig ? getPrecioOpcion(grupoConfig, opcion) : 0;
           complementosSeleccionados.push({
             grupo: grupoNombre,
             opcion: opcion,
-            cantidad: cantidad
+            cantidad: cantidad,
+            precio: afectanPrecio ? precioOpcion : 0,
           });
         }
       });
@@ -265,6 +309,9 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     onConfirm({
       complementosSeleccionados,
       notaEspecial: notaEspecial.trim(),
+      // v3.0: enviar totales pre-calculados para que el carrito no tenga que recalcular
+      _precioUnitario: preciosResumen.unitario,
+      _extraComplementos: preciosResumen.extra,
     });
 
     // Resetear estado local
@@ -358,8 +405,12 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
 
                   {/* Chips de opciones */}
                   <View style={styles.opcionesContainer}>
-                    {grupoNormalizado.opciones.map((opcion, optIndex) => {
-                      const cantidad = getCantidadOpcion(grupoNormalizado.grupo, opcion);
+                    {grupoNormalizado.opciones.map((opcionRaw, optIndex) => {
+                      // v3.0: normalizar opción (string u objeto) a { nombre, precio }
+                      const opcion = normalizarOpcion(opcionRaw);
+                      const opcionNombre = opcion.nombre;
+                      const opcionPrecio = opcion.precio || 0;
+                      const cantidad = getCantidadOpcion(grupoNormalizado.grupo, opcionNombre);
                       const isSelected = cantidad > 0;
                       const puedeIncrementar = 
                         (grupoNormalizado.maxUnidadesGrupo === null || getTotalUnidadesGrupo(grupoNormalizado.grupo) < grupoNormalizado.maxUnidadesGrupo) &&
@@ -374,7 +425,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                                 styles.opcionChip,
                                 isSelected && styles.opcionChipSelected,
                               ]}
-                              onPress={() => toggleOpcion(grupoNormalizado.grupo, opcion, grupoNormalizado)}
+                              onPress={() => toggleOpcion(grupoNormalizado.grupo, opcionNombre, grupoNormalizado)}
                               activeOpacity={0.7}
                             >
                               <Text
@@ -383,14 +434,15 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                                   isSelected && styles.opcionTextSelected,
                                 ]}
                               >
-                                {opcion}
+                                {opcionNombre}
+                                {afectanPrecio && opcionPrecio > 0 ? `  +S/. ${opcionPrecio.toFixed(2)}` : ''}
                               </Text>
                             </TouchableOpacity>
                             
                             <View style={styles.cantidadControls}>
                               <TouchableOpacity
                                 style={[styles.cantidadButton, cantidad === 0 && styles.cantidadButtonDisabled]}
-                                onPress={() => decrementarOpcion(grupoNormalizado.grupo, opcion)}
+                                onPress={() => decrementarOpcion(grupoNormalizado.grupo, opcionNombre)}
                                 disabled={cantidad === 0}
                               >
                                 <MaterialCommunityIcons name="minus" size={16} color={cantidad > 0 ? theme.colors.text.white : theme.colors.text.light} />
@@ -400,7 +452,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                               
                               <TouchableOpacity
                                 style={[styles.cantidadButton, !puedeIncrementar && styles.cantidadButtonDisabled]}
-                                onPress={() => incrementarOpcion(grupoNormalizado.grupo, opcion, grupoNormalizado)}
+                                onPress={() => incrementarOpcion(grupoNormalizado.grupo, opcionNombre, grupoNormalizado)}
                                 disabled={!puedeIncrementar}
                               >
                                 <MaterialCommunityIcons name="plus" size={16} color={puedeIncrementar ? theme.colors.text.white : theme.colors.text.light} />
@@ -418,7 +470,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                             styles.opcionChip,
                             isSelected && styles.opcionChipSelected,
                           ]}
-                          onPress={() => toggleOpcion(grupoNormalizado.grupo, opcion, grupoNormalizado)}
+                          onPress={() => toggleOpcion(grupoNormalizado.grupo, opcionNombre, grupoNormalizado)}
                           activeOpacity={0.7}
                         >
                           <MaterialCommunityIcons
@@ -437,7 +489,8 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                               isSelected && styles.opcionTextSelected,
                             ]}
                           >
-                            {opcion}
+                            {opcionNombre}
+                            {afectanPrecio && opcionPrecio > 0 ? `  +S/. ${opcionPrecio.toFixed(2)}` : ''}
                           </Text>
                         </TouchableOpacity>
                       );
@@ -462,6 +515,24 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
               />
             </View>
           </ScrollView>
+
+          {/* v3.0: Footer con desglose de precios */}
+          {afectanPrecio && preciosResumen.tieneExtras && (
+            <View style={styles.precioResumenContainer}>
+              <View style={styles.precioResumenRow}>
+                <Text style={styles.precioResumenLabel}>Precio base</Text>
+                <Text style={styles.precioResumenValor}>S/. {basePlato.toFixed(2)}</Text>
+              </View>
+              <View style={styles.precioResumenRow}>
+                <Text style={styles.precioResumenLabel}>Complementos</Text>
+                <Text style={styles.precioResumenValor}>+S/. {preciosResumen.extra.toFixed(2)}</Text>
+              </View>
+              <View style={[styles.precioResumenRow, styles.precioResumenTotalRow]}>
+                <Text style={styles.precioResumenTotalLabel}>Total unitario</Text>
+                <Text style={styles.precioResumenTotalValor}>S/. {preciosResumen.unitario.toFixed(2)}</Text>
+              </View>
+            </View>
+          )}
 
           {/* Footer con botones */}
           <View style={styles.modalFooter}>
@@ -755,6 +826,45 @@ const modalComplementosStyles = (theme) =>
       fontSize: 12,
       color: theme.colors.warning,
       fontWeight: "500",
+    },
+    // v3.0: estilos para el resumen de precios en el footer
+    precioResumenContainer: {
+      paddingHorizontal: theme.spacing.lg,
+      paddingTop: theme.spacing.sm,
+      paddingBottom: theme.spacing.xs,
+      backgroundColor: theme.colors.background,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+    precioResumenRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingVertical: 2,
+    },
+    precioResumenLabel: {
+      fontSize: 12,
+      color: theme.colors.text.secondary,
+    },
+    precioResumenValor: {
+      fontSize: 12,
+      color: theme.colors.text.primary,
+      fontWeight: "500",
+    },
+    precioResumenTotalRow: {
+      marginTop: 4,
+      paddingTop: 4,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+    precioResumenTotalLabel: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: theme.colors.text.primary,
+    },
+    precioResumenTotalValor: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: theme.colors.secondary,
     },
   });
 

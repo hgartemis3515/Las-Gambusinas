@@ -232,7 +232,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           plato: platoItem.plato || { nombre: 'Plato desconocido', precio: 0 },
           cantidad: cantidad,
           estado: estadoNormalizado,
-          precio: platoItem.plato?.precio || 0,
+          precio: (platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (platoItem.plato?.precio || 0)),
           comandaId: comanda._id,
           comandaNumber: comanda.comandaNumber,
           eliminado: platoEliminado,
@@ -773,15 +773,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
 
   // Función para agregar un plato sin complementos
-  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = '') => {
+  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = '', precioUnitarioV3 = null, extraComplementosV3 = null) => {
     // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
     const instanceId = `${plato._id}_${Date.now()}`;
 
     // v2.0: Normalizar complementos seleccionados (asegurar que tengan cantidad)
+    // v3.0: preservar precio del extra (snapshot) si vino del Modal
     const complementosNormalizados = complementosSeleccionados.map(comp => ({
       grupo: comp.grupo,
       opcion: comp.opcion,
-      cantidad: comp.cantidad || 1 // Si no tiene cantidad, asumir 1 (legacy)
+      cantidad: comp.cantidad || 1, // Si no tiene cantidad, asumir 1 (legacy)
+      ...(comp.precio != null ? { precio: Number(comp.precio) || 0 } : {})
     }));
 
     const platoConComplementos = {
@@ -796,6 +798,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       complementosSeleccionados: complementosNormalizados,
       notaEspecial,
       tipoServicio: tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa', // NUEVO
+      // v3.0: precio unitario con extras (para mostrar subtotal correcto)
+      ...(precioUnitarioV3 != null ? { precioUnitario: Number(precioUnitarioV3) } : {}),
+      ...(extraComplementosV3 != null ? { extraComplementos: Number(extraComplementosV3) } : {}),
     };
 
     // Verificar si ya existe el mismo plato CON LOS MISMOS complementos Y mismo tipoServicio.
@@ -836,16 +841,18 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
 
   // Función para confirmar complementos desde el modal
-  const handleConfirmarComplementosEdicion = ({ complementosSeleccionados, notaEspecial }) => {
+  const handleConfirmarComplementosEdicion = ({ complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos }) => {
     if (platoParaComplementar) {
-      agregarPlatoSinComplementos(platoParaComplementar, complementosSeleccionados, notaEspecial);
+      agregarPlatoSinComplementos(platoParaComplementar, complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos);
       setPlatoParaComplementar(null);
     }
   };
-  
+
   const calcularTotalEdicion = () => {
     return platosEditados.reduce((total, p) => {
-      return total + (p.precio || 0) * (p.cantidad || 1);
+      // v3.0: usar precioUnitario (base + extras) si está disponible
+      const precio = p.precioUnitario != null ? Number(p.precioUnitario) : (p.precio || 0);
+      return total + precio * (p.cantidad || 1);
     }, 0);
   };
   

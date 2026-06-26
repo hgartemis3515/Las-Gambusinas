@@ -132,7 +132,7 @@ export const filtrarPlatosPorEstado = (comandas, estadosPermitidos) => {
           plato: platoItem.plato || { nombre: 'Plato desconocido', precio: 0 },
           cantidad: cantidad,
           estado: estadoNormalizado,
-          precio: platoItem.plato?.precio || 0,
+          precio: (platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (platoItem.plato?.precio || 0)),
           comandaId: comanda._id,
           comandaNumber: comanda.comandaNumber,
           index: index,
@@ -185,7 +185,7 @@ export const separarPlatosEditables = (comandas) => {
         estado: estadoNormalizado,
         cantidad: cantidad,
         nombre: platoItem.plato?.nombre || 'Plato desconocido',
-        precio: platoItem.plato?.precio || 0,
+        precio: (platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (platoItem.plato?.precio || 0)),
         index: index,
         comandaId: comanda._id,
         complementosSeleccionados: platoItem.complementosSeleccionados || [], // 🔥 NUEVO: Complementos del plato

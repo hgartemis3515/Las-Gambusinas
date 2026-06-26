@@ -6139,7 +6139,8 @@ const InicioScreen = () => {
                   {comandaAEliminar.platos.map((platoItem, index) => {
                     const plato = platoItem.plato || platoItem;
                     const cantidad = comandaAEliminar.cantidades?.[index] || 1;
-                    const precio = plato?.precio || platoItem.precio || 0;
+                    // v3.0: priorizar precioUnitario snapshot (incluye extras de complementos)
+                    const precio = platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (plato?.precio || platoItem.precio || 0);
                     const subtotal = precio * cantidad;
                     const nombre = plato?.nombre || "Plato desconocido";
                     
@@ -6178,7 +6179,8 @@ const InicioScreen = () => {
                           if (!platoItem.eliminado && !platoItem.anulado) {
                             const plato = platoItem.plato || platoItem;
                             const cantidad = comandaAEliminar.cantidades?.[index] || 1;
-                            const precio = plato?.precio || platoItem.precio || 0;
+                            // v3.0: priorizar precioUnitario snapshot (incluye extras de complementos)
+                    const precio = platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (plato?.precio || platoItem.precio || 0);
                             total += precio * cantidad;
                           }
                         });
@@ -6291,7 +6293,8 @@ const InicioScreen = () => {
                       if (!platoItem.eliminado && !platoItem.anulado) {
                         const plato = platoItem.plato || platoItem;
                         const cantidad = comanda.cantidades?.[index] || 1;
-                        const precio = plato?.precio || platoItem.precio || 0;
+                        // v3.0: priorizar precioUnitario snapshot (incluye extras de complementos)
+                    const precio = platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (plato?.precio || platoItem.precio || 0);
                         totalComanda += precio * cantidad;
                       }
                     });
@@ -6308,7 +6311,8 @@ const InicioScreen = () => {
                           
                           const plato = platoItem.plato || platoItem;
                           const cantidad = comanda.cantidades?.[index] || 1;
-                          const precio = plato?.precio || platoItem.precio || 0;
+                          // v3.0: priorizar precioUnitario snapshot (incluye extras de complementos)
+                    const precio = platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (plato?.precio || platoItem.precio || 0);
                           const subtotal = precio * cantidad;
                           const nombre = plato?.nombre || "Plato desconocido";
                           
@@ -6352,7 +6356,8 @@ const InicioScreen = () => {
                             if (!platoItem.eliminado && !platoItem.anulado) {
                               const plato = platoItem.plato || platoItem;
                               const cantidad = comanda.cantidades?.[index] || 1;
-                              const precio = plato?.precio || platoItem.precio || 0;
+                              // v3.0: priorizar precioUnitario snapshot (incluye extras de complementos)
+                    const precio = platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (plato?.precio || platoItem.precio || 0);
                               totalGeneral += precio * cantidad;
                             }
                           });
@@ -6664,7 +6669,8 @@ const InicioScreen = () => {
                     {comandaEliminarPlatos.platos.map((platoItem, index) => {
                       const plato = platoItem.plato || platoItem;
                       const cantidad = comandaEliminarPlatos.cantidades?.[index] || 1;
-                      const precio = plato?.precio || platoItem.precio || 0;
+                      // v3.0: priorizar precioUnitario snapshot (incluye extras de complementos)
+                    const precio = platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (plato?.precio || platoItem.precio || 0);
                       const subtotal = precio * cantidad;
                       const nombre = plato?.nombre || "Plato desconocido";
                       const estado = platoItem.estado?.toLowerCase() || "";

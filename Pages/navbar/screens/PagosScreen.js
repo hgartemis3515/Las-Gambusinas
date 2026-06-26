@@ -893,7 +893,8 @@ const PagosScreen = () => {
           // Los platos anulados desde cocina tienen eliminado=true Y anulado=true
           if (!platoItem.eliminado && !platoItem.anulado) {
             const cantidad = comanda.cantidades?.[index] || 1;
-            const precio = platoItem.plato?.precio || platoItem.precio || 0;
+            // v3.0: usar precioUnitario snapshot (incluye extras) si está disponible
+            const precio = platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (platoItem.plato?.precio || platoItem.precio || 0);
             totalCalculado += precio * cantidad;
           }
         });
@@ -926,7 +927,8 @@ const PagosScreen = () => {
           // Los platos anulados desde cocina tienen eliminado=true Y anulado=true
           if (!platoItem.eliminado && !platoItem.anulado) {
             const cantidad = comanda.cantidades?.[index] || 1;
-            const precio = platoItem.plato?.precio || platoItem.precio || 0;
+            // v3.0: usar precioUnitario snapshot si está disponible
+            const precio = platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (platoItem.plato?.precio || platoItem.precio || 0);
             total += precio * cantidad;
           }
         });
@@ -983,7 +985,8 @@ const PagosScreen = () => {
         comanda.platos.forEach((platoItem, index) => {
           if (!platoItem.eliminado && !platoItem.anulado) {
             const cantidad = comanda.cantidades?.[index] || 1;
-            const precio = platoItem.plato?.precio || platoItem.precio || 0;
+            // v3.0: usar precioUnitario snapshot si está disponible
+            const precio = platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (platoItem.plato?.precio || platoItem.precio || 0);
             sub += precio * cantidad;
           }
         });
