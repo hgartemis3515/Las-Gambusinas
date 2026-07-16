@@ -100,29 +100,23 @@ const useSocketMozos = ({
     // OPTIMIZADO: Configuración bulletproof para conexión permanente
     // IMPORTANTE: Enviar token en auth para autenticación
     const socket = io(wsURL, {
-      transports: ['websocket', 'polling'], // WebSocket primero, polling fallback
+      // En React Native / Expo Go el websocket directo a menudo falla primero;
+      // polling primero permite conectar y luego upgrade a websocket.
+      transports: ['polling', 'websocket'],
       reconnection: true,
-      reconnectionDelay: initialDelay, // Delay inicial 1s
-      reconnectionDelayMax: maxDelay, // Delay máximo 5s (más agresivo)
-      reconnectionAttempts: maxReconnectAttempts, // 10 intentos
-      timeout: 20000, // 20s timeout inicial
-      // Opciones para evitar desconexiones temporales
-      forceNew: false, // Reutilizar conexión existente
-      autoConnect: true, // Conectar automáticamente
-      closeOnBeforeunload: false, // No cerrar al navegar
-      // Opciones adicionales para estabilidad
-      upgrade: true, // Permitir upgrade de polling a websocket
-      rememberUpgrade: true, // Recordar preferencia de transporte
-      // Ping/pong para mantener conexión viva
-      pingTimeout: 60000, // 60s timeout ping (mayor que heartbeat 25s)
-      pingInterval: 25000, // 25s intervalo ping (igual que heartbeat)
-      // 🔥 MEJORADO: Opciones para evitar desconexiones durante operaciones HTTP
-      allowUpgrades: true, // Permitir upgrades de transporte
-      // Configuración para manejar mejor los "transport error"
-      randomizationFactor: 0.5, // Factor de aleatoriedad en backoff (0-1)
-      // Aumentar tolerancia a errores temporales
-      reconnectionDelayFactor: 1.5, // Factor de incremento en backoff (más conservador)
-      // 🔥 AUTENTICACIÓN JWT: Enviar token en el handshake
+      reconnectionDelay: initialDelay,
+      reconnectionDelayMax: maxDelay,
+      reconnectionAttempts: maxReconnectAttempts,
+      timeout: 20000,
+      forceNew: false,
+      autoConnect: true,
+      upgrade: true,
+      rememberUpgrade: false,
+      pingTimeout: 60000,
+      pingInterval: 25000,
+      allowUpgrades: true,
+      randomizationFactor: 0.5,
+      reconnectionDelayFactor: 1.5,
       auth: {
         token: token
       }
@@ -314,7 +308,13 @@ const useSocketMozos = ({
           onSocketStatus({ connected: false, status: 'auth_error', error: errorMsg });
         }
       } else {
-        console.error('❌ [MOZOS] Error de conexión Socket.io:', errorMsg);
+        // websocket error en Expo Go suele ser transitorio; polling reconecta
+        const transient = /websocket|transport|xhr poll|timeout/i.test(errorMsg);
+        if (transient) {
+          console.warn(`⚠️ [MOZOS] Socket transport: ${errorMsg} (reintentando…)`);
+        } else {
+          console.error('❌ [MOZOS] Error de conexión Socket.io:', errorMsg);
+        }
         setConnectionStatus('desconectado');
         
         if (onSocketStatus) {
@@ -323,7 +323,6 @@ const useSocketMozos = ({
       }
       
       // Socket.io ya tiene reconexión automática con backoff exponencial
-      // No necesitamos hacer nada adicional aquí
     });
 
     // Evento: Reconexión fallida

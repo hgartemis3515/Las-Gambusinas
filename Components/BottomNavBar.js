@@ -25,6 +25,7 @@ const BottomNavBar = ({ activeIndex = 0, navigation: navProp }) => {
     { route: "Inicio", icono: "🏠", label: "Inicio" },
     { route: "Ordenes", icono: "🍽️", label: "Órdenes" },
     { route: "Pagos", icono: "💰", label: "Pagos" },
+    { route: "Chat", icono: "💬", label: "Chat", stackRoute: true },
     { route: "Mas", icono: "⚙️", label: "Más" },
   ];
 
