@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   SectionList,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -27,7 +28,10 @@ import {
   setPineado,
   setArchivado,
   emitTyping,
+  crearGrupo,
 } from '../../services/chatService';
+import apiConfig from '../../config/apiConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PRIO_COLORS = {
   baja: '#95a5a6',
@@ -85,6 +89,57 @@ export default function ChatScreen() {
   const typingTimeoutRef = useRef(null);
   const lastTypingEmitRef = useRef(0);
   const grabacionRef = useRef(null);
+
+  // === Nuevo grupo (modal) ===
+  const [modalGrupo, setModalGrupo] = useState(false);
+  const [grupoNombre, setGrupoNombre] = useState('');
+  const [grupoSeleccion, setGrupoSeleccion] = useState([]);
+  const [usuariosLista, setUsuariosLista] = useState([]);
+  const [cargandoUsuarios, setCargandoUsuarios] = useState(false);
+
+  const cargarUsuarios = useCallback(async () => {
+    setCargandoUsuarios(true);
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      const url = apiConfig.getEndpoint('/mozos?activos=true');
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : (data?.data || data?.mozos || []);
+      setUsuariosLista(list);
+    } catch (_) { /* silencioso */ } finally {
+      setCargandoUsuarios(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (modalGrupo && usuariosLista.length === 0) cargarUsuarios();
+  }, [modalGrupo, usuariosLista.length, cargarUsuarios]);
+
+  const toggleMiembroGrupo = (id) => {
+    setGrupoSeleccion((curr) =>
+      curr.includes(id) ? curr.filter(x => x !== id) : [...curr, id]
+    );
+  };
+
+  const crearGrupoNuevo = async () => {
+    if (!grupoNombre.trim()) { Alert.alert('Falta el nombre', 'Ponle un nombre al grupo'); return; }
+    if (grupoSeleccion.length === 0) { Alert.alert('Sin miembros', 'Elige al menos a una persona'); return; }
+    try {
+      const resp = await crearGrupo(grupoNombre.trim(), grupoSeleccion);
+      if (resp?.success) {
+        setModalGrupo(false);
+        setGrupoNombre('');
+        setGrupoSeleccion([]);
+        await cargarInbox();
+        abrirConversacion(resp.data);
+      } else {
+        Alert.alert('Error', resp?.error || 'No se pudo crear el grupo');
+      }
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo crear el grupo');
+    }
+  };
 
   const cargarInbox = useCallback(async () => {
     try {
@@ -244,6 +299,7 @@ export default function ChatScreen() {
 
   const secciones = [
     { title: 'Anuncios', data: conversacionesFiltradas.filter(c => c.tipo === 'anuncio') },
+    { title: 'Grupos', data: conversacionesFiltradas.filter(c => c.tipo === 'grupo') },
     { title: 'Canales', data: conversacionesFiltradas.filter(c => c.tipo === 'canal') },
     { title: 'Directos', data: conversacionesFiltradas.filter(c => c.tipo === 'directo') },
   ].filter(s => s.data.length > 0);
@@ -267,7 +323,7 @@ export default function ChatScreen() {
         <View style={styles.convContent}>
           <View style={styles.convHeader}>
             <Text style={[styles.convTitulo, { color: colors.text }]} numberOfLines={1}>
-              {item.tipo === 'anuncio' ? '📢 ' : (item.tipo === 'canal' ? '# ' : '')}
+              {item.tipo === 'anuncio' ? '📢 ' : (item.tipo === 'canal' ? '# ' : (item.tipo === 'grupo' ? '👥 ' : ''))}
               {item.titulo || 'Conversación'}
               {item.silenciado ? ' 🔕' : ''}
               {item.pineado ? ' 📌' : ''}
@@ -347,6 +403,9 @@ export default function ChatScreen() {
             <Text style={[styles.backText, { color: colors.primary }]}>←</Text>
           </TouchableOpacity>
           <Text style={[styles.title, { color: colors.text }]}>Chat</Text>
+          <TouchableOpacity onPress={() => setModalGrupo(true)} style={styles.nuevoGrupoBtn}>
+            <Text style={{ fontSize: 20 }}>👥</Text>
+          </TouchableOpacity>
           {noLeidos > 0 && (
             <View style={[styles.badgeNoLeidos, { backgroundColor: colors.primary }]}>
               <Text style={styles.badgeText}>{noLeidos > 99 ? '99+' : noLeidos}</Text>
@@ -382,6 +441,62 @@ export default function ChatScreen() {
           refreshing={cargando}
           stickySectionHeadersEnabled={false}
         />
+
+        <Modal visible={modalGrupo} animationType="slide" transparent onRequestClose={() => setModalGrupo(false)}>
+          <View style={grupoStyles.backdrop}>
+            <View style={[grupoStyles.card, { backgroundColor: colors.surface }]}>
+              <View style={grupoStyles.header}>
+                <Text style={[grupoStyles.title, { color: colors.text }]}>👥 Nuevo grupo</Text>
+                <TouchableOpacity onPress={() => setModalGrupo(false)}>
+                  <Text style={{ fontSize: 26, color: colors.textMuted }}>×</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={[grupoStyles.label, { color: colors.textSecondary }]}>Nombre del grupo</Text>
+              <TextInput
+                value={grupoNombre}
+                onChangeText={setGrupoNombre}
+                placeholder="Ej: Turno noche"
+                placeholderTextColor={colors.textMuted}
+                style={[grupoStyles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+              />
+
+              <Text style={[grupoStyles.label, { color: colors.textSecondary }]}>Miembros ({grupoSeleccion.length})</Text>
+              <FlatList
+                data={usuariosLista}
+                keyExtractor={(u) => u._id}
+                renderItem={({ item }) => {
+                  const sel = grupoSeleccion.includes(item._id);
+                  return (
+                    <TouchableOpacity
+                      onPress={() => toggleMiembroGrupo(item._id)}
+                      style={[grupoStyles.chipRow, { borderColor: sel ? colors.primary : colors.border, backgroundColor: sel ? colors.inputBg : 'transparent' }]}
+                    >
+                      <Text style={{ color: sel ? colors.primary : colors.text, fontSize: 13 }}>
+                        {sel ? '✓ ' : ''}{item.name} <Text style={{ color: colors.textMuted, fontSize: 11 }}>({item.rol})</Text>
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                }}
+                style={{ maxHeight: 260 }}
+                ListEmptyComponent={
+                  cargandoUsuarios
+                    ? <Text style={{ color: colors.textMuted, padding: 8 }}>Cargando…</Text>
+                    : <Text style={{ color: colors.textMuted, padding: 8 }}>Sin personas disponibles</Text>
+                }
+              />
+
+              <View style={grupoStyles.actions}>
+                <TouchableOpacity onPress={() => setModalGrupo(false)} style={[grupoStyles.btnGhost, { borderColor: colors.border }]}>
+                  <Text style={{ color: colors.textSecondary }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={crearGrupoNuevo} style={[grupoStyles.btnPrimary, { backgroundColor: colors.primary }]}>
+                  <Text style={{ color: colors.textWhite, fontWeight: '700' }}>Crear grupo</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     );
   }
@@ -455,6 +570,7 @@ const styles = StyleSheet.create({
   backBtn: { marginRight: 12, padding: 4 },
   backText: { fontSize: 26 },
   title: { fontSize: 20, fontWeight: 'bold', flex: 1 },
+  nuevoGrupoBtn: { paddingHorizontal: 8, paddingVertical: 4, marginRight: 6 },
   connectionRow: { paddingVertical: 4, alignItems: 'center' },
   connectionText: { fontSize: 11 },
   searchRow: { paddingHorizontal: 12, paddingBottom: 8 },
@@ -498,4 +614,17 @@ const styles = StyleSheet.create({
   micBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   micBtnGrabando: { backgroundColor: '#e74c3c' },
   micText: { fontSize: 18 },
+});
+
+const grupoStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  card: { width: '100%', maxWidth: 460, borderRadius: 14, padding: 16, maxHeight: '86%' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  title: { fontSize: 17, fontWeight: 'bold' },
+  label: { fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 12, marginBottom: 4, fontWeight: '600' },
+  input: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, borderWidth: StyleSheet.hairlineWidth },
+  chipRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 10, borderWidth: 1, borderRadius: 10, marginBottom: 4 },
+  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 14 },
+  btnGhost: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, borderWidth: 1 },
+  btnPrimary: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10 },
 });

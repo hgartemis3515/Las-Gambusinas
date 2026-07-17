@@ -18,6 +18,7 @@ import HelpScreen from './Pages/Help/HelpScreen';
 import AboutScreen from './Pages/About/AboutScreen';
 import NotificationsScreen from './Pages/Notifications/NotificationsScreen';
 import ChatScreen from './Pages/Chat/ChatScreen';
+import AlertaOverlayMozos from './components/AlertaOverlayMozos';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
@@ -65,7 +66,9 @@ export default function App() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <ThemeProvider>
           <SocketProvider>
-            <NavigationContainer ref={navigationRef}>
+            <>
+              <AlertaOverlayMozos />
+              <NavigationContainer ref={navigationRef}>
               <Stack.Navigator 
                 initialRouteName="Login"
                 screenOptions={{
@@ -116,6 +119,7 @@ export default function App() {
                 />
               </Stack.Navigator>
             </NavigationContainer>
+            </>
           </SocketProvider>
         </ThemeProvider>
       </GestureHandlerRootView>

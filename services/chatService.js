@@ -96,6 +96,55 @@ export async function crearDM(destinatarioId) {
   return (await res.json());
 }
 
+// === Grupos (chat grupal ad-hoc) ===
+
+export async function crearGrupo(nombreGrupo, participanteIds, descripcionGrupo = '') {
+  const token = await getAuthToken();
+  const url = apiConfig.getEndpoint('/mensajes/conversaciones');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tipo: 'grupo', nombreGrupo, descripcionGrupo, participanteIds })
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return (await res.json());
+}
+
+export async function agregarMiembrosGrupo(convId, miembroIds) {
+  const token = await getAuthToken();
+  const url = apiConfig.getEndpoint(`/mensajes/conversaciones/${convId}/miembros`);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ miembroIds })
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return (await res.json());
+}
+
+export async function quitarMiembroGrupo(convId, usuarioId) {
+  const token = await getAuthToken();
+  const url = apiConfig.getEndpoint(`/mensajes/conversaciones/${convId}/miembros/${usuarioId}`);
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return (await res.json());
+}
+
+export async function actualizarGrupo(convId, { nombreGrupo, descripcionGrupo, activo } = {}) {
+  const token = await getAuthToken();
+  const url = apiConfig.getEndpoint(`/mensajes/conversaciones/${convId}`);
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombreGrupo, descripcionGrupo, activo })
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return (await res.json());
+}
+
 export function getAudioUrl(relUrl) {
   // audio.url viene como /uploads/mensajes/xxx.m4a
   const baseOrigin = (apiConfig.wsURL || apiConfig.baseURL || '').replace(/^ws/, 'http').replace(/\/api$/, '');
