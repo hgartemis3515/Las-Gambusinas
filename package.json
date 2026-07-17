@@ -25,6 +25,7 @@
     "axios": "^1.13.6",
     "babel-preset-expo": "~54.0.10",
     "expo": "~54.0.34",
+    "expo-av": "~16.0.8",
     "expo-background-fetch": "~14.0.9",
     "expo-build-properties": "~1.0.10",
     "expo-constants": "~18.0.13",
