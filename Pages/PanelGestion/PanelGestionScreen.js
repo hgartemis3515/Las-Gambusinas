@@ -32,6 +32,7 @@ const PanelGestionScreen = () => {
     const socketCtx = useSocket();
     const socket = socketCtx?.socket;
     const connected = !!socketCtx?.connected;
+    const styles = useMemo(() => buildStyles(theme), [theme]);
 
     const [solicitudes, setSolicitudes] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -220,25 +221,36 @@ const PanelGestionScreen = () => {
 
     const renderItem = ({ item }) => {
         const pendiente = item.estado === 'pendiente';
+        const accentPendiente = theme.colors.warning;
+        const mutedIcon = theme.colors.text.light;
         return (
-            <View style={[styles.card, { backgroundColor: theme.card || '#1f1f29', borderColor: pendiente ? '#d4af37' : '#333' }]}>
+            <View
+                style={[
+                    styles.card,
+                    { borderColor: pendiente ? accentPendiente : theme.colors.border },
+                ]}
+            >
                 <View style={styles.cardHeader}>
-                    <MaterialCommunityIcons name="food" size={20} color={pendiente ? '#d4af37' : '#888'} />
-                    <Text style={[styles.cardTitle, { color: theme.text }]}>
+                    <MaterialCommunityIcons
+                        name="food"
+                        size={20}
+                        color={pendiente ? accentPendiente : mutedIcon}
+                    />
+                    <Text style={styles.cardTitle}>
                         {item.platoNombre || 'Plato'} {item.cantidad > 1 ? `×${item.cantidad}` : ''}
                     </Text>
-                    <Text style={[styles.badge, { color: pendiente ? '#d4af37' : '#888' }]}>
+                    <Text style={[styles.badge, { color: pendiente ? accentPendiente : mutedIcon }]}>
                         #{item.numeroColaActual ?? '-'} · {item.cocineroAlias || 'cocinero'}
                     </Text>
                 </View>
-                <Text style={[styles.cardSub, { color: theme.muted || '#aaa' }]}>
+                <Text style={styles.cardSub}>
                     Solicitante: {item.solicitadoPor?.nombre || '-'} ({item.solicitadoPor?.rol || '-'})
                 </Text>
                 {item.motivo ? (
-                    <Text style={[styles.cardSub, { color: theme.muted || '#aaa' }]}>Motivo: {item.motivo}</Text>
+                    <Text style={styles.cardSub}>Motivo: {item.motivo}</Text>
                 ) : null}
-                <Text style={[styles.cardSub, { color: theme.muted || '#aaa' }]}>
-                    Estado: <Text style={{ fontWeight: 'bold' }}>{item.estado}</Text>
+                <Text style={styles.cardSub}>
+                    Estado: <Text style={styles.cardEstado}>{item.estado}</Text>
                 </Text>
 
                 {pendiente && (
@@ -256,15 +268,20 @@ const PanelGestionScreen = () => {
     };
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: theme.background || '#12121a' }]} edges={['top']}>
+        <SafeAreaView style={styles.container} edges={['top']}>
             <View style={styles.header}>
                 <View style={{ flex: 1 }}>
-                    <Text style={[styles.title, { color: theme.text }]}>Panel</Text>
-                    <Text style={[styles.subtitle, { color: theme.muted || '#aaa' }]}>
+                    <Text style={styles.title}>Panel</Text>
+                    <Text style={styles.subtitle}>
                         Solicitudes y gestión {connected ? '· en vivo' : '· sincronizando…'}
                     </Text>
                 </View>
-                <View style={[styles.liveDot, { backgroundColor: connected ? '#16a34a' : '#f59e0b' }]} />
+                <View
+                    style={[
+                        styles.liveDot,
+                        { backgroundColor: connected ? theme.colors.secondary : theme.colors.warning },
+                    ]}
+                />
             </View>
 
             {bannerNueva ? (
@@ -275,17 +292,17 @@ const PanelGestionScreen = () => {
             ) : null}
 
             <View style={styles.resumenRow}>
-                <View style={[styles.resumenCard, { borderColor: '#d4af37' }]}>
-                    <Text style={[styles.resumenNum, { color: '#d4af37' }]}>{resumen.pendientes}</Text>
-                    <Text style={[styles.resumenLabel, { color: theme.muted || '#aaa' }]}>Pendientes</Text>
+                <View style={[styles.resumenCard, { borderColor: theme.colors.warning }]}>
+                    <Text style={[styles.resumenNum, { color: theme.colors.warning }]}>{resumen.pendientes}</Text>
+                    <Text style={styles.resumenLabel}>Pendientes</Text>
                 </View>
-                <View style={[styles.resumenCard, { borderColor: '#16a34a' }]}>
-                    <Text style={[styles.resumenNum, { color: '#16a34a' }]}>{resumen.aprobadas}</Text>
-                    <Text style={[styles.resumenLabel, { color: theme.muted || '#aaa' }]}>Aprobadas</Text>
+                <View style={[styles.resumenCard, { borderColor: theme.colors.secondary }]}>
+                    <Text style={[styles.resumenNum, { color: theme.colors.secondary }]}>{resumen.aprobadas}</Text>
+                    <Text style={styles.resumenLabel}>Aprobadas</Text>
                 </View>
-                <View style={[styles.resumenCard, { borderColor: '#dc2626' }]}>
-                    <Text style={[styles.resumenNum, { color: '#dc2626' }]}>{resumen.rechazadas}</Text>
-                    <Text style={[styles.resumenLabel, { color: theme.muted || '#aaa' }]}>Rechazadas</Text>
+                <View style={[styles.resumenCard, { borderColor: theme.colors.primary }]}>
+                    <Text style={[styles.resumenNum, { color: theme.colors.primary }]}>{resumen.rechazadas}</Text>
+                    <Text style={styles.resumenLabel}>Rechazadas</Text>
                 </View>
             </View>
 
@@ -294,9 +311,17 @@ const PanelGestionScreen = () => {
                 keyExtractor={(i) => String(i._id)}
                 renderItem={renderItem}
                 contentContainerStyle={styles.list}
-                refreshControl={<RefreshControl refreshing={loading} onRefresh={() => fetchSolicitudes(false)} />}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={loading}
+                        onRefresh={() => fetchSolicitudes(false)}
+                        tintColor={theme.colors.primary}
+                        colors={[theme.colors.primary]}
+                        progressBackgroundColor={theme.colors.surface}
+                    />
+                }
                 ListEmptyComponent={
-                    <Text style={[styles.empty, { color: theme.muted || '#aaa' }]}>
+                    <Text style={styles.empty}>
                         {loading
                             ? 'Cargando...'
                             : 'No hay solicitudes. Las de supervisores aparecerán aquí automáticamente.'}
@@ -307,58 +332,130 @@ const PanelGestionScreen = () => {
     );
 };
 
-const styles = StyleSheet.create({
-    container: { flex: 1 },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingTop: 10,
-        paddingBottom: 8,
-    },
-    title: { fontSize: 22, fontWeight: 'bold' },
-    subtitle: { fontSize: 12, marginTop: 2 },
-    liveDot: { width: 10, height: 10, borderRadius: 5, marginLeft: 8 },
-    banner: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        marginHorizontal: 16,
-        marginBottom: 8,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        borderRadius: 10,
-        backgroundColor: '#d4af37',
-    },
-    bannerText: { flex: 1, color: '#1a1a1a', fontWeight: '600', fontSize: 13 },
-    resumenRow: {
-        flexDirection: 'row',
-        gap: 8,
-        paddingHorizontal: 16,
-        marginBottom: 8,
-    },
-    resumenCard: {
-        flex: 1,
-        borderWidth: 1,
-        borderRadius: 10,
-        paddingVertical: 10,
-        alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.03)',
-    },
-    resumenNum: { fontSize: 18, fontWeight: 'bold' },
-    resumenLabel: { fontSize: 10, marginTop: 2 },
-    list: { padding: 16, gap: 12, paddingBottom: 24 },
-    card: { borderRadius: 12, padding: 14, borderWidth: 1, gap: 4 },
-    cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    cardTitle: { flex: 1, fontSize: 15, fontWeight: 'bold' },
-    badge: { fontSize: 12, fontWeight: 'bold' },
-    cardSub: { fontSize: 12 },
-    actions: { flexDirection: 'row', gap: 10, marginTop: 8 },
-    btn: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
-    btnAprobar: { backgroundColor: '#16a34a' },
-    btnRechazar: { backgroundColor: '#dc2626' },
-    btnText: { color: '#fff', fontWeight: 'bold' },
-    empty: { textAlign: 'center', marginTop: 40, fontSize: 14, paddingHorizontal: 24 },
-});
+const buildStyles = (theme) =>
+    StyleSheet.create({
+        container: {
+            flex: 1,
+            backgroundColor: theme.colors.background,
+        },
+        header: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: theme.spacing.md,
+            paddingTop: 10,
+            paddingBottom: theme.spacing.sm,
+        },
+        title: {
+            fontSize: 22,
+            fontWeight: 'bold',
+            color: theme.colors.text.primary,
+        },
+        subtitle: {
+            fontSize: 12,
+            marginTop: 2,
+            color: theme.colors.text.secondary,
+        },
+        liveDot: {
+            width: 10,
+            height: 10,
+            borderRadius: 5,
+            marginLeft: theme.spacing.sm,
+        },
+        banner: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            marginHorizontal: theme.spacing.md,
+            marginBottom: theme.spacing.sm,
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+            borderRadius: theme.borderRadius.sm,
+            backgroundColor: theme.colors.warning,
+        },
+        bannerText: {
+            flex: 1,
+            color: '#1a1a1a',
+            fontWeight: '600',
+            fontSize: 13,
+        },
+        resumenRow: {
+            flexDirection: 'row',
+            gap: 8,
+            paddingHorizontal: theme.spacing.md,
+            marginBottom: theme.spacing.sm,
+        },
+        resumenCard: {
+            flex: 1,
+            borderWidth: 1,
+            borderRadius: theme.borderRadius.sm,
+            paddingVertical: 10,
+            alignItems: 'center',
+            backgroundColor: theme.colors.surface,
+            ...theme.shadows.small,
+        },
+        resumenNum: { fontSize: 18, fontWeight: 'bold' },
+        resumenLabel: {
+            fontSize: 10,
+            marginTop: 2,
+            color: theme.colors.text.secondary,
+        },
+        list: {
+            padding: theme.spacing.md,
+            gap: 12,
+            paddingBottom: 24,
+        },
+        card: {
+            borderRadius: theme.borderRadius.md,
+            padding: 14,
+            borderWidth: 1,
+            gap: 4,
+            backgroundColor: theme.colors.surface,
+            ...theme.shadows.small,
+        },
+        cardHeader: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+        },
+        cardTitle: {
+            flex: 1,
+            fontSize: 15,
+            fontWeight: 'bold',
+            color: theme.colors.text.primary,
+        },
+        badge: { fontSize: 12, fontWeight: 'bold' },
+        cardSub: {
+            fontSize: 12,
+            color: theme.colors.text.secondary,
+        },
+        cardEstado: {
+            fontWeight: 'bold',
+            color: theme.colors.text.primary,
+        },
+        actions: {
+            flexDirection: 'row',
+            gap: 10,
+            marginTop: theme.spacing.sm,
+        },
+        btn: {
+            flex: 1,
+            paddingVertical: 10,
+            borderRadius: theme.borderRadius.sm,
+            alignItems: 'center',
+        },
+        btnAprobar: { backgroundColor: theme.colors.secondary },
+        btnRechazar: { backgroundColor: theme.colors.primary },
+        btnText: {
+            color: theme.colors.text.white,
+            fontWeight: 'bold',
+        },
+        empty: {
+            textAlign: 'center',
+            marginTop: 40,
+            fontSize: 14,
+            paddingHorizontal: 24,
+            color: theme.colors.text.secondary,
+        },
+    });
 
 export default PanelGestionScreen;

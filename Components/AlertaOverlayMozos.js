@@ -1,8 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, AppState, Platform } from 'react-native';
-import { Audio } from 'expo-av';
 import { useSocket } from '../context/SocketContext';
 import { getAlertasActivas, ackAlerta } from '../services/alertaService';
+
+/** Lazy: evita crash si el APK no incluye el módulo nativo expo-av (OTA sin rebuild). */
+function getExpoAudio() {
+  try {
+    return require('expo-av').Audio;
+  } catch (_) {
+    return null;
+  }
+}
 
 /**
  * AlertaOverlayMozos
@@ -27,6 +35,8 @@ export default function AlertaOverlayMozos() {
   // Cargar sonidos bajo demanda
   const reproducirSonido = async (clave) => {
     if (!clave || clave === 'silencio') return;
+    const Audio = getExpoAudio();
+    if (!Audio?.Sound) return;
     try {
       // Construir URL del catálogo en el backend
       const base = (apiConfigBase()).replace(/\/api$/, '');
