@@ -7,7 +7,7 @@ import { useTheme } from "../context/ThemeContext";
 import TabNav from "./TabNav";
 import { colors } from "../constants/colors";
 
-const BottomNavBar = ({ activeIndex = 0, navigation: navProp }) => {
+const BottomNavBar = ({ activeIndex = 0, activeRoute = null, navigation: navProp, showPanel = false }) => {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const navigation = navProp || useNavigation();
@@ -20,8 +20,11 @@ const BottomNavBar = ({ activeIndex = 0, navigation: navProp }) => {
   // Color rojo según dark mode
   const navBgColor = isDarkMode ? "#A11228" : "#C41E3A"; // Rojo oscuro en dark, rojo brillante en light
 
-  // Configuración de tabs
+  // Configuración de tabs — Panel a la izquierda de Inicio (solo admin / permiso)
   const tabsConfig = [
+    ...(showPanel
+      ? [{ route: "Panel", icono: "📋", label: "Panel" }]
+      : []),
     { route: "Inicio", icono: "🏠", label: "Inicio" },
     { route: "Ordenes", icono: "🍽️", label: "Órdenes" },
     { route: "Pagos", icono: "💰", label: "Pagos" },
@@ -29,10 +32,16 @@ const BottomNavBar = ({ activeIndex = 0, navigation: navProp }) => {
     { route: "Mas", icono: "⚙️", label: "Más" },
   ];
 
-  const handleTabPress = (routeName, isFocused) => {
-    if (!isFocused && navigation) {
-      navigation.navigate(routeName);
+  const handleTabPress = (routeName, isFocused, isStackRoute) => {
+    if (isFocused || !navigation) return;
+    if (isStackRoute) {
+      // Chat vive en el Stack padre (App.js), no en el Tab navigator
+      const parent = navigation.getParent?.();
+      if (parent) parent.navigate(routeName);
+      else navigation.navigate(routeName);
+      return;
     }
+    navigation.navigate(routeName);
   };
 
   return (
@@ -58,7 +67,10 @@ const BottomNavBar = ({ activeIndex = 0, navigation: navProp }) => {
       {/* Tabs container */}
       <View style={styles.tabsContainer}>
         {tabsConfig.map((tabConfig, index) => {
-          const isFocused = activeIndex === index;
+          // Preferir nombre de ruta (evita desfase por Chat fuera del Tab navigator)
+          const isFocused = activeRoute
+            ? activeRoute === tabConfig.route
+            : activeIndex === index;
 
           return (
             <TabNav
@@ -68,7 +80,7 @@ const BottomNavBar = ({ activeIndex = 0, navigation: navProp }) => {
               activeColor="#FFFFFF"
               inactiveColor="#FFFFFFCC"
               active={isFocused}
-              onPress={() => handleTabPress(tabConfig.route, isFocused)}
+              onPress={() => handleTabPress(tabConfig.route, isFocused, tabConfig.stackRoute)}
               tabSize={tabSize}
             />
           );

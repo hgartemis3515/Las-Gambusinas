@@ -417,6 +417,7 @@ const Login = () => {
           const user = JSON.parse(userJson);
           if (user?._id && user?.name) {
             didNavigate = true;
+            // PLAN: Panel es un tab dentro de Navbar (no un screen separado)
             navigation.replace("Navbar", { username: user.name });
             return;
           }
@@ -537,6 +538,7 @@ const Login = () => {
       setTimeout(() => {
         setShowWelcome(false);
         setTimeout(() => {
+          // PLAN: Panel es un tab dentro de Navbar (admins lo ven a la izq. de Inicio)
           navigation.replace("Navbar", { username: usuario.name });
         }, 300);
       }, 2000);
