@@ -13,6 +13,12 @@ import {
     RefreshControl,
     StyleSheet,
     Alert,
+    Modal,
+    TextInput,
+    Pressable,
+    ActivityIndicator,
+    KeyboardAvoidingView,
+    Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -38,6 +44,9 @@ const PanelGestionScreen = () => {
     const [loading, setLoading] = useState(false);
     const [bannerNueva, setBannerNueva] = useState(null);
     const [focused, setFocused] = useState(true);
+    const [resolviendo, setResolviendo] = useState(false);
+    const [rechazoModal, setRechazoModal] = useState(null); // solicitud | null
+    const [notaRechazo, setNotaRechazo] = useState('');
 
     const fetchRef = useRef(null);
     const idsVistosRef = useRef(new Set());
@@ -189,35 +198,54 @@ const PanelGestionScreen = () => {
         return { pendientes, aprobadas, rechazadas };
     }, [solicitudes]);
 
-    const resolver = useCallback(async (solicitud, aprobar) => {
+    const resolver = useCallback(async (solicitud, aprobar, nota = null) => {
+        if (resolviendo) return;
+        setResolviendo(true);
         try {
             const token = await getToken();
             const endpoint = aprobar ? 'aprobar' : 'rechazar';
+            const body = aprobar
+                ? {}
+                : { nota: (nota && String(nota).trim()) ? String(nota).trim().slice(0, 500) : null };
             const res = await fetch(`${apiBase()}/${solicitud._id}/${endpoint}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                     ...(token ? { Authorization: `Bearer ${token}` } : {})
-                }
+                },
+                body: JSON.stringify(body)
             });
             const data = await res.json();
             if (data?.success) {
                 if (data.solicitud) mergeSolicitudes([data.solicitud]);
+                setRechazoModal(null);
+                setNotaRechazo('');
                 Alert.alert(
                     aprobar ? 'Solicitud aprobada' : 'Solicitud rechazada',
                     aprobar
-                        ? 'Se habilitó finalizar ese plato en cocina.'
-                        : 'Se notificó al solicitante.'
+                        ? 'Se habilitó finalizar ese plato en cocina y se notificó al solicitante.'
+                        : 'Se notificó al solicitante (con la nota, si la escribió).'
                 );
-                // Refresco inmediato por si el socket no llega al KDS aún
                 fetchRef.current?.(true);
             } else {
                 Alert.alert('Error', data?.error || 'No se pudo resolver la solicitud');
             }
         } catch (e) {
             Alert.alert('Error de conexión', e.message);
+        } finally {
+            setResolviendo(false);
         }
-    }, [getToken, apiBase, mergeSolicitudes]);
+    }, [getToken, apiBase, mergeSolicitudes, resolviendo]);
+
+    const abrirRechazo = useCallback((solicitud) => {
+        setNotaRechazo('');
+        setRechazoModal(solicitud);
+    }, []);
+
+    const confirmarRechazo = useCallback(() => {
+        if (!rechazoModal) return;
+        resolver(rechazoModal, false, notaRechazo);
+    }, [rechazoModal, notaRechazo, resolver]);
 
     const renderItem = ({ item }) => {
         const pendiente = item.estado === 'pendiente';
@@ -249,16 +277,27 @@ const PanelGestionScreen = () => {
                 {item.motivo ? (
                     <Text style={styles.cardSub}>Motivo: {item.motivo}</Text>
                 ) : null}
+                {item.notaResolucion ? (
+                    <Text style={styles.cardSub}>Nota admin: {item.notaResolucion}</Text>
+                ) : null}
                 <Text style={styles.cardSub}>
                     Estado: <Text style={styles.cardEstado}>{item.estado}</Text>
                 </Text>
 
                 {pendiente && (
                     <View style={styles.actions}>
-                        <TouchableOpacity style={[styles.btn, styles.btnAprobar]} onPress={() => resolver(item, true)}>
+                        <TouchableOpacity
+                            style={[styles.btn, styles.btnAprobar]}
+                            onPress={() => resolver(item, true)}
+                            disabled={resolviendo}
+                        >
                             <Text style={styles.btnText}>Aprobar</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={[styles.btn, styles.btnRechazar]} onPress={() => resolver(item, false)}>
+                        <TouchableOpacity
+                            style={[styles.btn, styles.btnRechazar]}
+                            onPress={() => abrirRechazo(item)}
+                            disabled={resolviendo}
+                        >
                             <Text style={styles.btnText}>Rechazar</Text>
                         </TouchableOpacity>
                     </View>
@@ -328,6 +367,67 @@ const PanelGestionScreen = () => {
                     </Text>
                 }
             />
+
+            <Modal
+                visible={!!rechazoModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => !resolviendo && setRechazoModal(null)}
+            >
+                <Pressable
+                    style={styles.modalBackdrop}
+                    onPress={() => !resolviendo && setRechazoModal(null)}
+                >
+                    <KeyboardAvoidingView
+                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                        style={styles.modalCenter}
+                    >
+                        <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+                            <Text style={styles.modalTitle}>Rechazar solicitud</Text>
+                            <Text style={styles.modalSub}>
+                                {rechazoModal?.platoNombre || 'Plato'}
+                                {rechazoModal?.numeroColaActual != null
+                                    ? ` · #${rechazoModal.numeroColaActual}`
+                                    : ''}
+                                {'\n'}Se notificará a {rechazoModal?.solicitadoPor?.nombre || 'quien solicitó'}.
+                            </Text>
+                            <Text style={styles.modalLabel}>Nota u observación (opcional)</Text>
+                            <TextInput
+                                style={styles.modalInput}
+                                value={notaRechazo}
+                                onChangeText={setNotaRechazo}
+                                placeholder="Ej: Debe terminar primero el #1 de ese cocinero"
+                                placeholderTextColor={theme.colors.text.light}
+                                multiline
+                                maxLength={500}
+                                editable={!resolviendo}
+                            />
+                            <View style={styles.modalActions}>
+                                <TouchableOpacity
+                                    style={[styles.btn, styles.btnModalCancel]}
+                                    onPress={() => setRechazoModal(null)}
+                                    disabled={resolviendo}
+                                >
+                                    <Text style={[styles.btnText, { color: theme.colors.text.primary }]}>
+                                        Cancelar
+                                    </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.btn, styles.btnRechazar]}
+                                    onPress={confirmarRechazo}
+                                    disabled={resolviendo}
+                                >
+                                    {resolviendo ? (
+                                        <ActivityIndicator color={theme.colors.text.white} />
+                                    ) : (
+                                        <Text style={styles.btnText}>Rechazar y notificar</Text>
+                                    )}
+                                </TouchableOpacity>
+                            </View>
+                        </Pressable>
+                    </KeyboardAvoidingView>
+                </Pressable>
+            </Modal>
         </SafeAreaView>
     );
 };
@@ -455,6 +555,62 @@ const buildStyles = (theme) =>
             fontSize: 14,
             paddingHorizontal: 24,
             color: theme.colors.text.secondary,
+        },
+        modalBackdrop: {
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.55)',
+            justifyContent: 'center',
+            padding: 20,
+        },
+        modalCenter: {
+            width: '100%',
+        },
+        modalCard: {
+            backgroundColor: theme.colors.surface,
+            borderRadius: theme.borderRadius.md,
+            padding: theme.spacing.lg,
+            borderWidth: 1,
+            borderColor: theme.colors.border,
+            ...theme.shadows.medium,
+        },
+        modalTitle: {
+            fontSize: 18,
+            fontWeight: 'bold',
+            color: theme.colors.text.primary,
+            marginBottom: 6,
+        },
+        modalSub: {
+            fontSize: 13,
+            color: theme.colors.text.secondary,
+            marginBottom: theme.spacing.md,
+            lineHeight: 18,
+        },
+        modalLabel: {
+            fontSize: 12,
+            fontWeight: '600',
+            color: theme.colors.text.secondary,
+            marginBottom: 6,
+        },
+        modalInput: {
+            minHeight: 88,
+            borderWidth: 1,
+            borderColor: theme.colors.border,
+            borderRadius: theme.borderRadius.sm,
+            padding: 12,
+            color: theme.colors.text.primary,
+            backgroundColor: theme.colors.background,
+            textAlignVertical: 'top',
+            marginBottom: theme.spacing.md,
+            fontSize: 14,
+        },
+        modalActions: {
+            flexDirection: 'row',
+            gap: 10,
+        },
+        btnModalCancel: {
+            backgroundColor: theme.colors.background,
+            borderWidth: 1,
+            borderColor: theme.colors.border,
         },
     });
 
