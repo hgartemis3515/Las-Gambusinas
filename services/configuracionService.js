@@ -153,6 +153,26 @@ export const editarEliminarTomadasPorCocinaHabilitadoMozos = async () => {
 };
 
 /**
+ * PLAN_RESERVAS_MOZOS_CAJA_KDS v1.1
+ * Si true, los mozos verán el botón "Reservar" en la barra de Inicio.
+ * Por defecto true (config marcada): botón visible. Si false, el botón se oculta
+ * y las reservas solo se crean desde el dashboard. Requiere además el permiso
+ * 'crear-reservas-mozos' en el rol del mozo.
+ * Backend: configuracionSistema.reservas.permitirCrearDesdeMozos.
+ *
+ * @returns {Promise<boolean>}
+ */
+export const permitirCrearReservasMozos = async () => {
+    try {
+        const config = await obtenerConfiguracion();
+        return config?.reservas?.permitirCrearDesdeMozos !== false;
+    } catch (e) {
+        // Ante error, permitir por defecto (no bloquear la operativa por un fallo de config).
+        return true;
+    }
+};
+
+/**
  * Configuración por defecto (fallback)
  */
 export const getConfiguracionPorDefecto = () => ({
@@ -285,6 +305,7 @@ export default {
     getConfiguracionPorDefecto,
     imprimirComandaHabilitadoMozos,
     editarEliminarTomadasPorCocinaHabilitadoMozos,
+    permitirCrearReservasMozos,
     calcularTotales,
     formatearMonto,
     formatearMontoAsync,

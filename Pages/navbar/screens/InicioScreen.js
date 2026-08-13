@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { imprimirComandaHabilitadoMozos, editarEliminarTomadasPorCocinaHabilitadoMozos } from "../../../services/configuracionService";
+import { imprimirComandaHabilitadoMozos, editarEliminarTomadasPorCocinaHabilitadoMozos, permitirCrearReservasMozos } from "../../../services/configuracionService";
 import {
   View,
   Text,
@@ -566,11 +566,14 @@ const InicioScreen = () => {
   // Se habilita desde configuracion.html > Mozos > Botón de impresión de comandas.
   const [imprimirComandaHabilitado, setImprimirComandaHabilitado] = useState(false);
   const [permitirEditarEliminarTomadas, setPermitirEditarEliminarTomadas] = useState(false);
+  // PLAN_RESERVAS_MOZOS_CAJA_KDS v1.1: toggle del botón Reservar (config.reservas.permitirCrearDesdeMozos)
+  const [reservasHabilitadoMozos, setReservasHabilitadoMozos] = useState(true);
 
   // Cargar flags de configuración del sistema
   useEffect(() => {
     imprimirComandaHabilitadoMozos().then(setImprimirComandaHabilitado).catch(() => {});
     editarEliminarTomadasPorCocinaHabilitadoMozos().then(setPermitirEditarEliminarTomadas).catch(() => {});
+    permitirCrearReservasMozos().then(setReservasHabilitadoMozos).catch(() => {});
   }, []);
 
   const [comandas, setComandas] = useState([]);
@@ -5333,9 +5336,21 @@ const InicioScreen = () => {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.barraItem}
+              style={[styles.barraItem, !reservasHabilitadoMozos && { opacity: 0.4 }]}
+              disabled={!reservasHabilitadoMozos}
               onPress={() => {
-                Alert.alert("Reservar", "Crear una reserva");
+                // PLAN_RESERVAS_MOZOS_CAJA_KDS v1.1: lanzar wizard de reserva
+                if (!reservasHabilitadoMozos) {
+                  Alert.alert("Reservas deshabilitadas", "El administrador desactivó la creación de reservas desde App Mozos.");
+                  return;
+                }
+                const tienePermiso = userInfo?.permisos?.includes('crear-reservas-mozos');
+                if (!tienePermiso) {
+                  Alert.alert("Sin permisos", "No tienes permiso para crear reservas");
+                  return;
+                }
+                // PLAN_RESERVAS_WIZARD_V2: preseleccionar la mesa elegida en InicioScreen
+                navigation.navigate("ReservaWizard", { mesa: mesaSeleccionada });
               }}
             >
               <View style={styles.barraItemContent}>

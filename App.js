@@ -13,6 +13,7 @@ import SplashScreen from './Pages/Splash/SplashScreen';
 import Login from './Pages/Login/Login';
 import Navbar from './Pages/navbar/navbar';
 import ComandaDetalleScreen from './Pages/ComandaDetalleScreen';
+import ReservaWizardScreen from './Pages/ReservaWizardScreen';
 import ProfileScreen from './Pages/Profile/ProfileScreen';
 import HelpScreen from './Pages/Help/HelpScreen';
 import AboutScreen from './Pages/About/AboutScreen';
@@ -91,6 +92,11 @@ export default function App() {
                   options={{
                     headerShown: false,
                   }}
+                />
+                <Stack.Screen
+                  name="ReservaWizard"
+                  component={ReservaWizardScreen}
+                  options={{ headerShown: false }}
                 />
                 <Stack.Screen
                   name="Profile"

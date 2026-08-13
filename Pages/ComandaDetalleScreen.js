@@ -1948,6 +1948,38 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         isConnected={connected}
         reconnectAttempts={reconnectAttempts}
       />
+
+      {/* PLAN_RESERVAS_MOZOS_CAJA_KDS v1.1: badge seña/saldo de reserva con PPA */}
+      {reserva?.pagoAdelantado?.activo && (
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          paddingHorizontal: 12, paddingVertical: 6,
+          backgroundColor: (themeColors.colors?.reservado || '#7C3AED') + '14',
+          borderBottomWidth: 1, borderBottomColor: (themeColors.colors?.reservado || '#7C3AED') + '30'
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <MaterialCommunityIcons name="calendar-clock" size={16} color={themeColors.colors?.reservado || '#7C3AED'} />
+            <Text style={{ fontSize: 12, fontWeight: '600', color: themeColors.colors?.reservado || '#7C3AED' }}>
+              Reserva con seña
+            </Text>
+            {reserva.pagoAdelantado.estadoTicket === 'pendiente_aprobacion' && (
+              <Text style={{ fontSize: 10, color: '#F59E0B', fontWeight: '600' }}>· PPA pendiente</Text>
+            )}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Text style={{ fontSize: 11, color: themeColors.colors?.text?.secondary || '#6B7280' }}>
+              Seña: <Text style={{ fontWeight: '700', color: themeColors.colors?.reservado || '#7C3AED' }}>
+                S/. {Number(reserva.pagoAdelantado.montoPagado || 0).toFixed(2)}
+              </Text>
+            </Text>
+            <Text style={{ fontSize: 11, color: themeColors.colors?.text?.secondary || '#6B7280' }}>
+              Saldo: <Text style={{ fontWeight: '700' }}>
+                S/. {Number(reserva.pagoAdelantado.montoPendiente || 0).toFixed(2)}
+              </Text>
+            </Text>
+          </View>
+        </View>
+      )}
       
       {/* Layout de dos columnas */}
       <View style={styles.twoColumnLayout}>

@@ -937,6 +937,21 @@ const PagosScreen = () => {
     // FIX: No usar || con total porque 0 es falsy (descuento 100%)
     return total > 0 ? total : (totalPendienteDeParams > 0 ? totalPendienteDeParams : total);
   }, [comandas, route.params]); // ✅ Dependencia: route.params para detectar cambios
+
+  // PLAN_RESERVAS_MOZOS_CAJA_KDS v1.1: abono de reserva (seña) y saldo a cobrar.
+  // El caller pasa abonoReserva en route.params cuando la mesa tiene una reserva con PPA aprobado.
+  const abonoReserva = useMemo(() => {
+    const v = route.params?.abonoReserva;
+    return Number.isFinite(Number(v)) ? Number(v) : 0;
+  }, [route.params]);
+  const reservaOrigenId = useMemo(() => {
+    const params = route.params || {};
+    if (params.reservaOrigenId) return params.reservaOrigenId;
+    const comandasDeParams = params.comandasParaPagar || [];
+    const c = comandasDeParams[0] || comandas[0];
+    return c?.origenReserva?._id || c?.origenReserva || null;
+  }, [route.params, comandas]);
+  const saldoReserva = useMemo(() => Math.max(0, totalCalculado - abonoReserva), [totalCalculado, abonoReserva]);
   
   // 🔥 NUEVO: Calcular información de descuentos
   const infoDescuentos = useMemo(() => {
@@ -1463,6 +1478,8 @@ const PagosScreen = () => {
         }),
         // 🔥 PAGO ADELANTADO (PPA): flag para diferenciar de pago normal
         ...(esPagoAdelantado && { esPagoAdelantado: true }),
+        // PLAN_RESERVAS_MOZOS_CAJA_KDS v1.1: descontar abono de reserva (seña) del total a cobrar
+        ...(abonoReserva > 0 && { abonoReserva, reservaOrigenId: reservaOrigenId || null }),
       };
       
       console.log("📤 [PAGO] Enviando al backend (parcial):", {
@@ -2527,6 +2544,25 @@ const PagosScreen = () => {
               })()}
             </Text>
           </View>
+          {abonoReserva > 0 && (
+            <>
+              <View style={[styles.totalRow, { borderTopColor: 'rgba(124,58,237,0.3)', borderTopWidth: 1, paddingTop: 6 }]}>
+                <Text style={[styles.totalLabel, { color: '#7C3AED' }]}>ABONO RESERVA:</Text>
+                <Text style={[styles.totalValue, { color: '#7C3AED' }]}>
+                  - {configMoneda?.simboloMoneda || 'S/.'} {abonoReserva.toFixed(configMoneda?.decimales ?? 2)}
+                </Text>
+              </View>
+              <View style={[styles.totalRow, styles.totalRowFinal, { backgroundColor: 'rgba(124,58,237,0.08)' }]}>
+                <Text style={[styles.totalLabelFinal, { color: '#7C3AED' }]}>SALDO A COBRAR:</Text>
+                <Text style={[styles.totalValueFinal, { color: '#7C3AED' }]}>
+                  {configMoneda?.simboloMoneda || 'S/.'} {(() => {
+                    const baseSaldo = platosSeleccionadosPago.length > 0 ? totalesPagoActual.total : (totalCalculado || 0);
+                    return Math.max(0, baseSaldo - abonoReserva).toFixed(configMoneda?.decimales ?? 2);
+                  })()}
+                </Text>
+              </View>
+            </>
+          )}
         </Animated.View>
       </ScrollView>
 
