@@ -376,16 +376,28 @@ export default function ReservaWizardScreen() {
                     })}
                   </ScrollView>
                 )}
-                <FlatList data={platosFiltrados} keyExtractor={(p) => p._id} scrollEnabled={false} renderItem={({ item }) => {
+                <FlatList data={platosFiltrados} keyExtractor={(p) => p._id} scrollEnabled nestedScrollEnabled style={s.platosList} renderItem={({ item }) => {
                   const tieneComp = item.complementos && item.complementos.length > 0;
+                  const instancias = selPlatos.filter((p) => p._id === item._id);
+                  const seleccionado = instancias.length > 0;
+                  const cantTotal = instancias.reduce((a, p) => a + (p.cantidad || 1), 0);
                   return (
                     <Pressable onPress={() => tocarPlato(item)}>
-                      <MotiView style={s.platoRow} from={{ opacity: 0.9 }} animate={{ opacity: 1 }}>
+                      <MotiView style={[s.platoRow, seleccionado && s.platoRowActive]} from={{ scale: 0.98 }} animate={{ scale: seleccionado ? 1.01 : 1 }} transition={{ type: "spring", stiffness: 300, damping: 20 }}>
                         <View style={{ flex: 1 }}>
-                          <Text style={s.platoNombre}>{item.nombre}</Text>
+                          <Text style={[s.platoNombre, seleccionado && s.platoNombreActive]}>{item.nombre}</Text>
                           <Text style={s.muted}>S/ {Number(item.precio || 0).toFixed(2)}</Text>
                         </View>
-                        {tieneComp && <MaterialCommunityIcons name="plus-circle-multiple-outline" size={18} color={cPrimary} />}
+                        {tieneComp && <MaterialCommunityIcons name="plus-circle-multiple-outline" size={18} color={cPrimary} style={{ marginRight: 8 }} />}
+                        {seleccionado ? (
+                          <View style={s.platoBadge}>
+                            <Text style={s.platoBadgeText}>{cantTotal}</Text>
+                          </View>
+                        ) : (
+                          <View style={s.platoAddBtn}>
+                            <MaterialCommunityIcons name="plus" size={18} color={cPrimary} />
+                          </View>
+                        )}
                       </MotiView>
                     </Pressable>
                   );
@@ -425,8 +437,13 @@ export default function ReservaWizardScreen() {
                 <Text style={s.hint}>Si lo activas, cocina lo aprueba en la bandeja PPA. Si no, la reserva se crea igual.</Text>
                 <Pressable onPress={() => { setPpaActivo((v) => !v); haptic(); }}>
                   <View style={[s.toggleWrap, ppaActivo && s.toggleWrapActive]}>
-                    <Text style={[s.toggleText, ppaActivo && s.toggleTextActive]}>{ppaActivo ? "Sí, registrar adelanto" : "No, sin adelanto"}</Text>
-                    <MotiView animate={{ translateX: ppaActivo ? 22 : 0 }} transition={{ type: "spring", stiffness: 500, damping: 30 }} style={s.toggleKnob} />
+                    <MotiView animate={{ scale: ppaActivo ? 1 : 0.85 }} transition={{ type: "spring", stiffness: 300, damping: 18 }} style={[s.checkBox, ppaActivo && s.checkBoxActive]}>
+                      {ppaActivo && <MaterialCommunityIcons name="check-bold" size={18} color="#fff" />}
+                    </MotiView>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.toggleText, ppaActivo && s.toggleTextActive]}>{ppaActivo ? "Sí, registrar adelanto" : "No, sin adelanto"}</Text>
+                      <Text style={s.toggleSub}>{ppaActivo ? "Se envía a aprobación de cocina" : "La reserva se crea sin adelanto"}</Text>
+                    </View>
                   </View>
                 </Pressable>
                 <AnimatePresence>
@@ -577,7 +594,13 @@ const makeStyles = (theme) => {
     catChipText: { fontSize: 12, color: cText, fontWeight: "600" },
     catChipTextActive: { color: "#fff" },
     platoRow: { flexDirection: "row", alignItems: "center", padding: 12, borderWidth: 1, borderColor: cBorder, borderRadius: 12, marginBottom: 6, backgroundColor: cSurface },
+    platoRowActive: { borderColor: cPrimary, backgroundColor: cPrimary + "12", borderWidth: 1.5 },
     platoNombre: { fontSize: 14, fontWeight: "600", color: cText },
+    platoNombreActive: { color: cPrimary },
+    platosList: { maxHeight: 300 },
+    platoAddBtn: { width: 30, height: 30, borderRadius: 15, borderWidth: 1.5, borderColor: cPrimary, justifyContent: "center", alignItems: "center" },
+    platoBadge: { minWidth: 28, height: 28, borderRadius: 14, paddingHorizontal: 8, backgroundColor: cPrimary, justifyContent: "center", alignItems: "center", ...sh },
+    platoBadgeText: { color: "#fff", fontWeight: "800", fontSize: 13 },
     selPlato: { padding: 10, backgroundColor: cSurface, borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: cBorder, ...sh },
     selTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
     compChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 },
@@ -590,11 +613,13 @@ const makeStyles = (theme) => {
     cantNum: { fontSize: 15, fontWeight: "700", minWidth: 24, textAlign: "center", color: cText },
     quitarBtn: { marginLeft: "auto", padding: 4 },
     total: { fontSize: 16, fontWeight: "800", color: cText, marginTop: 10, textAlign: "right" },
-    toggleWrap: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 14, borderRadius: 12, borderWidth: 1, borderColor: cBorder, backgroundColor: cSurface, marginBottom: 8 },
-    toggleWrapActive: { backgroundColor: cPrimary, borderColor: cPrimary },
-    toggleText: { fontSize: 14, color: cText, fontWeight: "600" },
-    toggleTextActive: { color: "#fff" },
-    toggleKnob: { width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", ...sh },
+    toggleWrap: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: cBorder, backgroundColor: cSurface, marginBottom: 8 },
+    toggleWrapActive: { backgroundColor: cPrimary + "10", borderColor: cPrimary },
+    toggleText: { fontSize: 15, color: cText, fontWeight: "700" },
+    toggleTextActive: { color: cPrimary },
+    toggleSub: { fontSize: 12, color: cMuted, marginTop: 2 },
+    checkBox: { width: 28, height: 28, borderRadius: 8, borderWidth: 2, borderColor: cBorder, justifyContent: "center", alignItems: "center", backgroundColor: "transparent" },
+    checkBoxActive: { backgroundColor: cPrimary, borderColor: cPrimary },
     ppaResumen: { marginTop: 10, padding: 12, borderRadius: 12, backgroundColor: cSurface, borderWidth: 1, borderColor: cBorder },
     ppaRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
     ppaLabel: { fontSize: 13, color: cMuted },
