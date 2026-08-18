@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import useSocketMozos from '../hooks/useSocketMozos';
 import { registerPushAfterLogin } from '../services/pushNotifications';
+import apiConfig from '../config/apiConfig';
 
 const SocketContext = createContext(null);
 
@@ -9,6 +11,8 @@ export const SocketProvider = ({ children }) => {
   const [socketStatus, setSocketStatus] = useState({ connected: false, status: 'desconectado' });
   const [authToken, setAuthToken] = useState(null);
   const [isLoadingToken, setIsLoadingToken] = useState(true); // Nuevo: estado de carga inicial
+  const [configReady, setConfigReady] = useState(false);
+  const [reconnectNonce, setReconnectNonce] = useState(0);
   
   // Callbacks globales para eventos WebSocket
   const [eventHandlers, setEventHandlers] = useState({
@@ -50,7 +54,7 @@ export const SocketProvider = ({ children }) => {
               } catch (_) {}
             }
           } else {
-            console.log('⚠️ [MOZOS] No hay token JWT guardado');
+            setAuthToken(null);
           }
           setIsLoadingToken(false);
         }
@@ -68,6 +72,22 @@ export const SocketProvider = ({ children }) => {
     return () => {
       mounted = false;
       clearInterval(checkTokenInterval);
+    };
+  }, []);
+
+  useEffect(() => {
+    let unsub = () => {};
+    let mounted = true;
+    apiConfig.whenReady().then(() => {
+      if (!mounted) return;
+      setConfigReady(true);
+      unsub = apiConfig.subscribe(() => {
+        setReconnectNonce((n) => n + 1);
+      });
+    });
+    return () => {
+      mounted = false;
+      unsub();
     };
   }, []);
 
@@ -147,7 +167,8 @@ export const SocketProvider = ({ children }) => {
     onMesasSeparadas: handleMesasSeparadas,
     onMapaActualizado: handleMapaActualizado,
     onCatalogoMesasAreas: handleCatalogoMesasAreas,
-    token: isLoadingToken ? null : authToken // Solo conectar cuando el token esté cargado
+    token: (!configReady || isLoadingToken) ? null : authToken,
+    reconnectNonce
   });
   
   const { connected, connectionStatus, reconnectAttempts, socket, trackRoom, untrackRoom, authError } = socketHookResult;
@@ -185,6 +206,23 @@ export const SocketProvider = ({ children }) => {
     setIsLoadingToken(false); // Token disponible, listo para conectar
   }, []);
 
+  const reconnectSocket = useCallback(() => {
+    setReconnectNonce((n) => n + 1);
+  }, []);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active' || !authToken || connected) return;
+      console.log('🔄 [MOZOS] App en primer plano — reconectando socket');
+      if (socket && !socket.connected) {
+        socket.connect();
+      } else {
+        setReconnectNonce((n) => n + 1);
+      }
+    });
+    return () => sub.remove();
+  }, [authToken, connected, socket]);
+
   return (
     <SocketContext.Provider value={{
       connected,
@@ -197,6 +235,7 @@ export const SocketProvider = ({ children }) => {
       leaveMesa,
       authError,
       updateToken,
+      reconnectSocket,
       authToken,
       isLoadingToken,
       handleMesasJuntadas,

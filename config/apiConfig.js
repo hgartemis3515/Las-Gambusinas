@@ -29,11 +29,48 @@ class ApiConfig {
     this.isConfigured = false;
     this.lastTestResult = null;
     this.lastTestTime = null;
+    this._listeners = new Set();
+    this._readyPromise = null;
 
-    // Inicializar desde AsyncStorage
-    this.init();
+    // Inicializar desde AsyncStorage (exponer promesa para no conectar el socket antes)
+    this._readyPromise = this.init();
 
     ApiConfig.instance = this;
+  }
+
+  whenReady() {
+    return this._readyPromise || Promise.resolve();
+  }
+
+  subscribe(listener) {
+    this._listeners.add(listener);
+    return () => this._listeners.delete(listener);
+  }
+
+  _notify() {
+    this._listeners.forEach((fn) => {
+      try {
+        fn(this.getInfo());
+      } catch (_) {}
+    });
+  }
+
+  /**
+   * Origen para Socket.io: http(s)://host:puerto (nunca ws://).
+   * engine.io en React Native usa XHR para polling; ws:// rompe el handshake.
+   */
+  normalizeSocketOrigin(raw) {
+    if (!raw || typeof raw !== 'string') {
+      return getFallbackServerOrigin();
+    }
+    let value = raw.trim();
+    value = value.replace(/^ws:/i, 'http:').replace(/^wss:/i, 'https:');
+    try {
+      const parsed = new URL(value);
+      return `${parsed.protocol}//${parsed.host}`;
+    } catch {
+      return getFallbackServerOrigin();
+    }
   }
 
   /**
@@ -45,13 +82,21 @@ class ApiConfig {
       if (configJson) {
         const config = JSON.parse(configJson);
         this.baseURL = config.baseURL;
-        this.wsURL = config.wsURL;
+        this.wsURL = this.normalizeSocketOrigin(config.wsURL || config.baseURL);
         this.apiVersion = config.apiVersion || 'v1';
         this.timeout = config.timeout || 10000;
         this.isConfigured = !!this.baseURL && this.validateURL(this.baseURL);
         
         if (this.isConfigured) {
           console.log('✅ [ApiConfig] Configuración cargada desde AsyncStorage:', this.baseURL);
+          if (config.wsURL !== this.wsURL) {
+            await AsyncStorage.setItem('apiConfig', JSON.stringify({
+              baseURL: this.baseURL,
+              wsURL: this.wsURL,
+              apiVersion: this.apiVersion,
+              timeout: this.timeout
+            }));
+          }
         } else {
           console.warn('⚠️ [ApiConfig] Configuración inválida, usando modo demo');
           this.setDemoConfig();
@@ -65,6 +110,8 @@ class ApiConfig {
     } catch (error) {
       console.error('❌ [ApiConfig] Error al cargar configuración:', error);
       this.setDemoConfig();
+    } finally {
+      this._notify();
     }
   }
 
@@ -73,7 +120,7 @@ class ApiConfig {
    */
   setDefaultConfig() {
     this.baseURL = getFallbackApiBase();
-    this.wsURL = getFallbackServerOrigin();
+    this.wsURL = this.normalizeSocketOrigin(getFallbackServerOrigin());
     this.apiVersion = 'v1';
     this.timeout = 10000;
     this.isConfigured = true;
@@ -84,7 +131,7 @@ class ApiConfig {
    */
   setDemoConfig() {
     this.baseURL = 'https://demo.lasgambusinas.com/api';
-    this.wsURL = 'wss://demo.lasgambusinas.com';
+    this.wsURL = 'https://demo.lasgambusinas.com';
     this.apiVersion = 'v1';
     this.timeout = 10000;
     this.isConfigured = true;
@@ -104,7 +151,7 @@ class ApiConfig {
       }
 
       this.baseURL = config.baseURL.trim();
-      this.wsURL = config.wsURL || this.generateWsURL(config.baseURL);
+      this.wsURL = this.normalizeSocketOrigin(config.wsURL || this.generateWsURL(config.baseURL));
       this.apiVersion = config.apiVersion || 'v1';
       this.timeout = config.timeout || 10000;
       this.isConfigured = true;
@@ -118,7 +165,8 @@ class ApiConfig {
       };
 
       await AsyncStorage.setItem('apiConfig', JSON.stringify(configToSave));
-      console.log('✅ [ApiConfig] Configuración guardada:', this.baseURL);
+      console.log('✅ [ApiConfig] Configuración guardada:', this.baseURL, 'socket:', this.wsURL);
+      this._notify();
 
       return true;
     } catch (error) {
@@ -133,12 +181,10 @@ class ApiConfig {
   generateWsURL(baseURL) {
     try {
       const url = new URL(baseURL);
-      // Convertir http -> ws, https -> wss
-      const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-      return `${protocol}//${url.host}`;
+      // Socket.io-client espera http(s), no ws(s). El transporte websocket se negocia solo.
+      return `${url.protocol}//${url.host}`;
     } catch (error) {
-      // Si falla, intentar reemplazo simple
-      return baseURL.replace('http://', 'ws://').replace('https://', 'wss://').replace('/api', '');
+      return this.normalizeSocketOrigin(String(baseURL).replace(/\/api\/?$/, ''));
     }
   }
 
@@ -282,6 +328,7 @@ class ApiConfig {
     this.lastTestResult = null;
     this.lastTestTime = null;
     this.setDefaultConfig();
+    this._notify();
     console.log('🔄 [ApiConfig] Configuración reseteada');
   }
 

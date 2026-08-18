@@ -93,7 +93,9 @@ export const getServerBaseURL = () => {
 export const getWebSocketURL = () => {
   try {
     if (apiConfig.isConfigured && apiConfig.wsURL) {
-      return apiConfig.wsURL;
+      return typeof apiConfig.normalizeSocketOrigin === 'function'
+        ? apiConfig.normalizeSocketOrigin(apiConfig.wsURL)
+        : apiConfig.wsURL;
     }
   } catch (error) {
     console.warn('[apiConfig] Error obteniendo wsURL:', error);

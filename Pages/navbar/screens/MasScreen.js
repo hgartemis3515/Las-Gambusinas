@@ -84,7 +84,7 @@ const MasScreen = () => {
   const theme = themeContext?.theme || themeLight;
   const isDarkMode = themeContext?.isDarkMode || false;
   const toggleTheme = themeContext?.toggleTheme || (() => {});
-  const { connected, connectionStatus, reconnectAttempts } = useSocket();
+  const { connected, connectionStatus, reconnectAttempts, updateToken } = useSocket();
 
   const [userInfo, setUserInfo] = useState(null);
   const [vistaInicio, setVistaInicio] = useState("tarjetas");
@@ -244,6 +244,7 @@ const MasScreen = () => {
           onPress: async () => {
             try {
               await AsyncStorage.multiRemove(LOGOUT_STORAGE_KEYS);
+              updateToken(null);
               navigation.replace("Login");
             } catch (error) {
               console.error("Error cerrando sesión:", error);

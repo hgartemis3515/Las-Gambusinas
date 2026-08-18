@@ -16,6 +16,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiConfig from '../config/apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
+import { useSocket } from '../context/SocketContext';
 
 /**
  * Modal de Configuración de Servidor - Patrón Profesional
@@ -28,6 +29,8 @@ import { getFallbackApiBase } from '../config/envDefaults';
  * - Persistencia automática
  */
 const SettingsModal = ({ visible, onClose }) => {
+  const { connected, authToken } = useSocket();
+  const [socketWaitTick, setSocketWaitTick] = useState(0);
   const [config, setConfig] = useState({
     baseURL: '',
     apiVersion: 'v1',
@@ -44,6 +47,15 @@ const SettingsModal = ({ visible, onClose }) => {
       loadCurrentConfig();
     }
   }, [visible]);
+
+  useEffect(() => {
+    if (!socketWaitTick || !authToken) return;
+    if (connected) {
+      setTestStatus('success');
+      setTestMessage('Conexión exitosa — Online (tiempo real)');
+      setLoading(false);
+    }
+  }, [connected, socketWaitTick, authToken]);
 
   const loadCurrentConfig = async () => {
     try {
@@ -99,8 +111,21 @@ const SettingsModal = ({ visible, onClose }) => {
       const result = await apiConfig.testConnection(testConfig.baseURL);
 
       if (result.success) {
-        setTestStatus('success');
-        setTestMessage(result.message || '✅ Conexión exitosa');
+        await apiConfig.setConfig(testConfig);
+        setIsConfigured(true);
+
+        if (authToken) {
+          setSocketWaitTick((t) => t + 1);
+          setTestStatus('success');
+          setTestMessage(result.message
+            ? `${result.message}. Conectando tiempo real…`
+            : 'Servidor OK. Conectando tiempo real…');
+        } else {
+          setTestStatus('success');
+          setTestMessage(result.message
+            ? `${result.message}. Al ingresar quedarás Online.`
+            : 'Servidor OK. Al ingresar quedarás Online.');
+        }
       } else {
         setTestStatus('error');
         setTestMessage(result.message || '❌ Error de conexión');
@@ -145,10 +170,15 @@ const SettingsModal = ({ visible, onClose }) => {
 
       await apiConfig.setConfig(configToSave);
       setIsConfigured(true);
+      if (authToken) {
+        setSocketWaitTick((t) => t + 1);
+      }
       
       Alert.alert(
         '✅ Configuración Guardada',
-        'La configuración se ha guardado correctamente. La app usará esta configuración en el próximo inicio.',
+        authToken
+          ? 'Servidor guardado. El indicador pasará a Online si el socket conecta.'
+          : 'Servidor guardado. Al ingresar quedarás Online.',
         [{ text: 'OK', onPress: onClose }]
       );
     } catch (error) {

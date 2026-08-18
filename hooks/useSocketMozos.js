@@ -19,6 +19,7 @@ import {
  * @param {Function} onNuevaComanda - Callback cuando llega nueva comanda
  * @param {Function} onSocketStatus - Callback para cambios de estado de conexión
  * @param {string} token - Token JWT para autenticación Socket.io (obligatorio)
+ * @param {number} reconnectNonce - Incrementar para forzar recrear el cliente (cambio de IP)
  * @returns {Object} { socket, connected, connectionStatus, reconnectAttempts, authError }
  */
 const useSocketMozos = ({
@@ -30,7 +31,8 @@ const useSocketMozos = ({
   onMesasSeparadas,
   onMapaActualizado,
   onCatalogoMesasAreas,
-  token // Token JWT para autenticación
+  token, // Token JWT para autenticación
+  reconnectNonce = 0
 }) => {
   const [connected, setConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('desconectado'); // 'conectado', 'desconectado', 'reconectando', 'auth_error'
@@ -78,19 +80,21 @@ const useSocketMozos = ({
         socketRef.current = null;
       }
       
+      setConnected(false);
       setConnectionStatus('desconectado');
       setAuthError(null);
       authFailedRef.current = false;
       return;
     }
 
-    // Si ya falló la autenticación, no reintentar
+    // Si el token cambió, permitir reintentar auth
     if (authFailedRef.current) {
-      console.log('[MOZOS] Autenticación previamente fallida, no reintentando');
-      return;
+      console.log('[MOZOS] Autenticación previamente fallida, reintentando con token/URL nuevos');
+      authFailedRef.current = false;
+      setAuthError(null);
     }
 
-    // Obtener URL del servidor desde configuración dinámica
+    // Obtener URL del servidor desde configuración dinámica (http(s), no ws://)
     const serverUrl = getWebSocketURL();
     
     const wsURL = `${serverUrl}/mozos`;
@@ -99,24 +103,27 @@ const useSocketMozos = ({
     // Crear conexión Socket.io al namespace /mozos con backoff exponencial
     // OPTIMIZADO: Configuración bulletproof para conexión permanente
     // IMPORTANTE: Enviar token en auth para autenticación
+    setConnected(false);
+    setConnectionStatus('reconectando');
+    if (onSocketStatus) {
+      onSocketStatus({ connected: false, status: 'reconectando' });
+    }
+
     const socket = io(wsURL, {
-      // En React Native / Expo Go el websocket directo a menudo falla primero;
-      // polling primero permite conectar y luego upgrade a websocket.
-      transports: ['polling', 'websocket'],
+      // Igual que App Cocina: websocket primero; polling solo como fallback de engine.io
+      transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: initialDelay,
       reconnectionDelayMax: maxDelay,
       reconnectionAttempts: maxReconnectAttempts,
       timeout: 20000,
-      forceNew: false,
+      forceNew: true,
       autoConnect: true,
       upgrade: true,
       rememberUpgrade: false,
       pingTimeout: 60000,
       pingInterval: 25000,
-      allowUpgrades: true,
       randomizationFactor: 0.5,
-      reconnectionDelayFactor: 1.5,
       auth: {
         token: token
       }
@@ -218,25 +225,23 @@ const useSocketMozos = ({
       }
       
       setConnected(false);
-      setConnectionStatus('desconectado');
+      setConnectionStatus(reason === 'io client disconnect' ? 'desconectado' : 'reconectando');
       
       // Guardar estado
       AsyncStorage.setItem('socketConnected', 'false').catch(() => {});
       
-      // Solo cambiar a "reconectando" si no es un disconnect manual
-      if (reason !== 'io client disconnect') {
-        // Socket.io manejará la reconexión automáticamente
-        setConnectionStatus('reconectando');
-      }
-      
       // Notificar cambio de estado
       if (onSocketStatus) {
-        onSocketStatus({ connected: false, status: 'desconectado', reason });
+        onSocketStatus({
+          connected: false,
+          status: reason === 'io client disconnect' ? 'desconectado' : 'reconectando',
+          reason
+        });
       }
     });
 
-    // Evento: Intentando reconectar
-    socket.on('reconnect_attempt', (attemptNumber) => {
+    // Eventos de Manager (Socket.io v3+): reconnect_* ya no se escuchan en socket.on
+    socket.io.on('reconnect_attempt', (attemptNumber) => {
       reconnectAttemptsRef.current = attemptNumber;
       setReconnectAttempts(attemptNumber);
       setConnectionStatus('reconectando');
@@ -256,8 +261,7 @@ const useSocketMozos = ({
       }
     });
 
-    // Evento: Reconexión exitosa
-    socket.on('reconnect', (attemptNumber) => {
+    socket.io.on('reconnect', (attemptNumber) => {
       const reconnectTime = lastReconnectTimeRef.current 
         ? Math.round((Date.now() - lastReconnectTimeRef.current) / 1000)
         : 0;
@@ -272,14 +276,12 @@ const useSocketMozos = ({
       // Reiniciar heartbeat
       startHeartbeat();
       
-      // Rejoin rooms
       rejoinRooms();
+      joinMozoPersonalRoom(socket);
       
-      // Guardar estado
       AsyncStorage.setItem('socketConnected', 'true').catch(() => {});
       AsyncStorage.setItem('socketReconnects', '0').catch(() => {});
       
-      // Notificar cambio de estado
       if (onSocketStatus) {
         onSocketStatus({ connected: true, status: 'conectado' });
       }
@@ -315,18 +317,17 @@ const useSocketMozos = ({
         } else {
           console.error('❌ [MOZOS] Error de conexión Socket.io:', errorMsg);
         }
-        setConnectionStatus('desconectado');
+        setConnectionStatus('reconectando');
         
         if (onSocketStatus) {
-          onSocketStatus({ connected: false, status: 'desconectado', error: errorMsg });
+          onSocketStatus({ connected: false, status: 'reconectando', error: errorMsg });
         }
       }
       
       // Socket.io ya tiene reconexión automática con backoff exponencial
     });
 
-    // Evento: Reconexión fallida
-    socket.on('reconnect_failed', () => {
+    socket.io.on('reconnect_failed', () => {
       console.error('❌ [MOZOS] Reconexión fallida después de', maxReconnectAttempts, 'intentos');
       setConnectionStatus('desconectado');
       setReconnectAttempts(maxReconnectAttempts);
@@ -732,12 +733,9 @@ const useSocketMozos = ({
 
     // ========== FIN EVENTO MAPA ==========
 
-    // Cleanup - NO desconectar el socket ya que está en contexto global
-    // El socket se mantiene activo en todas las pantallas
-    // IMPORTANTE: No hacer cleanup del socket aquí porque está en contexto global
-    // Solo limpiar timeouts e intervals si existen
+    // Recrear el cliente al cambiar JWT, IP o nonce de reconexión
     return () => {
-      console.log('🧹 [MOZOS] Limpiando listeners (socket se mantiene activo en contexto global)');
+      console.log('🧹 [MOZOS] Cerrando socket anterior (token/URL/reconexión)');
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
@@ -746,10 +744,19 @@ const useSocketMozos = ({
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = null;
       }
-      // NO desconectar el socket - debe mantenerse activo
-      // socket.disconnect(); // NO hacer esto - el socket es global
+      try {
+        socket.io.off('reconnect_attempt');
+        socket.io.off('reconnect');
+        socket.io.off('reconnect_failed');
+        socket.removeAllListeners();
+        socket.disconnect();
+      } catch (_) {}
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
+      mozoPersonalRoomRef.current = null;
     };
-  }, [token]); // Reconectar cuando el token cambie
+  }, [token, reconnectNonce]); // Recrear al cambiar JWT, IP o pedido explícito de reconexión
 
   // 🔥 Función para trackear rooms (usada por SocketContext)
   const trackRoom = (mesaId) => {

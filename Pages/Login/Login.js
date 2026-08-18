@@ -36,6 +36,7 @@ import SettingsModal from "../../Components/SettingsModal";
 import apiConfig from "../../config/apiConfig";
 import { getFallbackApiBase } from "../../config/envDefaults";
 import { registerPushAfterLogin } from "../../services/pushNotifications";
+import { useSocket } from "../../context/SocketContext";
 import PosLogo from "../../Components/PosLogo";
 
 // Componente de partículas flotantes
@@ -385,6 +386,7 @@ const AnimatedInput = ({ label, icon, placeholder, value, onChangeText, error, d
 
 const Login = () => {
   const navigation = useNavigation();
+  const { updateToken } = useSocket();
   const { width, height } = useWindowDimensions();
   const { isLandscape, isTablet: isTabletOrientation } = useOrientation();
   const isTablet = width > 500;
@@ -417,6 +419,7 @@ const Login = () => {
           const user = JSON.parse(userJson);
           if (user?._id && user?.name) {
             didNavigate = true;
+            updateToken(token);
             // PLAN: Panel es un tab dentro de Navbar (no un screen separado)
             navigation.replace("Navbar", { username: user.name });
             return;
@@ -431,7 +434,7 @@ const Login = () => {
     return () => {
       alive = false;
     };
-  }, [navigation]);
+  }, [navigation, updateToken]);
 
   // Verificar estado de configuración
   useEffect(() => {
@@ -519,6 +522,7 @@ const Login = () => {
       await AsyncStorage.setItem("user", JSON.stringify(userData));
       await AsyncStorage.setItem("authToken", token);
       console.log("💾 Usuario y token guardados en AsyncStorage");
+      updateToken(token);
 
       registerPushAfterLogin(userData._id).catch(() => {});
 
