@@ -174,7 +174,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [descuentoSeleccionado, setDescuentoSeleccionado] = useState(0);
   const [motivoDescuento, setMotivoDescuento] = useState('');
   const [aplicandoDescuento, setAplicandoDescuento] = useState(false);
-  
+  const [reservaEfectiva, setReservaEfectiva] = useState(reserva || null);
+  const [liberandoMesa, setLiberandoMesa] = useState(false);
+
   // Cargar usuario
   useEffect(() => {
     const loadUser = async () => {
@@ -189,7 +191,31 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     };
     loadUser();
   }, []);
-  
+
+  useEffect(() => {
+    let cancelled = false;
+    const cargarReserva = async () => {
+      const origen = (comandas || []).map((c) => c.origenReserva).find(Boolean);
+      const reservaId = reserva?._id || origen?._id || origen;
+      const esOrigenReserva = (comandas || []).some((c) => c.origenCreacion === 'reserva' || c.origenReserva);
+      if (!reservaId && !(esOrigenReserva && mesaIdRef)) return;
+      try {
+        const base = apiConfig.isConfigured ? apiConfig.getEndpoint('/reservas') : `${getFallbackApiBase()}/reservas`;
+        if (reservaId) {
+          const res = await axios.get(`${base}/${reservaId}`, { timeout: 5000 });
+          if (!cancelled && res.data) setReservaEfectiva(res.data);
+        } else if (mesaIdRef) {
+          const res = await axios.get(`${base}/mesa/${mesaIdRef}/activa`, { timeout: 5000 });
+          if (!cancelled && res.data?.reserva) setReservaEfectiva(res.data.reserva);
+        }
+      } catch (e) {
+        if (__DEV__) console.warn('[ComandaDetalle] No se pudo cargar reserva:', e?.message);
+      }
+    };
+    cargarReserva();
+    return () => { cancelled = true; };
+  }, [comandas, mesaIdRef, reserva?._id]);
+
   // Cargar configuración de moneda
   useEffect(() => {
     const loadConfiguracion = async () => {
@@ -348,6 +374,21 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         }
       }
 
+      if (comandasMesa.length === 0) {
+        const cid = reservaEfectiva?.comandaGenerada?._id
+          || reservaEfectiva?.comandaGenerada
+          || reserva?.comandaGenerada?._id
+          || reserva?.comandaGenerada;
+        if (cid) {
+          try {
+            const resC = await axios.get(`${comandaBase}/${cid}`, { timeout: 8000 });
+            if (resC.data?._id) comandasMesa = [resC.data];
+          } catch (e) {
+            if (__DEV__) console.warn('[ComandaDetalle] comanda de reserva:', e?.message);
+          }
+        }
+      }
+
       let comandasFinales =
         mesaEstado === 'pagado' || mesaEstado === 'pagando'
           ? comandasMesa
@@ -375,7 +416,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     } finally {
       setRefreshing(false);
     }
-  }, [mesaIdRef, mesaNumRef, comandaPerteneceAMesa, filterByCliente, clienteId, mesa?.estado]);
+  }, [mesaIdRef, mesaNumRef, comandaPerteneceAMesa, filterByCliente, clienteId, mesa?.estado, reservaEfectiva?.comandaGenerada, reserva?.comandaGenerada]);
 
   // Marcar plato como entregado
   const handleMarcarPlatoEntregado = async (platoObj) => {
@@ -714,14 +755,25 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const puedeEditar = platosEnPedidoSinBloqueoCocina.length > 0;
   const puedeEliminarPlatos = platosEnPedidoSinBloqueoCocina.length > 0;
   const puedeEliminarComanda = comandas.length > 0 && comandas[0].status !== 'pagado' && !hayBloqueoCocinaEnComandas;
-  // Permitir nueva comanda si la mesa está en estados normales O si viene de una reserva
-  const puedeNuevaComanda = mesa?.estado === 'pedido' || mesa?.estado === 'preparado' || mesa?.estado === 'recoger' || mesa?.estado === 'reservado' || reserva;
+  const esReservaFlow = !!(reserva || reservaEfectiva)
+    || comandas.some((c) => c.origenCreacion === 'reserva' || c.origenReserva);
+  const puedeNuevaComanda = esReservaFlow
+    || mesa?.estado === 'pedido'
+    || mesa?.estado === 'preparado'
+    || mesa?.estado === 'recoger'
+    || mesa?.estado === 'entregado'
+    || mesa?.estado === 'reservado';
   const puedePagar = todosLosPlatos.length > 0 && todosLosPlatos.every(p => p.estado === 'entregado' || p.estado === 'pagado');
   
   // 🔥 PAGO ADELANTADO (PPA): Reglas de habilitación de botones
   const reglasPPA = getReglasBotonesComandaDetalle(todosLosPlatos);
-  // Sobrescribir puedePagar con regla PPA: en solo_para_llevar, Pagar se deshabilita
-  const puedePagarNormal = puedePagar && reglasPPA.composicion !== 'solo_para_llevar';
+  const abonoReservaMonto = Number(reservaEfectiva?.pagoAdelantado?.montoPagado) || 0;
+  const subtotalPlatosReserva = todosLosPlatos.reduce((acc, p) => acc + ((Number(p.precio) || 0) * (Number(p.cantidad) || 1)), 0);
+  const saldoReserva = esReservaFlow
+    ? Math.max(0, subtotalPlatosReserva - abonoReservaMonto)
+    : subtotalPlatosReserva;
+  const puedeLiberarReserva = esReservaFlow && puedePagar && saldoReserva <= 0.009;
+  const puedePagarNormal = puedePagar && reglasPPA.composicion !== 'solo_para_llevar' && !puedeLiberarReserva;
 
   // 🔥 PARA LLEVAR: Botón "Confirmar entrega".
   // Solo se habilita para comandas 100% "para llevar" cuyos platos activos
@@ -1558,14 +1610,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     AsyncStorage.setItem('mesaSeleccionada', JSON.stringify(mesa));
     
     // Si hay reserva, guardarla también para asociar a la comanda
-    if (reserva) {
-      AsyncStorage.setItem('reservaActiva', JSON.stringify(reserva));
+    if (reservaEfectiva) {
+      AsyncStorage.setItem('reservaActiva', JSON.stringify(reservaEfectiva));
     }
     
     navigation.navigate('Ordenes', {
       mesa: mesa,
       origen: 'ComandaDetalle',
-      reserva: reserva || null // Pasar la reserva para asociar a la comanda
+      reserva: reservaEfectiva || reserva || null
     });
   };
   
@@ -1616,18 +1668,63 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       
       // Navegar a PagosScreen
       const comandaIdsCiclo = comandas.map((c) => c._id).filter(Boolean);
+      const reservaOrigenId = reservaEfectiva?._id
+        || comandas.find((c) => c.origenReserva)?.origenReserva?._id
+        || comandas.find((c) => c.origenReserva)?.origenReserva
+        || null;
       navigation.navigate('Pagos', {
         mesa: response.data.mesa,
         comandasParaPagar: comandasParaPago,
         comandaIdsCiclo,
         totalPendiente: response.data.totalPendiente,
-        origen: 'ComandaDetalle'
+        origen: 'ComandaDetalle',
+        ...(abonoReservaMonto > 0 && { abonoReserva: abonoReservaMonto, reservaOrigenId }),
       });
       
     } catch (error) {
       console.error('Error al obtener comandas para pagar:', error);
       Alert.alert('Error', 'No se pudieron obtener las comandas para pagar.');
     }
+  };
+
+  const handleLiberarMesaReserva = () => {
+    if (!puedeLiberarReserva || !mesa?._id) return;
+    Alert.alert(
+      'Liberar mesa',
+      `La reserva está saldada (adelanto cubre el total). ¿Liberar la mesa ${mesa.nummesa}?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Liberar',
+          onPress: async () => {
+            setLiberandoMesa(true);
+            try {
+              const mesaId = mesa._id?.toString?.() || mesa._id;
+              const mesaURL = apiConfig.isConfigured
+                ? `${apiConfig.getEndpoint('/mesas')}/${mesaId}/estado`
+                : `${getFallbackApiBase()}/mesas/${mesaId}/estado`;
+              await axios.put(mesaURL, { estado: 'libre' }, { timeout: 5000 });
+              const reservaId = reservaEfectiva?._id;
+              if (reservaId) {
+                try {
+                  const reservasBase = apiConfig.isConfigured
+                    ? apiConfig.getEndpoint('/reservas')
+                    : `${getFallbackApiBase()}/reservas`;
+                  await axios.post(`${reservasBase}/${reservaId}/completar`, {}, { timeout: 5000 });
+                } catch (_) { /* no bloquear liberación */ }
+              }
+              Alert.alert('Mesa liberada', `La mesa ${mesa.nummesa} está libre.`);
+              navigation.goBack();
+            } catch (error) {
+              const msg = error.response?.data?.error || error.response?.data?.message || error.message;
+              Alert.alert('Error', `No se pudo liberar la mesa.\n${msg}`);
+            } finally {
+              setLiberandoMesa(false);
+            }
+          },
+        },
+      ]
+    );
   };
   
   // ============================================
@@ -1949,32 +2046,50 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         reconnectAttempts={reconnectAttempts}
       />
 
-      {/* PLAN_RESERVAS_MOZOS_CAJA_KDS v1.1: badge seña/saldo de reserva con PPA */}
-      {reserva?.pagoAdelantado?.activo && (
+      {/* Reserva: título + horario atención + envío KDS + seña/saldo */}
+      {esReservaFlow && (
         <View style={{
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          paddingHorizontal: 12, paddingVertical: 6,
+          paddingHorizontal: 12, paddingVertical: 8,
           backgroundColor: (themeColors.colors?.reservado || '#7C3AED') + '14',
           borderBottomWidth: 1, borderBottomColor: (themeColors.colors?.reservado || '#7C3AED') + '30'
         }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <MaterialCommunityIcons name="calendar-clock" size={16} color={themeColors.colors?.reservado || '#7C3AED'} />
-            <Text style={{ fontSize: 12, fontWeight: '600', color: themeColors.colors?.reservado || '#7C3AED' }}>
-              Reserva con seña
-            </Text>
-            {reserva.pagoAdelantado.estadoTicket === 'pendiente_aprobacion' && (
-              <Text style={{ fontSize: 10, color: '#F59E0B', fontWeight: '600' }}>· PPA pendiente</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+              <MaterialCommunityIcons name="calendar-clock" size={16} color={themeColors.colors?.reservado || '#7C3AED'} />
+              <Text style={{ fontSize: 13, fontWeight: '700', color: themeColors.colors?.reservado || '#7C3AED' }}>
+                Reserva
+              </Text>
+            </View>
+            {(abonoReservaMonto > 0 || saldoReserva > 0) && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                {abonoReservaMonto > 0 && (
+                  <Text style={{ fontSize: 11, color: themeColors.colors?.text?.secondary || '#6B7280' }}>
+                    Adelanto: <Text style={{ fontWeight: '700', color: themeColors.colors?.reservado || '#7C3AED' }}>
+                      S/. {abonoReservaMonto.toFixed(2)}
+                    </Text>
+                  </Text>
+                )}
+                <Text style={{ fontSize: 11, color: themeColors.colors?.text?.secondary || '#6B7280' }}>
+                  Saldo: <Text style={{ fontWeight: '700' }}>
+                    S/. {saldoReserva.toFixed(2)}
+                  </Text>
+                </Text>
+              </View>
             )}
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={{ marginTop: 4, gap: 2 }}>
             <Text style={{ fontSize: 11, color: themeColors.colors?.text?.secondary || '#6B7280' }}>
-              Seña: <Text style={{ fontWeight: '700', color: themeColors.colors?.reservado || '#7C3AED' }}>
-                S/. {Number(reserva.pagoAdelantado.montoPagado || 0).toFixed(2)}
+              Atención: <Text style={{ fontWeight: '600', color: themeColors.colors?.text?.primary || '#111827' }}>
+                {reservaEfectiva?.fechaReserva
+                  ? moment(reservaEfectiva.fechaReserva).tz('America/Lima').format('DD/MM HH:mm')
+                  : '—'}
               </Text>
             </Text>
             <Text style={{ fontSize: 11, color: themeColors.colors?.text?.secondary || '#6B7280' }}>
-              Saldo: <Text style={{ fontWeight: '700' }}>
-                S/. {Number(reserva.pagoAdelantado.montoPendiente || 0).toFixed(2)}
+              Envío a KDS: <Text style={{ fontWeight: '600', color: themeColors.colors?.text?.primary || '#111827' }}>
+                {reservaEfectiva?.fechaCocina
+                  ? moment(reservaEfectiva.fechaCocina).tz('America/Lima').format('DD/MM HH:mm')
+                  : '—'}
               </Text>
             </Text>
           </View>
@@ -2126,7 +2241,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             <TouchableOpacity
               style={[
                 styles.actionButton, 
-                { backgroundColor: '#059669' }, // Verde intenso en ambos modos
+                { backgroundColor: '#059669' },
                 !puedePagarNormal && styles.actionButtonDisabled
               ]}
               onPress={handlePagar}
@@ -2135,6 +2250,21 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               <MaterialCommunityIcons name="cash" size={20} color="#fff" />
               <Text style={styles.actionButtonText}>Pagar</Text>
             </TouchableOpacity>
+
+            {puedeLiberarReserva && (
+              <TouchableOpacity
+                style={[
+                  styles.actionButton,
+                  { backgroundColor: '#7C3AED' },
+                  liberandoMesa && styles.actionButtonDisabled
+                ]}
+                onPress={handleLiberarMesaReserva}
+                disabled={liberandoMesa}
+              >
+                <MaterialCommunityIcons name="table-furniture" size={20} color="#fff" />
+                <Text style={styles.actionButtonText}>{liberandoMesa ? 'Liberando…' : 'Liberar'}</Text>
+              </TouchableOpacity>
+            )}
 
             {/* 🔥 PARA LLEVAR: Botón Confirmar entrega (comanda 100% para llevar con PPA aprobado) */}
             {puedeConfirmarEntrega && (

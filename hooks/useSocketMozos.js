@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Alert } from 'react-native';
 import { io } from 'socket.io-client';
 import moment from 'moment-timezone';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -31,6 +32,7 @@ const useSocketMozos = ({
   onMesasSeparadas,
   onMapaActualizado,
   onCatalogoMesasAreas,
+  onReservaCambio,
   token, // Token JWT para autenticación
   reconnectNonce = 0
 }) => {
@@ -344,6 +346,8 @@ const useSocketMozos = ({
       
       if (onMesaActualizada && data.mesa) {
         onMesaActualizada(data.mesa);
+      } else if (onMesaActualizada && (data.mesaId || data._id) && data.estado) {
+        onMesaActualizada({ _id: data.mesaId || data._id, estado: data.estado, nummesa: data.nummesa });
       }
     });
 
@@ -701,6 +705,68 @@ const useSocketMozos = ({
           onSocketStatus({ connected: true, status: 'conectado' });
         }, 2000);
       }
+    });
+
+    socket.on('ticket-ppa-creado', (data) => {
+      if (data?.origen === 'reserva') {
+        const mesaId = data.mesaId || data.ticket?.mesa;
+        if (onMesaActualizada && mesaId) {
+          onMesaActualizada({
+            _id: mesaId,
+            estado: data.estadoMesa || 'pendiente_aprobar',
+            nummesa: data.nummesa || data.ticket?.numMesa,
+          });
+        }
+        if (onReservaCambio) onReservaCambio(data);
+      }
+    });
+
+    socket.on('reserva-creada', (data) => {
+      const reserva = data?.reserva || data;
+      const mesa = reserva?.mesa;
+      if (onMesaActualizada && mesa) {
+        const mesaId = mesa._id || mesa;
+        const estado = mesa.estado || 'pendiente_aprobar';
+        onMesaActualizada({
+          _id: mesaId,
+          estado,
+          nummesa: mesa.nummesa,
+        });
+      }
+      if (onReservaCambio) onReservaCambio(data);
+    });
+
+    socket.on('reserva-actualizada', (data) => {
+      if (onReservaCambio) onReservaCambio(data);
+    });
+
+    socket.on('reserva-cancelada', (data) => {
+      if (onReservaCambio) onReservaCambio(data);
+    });
+
+    socket.on('reserva-programada', (data) => {
+      if (onReservaCambio) onReservaCambio(data);
+    });
+
+    socket.on('ticket-ppa-aprobado', (data) => {
+      if (onMesaActualizada && data?.mesa && data.estadoMesa) {
+        onMesaActualizada({
+          _id: data.mesa,
+          estado: data.estadoMesa,
+          nummesa: data.nummesa,
+        });
+      }
+      if (onReservaCambio) onReservaCambio(data);
+    });
+
+    socket.on('ticket-ppa-rechazado', (data) => {
+      if (data?.origen === 'reserva') {
+        Alert.alert('Reserva rechazada', data.message || data.motivo || 'Cocina rechazó la reserva. La mesa volvió a libre.');
+      }
+      if (onMesaActualizada && data?.mesa) {
+        onMesaActualizada({ _id: data.mesa, estado: 'libre', nummesa: data.nummesa });
+      }
+      if (onReservaCambio) onReservaCambio(data);
     });
 
     // ========== FIN EVENTOS PLAN_PLANTILLA_COMANDAS ==========

@@ -714,14 +714,14 @@ const OrdenesScreen = ({ route }) => {
               }
               // Si es el mismo mozo, permitir crear nueva comanda
               // Si la mesa está en "preparado", se creará la nueva comanda y la mesa pasará a "pedido"
-              if (estadoMesa === 'preparado') {
-                console.log(`✅ Creando nueva comanda en mesa ${mesaActualizada.nummesa} (estado: preparado) - Mismo mozo`);
+              if (estadoMesa === 'preparado' || estadoMesa === 'entregado') {
+                console.log(`✅ Creando nueva comanda en mesa ${mesaActualizada.nummesa} (estado: ${estadoMesa}) - Mismo mozo`);
               }
             } else {
               // Si no hay comandas activas pero la mesa está en "preparado", permitir crear comanda
               // (puede ser un estado inconsistente o la comanda ya fue pagada)
-              if (estadoMesa === 'preparado') {
-                console.log(`✅ Creando nueva comanda en mesa ${mesaActualizada.nummesa} (estado: preparado) - Sin comandas activas`);
+              if (estadoMesa === 'preparado' || estadoMesa === 'entregado') {
+                console.log(`✅ Creando nueva comanda en mesa ${mesaActualizada.nummesa} (estado: ${estadoMesa}) - Sin comandas activas`);
                 // Permitir continuar con la creación de la comanda
               } else {
                 // Para otros estados sin comandas activas, rechazar
@@ -746,8 +746,8 @@ const OrdenesScreen = ({ route }) => {
               
               // Si la mesa está en "preparado", permitir crear comanda aunque falle la verificación
               // (el backend validará y actualizará el estado correctamente)
-              if (estadoMesa === 'preparado') {
-                console.log(`⚠️ [ORDENES] Error de red, pero permitiendo crear comanda en mesa ${mesaActualizada.nummesa} (estado: preparado)`);
+              if (estadoMesa === 'preparado' || estadoMesa === 'entregado') {
+                console.log(`⚠️ [ORDENES] Error de red, pero permitiendo crear comanda en mesa ${mesaActualizada.nummesa} (estado: ${estadoMesa})`);
                 // Continuar con la creación de la comanda - NO retornar aquí
               } else {
                 // Para otros estados, mostrar error pero más informativo

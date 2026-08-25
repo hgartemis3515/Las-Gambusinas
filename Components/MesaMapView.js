@@ -83,6 +83,7 @@ const MesaMapView = ({
   areaId = null,
   onMesaPress,
   style,
+  reservas = [],
 }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
@@ -136,6 +137,14 @@ const MesaMapView = ({
   
   // Obtener estado de mesa
   const getEstadoMesa = useCallback((mesa) => {
+    const st = mesa.estado?.toLowerCase();
+    if (st === 'pendiente_aprobar') {
+      const espera = reservas.some((r) => {
+        const mesaId = r.mesa?._id?.toString() || r.mesa?.toString();
+        return mesaId === mesa._id?.toString() && r.estado === 'pendiente_aprobar';
+      });
+      return espera ? 'Espera...' : 'Pendiente de aprobación';
+    }
     const estadoMap = {
       'libre': 'Libre',
       'esperando': 'Ocupada',
@@ -144,8 +153,8 @@ const MesaMapView = ({
       'pagado': 'Pagado',
       'reservado': 'Reservado'
     };
-    return estadoMap[mesa.estado?.toLowerCase()] || mesa.estado || 'Libre';
-  }, []);
+    return estadoMap[st] || mesa.estado || 'Libre';
+  }, [reservas]);
   
   // Manejar layout del contenedor
   const handleLayout = (event) => {

@@ -22,7 +22,8 @@ export const SocketProvider = ({ children }) => {
     onMesasJuntadas: null,
     onMesasSeparadas: null,
     onMapaActualizado: null,
-    onCatalogoMesasAreas: null
+    onCatalogoMesasAreas: null,
+    onReservaCambio: null
   });
 
   // Wrapper para manejar múltiples suscriptores
@@ -133,6 +134,12 @@ export const SocketProvider = ({ children }) => {
     }
   }, []);
 
+  const handleReservaCambio = useCallback((data) => {
+    if (eventHandlersRef.current.onReservaCambio) {
+      eventHandlersRef.current.onReservaCambio(data);
+    }
+  }, []);
+
   const handleSocketStatus = useCallback((status) => {
     setSocketStatus(status);
 
@@ -167,6 +174,7 @@ export const SocketProvider = ({ children }) => {
     onMesasSeparadas: handleMesasSeparadas,
     onMapaActualizado: handleMapaActualizado,
     onCatalogoMesasAreas: handleCatalogoMesasAreas,
+    onReservaCambio: handleReservaCambio,
     token: (!configReady || isLoadingToken) ? null : authToken,
     reconnectNonce
   });

@@ -1112,7 +1112,7 @@ const InicioScreen = () => {
         const nuevas = [...prev];
         const mesaAnterior = nuevas[index];
         const estadoAnterior = mesaAnterior.estado;
-        const nuevoEstado = mesa.estado;
+        const nuevoEstado = mesa.estado != null ? mesa.estado : mesaAnterior.estado;
         
         // CRÍTICO: estado del servidor + merge sin pisar con undefined (nombre / nummesa / grupo)
         nuevas[index] = { ...mergeMesaServidorPatch(mesaAnterior, mesa), estado: nuevoEstado };
@@ -1267,7 +1267,7 @@ const InicioScreen = () => {
             
             // Solo actualizar si el estado es diferente y no es un estado especial (pagado, pagando, reservado, pendiente_pago)
             // pendiente_pago: PPA registrado — no debe ser sobrescrito por comanda-actualizada hasta que cocina apruebe/rechace
-            const estadosEspeciales = ['pagado', 'pagando', 'reservado', 'pendiente_pago'];
+            const estadosEspeciales = ['pagado', 'pagando', 'reservado', 'pendiente_pago', 'pendiente_aprobar'];
             if (nuevoEstadoMesa && estadoAnterior?.toLowerCase() !== nuevoEstadoMesa && !estadosEspeciales.includes(estadoAnterior?.toLowerCase())) {
               console.log(`🎨 [ANIMACION] Mesa ${mesaNum} cambiará de "${estadoAnterior}" a "${nuevoEstadoMesa}"`);
               nuevas[index] = { ...mesaAnterior, estado: nuevoEstadoMesa };
@@ -1454,9 +1454,26 @@ const InicioScreen = () => {
   useFocusEffect(
     useCallback(() => {
       subscribeToEvents({
-        onMesaActualizada: handleMesaActualizada,
+        onMesaActualizada: (mesa) => {
+          handleMesaActualizada(mesa);
+          obtenerReservasActivas();
+        },
         onComandaActualizada: handleComandaActualizada,
         onNuevaComanda: handleNuevaComanda,
+        onReservaCambio: (data) => {
+          const reserva = data?.reserva;
+          if (reserva?._id) {
+            setReservas((prev) => {
+              const id = reserva._id.toString();
+              const idx = prev.findIndex((r) => (r._id?.toString() || r._id) === id);
+              if (idx === -1) return [...prev, reserva];
+              const next = [...prev];
+              next[idx] = { ...next[idx], ...reserva };
+              return next;
+            });
+          }
+          obtenerReservasActivas();
+        },
         onMesasJuntadas: (data) => {
           console.log('🔗 [INICIO] Evento mesas-juntadas recibido:', data);
           // Recargar mesas para obtener estado actualizado
@@ -1482,10 +1499,11 @@ const InicioScreen = () => {
           onComandaActualizada: null,
           onNuevaComanda: null,
           onMesasJuntadas: null,
-          onMesasSeparadas: null
+          onMesasSeparadas: null,
+          onReservaCambio: null
         });
       };
-    }, [subscribeToEvents, handleMesaActualizada, handleComandaActualizada, handleNuevaComanda, obtenerMesas, obtenerComandasHoy])
+    }, [subscribeToEvents, handleMesaActualizada, handleComandaActualizada, handleNuevaComanda, obtenerMesas, obtenerComandasHoy, obtenerReservasActivas])
   );
 
   // Actualizar hora cada segundo
@@ -1655,8 +1673,8 @@ const InicioScreen = () => {
   const obtenerReservasActivas = useCallback(async () => {
     try {
       const reservasURL = apiConfig.isConfigured 
-        ? apiConfig.getEndpoint('/reservas?estado=pendiente')
-        : `${getFallbackApiBase()}/reservas?estado=pendiente`;
+        ? apiConfig.getEndpoint('/reservas?estado=pendiente,pendiente_aprobar,activa')
+        : `${getFallbackApiBase()}/reservas?estado=pendiente,pendiente_aprobar,activa`;
       
       // Obtener token JWT para autorización
       const authToken = await AsyncStorage.getItem('authToken');
@@ -1893,12 +1911,22 @@ const InicioScreen = () => {
     // mostrarla Libre SIEMPRE aunque queden comandas huérfanas en el state local (se limpian
     // al liberar via cleanup en mesas.repository.js, pero el state de React puede estar desactualizado).
     if (mesa.estado && mesa.estado.toLowerCase() === "libre") {
+      const reservaEspera = reservas.find((r) => {
+        const mesaId = r.mesa?._id?.toString() || r.mesa?.toString();
+        return mesaId === mesa._id?.toString() && r.estado === "pendiente_aprobar";
+      });
+      if (reservaEspera) return "Espera...";
       return "Libre";
     }
 
     // PLAN_PLANTILLA_COMANDAS: estados de aprobación de cocina
-    // pendiente_aprobar = pago registrado, esperando aprobación de cocina (verde claro)
+    // pendiente_aprobar de reserva = Espera...; el de pago sigue como "Pendiente de aprobación"
     if (mesa.estado && mesa.estado.toLowerCase() === "pendiente_aprobar") {
+      const reservaEspera = reservas.find((r) => {
+        const mesaId = r.mesa?._id?.toString() || r.mesa?.toString();
+        return mesaId === mesa._id?.toString() && r.estado === "pendiente_aprobar";
+      });
+      if (reservaEspera) return "Espera...";
       return "Pendiente de aprobación";
     }
     // reportado = cocina reportó un problema (rojo)
@@ -2069,8 +2097,8 @@ const InicioScreen = () => {
       }
     }
     
-    // Si la mesa está reservada, buscar el mozo en la reserva
-    if (mesa.estado?.toLowerCase() === "reservado") {
+    // Si la mesa está reservada o en espera de reserva, buscar el mozo en la reserva
+    if (mesa.estado?.toLowerCase() === "reservado" || mesa.estado?.toLowerCase() === "pendiente_aprobar") {
       const reservaActiva = reservas.find(r => {
         const mesaId = r.mesa?._id?.toString() || r.mesa?.toString();
         return mesaId === mesa._id?.toString();
@@ -2078,7 +2106,7 @@ const InicioScreen = () => {
       if (reservaActiva?.mozo?.name) {
         return reservaActiva.mozo.name;
       }
-      return "Sin asignar";
+      if (mesa.estado?.toLowerCase() === "reservado") return "Sin asignar";
     }
     
     // PRIORIDAD: comandas por nummesa; si no hay, por _id de mesa (evita nombre vacío por desajuste de número)
@@ -2155,7 +2183,8 @@ const InicioScreen = () => {
         return theme.colors.mesaEstado.entregado || "#00C851"; // Verde - todos los platos entregados, listo para cobrar
       case "pendiente_aprobar":
       case "pendiente de aprobación":
-        return theme.colors.mesaEstado.pendiente_aprobar || "#FF9800"; // Naranja saturado - esperando aprobación
+      case "espera...":
+        return theme.colors.mesaEstado.pendiente_aprobar || "#FF9800";
       case "pagado":
         return theme.colors.mesaEstado.pagado || "#2E7D32"; // Verde oscuro (aprobado por cocina)
       case "pagando":
@@ -2174,6 +2203,20 @@ const InicioScreen = () => {
 
   const handleSelectMesa = async (mesa) => {
     const estado = getEstadoMesa(mesa);
+
+    if (estado === "Espera...") {
+      const reservaEspera = reservas.find((r) => {
+        const mesaId = r.mesa?._id?.toString() || r.mesa?.toString();
+        return mesaId === mesa._id?.toString() && r.estado === "pendiente_aprobar";
+      });
+      navigation.navigate("ReservaWizard", {
+        mesa,
+        esperaReserva: true,
+        reserva: reservaEspera || undefined,
+      });
+      return;
+    }
+
     setMesaSeleccionada(mesa);
     
     if (estado === "Libre") {
@@ -2203,18 +2246,22 @@ const InicioScreen = () => {
             return;
           }
           
-          // Si es el mozo asignado o no hay mozo asignado, permitir crear comanda
+          // Si es el mozo asignado, abrir el detalle con la comanda de la reserva si existe
           Alert.alert(
             "Mesa Reservada",
-            `Esta mesa tiene una reserva a nombre de ${reserva.clienteNombre || 'Cliente'}${reserva.numPersonas ? ` para ${reserva.numPersonas} personas` : ''}.\n\n¿Deseas iniciar la atención?`,
+            `Esta mesa tiene una reserva a nombre de ${reserva.clienteNombre || 'Cliente'}${reserva.numPersonas ? ` para ${reserva.numPersonas} personas` : ''}.`,
             [
               { text: "Cancelar", style: "cancel" },
               { 
-                text: "Iniciar Atención", 
-                onPress: () => {
+                text: "Atender", 
+                onPress: async () => {
+                  let cmds = getComandasPorMesa(mesa.nummesa);
+                  if ((!cmds || cmds.length === 0) && mesa._id) {
+                    cmds = await obtenerComandasMesa(mesa._id);
+                  }
                   navigation.navigate('ComandaDetalle', {
                     mesa: mesa,
-                    comandas: [],
+                    comandas: cmds || [],
                     reserva: reserva
                   });
                 }
@@ -5124,6 +5171,7 @@ const InicioScreen = () => {
             // ========== VISTA DE MAPA ==========
             <MesaMapView
               mesas={mesas}
+              reservas={reservas}
               areaId={seccionActiva?._id || seccionActiva}
               onMesaPress={handleSelectMesa}
               style={{ flex: 1 }}
@@ -5296,6 +5344,7 @@ const InicioScreen = () => {
               onPress={() => {
                 obtenerMesas();
                 obtenerComandasHoy();
+                obtenerReservasActivas();
                 Alert.alert("Recargar", "Datos actualizados");
               }}
             >
