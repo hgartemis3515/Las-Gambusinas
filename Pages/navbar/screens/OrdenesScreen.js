@@ -9,8 +9,6 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
-  InteractionManager,
-  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -27,6 +25,7 @@ import moment from "moment-timezone";
 import debounce from "lodash.debounce";
 // Componente de modal de complementos
 import ModalComplementos from "../../../Components/ModalComplementos";
+import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
 // Animaciones Premium 60fps
@@ -202,12 +201,8 @@ const OrdenesScreen = ({ route }) => {
 
   // Estado para el modal de complementos
   const [platoParaComplementar, setPlatoParaComplementar] = useState(null); // Cuando no es null, el modal de complementos está abierto
-  // iOS: un segundo Modal encima del modal de platos no se muestra; se cierra Menú y luego se abre complementos
-  const platoPendienteComplementosRef = useRef(null);
-  const reabrirModalPlatosTrasComplementosRef = useRef(false);
+  // Overlay in-tree: complementos (Modal) se abre encima del menú sin cerrarlo
   const platosListScrollRef = useRef(null);
-  const platosListScrollOffsetRef = useRef(0);
-  const restaurarScrollPlatosRef = useRef(false);
 
   // Debounce búsqueda 300ms para no re-filtrar en cada tecla
   const debouncedSetSearchRef = useRef(
@@ -217,15 +212,6 @@ const OrdenesScreen = ({ route }) => {
     debouncedSetSearchRef(searchPlato);
     return () => debouncedSetSearchRef.cancel?.();
   }, [searchPlato, debouncedSetSearchRef]);
-
-  useEffect(() => {
-    if (modalPlatosVisible || !platoPendienteComplementosRef.current) return;
-    const pending = platoPendienteComplementosRef.current;
-    platoPendienteComplementosRef.current = null;
-    InteractionManager.runAfterInteractions(() => {
-      setPlatoParaComplementar(pending);
-    });
-  }, [modalPlatosVisible]);
 
   useEffect(() => {
     loadUserData();
@@ -390,48 +376,43 @@ const OrdenesScreen = ({ route }) => {
     const tieneComplementos = plato.complementos && plato.complementos.length > 0;
 
     if (tieneComplementos) {
-      if (modalPlatosVisible) {
-        reabrirModalPlatosTrasComplementosRef.current = true;
-        platoPendienteComplementosRef.current = plato;
-        setModalPlatosVisible(false);
-      } else {
-        setPlatoParaComplementar(plato);
-      }
+      setPlatoParaComplementar(plato);
     } else {
       agregarPlatoSinComplementos(plato);
     }
   };
 
-  const cerrarModalComplementosYReabrirMenu = () => {
-    setPlatoParaComplementar(null);
-    if (reabrirModalPlatosTrasComplementosRef.current) {
-      reabrirModalPlatosTrasComplementosRef.current = false;
-      restaurarScrollPlatosRef.current = true;
-      setModalPlatosVisible(true);
+  const handleAddPlatoFromMenu = (plato) => {
+    handleAddPlato(plato);
+    if (!plato.complementos || plato.complementos.length === 0) {
+      Alert.alert("✅", `${plato.nombre} agregado`);
     }
   };
 
-  const restaurarScrollListaPlatos = useCallback(() => {
-    if (!restaurarScrollPlatosRef.current) return;
-    restaurarScrollPlatosRef.current = false;
-    const offsetY = platosListScrollOffsetRef.current;
-    if (offsetY <= 0) return;
-    InteractionManager.runAfterInteractions(() => {
-      requestAnimationFrame(() => {
-        platosListScrollRef.current?.scrollTo({ y: offsetY, animated: false });
-      });
-    });
-  }, []);
+  const handleDecrementPlatoFromMenu = (plato) => {
+    const instanciasDelPlato = selectedPlatos.filter(p => p._id === plato._id);
+    if (instanciasDelPlato.length > 0) {
+      const ultimaInstancia = instanciasDelPlato[instanciasDelPlato.length - 1];
+      const instanceId = ultimaInstancia.instanceId || ultimaInstancia._id;
+      const currentCant = cantidades[instanceId] || 1;
+      if (currentCant > 1) {
+        setCantidades({ ...cantidades, [instanceId]: currentCant - 1 });
+      } else if (instanciasDelPlato.length === 1) {
+        handleRemovePlato(instanceId);
+      }
+    }
+  };
+
+  const cerrarModalComplementosYReabrirMenu = () => {
+    setPlatoParaComplementar(null);
+  };
 
   const cerrarModalPlatos = useCallback(() => {
     setModalPlatosVisible(false);
     setTipoPlatoFiltro(null);
     setCategoriaFiltro(null);
     setSearchPlato("");
-    // Resetear el toggle de tipo de servicio al cerrar el modal (default Mesa)
     setTipoServicioModal('mesa');
-    platosListScrollOffsetRef.current = 0;
-    restaurarScrollPlatosRef.current = false;
   }, []);
 
   // Función para agregar un plato sin complementos (comportamiento original)
@@ -1369,8 +1350,6 @@ const OrdenesScreen = ({ route }) => {
               setCategoriaFiltro(null);
               setSearchPlato("");
               setTipoServicioModal('mesa'); // Reset toggle al abrir el modal
-              platosListScrollOffsetRef.current = 0;
-              restaurarScrollPlatosRef.current = false;
               setModalPlatosVisible(true);
             }}
           >
@@ -1484,263 +1463,36 @@ const OrdenesScreen = ({ route }) => {
         </View>
       </Modal>
 
-      {/* Modal Platos */}
-      <Modal
-        animationType="slide"
-        transparent={true}
+      {/* Overlay menú de platos (in-tree, no Modal nativo) */}
+      <MenuPlatosSheet
         visible={modalPlatosVisible}
-        onRequestClose={cerrarModalPlatos}
-      >
-        <View style={styles.modalBackground}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Menú</Text>
-              <TouchableOpacity onPress={cerrarModalPlatos}>
-                <MaterialCommunityIcons name="close" size={24} color={theme.colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-            
-            {!tipoPlatoFiltro ? (
-              <View style={styles.tipoSelectorContainer}>
-                <Text style={styles.tipoSelectorTitle}>Selecciona el tipo de menú</Text>
-                <View style={styles.tipoButtonsContainer}>
-                  {tiposPlatoCatalogo.length > 0 ? (
-                    tiposPlatoCatalogo.map((t) => (
-                      <TouchableOpacity
-                        key={t.slug}
-                        style={styles.tipoButton}
-                        onPress={() => setTipoPlatoFiltro(t.slug)}
-                      >
-                        <MaterialCommunityIcons
-                          name={_iconForTipo(t.slug) || "silverware-fork-knife"}
-                          size={48}
-                          color={theme.colors.text.white}
-                        />
-                        <Text style={styles.tipoButtonText}>{(t.nombreCorto || t.nombre || "").toUpperCase()}</Text>
-                      </TouchableOpacity>
-                    ))
-                  ) : (
-                    <>
-                      <TouchableOpacity
-                        style={styles.tipoButton}
-                        onPress={() => setTipoPlatoFiltro("platos-desayuno")}
-                      >
-                        <MaterialCommunityIcons name="coffee" size={48} color={theme.colors.text.white} />
-                        <Text style={styles.tipoButtonText}>DESAYUNO</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.tipoButton}
-                        onPress={() => setTipoPlatoFiltro("plato-carta normal")}
-                      >
-                        <MaterialCommunityIcons name="silverware-fork-knife" size={48} color={theme.colors.text.white} />
-                        <Text style={styles.tipoButtonText}>CARTA</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              </View>
-            ) : (
-              <>
-                <View style={styles.tipoServicioRow}>
-                  <TouchableOpacity
-                    style={[styles.changeTipoButton, { flex: 1, marginBottom: 0 }]}
-                    onPress={() => {
-                      setTipoPlatoFiltro(null);
-                      setCategoriaFiltro(null);
-                      setSearchPlato("");
-                      setTipoServicioModal('mesa'); // Reset toggle al cambiar de tipo de menú
-                    }}
-                  >
-                    <MaterialCommunityIcons name="arrow-left" size={20} color={theme.colors.text.white} />
-                    <Text style={styles.changeTipoButtonText}>
-                      {labelForTipo(tipoPlatoFiltro) || "Tipo"}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <View style={styles.tipoServicioToggle}>
-                    <Text
-                      style={[
-                        styles.tipoServicioLabel,
-                        tipoServicioModal === 'mesa' && styles.tipoServicioLabelActive,
-                        // Mesa activo = amarillo · inactivo = gris
-                        { color: tipoServicioModal === 'mesa' ? '#F59E0B' : theme.colors.text.secondary }
-                      ]}
-                    >
-                      Mesa
-                    </Text>
-                    <Switch
-                      value={tipoServicioModal === 'para_llevar'}
-                      onValueChange={(v) => setTipoServicioModal(v ? 'para_llevar' : 'mesa')}
-                      // Mesa (OFF) = amarillo · Para llevar (ON) = púrpura
-                      trackColor={{ false: '#F59E0B', true: '#8B5CF6' }}
-                      thumbColor="#FFFFFF"
-                      accessibilityLabel="Tipo de servicio: Mesa o Para llevar"
-                      accessibilityHint="Cambia el destino de los platos que agregues a continuación"
-                    />
-                    <Text
-                      style={[
-                        styles.tipoServicioLabel,
-                        tipoServicioModal === 'para_llevar' && styles.tipoServicioLabelActive,
-                        // Para llevar activo = púrpura · inactivo = gris
-                        { color: tipoServicioModal === 'para_llevar' ? '#8B5CF6' : theme.colors.text.secondary }
-                      ]}
-                    >
-                      Para llevar
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.searchInputWrapper}>
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Buscar plato..."
-                    placeholderTextColor={theme.colors.text.light}
-                    value={searchPlato}
-                    onChangeText={handleSearchChangeText}
-                    onFocus={handleSearchFocus}
-                    accessibilityLabel={searchPlato.trim() ? "Búsqueda en todos los platos" : "Buscar plato"}
-                    accessibilityHint="Al escribir se muestran platos de todas las categorías"
-                  />
-                  {searchPlato.length > 0 && (
-                    <TouchableOpacity
-                      style={styles.searchClearButton}
-                      onPress={() => setSearchPlato("")}
-                      accessibilityLabel="Limpiar búsqueda"
-                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                    >
-                      <MaterialCommunityIcons name="close-circle" size={22} color={theme.colors.text.light} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                <ScrollView horizontal style={styles.categoriasContainer} showsHorizontalScrollIndicator={false}>
-                  <TouchableOpacity
-                    style={[styles.categoriaChip, (!categoriaFiltro || (searchPlato || "").trim().length > 0) && styles.categoriaChipActive]}
-                    onPress={() => setCategoriaFiltro(null)}
-                  >
-                    <Text style={[styles.categoriaChipText, (!categoriaFiltro || (searchPlato || "").trim().length > 0) && styles.categoriaChipTextActive]}>Todos</Text>
-                  </TouchableOpacity>
-                  {categorias.map((cat) => (
-                    <TouchableOpacity
-                      key={cat}
-                      style={[styles.categoriaChip, categoriaFiltro === cat && (searchPlato || "").trim().length === 0 && styles.categoriaChipActive]}
-                      onPress={() => handleCategorySelect(cat)}
-                    >
-                      <Text style={[styles.categoriaChipText, categoriaFiltro === cat && (searchPlato || "").trim().length === 0 && styles.categoriaChipTextActive]}>
-                        {getCategoriaIcon(cat)} {cat.split("(")[0].trim()}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-
-                <ScrollView
-                  ref={platosListScrollRef}
-                  style={styles.modalScrollView}
-                  onScroll={(e) => {
-                    platosListScrollOffsetRef.current = e.nativeEvent.contentOffset.y;
-                  }}
-                  scrollEventThrottle={16}
-                  onContentSizeChange={restaurarScrollListaPlatos}
-                  onLayout={restaurarScrollListaPlatos}
-                >
-                  {platosFiltrados.length === 0 ? (
-                    <View style={styles.emptyPlatosContainer}>
-                      <Text style={styles.emptyPlatosText}>
-                        No hay platos disponibles
-                      </Text>
-                    </View>
-                  ) : (
-                    platosFiltrados.map((plato) => {
-                      // Calcular cantidad total de este plato (sumando todas las instancias)
-                      const cantidadTotal = selectedPlatos
-                        .filter(p => p._id === plato._id)
-                        .reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
-                      
-                      // 🔥 Desglosar cantidad por tipo de servicio: mesa vs para llevar
-                      const instanciasMesa = selectedPlatos.filter(p => p._id === plato._id && (p.tipoServicio || 'mesa') === 'mesa');
-                      const instanciasLlevar = selectedPlatos.filter(p => p._id === plato._id && p.tipoServicio === 'para_llevar');
-                      const cantidadMesa = instanciasMesa.reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
-                      const cantidadLlevar = instanciasLlevar.reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
-                      
-                      return (
-                        <View key={plato._id} style={styles.platoModalItem}>
-                          <View style={styles.platoModalInfo}>
-                            <View style={styles.platoModalNombreContainer}>
-                              <Text style={styles.platoModalNombre}>{plato.nombre}</Text>
-                              {plato.complementos && plato.complementos.length > 0 && (
-                                <View style={styles.tieneComplementosBadge}>
-                                  <MaterialCommunityIcons name="tune-variant" size={12} color={theme.colors.text.white} />
-                                </View>
-                              )}
-                            </View>
-                            <Text style={styles.platoModalPrecio}>S/. {plato.precio.toFixed(2)}</Text>
-                          </View>
-                          <View style={styles.platoModalActions}>
-                            <TouchableOpacity
-                              style={styles.cantidadButtonSmall}
-                              onPress={() => {
-                                // Reducir cantidad de la última instancia agregada de este plato
-                                const instanciasDelPlato = selectedPlatos.filter(p => p._id === plato._id);
-                                if (instanciasDelPlato.length > 0) {
-                                  const ultimaInstancia = instanciasDelPlato[instanciasDelPlato.length - 1];
-                                  const instanceId = ultimaInstancia.instanceId || ultimaInstancia._id;
-                                  const currentCant = cantidades[instanceId] || 1;
-                                  if (currentCant > 1) {
-                                    setCantidades({ ...cantidades, [instanceId]: currentCant - 1 });
-                                  } else if (instanciasDelPlato.length === 1) {
-                                    // Si solo queda 1 de la única instancia, eliminar
-                                    handleRemovePlato(instanceId);
-                                  }
-                                }
-                              }}
-                            >
-                              <MaterialCommunityIcons name="minus" size={14} color={theme.colors.text.white} />
-                            </TouchableOpacity>
-                            {/* Cantidad desglosada: mesa + llevar */}
-                            {cantidadLlevar > 0 ? (
-                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <Text style={styles.cantidadTextSmall}>{cantidadMesa}</Text>
-                                <Text style={[styles.cantidadTextSmall, { color: '#8B5CF6', fontWeight: '700', marginLeft: 1 }]}>+{cantidadLlevar}</Text>
-                              </View>
-                            ) : (
-                              <Text style={styles.cantidadTextSmall}>{cantidadTotal || 0}</Text>
-                            )}
-                            <TouchableOpacity
-                              style={styles.cantidadButtonSmall}
-                              onPress={() => {
-                                // Incrementar cantidad de la última instancia si tiene los mismos complementos
-                                // O agregar una nueva instancia
-                                handleAddPlato(plato);
-                                if (!plato.complementos || plato.complementos.length === 0) {
-                                  Alert.alert("✅", `${plato.nombre} agregado`);
-                                }
-                              }}
-                            >
-                              <MaterialCommunityIcons name="plus" size={14} color={theme.colors.text.white} />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={styles.addPlatoButton}
-                              onPress={() => {
-                                handleAddPlato(plato);
-                                // Solo mostrar alert si no tiene complementos (el alert se muestra después del modal de complementos)
-                                if (!plato.complementos || plato.complementos.length === 0) {
-                                  Alert.alert("✅", `${plato.nombre} agregado`);
-                                }
-                              }}
-                            >
-                              <Text style={styles.addPlatoButtonText}>Agregar</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      );
-                    })
-                  )}
-                </ScrollView>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
+        onClose={cerrarModalPlatos}
+        tiposPlatoCatalogo={tiposPlatoCatalogo}
+        tipoPlatoFiltro={tipoPlatoFiltro}
+        onSelectTipo={setTipoPlatoFiltro}
+        onClearTipo={() => {
+          setTipoPlatoFiltro(null);
+          setCategoriaFiltro(null);
+          setSearchPlato("");
+          setTipoServicioModal('mesa');
+        }}
+        labelForTipo={labelForTipo}
+        tipoServicioModal={tipoServicioModal}
+        onTipoServicioChange={setTipoServicioModal}
+        searchPlato={searchPlato}
+        onSearchChange={handleSearchChangeText}
+        onSearchFocus={handleSearchFocus}
+        onClearSearch={() => setSearchPlato("")}
+        categorias={categorias}
+        categoriaFiltro={categoriaFiltro}
+        onSelectCategoria={handleCategorySelect}
+        platosFiltrados={platosFiltrados}
+        selectedPlatos={selectedPlatos}
+        cantidades={cantidades}
+        onDecrementPlato={handleDecrementPlatoFromMenu}
+        onAddPlato={handleAddPlatoFromMenu}
+        listRef={platosListScrollRef}
+      />
 
       {/* Overlay de Carga Animado */}
       {mostrarOverlayCarga && (
@@ -2077,6 +1829,8 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: theme.spacing.md,
+    flexGrow: 0,
+    flexShrink: 0,
   },
   modalTitle: {
     fontSize: 24,
@@ -2186,6 +1940,9 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
   },
   categoriasContainer: {
     marginBottom: theme.spacing.md,
+    flexGrow: 0,
+    flexShrink: 0,
+    minHeight: 40,
   },
   categoriaChip: {
     paddingHorizontal: theme.spacing.md,
@@ -2315,6 +2072,8 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     justifyContent: "space-between",
     gap: theme.spacing.sm,
     marginBottom: theme.spacing.md,
+    flexGrow: 0,
+    flexShrink: 0,
   },
   tipoServicioToggle: {
     flexDirection: "row",

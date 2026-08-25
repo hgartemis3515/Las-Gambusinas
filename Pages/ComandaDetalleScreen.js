@@ -19,6 +19,8 @@ import HeaderComandaDetalle from '../Components/HeaderComandaDetalle';
 import ModalComplementos from '../Components/ModalComplementos';
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from '../hooks/useTiposPlato';
+import useKeyboardInset from '../hooks/useKeyboardInset';
+import KeyboardAwareResults from '../Components/KeyboardAwareResults';
 
 // Contextos y configuración
 import { useTheme } from '../context/ThemeContext';
@@ -116,6 +118,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const { theme, isDarkMode } = useTheme();
   const isDark = isDarkMode; // Alias para compatibilidad
   const themeColors = theme || themeLight;
+  const { inset: keyboardInset, listMaxHeight: platosListMaxHeight } = useKeyboardInset({ mode: 'modal', chrome: 220 });
   const { socket, connected, connectionStatus, reconnectAttempts, joinMesa, leaveMesa } = useSocket();
   
   // FASE 4.1: Estado para indicador online-active cuando recibe actualizaciones
@@ -2631,9 +2634,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           setCategoriaFiltro(null);
         }}
       >
-        <View style={[styles.modalOverlay, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.85)' : 'rgba(0, 0, 0, 0.5)' }]}>
+        <View style={[styles.modalOverlay, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.85)' : 'rgba(0, 0, 0, 0.5)', ...(keyboardInset > 0 ? { paddingBottom: keyboardInset } : null) }]}>
           <View style={[
-            styles.modalContentEditar, 
+            styles.modalContentEditar,
             { 
               backgroundColor: isDark ? '#000000' : (themeColors.colors?.surface || themeColors.colors?.card || themeColors.card || '#FFFFFF'), // Negro puro en modo oscuro
               shadowColor: '#000',
@@ -2644,8 +2647,20 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             }
           ]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937') }]}>
-                Editar Comanda #{comandaEditando?.comandaNumber || 'N/A'}
+              {tipoPlatoFiltro ? (
+                <TouchableOpacity
+                  onPress={() => {
+                    setTipoPlatoFiltro(null);
+                    setSearchPlato('');
+                    setCategoriaFiltro(null);
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <MaterialCommunityIcons name="arrow-left" size={24} color={isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937')} />
+                </TouchableOpacity>
+              ) : null}
+              <Text style={[styles.modalTitle, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937'), flex: 1 }]}>
+                {tipoPlatoFiltro ? (labelForTipo(tipoPlatoFiltro) || 'Menú') : `Editar Comanda #${comandaEditando?.comandaNumber || 'N/A'}`}
               </Text>
               <TouchableOpacity onPress={() => {
                 setModalEditarVisible(false);
@@ -2657,6 +2672,189 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 <MaterialCommunityIcons name="close" size={24} color={isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937')} />
               </TouchableOpacity>
             </View>
+
+            {tipoPlatoFiltro ? (
+              <>
+                <View style={[
+                  styles.tipoServicioRow,
+                  {
+                    backgroundColor: isDark ? '#374151' : (themeColors.colors?.surface || '#FFFFFF'),
+                    borderColor: isDark ? '#4B5563' : (themeColors.colors?.border || '#E5E7EB'),
+                  }
+                ]}>
+                  <Text style={[
+                    styles.tipoServicioTipoMenu,
+                    { color: isDark ? '#F9FAFB' : (themeColors.colors?.text?.primary || '#1F2937') }
+                  ]}>
+                    {labelForTipo(tipoPlatoFiltro) || 'Tipo'}
+                  </Text>
+                  <View style={styles.tipoServicioToggle}>
+                    <Text style={[
+                      styles.tipoServicioLabel,
+                      tipoServicioModal === 'mesa' && styles.tipoServicioLabelActive,
+                      { color: tipoServicioModal === 'mesa'
+                          ? '#F59E0B'
+                          : (isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || '#6B7280')) }
+                    ]}>
+                      Mesa
+                    </Text>
+                    <Switch
+                      value={tipoServicioModal === 'para_llevar'}
+                      onValueChange={(v) => setTipoServicioModal(v ? 'para_llevar' : 'mesa')}
+                      trackColor={{ false: '#F59E0B', true: '#8B5CF6' }}
+                      thumbColor="#FFFFFF"
+                      accessibilityLabel="Tipo de servicio: Mesa o Para llevar"
+                      accessibilityHint="Cambia el destino de los platos que agregues a continuación"
+                    />
+                    <Text style={[
+                      styles.tipoServicioLabel,
+                      tipoServicioModal === 'para_llevar' && styles.tipoServicioLabelActive,
+                      { color: tipoServicioModal === 'para_llevar'
+                          ? '#8B5CF6'
+                          : (isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || '#6B7280')) }
+                    ]}>
+                      Para llevar
+                    </Text>
+                  </View>
+                </View>
+                <KeyboardAwareResults
+                  listMaxHeight={platosListMaxHeight}
+                  search={
+                    <TextInput
+                      style={[
+                        styles.searchInput,
+                        {
+                          backgroundColor: isDark ? '#374151' : (themeColors.colors?.surface || '#FFFFFF'),
+                          borderColor: isDark ? '#4B5563' : (themeColors.colors?.border || '#E5E7EB'),
+                          color: isDark ? '#F9FAFB' : (themeColors.colors?.text?.primary || '#1F2937'),
+                        }
+                      ]}
+                      placeholder="Buscar plato..."
+                      placeholderTextColor={isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || '#6B7280')}
+                      value={searchPlato}
+                      onChangeText={setSearchPlato}
+                    />
+                  }
+                  filters={
+                    <ScrollView horizontal style={styles.categoriasContainer} showsHorizontalScrollIndicator={false}>
+                      <TouchableOpacity
+                        style={[
+                          styles.categoriaChip,
+                          {
+                            backgroundColor: !categoriaFiltro
+                              ? '#3B82F6'
+                              : (themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB')),
+                            borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                          },
+                          !categoriaFiltro && styles.categoriaChipActive
+                        ]}
+                        onPress={() => setCategoriaFiltro(null)}
+                      >
+                        <Text style={[
+                          styles.categoriaChipText,
+                          {
+                            color: !categoriaFiltro
+                              ? '#FFFFFF'
+                              : (themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937'))
+                          }
+                        ]}>
+                          Todos
+                        </Text>
+                      </TouchableOpacity>
+                      {categorias.map((cat) => (
+                        <TouchableOpacity
+                          key={cat}
+                          style={[
+                            styles.categoriaChip,
+                            {
+                              backgroundColor: categoriaFiltro === cat
+                                ? '#3B82F6'
+                                : (themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB')),
+                              borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                            },
+                            categoriaFiltro === cat && styles.categoriaChipActive
+                          ]}
+                          onPress={() => setCategoriaFiltro(cat)}
+                        >
+                          <Text style={[
+                            styles.categoriaChipText,
+                            {
+                              color: categoriaFiltro === cat
+                                ? '#FFFFFF'
+                                : (themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937'))
+                            }
+                          ]}>
+                            {cat}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  }
+                >
+                  {platosFiltrados.length === 0 ? (
+                    <Text style={[
+                      styles.emptyPlatosText,
+                      { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }
+                    ]}>
+                      {`No hay platos disponibles en ${labelForTipo(tipoPlatoFiltro) || tipoPlatoFiltro}`}
+                    </Text>
+                  ) : (
+                    platosFiltrados.map((plato) => {
+                      const cantidadEnComanda = platosEditados.find(
+                        p => (p.plato === plato._id || p.plato?.toString() === plato._id?.toString())
+                      )?.cantidad || 0;
+                      return (
+                        <TouchableOpacity
+                          key={plato._id}
+                          style={[
+                            styles.platoSelectItem,
+                            {
+                              backgroundColor: themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB'),
+                              borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                            }
+                          ]}
+                          onPress={() => handleAgregarPlato(plato)}
+                        >
+                          <View style={styles.platoSelectInfo}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Text style={[
+                                styles.platoSelectNombre,
+                                { color: themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937') }
+                              ]}>
+                                {plato.nombre}
+                              </Text>
+                              {plato.complementos && plato.complementos.length > 0 && (
+                                <View style={{
+                                  backgroundColor: '#00D4FF',
+                                  paddingHorizontal: 6,
+                                  paddingVertical: 2,
+                                  borderRadius: 8,
+                                }}>
+                                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '600' }}>
+                                    🍽️
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text style={[styles.platoSelectPrecio, { color: '#059669' }]}>
+                              S/. {plato.precio.toFixed(2)}
+                            </Text>
+                          </View>
+                          {cantidadEnComanda > 0 && (
+                            <View style={[styles.cantidadBadge, { backgroundColor: '#3B82F6' }]}>
+                              <Text style={[styles.cantidadBadgeText, { color: '#FFFFFF' }]}>
+                                x{cantidadEnComanda}
+                              </Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </KeyboardAwareResults>
+              </>
+            ) : (
+            <>
             
             {/* Leyenda de colores */}
             <View style={[
@@ -2670,7 +2868,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               </Text>
             </View>
             
-            <ScrollView style={styles.modalScrollView}>
+            <ScrollView style={styles.modalScrollView} keyboardShouldPersistTaps="handled">
               <View style={styles.editSection}>
                 <Text style={[styles.editLabel, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937') }]}>
                   Mesa: {mesa?.nombreCombinado || `M${mesa?.nummesa}` || 'N/A'}
@@ -2930,194 +3128,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   <MaterialCommunityIcons name="plus-circle" size={20} color="#fff" />
                   <Text style={styles.addPlatoButtonText}> Agregar Plato</Text>
                 </TouchableOpacity>
-                
-                {tipoPlatoFiltro && (
-                  <>
-                    <View style={[
-                      styles.tipoServicioRow,
-                      {
-                        backgroundColor: isDark ? '#374151' : (themeColors.colors?.surface || '#FFFFFF'),
-                        borderColor: isDark ? '#4B5563' : (themeColors.colors?.border || '#E5E7EB'),
-                      }
-                    ]}>
-                      <Text style={[
-                        styles.tipoServicioTipoMenu,
-                        { color: isDark ? '#F9FAFB' : (themeColors.colors?.text?.primary || '#1F2937') }
-                      ]}>
-                        {labelForTipo(tipoPlatoFiltro) || 'Tipo'}
-                      </Text>
-                      <View style={styles.tipoServicioToggle}>
-                        <Text style={[
-                          styles.tipoServicioLabel,
-                          tipoServicioModal === 'mesa' && styles.tipoServicioLabelActive,
-                          // Mesa activo = amarillo · inactivo = gris
-                          { color: tipoServicioModal === 'mesa'
-                              ? '#F59E0B'
-                              : (isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || '#6B7280')) }
-                        ]}>
-                          Mesa
-                        </Text>
-                        <Switch
-                          value={tipoServicioModal === 'para_llevar'}
-                          onValueChange={(v) => setTipoServicioModal(v ? 'para_llevar' : 'mesa')}
-                          // Mesa (OFF) = amarillo · Para llevar (ON) = púrpura
-                          trackColor={{ false: '#F59E0B', true: '#8B5CF6' }}
-                          thumbColor="#FFFFFF"
-                          accessibilityLabel="Tipo de servicio: Mesa o Para llevar"
-                          accessibilityHint="Cambia el destino de los platos que agregues a continuación"
-                        />
-                        <Text style={[
-                          styles.tipoServicioLabel,
-                          tipoServicioModal === 'para_llevar' && styles.tipoServicioLabelActive,
-                          // Para llevar activo = púrpura · inactivo = gris
-                          { color: tipoServicioModal === 'para_llevar'
-                              ? '#8B5CF6'
-                              : (isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || '#6B7280')) }
-                        ]}>
-                          Para llevar
-                        </Text>
-                      </View>
-                    </View>
-                    <TextInput
-                      style={[
-                        styles.searchInput,
-                        {
-                          backgroundColor: isDark ? '#374151' : (themeColors.colors?.surface || '#FFFFFF'),
-                          borderColor: isDark ? '#4B5563' : (themeColors.colors?.border || '#E5E7EB'),
-                          color: isDark ? '#F9FAFB' : (themeColors.colors?.text?.primary || '#1F2937'),
-                        }
-                      ]}
-                      placeholder="Buscar plato..."
-                      placeholderTextColor={isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || '#6B7280')}
-                      value={searchPlato}
-                      onChangeText={setSearchPlato}
-                    />
-                    <ScrollView horizontal style={styles.categoriasContainer} showsHorizontalScrollIndicator={false}>
-                      <TouchableOpacity
-                        style={[
-                          styles.categoriaChip, 
-                          {
-                            backgroundColor: !categoriaFiltro 
-                              ? '#3B82F6' // Azul intenso en ambos modos
-                              : (themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB')),
-                            borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
-                          },
-                          !categoriaFiltro && styles.categoriaChipActive
-                        ]}
-                        onPress={() => setCategoriaFiltro(null)}
-                      >
-                        <Text style={[
-                          styles.categoriaChipText, 
-                          {
-                            color: !categoriaFiltro 
-                              ? '#FFFFFF'
-                              : (themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937'))
-                          }
-                        ]}>
-                          Todos
-                        </Text>
-                      </TouchableOpacity>
-                      {categorias.map((cat) => (
-                        <TouchableOpacity
-                          key={cat}
-                          style={[
-                            styles.categoriaChip, 
-                            {
-                              backgroundColor: categoriaFiltro === cat
-                                ? '#3B82F6' // Azul intenso en ambos modos
-                                : (themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB')),
-                              borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
-                            },
-                            categoriaFiltro === cat && styles.categoriaChipActive
-                          ]}
-                          onPress={() => setCategoriaFiltro(cat)}
-                        >
-                          <Text style={[
-                            styles.categoriaChipText,
-                            {
-                              color: categoriaFiltro === cat
-                                ? '#FFFFFF'
-                                : (themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937'))
-                            }
-                          ]}>
-                            {cat}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                    <ScrollView style={styles.platosScrollView} nestedScrollEnabled={true}>
-                      {platosFiltrados.length === 0 ? (
-                        <Text style={[
-                          styles.emptyPlatosText,
-                          { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }
-                        ]}>
-                          {tipoPlatoFiltro 
-                            ? `No hay platos disponibles en ${labelForTipo(tipoPlatoFiltro) || tipoPlatoFiltro}`
-                            : 'No hay platos disponibles'}
-                        </Text>
-                      ) : (
-                        platosFiltrados.map((plato) => {
-                          const cantidadEnComanda = platosEditados.find(
-                            p => (p.plato === plato._id || p.plato?.toString() === plato._id?.toString())
-                          )?.cantidad || 0;
-                          
-                          return (
-                            <TouchableOpacity
-                              key={plato._id}
-                              style={[
-                                styles.platoSelectItem,
-                                {
-                                  backgroundColor: themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB'),
-                                  borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
-                                }
-                              ]}
-                              onPress={() => handleAgregarPlato(plato)}
-                            >
-                              <View style={styles.platoSelectInfo}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                  <Text style={[
-                                    styles.platoSelectNombre,
-                                    { color: themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937') }
-                                  ]}>
-                                    {plato.nombre}
-                                  </Text>
-                                  {plato.complementos && plato.complementos.length > 0 && (
-                                    <View style={{
-                                      backgroundColor: '#00D4FF',
-                                      paddingHorizontal: 6,
-                                      paddingVertical: 2,
-                                      borderRadius: 8,
-                                    }}>
-                                      <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '600' }}>
-                                        🍽️
-                                      </Text>
-                                    </View>
-                                  )}
-                                </View>
-                                <Text style={[
-                                  styles.platoSelectPrecio,
-                                  { color: '#059669' }
-                                ]}>
-                                  S/. {plato.precio.toFixed(2)}
-                                </Text>
-                              </View>
-                              {cantidadEnComanda > 0 && (
-                                <View style={[
-                                  styles.cantidadBadge,
-                                  { backgroundColor: '#3B82F6' } // Azul intenso en ambos modos
-                                ]}>
-                                  <Text style={[styles.cantidadBadgeText, { color: '#FFFFFF' }]}>
-                                    x{cantidadEnComanda}
-                                  </Text>
-                                </View>
-                              )}
-                            </TouchableOpacity>
-                          );
-                        })
-                      )}
-                    </ScrollView>
-                  </>
-                )}
               </View>
               
               <View style={styles.editSection}>
@@ -3197,6 +3207,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 </Text>
               </TouchableOpacity>
             </View>
+            </>
+            )}
           </View>
         </View>
       </Modal>
@@ -3516,7 +3528,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         animationType="fade"
         onRequestClose={() => setModalDescuentoVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalOverlayCenter}>
           <View style={[styles.modalContainer, { backgroundColor: themeColors.colors?.surface || '#fff' }]}>
             <View style={[styles.modalHeader, { backgroundColor: '#8B5CF6' }]}>
               <MaterialCommunityIcons name="percent" size={24} color="#fff" />
@@ -3940,6 +3952,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginBottom: 8,
     marginTop: 4,
+    flexGrow: 0,
+    flexShrink: 0,
   },
   tipoServicioTipoMenu: {
     fontSize: 13,
@@ -4046,6 +4060,8 @@ const styles = StyleSheet.create({
   categoriasContainer: {
     marginBottom: 12,
     maxHeight: 50,
+    flexGrow: 0,
+    flexShrink: 0,
   },
   categoriaChip: {
     paddingHorizontal: 16,
@@ -4158,7 +4174,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   // Estilos para el modal de descuento
-  modalOverlay: {
+  modalOverlayCenter: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',

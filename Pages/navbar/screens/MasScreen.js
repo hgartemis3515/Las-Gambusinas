@@ -21,6 +21,7 @@ import { useTheme } from "../../../context/ThemeContext";
 import { useSocket } from "../../../context/SocketContext";
 import { themeLight } from "../../../constants/theme";
 import SettingsModal from "../../../Components/SettingsModal";
+import PersonalizarIconoOnlineModal from "../../../Components/PersonalizarIconoOnlineModal";
 import axios from "../../../config/axiosConfig";
 import { apiConfig } from "../../../apiConfig";
 import {
@@ -89,6 +90,7 @@ const MasScreen = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [vistaInicio, setVistaInicio] = useState("tarjetas");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [iconoOnlineOpen, setIconoOnlineOpen] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(true);
   const [profileSyncing, setProfileSyncing] = useState(false);
   const [serverOk, setServerOk] = useState(null);
@@ -295,6 +297,10 @@ const MasScreen = () => {
   return (
     <SafeAreaView style={styles.container} edges={[]}>
       <SettingsModal visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <PersonalizarIconoOnlineModal
+        visible={iconoOnlineOpen}
+        onClose={() => setIconoOnlineOpen(false)}
+      />
       <ScrollView style={styles.scrollView}>
         <View style={styles.header}>
           <TouchableOpacity
@@ -464,7 +470,24 @@ const MasScreen = () => {
             <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.light} />
           </TouchableOpacity>
 
-          {/* Notificaciones Push — navega a pantalla dedicada */}
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setIconoOnlineOpen(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuIconContainer, { backgroundColor: theme.colors.secondary + "20" }]}>
+              <MaterialCommunityIcons name="circle-slice-8" size={24} color={theme.colors.secondary} />
+            </View>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={styles.menuItemText}>Personalizar</Text>
+              <Text style={styles.pushHint}>Transparencia del icono ONLINE</Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.light} />
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => {

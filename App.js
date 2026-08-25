@@ -9,6 +9,7 @@ import {
 import { createStackNavigator } from '@react-navigation/stack';
 import { ThemeProvider } from './context/ThemeContext';
 import { SocketProvider } from './context/SocketContext';
+import { OnlineBadgeProvider } from './context/OnlineBadgeContext';
 import SplashScreen from './Pages/Splash/SplashScreen';
 import Login from './Pages/Login/Login';
 import Navbar from './Pages/navbar/navbar';
@@ -66,6 +67,7 @@ export default function App() {
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <ThemeProvider>
+          <OnlineBadgeProvider>
           <SocketProvider>
             <>
               <AlertaOverlayMozos />
@@ -127,6 +129,7 @@ export default function App() {
             </NavigationContainer>
             </>
           </SocketProvider>
+          </OnlineBadgeProvider>
         </ThemeProvider>
       </GestureHandlerRootView>
     </SafeAreaProvider>

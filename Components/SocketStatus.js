@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
+import { useOnlineBadge, DEFAULT_ONLINE_BADGE_OPACITY } from '../context/OnlineBadgeContext';
 
 /**
  * Componente OPTIMIZADO para mostrar el estado de conexión WebSocket
@@ -14,6 +15,8 @@ export default function SocketStatus({
   reconnectAttempts = 0 
 }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const { opacity } = useOnlineBadge();
+  const badgeOpacity = opacity ?? DEFAULT_ONLINE_BADGE_OPACITY;
 
   // FASE 4: Animación de pulso cuando está conectando o recibiendo actualizaciones
   useEffect(() => {
@@ -91,7 +94,7 @@ export default function SocketStatus({
   const status = getStatusConfig();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { opacity: badgeOpacity }]} pointerEvents="none">
       <Animated.View 
         style={[
           styles.indicatorContainer,
@@ -115,17 +118,17 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 50,
     right: 20,
-    zIndex: 9999, // Muy alto para estar siempre visible sobre todo
-    elevation: 9999, // Para Android
+    zIndex: 9999,
+    elevation: 9999,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.85)', // Más opaco para mejor visibilidad
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.15,
     shadowRadius: 4,
   },
   indicatorContainer: {
