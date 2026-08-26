@@ -54,6 +54,33 @@ export function obtenerPlatosElegiblesPPA(platos) {
  * @param {Array} todosLosPlatos - Todos los platos de la comanda (incluyendo eliminados)
  * @returns {Object} Reglas de habilitación
  */
+/** Plato ya cobrado por PPA (ticket pendiente o aprobado). */
+export function platoCobradoViaPPA(plato) {
+  if (!plato?.pagoAdelantado) return false;
+  if (plato.pagoAdelantado.cobrado === true) return true;
+  const et = plato.pagoAdelantado.estadoTicket;
+  return et === 'pendiente_aprobacion' || et === 'aprobado';
+}
+
+export function platoCerradoParaLiberar(plato) {
+  const e = (plato?.estado || '').toLowerCase();
+  return e === 'entregado' || e === 'pagado';
+}
+
+/**
+ * Tras entregar, se puede cerrar el ciclo PPA y liberar la mesa:
+ * - comanda 100% para llevar con todos entregados/pagados, o
+ * - todos los platos activos cobrados vía PPA y ya entregados/pagados.
+ */
+export function puedeLiberarMesaTrasPPA(todosLosPlatos) {
+  const activos = (todosLosPlatos || []).filter(p => !p.eliminado && !p.anulado);
+  if (activos.length === 0) return false;
+  if (!activos.every(platoCerradoParaLiberar)) return false;
+  const composicion = clasificarComandaPorTipoServicio(activos);
+  if (composicion === 'solo_para_llevar') return true;
+  return activos.every(platoCobradoViaPPA);
+}
+
 export function getReglasBotonesComandaDetalle(todosLosPlatos) {
   if (!todosLosPlatos || todosLosPlatos.length === 0) {
     return {

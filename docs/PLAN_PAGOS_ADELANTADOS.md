@@ -4,6 +4,7 @@
 **Fecha:** Junio 2026  
 **Alcance:** App Mozos (`gambusinas`), App Cocina (`appcocina`), Backend Las Gambusinas (`backend-gambusinas`)  
 **Documentación relacionada:**
+- [PLAN_VERIFICACION_PAGO_ADELANTADO.md](./PLAN_VERIFICACION_PAGO_ADELANTADO.md) — auditoría 26 ago 2026: qué estados de comanda/plato/mesa permiten PPA hoy
 - [PLAN_PARA_LLEVAR_PLATOS_GLM-5.2.md](./PLAN_PARA_LLEVAR_PLATOS_GLM-5.2.md) — campo `tipoServicio` por línea de plato
 - [PLAN_PAGOS_PARCIALES_Y_VOUCHERS_AGRUPADOS.md](./PLAN_PAGOS_PARCIALES_Y_VOUCHERS_AGRUPADOS.md) — flujo de `PagosScreen` y bouchers
 - [APP_MOZOS_DOCUMENTACION_COMPLETA.md](./APP_MOZOS_DOCUMENTACION_COMPLETA.md)

@@ -32,7 +32,7 @@ import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, filtrarComandasPorPedido, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
-import { clasificarComandaPorTipoServicio, obtenerPlatosElegiblesPPA, getReglasBotonesComandaDetalle, buildPlatosPayloadPPA } from '../helpers/pagoAdelantadoHelpers';
+import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA } from '../helpers/pagoAdelantadoHelpers';
 import { calcularSubtotalPlatosPagables } from '../utils/pagoParcialHelpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -787,15 +787,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     ? Math.max(0, subtotalPlatosReserva - abonoReservaMonto)
     : subtotalPlatosReserva;
   const puedeLiberarReserva = esReservaFlow && puedePagar && saldoReserva <= 0.009;
-  const puedePagarNormal = puedePagar && reglasPPA.composicion !== 'solo_para_llevar' && !puedeLiberarReserva;
-
-  // 🔥 PARA LLEVAR: Botón "Confirmar entrega".
-  // Solo se habilita para comandas 100% "para llevar" cuyos platos activos
-  // están TODOS en estado "entregado". Cierra la comanda y libera la mesa.
-  const platosActivosLlevar = todosLosPlatos.filter(p => !p.eliminado && !p.anulado);
-  const todosEntregadosLlevar = platosActivosLlevar.length > 0
-    && platosActivosLlevar.every(p => (p.estado || '').toLowerCase() === 'entregado');
-  const puedeConfirmarEntrega = reglasPPA.composicion === 'solo_para_llevar' && todosEntregadosLlevar;
+  const puedeConfirmarEntrega = puedeLiberarMesaTrasPPA(todosLosPlatos);
+  const puedePagarNormal = puedePagar && reglasPPA.composicion !== 'solo_para_llevar' && !puedeLiberarReserva && !puedeConfirmarEntrega;
   
   // SALIO: Condición para mostrar botón Entregar: hay platos en estado "salio"
   // (recoger ya no habilita la entrega; el mozo espera a que cocina confirme la salida)
@@ -2280,17 +2273,25 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               </TouchableOpacity>
             )}
 
-            {/* 🔥 PARA LLEVAR: Botón Confirmar entrega (comanda 100% para llevar con PPA aprobado) */}
+            {/* PPA / para llevar: cerrar ciclo y liberar mesa (ya cobrado por adelantado) */}
             {puedeConfirmarEntrega && (
               <TouchableOpacity
                 style={[
                   styles.actionButton,
-                  { backgroundColor: '#0EA5E9' }, // Celeste para confirmar entrega
+                  { backgroundColor: '#0EA5E9' },
+                  confirmandoEntrega && styles.actionButtonDisabled,
                 ]}
                 onPress={handleConfirmarEntrega}
+                disabled={confirmandoEntrega}
               >
-                <MaterialCommunityIcons name="package-variant-closed-check" size={20} color="#fff" />
-                <Text style={styles.actionButtonText}>Confirmar entrega</Text>
+                <MaterialCommunityIcons name="table-furniture" size={20} color="#fff" />
+                <Text style={styles.actionButtonText}>
+                  {confirmandoEntrega
+                    ? 'Liberando…'
+                    : reglasPPA.composicion === 'solo_para_llevar'
+                      ? 'Confirmar entrega'
+                      : 'Liberar mesa'}
+                </Text>
               </TouchableOpacity>
             )}
             

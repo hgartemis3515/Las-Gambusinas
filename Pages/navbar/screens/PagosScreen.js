@@ -2618,7 +2618,7 @@ const PagosScreen = () => {
         )}
 
         {/* Botón Registrar Propina: cuando hay boucher y la mesa está pagada o todos los platos están pagados */}
-        {(boucherData || boucherFromParams) && (mesa?.estado?.toLowerCase() === "pagado" || platosPagables.length === 0) && (
+        {(boucherData || boucherFromParams) && (['pagado', 'pendiente_aprobar'].includes(mesa?.estado?.toLowerCase()) || platosPagables.length === 0) && (
           <TouchableOpacity
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

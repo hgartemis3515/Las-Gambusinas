@@ -1,20 +1,20 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   View,
   Text,
-  Modal,
   StyleSheet,
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   ScrollView,
   Platform,
+  Pressable,
+  Keyboard,
+  BackHandler,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useWindowDimensions } from "react-native";
-import useKeyboardInset from "../hooks/useKeyboardInset";
 import axios from "axios";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../constants/colors";
@@ -49,13 +49,17 @@ const ModalClientes = ({
   const styles = useMemo(() => modalStyles(theme), [theme]);
   const { width } = useWindowDimensions();
   const escala = width < 390 ? 0.88 : 1;
-  const { inset, listMaxHeight } = useKeyboardInset({ mode: "modal", chrome: 240 });
   const scrollRef = useRef(null);
+  const overlayRef = useRef(null);
+  const [overlayH, setOverlayH] = useState(0);
+  const [headerH, setHeaderH] = useState(64);
+  const [footerH, setFooterH] = useState(92);
+  const [kbPad, setKbPad] = useState(0);
 
   const revelarCampo = () => {
     setTimeout(() => {
       scrollRef.current?.scrollToEnd({ animated: true });
-    }, 280);
+    }, 80);
   };
 
   // Estado de cliente (original)
@@ -237,21 +241,68 @@ const ModalClientes = ({
     }
   };
 
+  useEffect(() => {
+    if (!visible) {
+      setKbPad(0);
+      return undefined;
+    }
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const subShow = Keyboard.addListener(showEvt, (e) => {
+      const kbY = e?.endCoordinates?.screenY;
+      const applyPad = (overlap) => {
+        setKbPad(overlap);
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
+      };
+      if (typeof kbY !== "number") {
+        applyPad(e?.endCoordinates?.height ?? 0);
+        return;
+      }
+      overlayRef.current?.measureInWindow((x, y, w, h) => {
+        applyPad(Math.max(0, y + h - kbY));
+      });
+    });
+    const subHide = Keyboard.addListener(hideEvt, () => setKbPad(0));
+    const back = BackHandler.addEventListener("hardwareBackPress", () => {
+      setDni("");
+      setNombre("");
+      setTelefono("");
+      setEsInvitado(true);
+      resetEstadoPago();
+      onClose && onClose();
+      return true;
+    });
+    return () => {
+      subShow.remove();
+      subHide.remove();
+      back.remove();
+    };
+  }, [visible, onClose]);
+
+  if (!visible) return null;
+
+  const scrollMax = Math.max(
+    160,
+    (overlayH > 0 ? overlayH * 0.92 : 520) - headerH - footerH
+  );
+
   return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={handleCancelar}
+    <View
+      ref={overlayRef}
+      collapsable={false}
+      style={[styles.overlay, kbPad > 0 && { paddingBottom: kbPad }]}
+      pointerEvents="auto"
     >
-      <View style={styles.modalOverlay}>
-        <KeyboardAvoidingView
-          style={styles.modalOverlayContent}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          enabled={Platform.OS === "ios"}
-        >
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
+      <View
+        style={styles.sheetAnchor}
+        onLayout={(e) => setOverlayH(e.nativeEvent.layout.height)}
+      >
+        <Pressable style={styles.backdrop} onPress={handleCancelar} />
+        <View style={[styles.sheet, overlayH > 0 && { maxHeight: overlayH * 0.92 }]}>
+            <View
+              style={styles.modalHeader}
+              onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}
+            >
               <Text style={styles.modalTitle}>Información del pago</Text>
               <TouchableOpacity onPress={handleCancelar} style={styles.closeButton}>
                 <MaterialCommunityIcons name="close" size={24} color="#333333" />
@@ -260,14 +311,10 @@ const ModalClientes = ({
 
             <ScrollView
               ref={scrollRef}
-              style={[styles.modalScrollView, { maxHeight: listMaxHeight }]}
-              contentContainerStyle={[
-                styles.modalScrollContent,
-                inset > 0 && { paddingBottom: inset + 16 },
-              ]}
+              style={[styles.modalScrollView, { maxHeight: scrollMax }]}
+              contentContainerStyle={styles.modalScrollContent}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
-              automaticallyAdjustKeyboardInsets
               nestedScrollEnabled
               showsVerticalScrollIndicator={true}
             >
@@ -517,7 +564,10 @@ const ModalClientes = ({
               </View>
             </ScrollView>
 
-            <View style={[styles.modalFooter, { flexDirection: 'row', gap: 12 * escala, justifyContent: 'space-evenly' }]}>
+            <View
+              style={[styles.modalFooter, { flexDirection: 'row', gap: 12 * escala, justifyContent: 'space-evenly' }]}
+              onLayout={(e) => setFooterH(e.nativeEvent.layout.height)}
+            >
               <TouchableOpacity
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -567,34 +617,36 @@ const ModalClientes = ({
               </TouchableOpacity>
             </View>
           </View>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
+        </View>
+    </View>
   );
 };
 
 const modalStyles = (theme) => StyleSheet.create({
-  modalOverlay: {
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 999,
+    elevation: 24,
+  },
+  sheetAnchor: {
     flex: 1,
+    justifyContent: "flex-end",
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
   },
-  modalOverlayContent: {
-    width: "100%",
-    maxWidth: 500,
-    maxHeight: "95%",
-  },
-  modalContent: {
+  sheet: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 15,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     width: "100%",
+    overflow: "visible",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
-    elevation: 5,
+    elevation: 8,
   },
   modalHeader: {
     flexDirection: "row",
@@ -614,10 +666,11 @@ const modalStyles = (theme) => StyleSheet.create({
     padding: 5,
   },
   modalScrollView: {
-    maxHeight: 500,
+    flexGrow: 0,
+    flexShrink: 1,
   },
   modalScrollContent: {
-    paddingBottom: 10,
+    paddingBottom: 24,
   },
   modalBody: {
     padding: 20,
@@ -836,12 +889,11 @@ const modalStyles = (theme) => StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 48,
-    paddingVertical: Platform.OS === "android" ? 10 : 12,
-    paddingHorizontal: 4,
+    height: 48,
     fontSize: 16,
-    lineHeight: 22,
     color: "#333333",
+    paddingVertical: 0,
+    paddingHorizontal: 4,
     includeFontPadding: false,
     textAlignVertical: "center",
   },
