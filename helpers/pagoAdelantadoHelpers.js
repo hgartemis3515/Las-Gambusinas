@@ -78,7 +78,9 @@ export function puedeLiberarMesaTrasPPA(todosLosPlatos) {
   if (!activos.every(platoCerradoParaLiberar)) return false;
   const composicion = clasificarComandaPorTipoServicio(activos);
   if (composicion === 'solo_para_llevar') return true;
-  return activos.every(platoCobradoViaPPA);
+  if (activos.every(platoCobradoViaPPA)) return true;
+  // Visita 100% cobrada por PPA aunque algún subdoc haya perdido el flag
+  return activos.some(platoCobradoViaPPA) && activos.every(platoCerradoParaLiberar);
 }
 
 export function getReglasBotonesComandaDetalle(todosLosPlatos) {

@@ -29,7 +29,7 @@ import { useSocket } from '../context/SocketContext';
 import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
-import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, filtrarComandasPorPedido, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../utils/comandaHelpers';
+import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, filtrarComandasPorPedido, acotarComandasAlCicloActual, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
 import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA } from '../helpers/pagoAdelantadoHelpers';
@@ -126,7 +126,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [localConnectionStatus, setLocalConnectionStatus] = React.useState(connectionStatus || 'desconectado');
   
   // Estados
-  const [comandas, setComandasState] = useState(comandasIniciales || []);
+  const [comandas, setComandasState] = useState(() => acotarComandasAlCicloActual(comandasIniciales || []));
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
@@ -339,11 +339,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             if (pedidoIdCiclo) {
               lista = filtrarComandasPorPedido(lista, pedidoIdCiclo);
             }
-            // PLAN_PLANTILLA_COMANDAS: el backend ya filtra los platos relevantes en
-            // /mesa/:id/pagadas (mapComandasSoloPlatosPagados incluye pedido|pendiente|entregado...).
-            // NO aplicar filtrarSoloPlatosPagados aquí: descartaría platos en 'pedido' que
-            // acabamos de aprobar en cocina y el mozo debe verlos como "cobrado".
-            comandasMesa = lista;
+            comandasMesa = acotarComandasAlCicloActual(lista);
           }
         } catch (e) {
           if (__DEV__) console.warn('[ComandaDetalle] /mesa/pagadas:', e?.message);
@@ -351,29 +347,22 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       }
 
       if (comandasMesa.length === 0) {
-        // PLAN_PLANTILLA_COMANDAS: en mesa pagado/pendiente_aprobar, SOLO usar /pagadas.
-        // NO caer en fallback /activas ni /fecha/hoy — esos traen comandas de visitas
-        // anteriores que ya fueron cerradas (IsActive=false, status=completado) y que
-        // no pertenecen al ciclo actual, mostrando "platos antiguos" al mozo.
         if (mesaEstado !== 'pagado' && mesaEstado !== 'pagando' && mesaEstado !== 'pendiente_aprobar') {
           if (mesaIdRef) {
             try {
               const activasURL = `${comandaBase}/mesa/${mesaIdRef}/activas`;
               const resActivas = await axios.get(activasURL, { timeout: 10000 });
               if (resActivas.data?.success && Array.isArray(resActivas.data.comandas)) {
-                comandasMesa = resActivas.data.comandas;
+                pedidoIdCiclo = resActivas.data.pedidoId || pedidoIdCiclo;
+                let lista = resActivas.data.comandas;
+                if (pedidoIdCiclo) {
+                  lista = filtrarComandasPorPedido(lista, pedidoIdCiclo);
+                }
+                comandasMesa = acotarComandasAlCicloActual(lista);
               }
             } catch (e) {
-              if (__DEV__) console.warn('[ComandaDetalle] /mesa/activas falló, se intentará por fecha:', e?.message);
+              if (__DEV__) console.warn('[ComandaDetalle] /mesa/activas falló:', e?.message);
             }
-          }
-
-          if (comandasMesa.length === 0) {
-            const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-            const comandasURL = `${comandaBase}/fecha/${currentDate}`;
-            const response = await axios.get(comandasURL, { timeout: 10000 });
-            const todasLasComandas = response.data || [];
-            comandasMesa = todasLasComandas.filter(comandaPerteneceAMesa);
           }
         }
       }
@@ -394,9 +383,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       }
 
       let comandasFinales =
-        mesaEstado === 'pagado' || mesaEstado === 'pagando'
-          ? comandasMesa
-          : filtrarComandasActivas(comandasMesa);
+        mesaEstado === 'pagado' || mesaEstado === 'pagando' || mesaEstado === 'pendiente_aprobar'
+          ? acotarComandasAlCicloActual(comandasMesa)
+          : acotarComandasAlCicloActual(filtrarComandasActivas(comandasMesa));
 
       if ((filterByCliente || clienteId) && comandasFinales.length > 0 && clienteId) {
         const idStr = typeof clienteId === 'string' ? clienteId : clienteId?.toString?.() || '';
@@ -420,7 +409,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     } finally {
       setRefreshing(false);
     }
-  }, [mesaIdRef, mesaNumRef, comandaPerteneceAMesa, filterByCliente, clienteId, mesa?.estado, reservaEfectiva?.comandaGenerada, reserva?.comandaGenerada]);
+  }, [mesaIdRef, mesaNumRef, filterByCliente, clienteId, mesa?.estado, reservaEfectiva?.comandaGenerada, reserva?.comandaGenerada]);
 
   // Marcar plato como entregado
   const handleMarcarPlatoEntregado = async (platoObj) => {
@@ -1823,7 +1812,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }
     Alert.alert(
       'Confirmar entrega',
-      '¿Confirmas que el pedido para llevar fue entregado al cliente? La mesa quedará libre para nuevos pedidos.',
+      '¿Confirmas que entregaste el pedido ya cobrado por adelantado? La mesa quedará libre.',
       [
         { text: 'Cancelar', style: 'cancel' },
         {

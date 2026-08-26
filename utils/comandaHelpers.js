@@ -23,13 +23,20 @@ export const esComandaActiva = (comanda) => {
   if (comanda.eliminado === true || comanda.eliminada === true) return false;
   if (comanda.fechaEliminacion) return false;
 
-  // Comanda con boucher asociado (si el backend expone el campo)
-  const boucherId = comanda.boucherId ?? comanda.boucher;
-  if (boucherId != null && boucherId !== '') return false;
-
-  // Estado de comanda indica cierre de ciclo
   const status = (comanda.status || '').toString().toLowerCase().trim();
   if (ESTADOS_COMANDA_CERRADA.some((e) => status === e)) return false;
+
+  // PPA: el boucher del adelanto no cierra el ciclo (platos siguen en cocina/entrega).
+  const tienePPAVigente = (comanda.platos || []).some((p) => {
+    if (!p?.pagoAdelantado) return false;
+    if (p.pagoAdelantado.cobrado === true) return true;
+    const et = p.pagoAdelantado.estadoTicket;
+    return et === 'pendiente_aprobacion' || et === 'aprobado';
+  });
+  if (!tienePPAVigente) {
+    const boucherId = comanda.boucherId ?? comanda.boucher;
+    if (boucherId != null && boucherId !== '') return false;
+  }
 
   // Defensivo: comanda muy antigua sin estado claro (opcional, evita comandas huérfanas)
   const createdAt = comanda.createdAt ? new Date(comanda.createdAt).getTime() : 0;
@@ -59,7 +66,7 @@ export const filtrarComandasPorPedido = (comandas, pedidoId) => {
   const pid = String(pedidoId);
   return comandas.filter((c) => {
     const p = c.pedido?._id ?? c.pedido;
-    return p == null || String(p) === pid;
+    return p != null && String(p) === pid;
   });
 };
 
@@ -72,6 +79,42 @@ export const filtrarComandasPorIds = (comandas, comandaIds) => {
     const id = c?._id?.toString?.() || c?._id;
     return id && set.has(String(id));
   });
+};
+
+const MS_HORA = 60 * 60 * 1000;
+
+/**
+ * Deja solo las comandas de la visita actual: pedido de la comanda más reciente.
+ * Si ese pedido agrupa visitas de más de 8h (pedido reutilizado), recorta a 4h.
+ */
+export const acotarComandasAlCicloActual = (comandas) => {
+  if (!Array.isArray(comandas) || comandas.length <= 1) return comandas || [];
+  const meta = comandas.map((c) => ({
+    c,
+    t: new Date(c.createdAt || c.tiempoPagado || 0).getTime() || 0,
+    pedido: String(c.pedido?._id ?? c.pedido ?? ''),
+  }));
+  const newest = meta.reduce((a, b) => (a.t >= b.t ? a : b));
+  let pool = newest.pedido
+    ? meta.filter((x) => x.pedido === newest.pedido)
+    : meta;
+  if (!pool.length) pool = meta;
+  const maxT = Math.max(...pool.map((x) => x.t));
+  const minT = Math.min(...pool.map((x) => x.t));
+  if (maxT - minT > 8 * MS_HORA) {
+    pool = pool.filter((x) => maxT - x.t <= 4 * MS_HORA);
+  }
+  const result = pool.map((x) => x.c);
+  const tienePPA = (c) => (c.platos || []).some((p) => {
+    if (!p?.pagoAdelantado) return false;
+    if (p.pagoAdelantado.cobrado === true) return true;
+    const et = p.pagoAdelantado.estadoTicket;
+    return et === 'pendiente_aprobacion' || et === 'aprobado';
+  });
+  const conPPA = result.filter(tienePPA);
+  if (!conPPA.length) return result;
+  const minPPA = Math.min(...conPPA.map((c) => new Date(c.createdAt || 0).getTime() || 0));
+  return result.filter((c) => tienePPA(c) || (new Date(c.createdAt || 0).getTime() || 0) >= minPPA - 5000);
 };
 
 /** Solo platos pagados (para Ver pedido en mesa pagada). */

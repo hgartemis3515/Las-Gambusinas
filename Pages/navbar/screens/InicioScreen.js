@@ -46,7 +46,7 @@ import { MotiPressable } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { slideInRightDelay, springConfig } from "../../../constants/animations";
 import { LinearGradient } from 'expo-linear-gradient';
-import { filtrarComandasActivas, comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../../../utils/comandaHelpers';
+import { filtrarComandasActivas, filtrarComandasPorPedido, acotarComandasAlCicloActual, comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../../../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
@@ -1669,6 +1669,26 @@ const InicioScreen = () => {
     }
   }, []);
 
+  const fetchComandasCicloMesa = useCallback(async (mesa) => {
+    if (!mesa?._id) return [];
+    try {
+      const st = (mesa.estado || '').toLowerCase();
+      const comandaBase = apiConfig.isConfigured
+        ? apiConfig.getEndpoint('/comanda')
+        : COMANDASEARCH_API_GET;
+      const esPagadas = st === 'pagado' || st === 'pagando' || st === 'pendiente_aprobar';
+      const url = `${comandaBase}/mesa/${mesa._id}/${esPagadas ? 'pagadas' : 'activas'}`;
+      const res = await axios.get(url, { timeout: 10000 });
+      let lista = res.data?.comandas || [];
+      const pedidoId = res.data?.pedidoId || null;
+      if (pedidoId) lista = filtrarComandasPorPedido(lista, pedidoId);
+      return acotarComandasAlCicloActual(lista);
+    } catch (error) {
+      console.error(`❌ Error obteniendo ciclo de mesa ${mesa.nummesa}:`, error.message);
+      return [];
+    }
+  }, []);
+
   // Cargar reservas activas para mostrar mozo en mesas reservadas
   const obtenerReservasActivas = useCallback(async () => {
     try {
@@ -2285,70 +2305,48 @@ const InicioScreen = () => {
         );
       }
     } else if (estado === "Pedido" || estado?.toLowerCase() === "pedido") {
-      const comandasMesa = getComandasPorMesa(mesa.nummesa);
-      const comandasActivas = comandasMesa.filter(c => 
-        c.status?.toLowerCase() !== "pagado" && 
-        c.status?.toLowerCase() !== "completado"
-      );
-      
-      const comandaActiva = comandasActivas[0] || comandasMesa[0];
-
-      if (comandaActiva) {
-        const mozoComandaId = comandaActiva.mozos?._id || comandaActiva.mozos;
-        const mozoActualId = userInfo?._id;
-        
-        if (mozoComandaId && mozoActualId && mozoComandaId.toString() !== mozoActualId.toString()) {
-          Alert.alert(
-            "Acceso Denegado",
-            "Solo el mozo que creó esta comanda puede editarla.",
-            [{ text: "OK" }]
-          );
-          return;
-        }
-
-        // Navegar al nuevo screen de detalle de comanda
-        // Nota: useFocusEffect ya refresca datos al volver a esta pantalla
-        navigation.navigate('ComandaDetalle', {
-          mesa: mesa,
-          comandas: comandasActivas.length > 0 ? comandasActivas : [comandaActiva]
-        });
-      } else {
-        // 🔥 FIX: No hay comandas locales pero la mesa está en estado "pedido" - buscar en backend
-        console.log(`⚠️ [DESYNC] Mesa ${mesa.nummesa} en estado "pedido" sin comandas locales - Buscando en backend...`);
-        
-        const comandasBackend = await obtenerComandasMesa(mesa._id);
-        
-        if (comandasBackend && comandasBackend.length > 0) {
-          // Verificar permisos con las comandas obtenidas
-          const mozoComandaId = comandasBackend[0].mozos?._id || comandasBackend[0].mozos;
-          const mozoActualId = userInfo?._id;
-          
-          if (mozoComandaId && mozoActualId && mozoComandaId.toString() !== mozoActualId.toString()) {
-            Alert.alert(
-              "Acceso Denegado",
-              "Solo el mozo que creó esta comanda puede editarla.",
-              [{ text: "OK" }]
-            );
-            return;
-          }
-          
-          // Navegar con las comandas obtenidas
-          navigation.navigate('ComandaDetalle', {
-            mesa: mesa,
-            comandas: comandasBackend
-          });
-        } else {
-          Alert.alert(
-            "Sin Comandas",
-            `La mesa ${mesa.nummesa} está marcada como "Pedido" pero no tiene comandas activas. Contacta al administrador para corregir el estado de la mesa.`,
-            [{ text: "OK" }]
-          );
-        }
+      let comandasActivas = await fetchComandasCicloMesa(mesa);
+      if (!comandasActivas.length) {
+        comandasActivas = acotarComandasAlCicloActual(
+          getComandasPorMesa(mesa.nummesa).filter((c) => {
+            const st = c.status?.toLowerCase();
+            return st !== 'pagado' && st !== 'completado';
+          })
+        );
       }
+
+      const comandaActiva = comandasActivas[0];
+      if (!comandaActiva) {
+        Alert.alert(
+          "Sin Comandas",
+          `La mesa ${mesa.nummesa} está marcada como "Pedido" pero no tiene comandas activas. Contacta al administrador para corregir el estado de la mesa.`,
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
+      const mozoComandaId = comandaActiva.mozos?._id || comandaActiva.mozos;
+      const mozoActualId = userInfo?._id;
+      if (mozoComandaId && mozoActualId && mozoComandaId.toString() !== mozoActualId.toString()) {
+        Alert.alert(
+          "Acceso Denegado",
+          "Solo el mozo que creó esta comanda puede editarla.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
+      navigation.navigate('ComandaDetalle', {
+        mesa: mesa,
+        comandas: comandasActivas,
+      });
     } else if (estado === "Preparado" || estado === "Entregado" || estado?.toLowerCase() === "preparado" || estado?.toLowerCase() === "entregado") {
       // Obtener TODAS las comandas activas de la mesa (no solo las preparadas)
       // Nota: "Entregado" se trata igual que "Preparado" — el mozo puede ver platos y pagar.
-      const comandasMesa = getComandasPorMesa(mesa.nummesa);
+      let comandasMesa = await fetchComandasCicloMesa(mesa);
+      if (!comandasMesa.length) {
+        comandasMesa = acotarComandasAlCicloActual(getComandasPorMesa(mesa.nummesa));
+      }
       
       // Ordenar comandas por fecha de creación (más recientes primero)
       const comandasOrdenadas = [...comandasMesa].sort((a, b) => {
@@ -2463,10 +2461,15 @@ const InicioScreen = () => {
           },
           {
             text: "Ver Pedido",
-            onPress: () => {
+            onPress: async () => {
+              const cmds = await fetchComandasCicloMesa(mesa);
+              if (!cmds.length) {
+                Alert.alert("Sin comandas", "No se encontraron comandas de esta visita.");
+                return;
+              }
               navigation.navigate("ComandaDetalle", {
                 mesa,
-                comandas: comandasActivas,
+                comandas: cmds,
                 origen: "PagoAdelantado",
               });
             }
@@ -2529,11 +2532,7 @@ const InicioScreen = () => {
             text: "📋 Ver pedido",
             onPress: async () => {
               try {
-                const comandaBase = apiConfig.isConfigured
-                  ? apiConfig.getEndpoint('/comanda')
-                  : COMANDASEARCH_API_GET;
-                const res = await axios.get(`${comandaBase}/mesa/${mesa._id}/pagadas`, { timeout: 10000 });
-                const comandasPagadasApi = res.data?.comandas || [];
+                const comandasPagadasApi = await fetchComandasCicloMesa({ ...mesa, estado: 'pagado' });
                 if (comandasPagadasApi.length === 0) {
                   Alert.alert("Sin comandas", "No se encontraron comandas pagadas para esta mesa.");
                   return;
@@ -2576,13 +2575,15 @@ const InicioScreen = () => {
       const pendienteAprobacionButtons = [
         {
           text: "📋 Ver pedido",
-          onPress: () => {
-            const comandasMesa = getComandasPorMesa(mesa.nummesa);
+          onPress: async () => {
+            const comandasMesa = await fetchComandasCicloMesa(mesa);
             if (comandasMesa.length > 0) {
               navigation.navigate('ComandaDetalle', {
                 mesa,
                 comandas: comandasMesa,
               });
+            } else {
+              Alert.alert("Sin comandas", "No se encontraron comandas de esta visita.");
             }
           }
         },
