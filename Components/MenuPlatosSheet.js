@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
+  useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -26,6 +27,25 @@ function iconForTipo(slug) {
   if (slug === 'platos-almuerzo') return 'food-apple';
   if (slug === 'platos-bar') return 'glass-cocktail';
   return null;
+}
+
+function layoutTipoMenu(usableWidth, count) {
+  const n = Math.max(1, count);
+  const usable = Math.max(180, usableWidth);
+  let cols = 2;
+  if (n === 1 || usable < 300) cols = 1;
+  else if (usable >= 540 && n >= 3) cols = Math.min(3, n);
+  else cols = Math.min(2, n);
+  const gap = usable < 340 ? 8 : 10;
+  const cardW = (usable - gap * (cols - 1)) / cols;
+  return {
+    cols,
+    gap,
+    cardW,
+    iconSize: Math.round(Math.min(40, Math.max(22, cardW * 0.22))),
+    fontSize: Math.round(Math.min(15, Math.max(11, cardW * 0.11))),
+    minH: Math.round(Math.min(120, Math.max(72, cardW * 0.7))),
+  };
 }
 
 function categoriaIcon(categoria) {
@@ -68,9 +88,24 @@ export default function MenuPlatosSheet({
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const styles = makeStyles(theme);
+  const { width: winW } = useWindowDimensions();
+  const [gridW, setGridW] = useState(0);
 
   const [overlayH, setOverlayH] = useState(0);
   const [chromeH, setChromeH] = useState(0);
+
+  const tiposMostrados = tiposPlatoCatalogo.length > 0
+    ? tiposPlatoCatalogo
+    : [
+        { slug: 'platos-desayuno', nombreCorto: 'DESAYUNO' },
+        { slug: 'plato-carta normal', nombreCorto: 'CARTA' },
+      ];
+  const tipoLayout = layoutTipoMenu(gridW > 0 ? gridW : winW - 64, tiposMostrados.length);
+
+  const onGridLayout = useCallback((e) => {
+    const w = e.nativeEvent.layout.width;
+    if (w > 0 && Math.abs(w - gridW) > 1) setGridW(w);
+  }, [gridW]);
 
   const listH = chromeH > 0
     ? Math.max(MIN_LIST, overlayH * 0.9 - chromeH)
@@ -159,31 +194,42 @@ export default function MenuPlatosSheet({
               {!tipoPlatoFiltro ? (
                 <View style={styles.tipoSelectorContainer}>
                   <Text style={styles.tipoSelectorTitle}>Selecciona el tipo de menú</Text>
-                  <View style={styles.tipoButtonsContainer}>
-                    {tiposPlatoCatalogo.length > 0 ? (
-                      tiposPlatoCatalogo.map((t) => (
-                        <TouchableOpacity key={t.slug} style={styles.tipoButton} onPress={() => onSelectTipo(t.slug)}>
-                          <MaterialCommunityIcons
-                            name={iconForTipo(t.slug) || 'silverware-fork-knife'}
-                            size={48}
-                            color={theme.colors.text.white}
-                          />
-                          <Text style={styles.tipoButtonText}>{(t.nombreCorto || t.nombre || '').toUpperCase()}</Text>
-                        </TouchableOpacity>
-                      ))
-                    ) : (
-                      <>
-                        <TouchableOpacity style={styles.tipoButton} onPress={() => onSelectTipo('platos-desayuno')}>
-                          <MaterialCommunityIcons name="coffee" size={48} color={theme.colors.text.white} />
-                          <Text style={styles.tipoButtonText}>DESAYUNO</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.tipoButton} onPress={() => onSelectTipo('plato-carta normal')}>
-                          <MaterialCommunityIcons name="silverware-fork-knife" size={48} color={theme.colors.text.white} />
-                          <Text style={styles.tipoButtonText}>CARTA</Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </View>
+                  <ScrollView
+                    style={{ maxHeight: overlayH > 0 ? Math.max(180, overlayH * 0.52) : 280 }}
+                    contentContainerStyle={[styles.tipoButtonsContainer, { gap: tipoLayout.gap }]}
+                    onLayout={onGridLayout}
+                    nestedScrollEnabled
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {tiposMostrados.map((t) => (
+                      <TouchableOpacity
+                        key={t.slug}
+                        style={[
+                          styles.tipoButton,
+                          {
+                            width: tipoLayout.cardW,
+                            minHeight: tipoLayout.minH,
+                          },
+                        ]}
+                        onPress={() => onSelectTipo(t.slug)}
+                      >
+                        <MaterialCommunityIcons
+                          name={iconForTipo(t.slug) || 'silverware-fork-knife'}
+                          size={tipoLayout.iconSize}
+                          color={theme.colors.text.white}
+                        />
+                        <Text
+                          style={[styles.tipoButtonText, { fontSize: tipoLayout.fontSize }]}
+                          numberOfLines={2}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.65}
+                        >
+                          {(t.nombreCorto || t.nombre || '').toUpperCase()}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
                 </View>
               ) : (
                 <>
@@ -429,36 +475,39 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 12,
   },
   tipoSelectorContainer: {
-    padding: theme.spacing.xl,
-    alignItems: 'center',
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: 0,
+    alignItems: 'stretch',
+    width: '100%',
   },
   tipoSelectorTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
-    marginBottom: theme.spacing.xl,
+    marginBottom: theme.spacing.md,
     color: theme.colors.text.primary,
     textAlign: 'center',
   },
   tipoButtonsContainer: {
     flexDirection: 'row',
-    gap: theme.spacing.lg,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     width: '100%',
   },
   tipoButton: {
-    flex: 1,
     backgroundColor: theme.colors.primary,
-    padding: theme.spacing.xl,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.sm,
     borderRadius: theme.borderRadius.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 150,
     ...theme.shadows.medium,
   },
   tipoButtonText: {
     color: theme.colors.text.white,
-    fontSize: 16,
     fontWeight: '700',
-    marginTop: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
+    textAlign: 'center',
+    width: '100%',
   },
   changeTipoButton: {
     flexDirection: 'row',
