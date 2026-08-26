@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import moment from 'moment-timezone';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { notifyPlatoListoLocal } from '../services/pushNotifications';
 
 // Componentes
 import BadgeEstadoPlato from '../Components/BadgeEstadoPlato';
@@ -529,6 +530,16 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       });
       
       if (comandaIndex === -1 && !esNuestraMesa) return;
+
+      if (data.nuevoEstado === 'recoger') {
+        const comandaLocal = comandaIndex !== -1 ? comandasActuales[comandaIndex] : null;
+        notifyPlatoListoLocal({
+          ...data,
+          comandaNumber: data.comandaNumber ?? comandaLocal?.comandaNumber,
+          comanda: data.comanda || comandaLocal,
+          mesaNumero: data.mesaNumero ?? mesa?.nummesa ?? mesa?.numero,
+        });
+      }
 
       if (comandaIndex !== -1 && data.platoId && data.nuevoEstado) {
         setComandasState(prev => {

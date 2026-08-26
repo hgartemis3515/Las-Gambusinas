@@ -84,8 +84,8 @@ export async function setPushVibracionEnabled(enabled) {
 }
 
 const CHANNEL_DEFAULT = 'default';
-const CHANNEL_PLATO_LISTO = 'plato-listo';
-const CHANNEL_PLATO_SALIO = 'plato-salio';
+const CHANNEL_PLATO_LISTO = 'plato-listo-heads-up';
+const CHANNEL_PLATO_SALIO = 'plato-salio-heads-up';
 
 const isExpoGo = Constants.appOwnership === 'expo';
 
@@ -127,16 +127,16 @@ export function isComandaListaEnCocina(comanda) {
 const recentLocalPush = new Map();
 const LOCAL_DEDUPE_MS = 10000;
 
-/** Con token Expo registrado, la push remota del backend basta (evita duplicado) */
+/** Siempre local: Honor/Huawei a menudo no entrega FCM; el socket cubre primer plano y segundo plano con JS vivo. */
 export async function shouldUseLocalPlatoListoPush() {
-  if (isExpoGo) return true;
-  const token = await AsyncStorage.getItem(PUSH_TOKEN_KEY);
-  return !token;
+  return true;
 }
 
-export function buildPlatoListoMessage(nombrePlato, mesaNumero) {
+export function buildPlatoListoMessage(nombrePlato, mesaNumero, comandaNumber) {
   const nombre = nombrePlato || 'Un plato';
   const mesa = mesaNumero != null && mesaNumero !== '' ? mesaNumero : '?';
+  const num = comandaNumber != null && comandaNumber !== '' ? `#${comandaNumber}` : null;
+  if (num) return `${nombre} listo para recoger. Comanda ${num}. Mesa ${mesa}`;
   return `${nombre} listo para recoger. Mesa ${mesa}`;
 }
 
@@ -156,28 +156,25 @@ function findNombrePlatoEnComanda(comanda, platoId) {
  * Único punto de notificación local por plato listo (Expo Go / sin token remoto).
  */
 export async function notifyPlatoListoLocal(data) {
-  if (!(await shouldUseLocalPlatoListoPush())) return;
-
   const ok = await shouldNotifyMozoAsignado({ comanda: data.comanda, mozoId: data.mozoId });
   if (!ok) return;
 
   const comandaId = data.comandaId?.toString?.() || data.comandaId;
   const platoId = data.platoId?.toString?.() || data.platoId;
-  const key = `plato-${comandaId}-${platoId}`;
-  const now = Date.now();
-  if (recentLocalPush.get(key) && now - recentLocalPush.get(key) < LOCAL_DEDUPE_MS) return;
-  recentLocalPush.set(key, now);
 
   const mesaNumero =
     data.mesaNumero ?? data.comanda?.mesas?.nummesa ?? data.comanda?.mesas?.numero ?? null;
+  const comandaNumber =
+    data.comandaNumber ?? data.comanda?.comandaNumber ?? null;
   const nombrePlato =
     data.platoNombre ||
     findNombrePlatoEnComanda(data.comanda, platoId) ||
     'Un plato';
 
+  const title = comandaNumber != null ? `🍽️ Plato listo · #${comandaNumber}` : '🍽️ Plato Listo';
   await showLocalPush(
-    '🍽️ Plato Listo',
-    buildPlatoListoMessage(nombrePlato, mesaNumero),
+    title,
+    buildPlatoListoMessage(nombrePlato, mesaNumero, comandaNumber),
     {
       mesaId: data.mesaId,
       mesaNumero,
@@ -186,6 +183,7 @@ export async function notifyPlatoListoLocal(data) {
       platoNombre: nombrePlato,
       type: 'plato-listo',
       comandaId,
+      comandaNumber,
     },
     CHANNEL_PLATO_LISTO,
     'plato',
@@ -205,9 +203,6 @@ export function buildPlatoSalioMessage(nombrePlato, mesaNumero) {
  * Diferenciado del "plato listo": indica al mozo que ya puede entregar al comensal.
  */
 export async function notifyPlatoSalioLocal(data) {
-  if (!(await shouldUseLocalPlatoListoPush())) return;
-
-  // Respetar preferencia específica de "salió de cocina"
   if (!(await getPushPlatoSalioEnabled())) return;
 
   const ok = await shouldNotifyMozoAsignado({ comanda: data.comanda, mozoId: data.mozoId });
@@ -215,10 +210,6 @@ export async function notifyPlatoSalioLocal(data) {
 
   const comandaId = data.comandaId?.toString?.() || data.comandaId;
   const platoId = data.platoId?.toString?.() || data.platoId;
-  const key = `plato-salio-${comandaId}-${platoId}`;
-  const now = Date.now();
-  if (recentLocalPush.get(key) && now - recentLocalPush.get(key) < LOCAL_DEDUPE_MS) return;
-  recentLocalPush.set(key, now);
 
   const mesaNumero =
     data.mesaNumero ?? data.comanda?.mesas?.nummesa ?? data.comanda?.mesas?.numero ?? null;
@@ -240,7 +231,7 @@ export async function notifyPlatoSalioLocal(data) {
       comandaId,
     },
     CHANNEL_PLATO_SALIO,
-    'plato',
+    'plato-salio',
     { comanda: data.comanda, mozoId: data.mozoId }
   );
 }
@@ -261,20 +252,25 @@ export function configureNotificationBehavior() {
 async function ensureAndroidChannels() {
   if (Platform.OS !== 'android') return;
   try {
+    const channelOpts = {
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      enableVibrate: true,
+      sound: 'default',
+      showBadge: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility?.PUBLIC,
+    };
     await Notifications.setNotificationChannelAsync(CHANNEL_DEFAULT, {
       name: 'General',
-      importance: Notifications.AndroidImportance.DEFAULT,
+      ...channelOpts,
     });
     await Notifications.setNotificationChannelAsync(CHANNEL_PLATO_LISTO, {
       name: 'Platos listos',
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 250, 250, 250],
+      ...channelOpts,
     });
-    // SALIO: canal dedicado para "plato salió de cocina"
     await Notifications.setNotificationChannelAsync(CHANNEL_PLATO_SALIO, {
       name: 'Platos salieron de cocina',
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 250, 250, 250],
+      ...channelOpts,
     });
   } catch (e) {
     console.warn('[push] Error creando canales de notificación:', e?.message);
@@ -365,8 +361,9 @@ export function subscribeToNotificationResponses(navigationRef) {
 export async function showLocalPush(title, body, data = {}, channelId = CHANNEL_PLATO_LISTO, type = 'plato', options = {}) {
   if (Platform.OS === 'web') return;
 
-  if (type === 'plato' && data?.comandaId && data?.platoId) {
-    const key = `plato-${data.comandaId}-${data.platoId}`;
+  if (data?.comandaId && data?.platoId && (type === 'plato' || type === 'plato-salio')) {
+    const prefix = type === 'plato-salio' ? 'plato-salio' : 'plato';
+    const key = `${prefix}-${data.comandaId}-${data.platoId}`;
     const now = Date.now();
     if (recentLocalPush.get(key) && now - recentLocalPush.get(key) < LOCAL_DEDUPE_MS) return;
     recentLocalPush.set(key, now);
@@ -378,6 +375,9 @@ export async function showLocalPush(title, body, data = {}, channelId = CHANNEL_
 
   if (type === 'plato') {
     const enabled = await getPushPlatoListoEnabled();
+    if (!enabled) return;
+  } else if (type === 'plato-salio') {
+    const enabled = await getPushPlatoSalioEnabled();
     if (!enabled) return;
   } else if (type === 'comanda') {
     const enabled = await getPushComandaListaEnabled();
@@ -402,7 +402,8 @@ export async function showLocalPush(title, body, data = {}, channelId = CHANNEL_
         body,
         data,
         sound: shouldSound ? 'default' : null,
-        priority: Notifications.AndroidNotificationPriority.HIGH,
+        channelId,
+        priority: Notifications.AndroidNotificationPriority.MAX,
       },
       trigger: null,
     });

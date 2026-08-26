@@ -365,7 +365,7 @@ const useSocketMozos = ({
             '✅ Comanda Lista',
             `Comanda #${comandaNumber}${mesaNumero ? ` de Mesa ${mesaNumero}` : ''} completa para recoger.`,
             { mesaId: data.comanda?.mesas?._id, mesaNumero, type: 'comanda-lista', comandaId: data.comandaId },
-            'plato-listo',
+            'plato-listo-heads-up',
             'comanda',
             { comanda: data.comanda }
           );
@@ -397,7 +397,21 @@ const useSocketMozos = ({
         }, 2000);
       }
 
-      // Refrescar comandas si aplica (sin notificación: la envía push remota o plato-actualizado)
+      // Local si cocina manda varios platos a recoger/salio en un batch (Honor no recibe FCM)
+      if (Array.isArray(data.platos)) {
+        for (const p of data.platos) {
+          const payload = {
+            ...data,
+            platoId: p.platoId,
+            nuevoEstado: p.nuevoEstado,
+            estadoAnterior: p.estadoAnterior,
+          };
+          if (p.nuevoEstado === 'recoger') notifyPlatoListoLocal(payload);
+          if (p.nuevoEstado === 'salio') notifyPlatoSalioLocal(payload);
+        }
+      }
+
+      // Refrescar comandas si aplica
       if (onComandaActualizada) {
         onComandaActualizada({
           tipo: 'plato-actualizado-batch',
@@ -458,7 +472,7 @@ const useSocketMozos = ({
         }, 2000);
       }
 
-      // Local solo si no hay push remota (Expo Go). APK: una sola notificación vía backend.
+      // Local siempre: Honor/Huawei no entrega FCM de forma fiable. También en ComandaDetalle.
       if (data.nuevoEstado === 'recoger') {
         notifyPlatoListoLocal(data);
       }

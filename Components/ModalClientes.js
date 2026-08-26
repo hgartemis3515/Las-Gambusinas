@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useWindowDimensions } from "react-native";
+import useKeyboardInset from "../hooks/useKeyboardInset";
 import axios from "axios";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../constants/colors";
@@ -45,9 +46,17 @@ const ModalClientes = ({
 }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || {};
-  const styles = modalStyles(theme);
+  const styles = useMemo(() => modalStyles(theme), [theme]);
   const { width } = useWindowDimensions();
   const escala = width < 390 ? 0.88 : 1;
+  const { inset, listMaxHeight } = useKeyboardInset({ mode: "modal", chrome: 240 });
+  const scrollRef = useRef(null);
+
+  const revelarCampo = () => {
+    setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }, 280);
+  };
 
   // Estado de cliente (original)
   const [dni, setDni] = useState("");
@@ -238,8 +247,8 @@ const ModalClientes = ({
       <View style={styles.modalOverlay}>
         <KeyboardAvoidingView
           style={styles.modalOverlayContent}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          enabled={Platform.OS === "ios"}
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -250,9 +259,16 @@ const ModalClientes = ({
             </View>
 
             <ScrollView
-              style={styles.modalScrollView}
-              contentContainerStyle={styles.modalScrollContent}
+              ref={scrollRef}
+              style={[styles.modalScrollView, { maxHeight: listMaxHeight }]}
+              contentContainerStyle={[
+                styles.modalScrollContent,
+                inset > 0 && { paddingBottom: inset + 16 },
+              ]}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              automaticallyAdjustKeyboardInsets
+              nestedScrollEnabled
               showsVerticalScrollIndicator={true}
             >
               <View style={styles.modalBody}>
@@ -363,13 +379,17 @@ const ModalClientes = ({
                         style={styles.inputIcon}
                       />
                       <TextInput
-                        style={[styles.input, { color: "#333333", fontSize: 16 }]}
+                        style={styles.input}
                         placeholder={`Con cuánto pagará (${simboloMoneda(monedaSeleccionada)})`}
                         value={montoRecibidoStr}
                         onChangeText={setMontoRecibidoStr}
                         keyboardType="decimal-pad"
                         placeholderTextColor="#999999"
                         returnKeyType="done"
+                        underlineColorAndroid="transparent"
+                        importantForAutofill="no"
+                        autoComplete="off"
+                        onFocus={revelarCampo}
                       />
                     </View>
                     {totalEnMoneda != null && (
@@ -421,7 +441,7 @@ const ModalClientes = ({
                       style={styles.inputIcon}
                     />
                     <TextInput
-                      style={[styles.input, { color: "#333333", fontSize: 16 }]}
+                      style={styles.input}
                       placeholder="Nombre (opcional)"
                       value={nombre}
                       onChangeText={(text) => {
@@ -432,6 +452,11 @@ const ModalClientes = ({
                       returnKeyType="next"
                       blurOnSubmit={false}
                       autoCapitalize="words"
+                      underlineColorAndroid="transparent"
+                      importantForAutofill="no"
+                      autoComplete="off"
+                      textContentType="none"
+                      onFocus={revelarCampo}
                     />
                   </View>
 
@@ -443,7 +468,7 @@ const ModalClientes = ({
                       style={styles.inputIcon}
                     />
                     <TextInput
-                      style={[styles.input, { color: "#333333", fontSize: 16 }]}
+                      style={styles.input}
                       placeholder="DNI (opcional)"
                       value={dni}
                       onChangeText={(text) => {
@@ -454,6 +479,11 @@ const ModalClientes = ({
                       placeholderTextColor="#999999"
                       returnKeyType="next"
                       blurOnSubmit={false}
+                      underlineColorAndroid="transparent"
+                      importantForAutofill="no"
+                      autoComplete="off"
+                      textContentType="none"
+                      onFocus={revelarCampo}
                     />
                   </View>
 
@@ -465,7 +495,7 @@ const ModalClientes = ({
                       style={styles.inputIcon}
                     />
                     <TextInput
-                      style={[styles.input, { color: "#333333", fontSize: 16 }]}
+                      style={styles.input}
                       placeholder="Teléfono (opcional)"
                       value={telefono}
                       onChangeText={(text) => {
@@ -476,6 +506,11 @@ const ModalClientes = ({
                       placeholderTextColor="#999999"
                       returnKeyType="done"
                       blurOnSubmit={true}
+                      underlineColorAndroid="transparent"
+                      importantForAutofill="no"
+                      autoComplete="off"
+                      textContentType="none"
+                      onFocus={revelarCampo}
                     />
                   </View>
                 </View>
@@ -793,15 +828,22 @@ const modalStyles = (theme) => StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 15,
     backgroundColor: "#FFFFFF",
+    minHeight: 52,
+    overflow: "visible",
   },
   inputIcon: {
     marginRight: 10,
   },
   input: {
     flex: 1,
-    height: 50,
+    minHeight: 48,
+    paddingVertical: Platform.OS === "android" ? 10 : 12,
+    paddingHorizontal: 4,
     fontSize: 16,
+    lineHeight: 22,
     color: "#333333",
+    includeFontPadding: false,
+    textAlignVertical: "center",
   },
   modalFooter: {
     flexDirection: "row",
