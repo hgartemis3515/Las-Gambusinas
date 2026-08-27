@@ -2511,7 +2511,7 @@ const PagosScreen = () => {
                 </Text>
                 {infoDescuentos.descuentos.map((desc, idx) => (
                   <Text key={idx} style={{ fontSize: 11, color: theme.colors?.text?.secondary || '#6B7280' }}>
-                    C#{desc.comandaNumber}: {desc.porcentaje}% - {desc.motivo}
+                    C#{desc.comandaNumber}: {configMoneda?.simboloMoneda || 'S/.'} {Number(desc.montoAhorro || 0).toFixed(configMoneda?.decimales ?? 2)} ({Number.isInteger(Number(desc.porcentaje)) ? Number(desc.porcentaje) : Number(desc.porcentaje).toFixed(2)}%){desc.motivo ? ` - ${desc.motivo}` : ''}
                   </Text>
                 ))}
               </View>
