@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Platform, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import Constants from 'expo-constants';
@@ -239,13 +239,19 @@ export async function notifyPlatoSalioLocal(data) {
 export function configureNotificationBehavior() {
   if (Platform.OS === 'web') return;
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    }),
+    handleNotification: async () => {
+      let shouldPlaySound = true;
+      try {
+        shouldPlaySound = await getPushSonidoEnabled();
+      } catch (_) { /* default on */ }
+      return {
+        shouldShowAlert: true,
+        shouldPlaySound,
+        shouldSetBadge: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      };
+    },
   });
 }
 
@@ -258,23 +264,52 @@ async function ensureAndroidChannels() {
       enableVibrate: true,
       sound: 'default',
       showBadge: true,
+      enableLights: true,
+      lightColor: '#C41E3A',
+      bypassDnd: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility?.PUBLIC,
     };
     await Notifications.setNotificationChannelAsync(CHANNEL_DEFAULT, {
       name: 'General',
+      description: 'Avisos generales de Gambusinas Mozos',
       ...channelOpts,
     });
     await Notifications.setNotificationChannelAsync(CHANNEL_PLATO_LISTO, {
       name: 'Platos listos',
+      description: 'Cuando un plato está listo para recoger',
       ...channelOpts,
     });
     await Notifications.setNotificationChannelAsync(CHANNEL_PLATO_SALIO, {
       name: 'Platos salieron de cocina',
+      description: 'Cuando un plato sale de cocina para entregar',
       ...channelOpts,
     });
   } catch (e) {
     console.warn('[push] Error creando canales de notificación:', e?.message);
   }
+}
+
+export async function getNotificationPermissionStatus() {
+  if (Platform.OS === 'web') return { granted: false, status: 'undetermined' };
+  try {
+    const { status, granted } = await Notifications.getPermissionsAsync();
+    return { granted: granted || status === 'granted', status };
+  } catch {
+    return { granted: false, status: 'undetermined' };
+  }
+}
+
+async function requestNativeNotificationPermissions() {
+  if (Platform.OS === 'ios') {
+    return Notifications.requestPermissionsAsync({
+      ios: {
+        allowAlert: true,
+        allowBadge: true,
+        allowSound: true,
+      },
+    });
+  }
+  return Notifications.requestPermissionsAsync();
 }
 
 export async function registerForExpoPushAsync() {
@@ -291,7 +326,7 @@ export async function registerForExpoPushAsync() {
   const { status: existing } = await Notifications.getPermissionsAsync();
   let finalStatus = existing;
   if (existing !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
+    const { status } = await requestNativeNotificationPermissions();
     finalStatus = status;
   }
   if (finalStatus !== 'granted') return null;
@@ -370,8 +405,10 @@ export async function showLocalPush(title, body, data = {}, channelId = CHANNEL_
   }
 
   const { comanda, mozoId } = options;
-  const allowed = await shouldNotifyMozoAsignado({ comanda, mozoId: mozoId || data?.mozoId });
-  if (!allowed) return;
+  if (type !== 'test') {
+    const allowed = await shouldNotifyMozoAsignado({ comanda, mozoId: mozoId || data?.mozoId });
+    if (!allowed) return;
+  }
 
   if (type === 'plato') {
     const enabled = await getPushPlatoListoEnabled();
@@ -402,8 +439,9 @@ export async function showLocalPush(title, body, data = {}, channelId = CHANNEL_
         body,
         data,
         sound: shouldSound ? 'default' : null,
-        channelId,
+        channelId: Platform.OS === 'android' ? channelId : undefined,
         priority: Notifications.AndroidNotificationPriority.MAX,
+        interruptionLevel: 'timeSensitive',
       },
       trigger: null,
     });
@@ -412,16 +450,132 @@ export async function showLocalPush(title, body, data = {}, channelId = CHANNEL_
   }
 }
 
+export async function sendTestLocalNotification() {
+  await ensureAndroidChannels();
+  await showLocalPush(
+    '🔔 Prueba de notificación',
+    'Si ves esto, los avisos del sistema están activos en este teléfono.',
+    { type: 'test' },
+    CHANNEL_DEFAULT,
+    'test'
+  );
+}
+
+export function getOemPushHints() {
+  const mfg = `${Device.manufacturer || ''} ${Device.brand || ''}`.toLowerCase();
+  if (/xiaomi|redmi|poco/.test(mfg)) {
+    return 'Xiaomi/Redmi/POCO: activa notificaciones, inicio automático y “Sin restricciones” de batería para Gambusinas.';
+  }
+  if (/honor|huawei/.test(mfg)) {
+    return 'Honor/Huawei: permite notificaciones, inicio en segundo plano y protege la app en Recientes para que no la cierre el sistema.';
+  }
+  if (/oppo|realme|oneplus/.test(mfg)) {
+    return 'OPPO/Realme: activa notificaciones y desactiva la optimización de batería para esta app.';
+  }
+  if (/vivo/.test(mfg)) {
+    return 'Vivo: activa notificaciones y permite el autostart / alta prioridad en segundo plano.';
+  }
+  if (/samsung/.test(mfg)) {
+    return 'Samsung: en Ajustes → Batería, no pongas la app en “Reposo profundo”.';
+  }
+  if (Platform.OS === 'ios') {
+    return 'iPhone: permite Alertas, Sonido y Distintivos. Si las denegaste, actívalas en Ajustes → Notificaciones → appmozo.';
+  }
+  return 'Permite notificaciones y desactiva la optimización de batería para esta app si los avisos no llegan con la pantalla bloqueada.';
+}
+
+async function tryStartIntent(action, extras = {}) {
+  const IntentLauncher = await import('expo-intent-launcher');
+  await IntentLauncher.startActivityAsync(action, extras);
+}
+
+export async function openAppNotificationSettings() {
+  if (Platform.OS === 'ios') {
+    await Linking.openSettings();
+    return;
+  }
+  if (Platform.OS !== 'android') return;
+  const pkg = Constants.expoConfig?.android?.package || 'com.carlos121.appmozo';
+  try {
+    await tryStartIntent('android.settings.APP_NOTIFICATION_SETTINGS', {
+      extra: {
+        'android.provider.extra.APP_PACKAGE': pkg,
+        app_package: pkg,
+        app_uid: 0,
+      },
+    });
+  } catch {
+    await openAppDetailsSettings();
+  }
+}
+
+export async function openAppDetailsSettings() {
+  if (Platform.OS === 'ios') {
+    await Linking.openSettings();
+    return;
+  }
+  if (Platform.OS !== 'android') return;
+  const pkg = Constants.expoConfig?.android?.package || 'com.carlos121.appmozo';
+  const IntentLauncher = await import('expo-intent-launcher');
+  await IntentLauncher.startActivityAsync(
+    IntentLauncher.ACTION_APPLICATION_DETAILS_SETTINGS,
+    { data: `package:${pkg}` }
+  );
+}
+
 export async function openBatteryOptimizationSettings() {
+  if (Platform.OS === 'ios') {
+    await Linking.openSettings();
+    return;
+  }
   if (Platform.OS !== 'android') return;
   try {
-    const IntentLauncher = await import('expo-intent-launcher');
-    const pkg = Constants.expoConfig?.android?.package || 'com.carlos121.appmozo';
-    await IntentLauncher.startActivityAsync(
-      IntentLauncher.ACTION_APPLICATION_DETAILS_SETTINGS,
-      { data: `package:${pkg}` }
-    );
+    await tryStartIntent('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS');
   } catch (e) {
     console.warn('[push] No se pudo abrir ajustes de batería:', e?.message);
+    await openAppDetailsSettings();
   }
+}
+
+export async function openAutostartSettingsIfAvailable() {
+  if (Platform.OS !== 'android') {
+    await Linking.openSettings();
+    return;
+  }
+  const pkg = Constants.expoConfig?.android?.package || 'com.carlos121.appmozo';
+  const mfg = `${Device.manufacturer || ''} ${Device.brand || ''}`.toLowerCase();
+  const IntentLauncher = await import('expo-intent-launcher');
+  const attempts = [];
+  if (/xiaomi|redmi|poco/.test(mfg)) {
+    attempts.push({
+      action: 'android.intent.action.MAIN',
+      className: 'com.miui.permcenter.autostart.AutoStartManagementActivity',
+      packageName: 'com.miui.securitycenter',
+    });
+  }
+  if (/honor|huawei/.test(mfg)) {
+    attempts.push({
+      action: 'android.intent.action.MAIN',
+      className: 'com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity',
+      packageName: 'com.huawei.systemmanager',
+    });
+    attempts.push({
+      action: 'android.intent.action.MAIN',
+      className: 'com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity',
+      packageName: 'com.hihonor.systemmanager',
+    });
+  }
+  for (const spec of attempts) {
+    try {
+      await IntentLauncher.startActivityAsync(spec.action, {
+        className: spec.className,
+        packageName: spec.packageName,
+      });
+      return;
+    } catch (_) { /* probar siguiente */ }
+  }
+  await IntentLauncher.startActivityAsync(
+    IntentLauncher.ACTION_APPLICATION_DETAILS_SETTINGS,
+    { data: `package:${pkg}` }
+  );
 }

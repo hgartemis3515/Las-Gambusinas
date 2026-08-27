@@ -30,8 +30,7 @@ import {
   registerPushAfterLogin,
   isExpoGoPushLimited,
 } from "../../../services/pushNotifications";
-
-const CONFIG_CACHE_KEY = "@lasgambusinas_config";
+import { clearAuthSession } from "../../../utils/authSession";
 
 /** Etiqueta de rol legible para personal de sala */
 function formatRolLabel(rol) {
@@ -62,22 +61,6 @@ function liveSyncSubtitle(connected, connectionStatus, reconnectAttempts) {
   return parts.join(" ");
 }
 
-const LOGOUT_STORAGE_KEYS = [
-  "user",
-  "authToken",
-  "mesaSeleccionada",
-  "reservaActiva",
-  "selectedPlates",
-  "selectedPlatesIds",
-  "cantidadesComanda",
-  "additionalDetails",
-  "vistaInicio",
-  CONFIG_CACHE_KEY,
-  "ultimoBoucher",
-  "boucherParaImprimir",
-  "mesaPago",
-  "mesaPagada",
-];
 
 const MasScreen = () => {
   const navigation = useNavigation();
@@ -245,7 +228,7 @@ const MasScreen = () => {
           style: "destructive",
           onPress: async () => {
             try {
-              await AsyncStorage.multiRemove(LOGOUT_STORAGE_KEYS);
+              await clearAuthSession();
               updateToken(null);
               navigation.replace("Login");
             } catch (error) {
@@ -296,7 +279,7 @@ const MasScreen = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={[]}>
-      <SettingsModal visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal visible={settingsOpen} onClose={() => setSettingsOpen(false)} logoutOnServerChange />
       <PersonalizarIconoOnlineModal
         visible={iconoOnlineOpen}
         onClose={() => setIconoOnlineOpen(false)}

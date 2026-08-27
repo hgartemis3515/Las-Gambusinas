@@ -7,6 +7,8 @@ import {
   Switch,
   TouchableOpacity,
   Platform,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
@@ -31,6 +33,12 @@ import {
   getPushVibracionEnabled,
   setPushVibracionEnabled,
   openBatteryOptimizationSettings,
+  openAppNotificationSettings,
+  openAutostartSettingsIfAvailable,
+  getNotificationPermissionStatus,
+  sendTestLocalNotification,
+  getOemPushHints,
+  getCurrentMozoId,
 } from '../../services/pushNotifications';
 
 const NotificationsScreen = () => {
@@ -44,7 +52,10 @@ const NotificationsScreen = () => {
   const [pushComandaLista, setPushComandaLista] = useState(true);
   const [pushSonido, setPushSonido] = useState(true);
   const [pushVibracion, setPushVibracion] = useState(true);
+  const [permGranted, setPermGranted] = useState(null);
+  const [testingPush, setTestingPush] = useState(false);
   const expoPushLimited = isExpoGoPushLimited();
+  const oemHint = getOemPushHints();
 
   const appVersion = Constants.expoConfig?.version || Constants.nativeAppVersion || '—';
 
@@ -56,6 +67,8 @@ const NotificationsScreen = () => {
       setPushComandaLista(await getPushComandaListaEnabled());
       setPushSonido(await getPushSonidoEnabled());
       setPushVibracion(await getPushVibracionEnabled());
+      const perm = await getNotificationPermissionStatus();
+      setPermGranted(perm.granted);
     })();
   }, []);
 
@@ -63,6 +76,47 @@ const NotificationsScreen = () => {
     Haptics.selectionAsync();
     setPushEnabled(value);
     await setPushNotificationsPrefEnabled(value);
+    if (value) {
+      const mozoId = await getCurrentMozoId();
+      if (mozoId) {
+        await registerPushAfterLogin(mozoId).catch(() => {});
+      }
+      const perm = await getNotificationPermissionStatus();
+      setPermGranted(perm.granted);
+      if (!perm.granted) {
+        Alert.alert(
+          'Permiso de notificaciones',
+          Platform.OS === 'ios'
+            ? 'Activa Alertas, Sonido y Distintivos en Ajustes del iPhone.'
+            : 'Activa las notificaciones de esta app. En Xiaomi/Honor también desactiva la batería restringida.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Abrir ajustes', onPress: () => openAppNotificationSettings() },
+          ]
+        );
+      }
+    }
+  };
+
+  const onProbarAviso = async () => {
+    setTestingPush(true);
+    try {
+      const perm = await getNotificationPermissionStatus();
+      setPermGranted(perm.granted);
+      if (!perm.granted) {
+        const mozoId = await getCurrentMozoId();
+        if (mozoId) await registerPushAfterLogin(mozoId).catch(() => {});
+      }
+      await sendTestLocalNotification();
+      Alert.alert(
+        'Aviso de prueba enviado',
+        'Si no aparece, abre “Permiso del sistema” y, en Xiaomi/Honor, “Batería / autostart”.'
+      );
+    } catch (e) {
+      Alert.alert('No se pudo enviar la prueba', e?.message || 'Revisa los permisos del teléfono.');
+    } finally {
+      setTestingPush(false);
+    }
   };
 
   const styles = createStyles(theme);
@@ -241,25 +295,103 @@ const NotificationsScreen = () => {
               </View>
             </View>
 
-            {/* Ajustes del sistema */}
+            {/* Ajustes del sistema / OEM */}
+            <View style={[styles.card, { marginBottom: 10 }]}>
+              <Text style={styles.cardTitle}>Este teléfono</Text>
+              <Text style={[styles.cardDesc, { marginTop: 6, marginBottom: 10 }]}>{oemHint}</Text>
+              <Text style={[styles.cardDesc, { marginBottom: 12 }]}>
+                Permiso del sistema: {permGranted == null ? '…' : permGranted ? 'concedido' : 'denegado o no pedido'}
+              </Text>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => { Haptics.selectionAsync(); onProbarAviso(); }}
+                disabled={testingPush}
+                activeOpacity={0.7}
+              >
+                {testingPush ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.actionBtnText}>Probar aviso ahora</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
             <TouchableOpacity
               style={[styles.card, styles.settingsCard]}
-              onPress={() => { Haptics.selectionAsync(); openBatteryOptimizationSettings(); }}
+              onPress={() => { Haptics.selectionAsync(); openAppNotificationSettings(); }}
               activeOpacity={0.7}
             >
               <View style={styles.cardRow}>
                 <View style={[styles.iconCircle, { backgroundColor: theme.colors.text.secondary + '20' }]}>
-                  <MaterialCommunityIcons name="cog-outline" size={20} color={theme.colors.text.secondary} />
+                  <MaterialCommunityIcons name="bell-cog-outline" size={20} color={theme.colors.text.secondary} />
                 </View>
                 <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={styles.cardTitle}>Ajustes del sistema</Text>
+                  <Text style={styles.cardTitle}>Permiso del sistema</Text>
                   <Text style={styles.cardDesc}>
-                    Abrir configuración de notificaciones de Android
+                    {Platform.OS === 'ios' ? 'Ajustes → Notificaciones (iPhone)' : 'Notificaciones de Android para esta app'}
                   </Text>
                 </View>
                 <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.text.secondary} />
               </View>
             </TouchableOpacity>
+
+            {Platform.OS === 'android' ? (
+              <>
+                <TouchableOpacity
+                  style={[styles.card, styles.settingsCard]}
+                  onPress={() => { Haptics.selectionAsync(); openBatteryOptimizationSettings(); }}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.cardRow}>
+                    <View style={[styles.iconCircle, { backgroundColor: theme.colors.text.secondary + '20' }]}>
+                      <MaterialCommunityIcons name="battery-high" size={20} color={theme.colors.text.secondary} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={styles.cardTitle}>Batería sin restricciones</Text>
+                      <Text style={styles.cardDesc}>
+                        Xiaomi, Honor y similares cierran la app si la batería está “optimizada”
+                      </Text>
+                    </View>
+                    <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.text.secondary} />
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.card, styles.settingsCard]}
+                  onPress={() => { Haptics.selectionAsync(); openAutostartSettingsIfAvailable(); }}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.cardRow}>
+                    <View style={[styles.iconCircle, { backgroundColor: theme.colors.text.secondary + '20' }]}>
+                      <MaterialCommunityIcons name="rocket-launch-outline" size={20} color={theme.colors.text.secondary} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={styles.cardTitle}>Inicio automático / segundo plano</Text>
+                      <Text style={styles.cardDesc}>
+                        Autostart en Xiaomi o apps protegidas en Honor/Huawei
+                      </Text>
+                    </View>
+                    <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.text.secondary} />
+                  </View>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={[styles.card, styles.settingsCard]}
+                onPress={() => { Haptics.selectionAsync(); openAppNotificationSettings(); }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.cardRow}>
+                  <View style={[styles.iconCircle, { backgroundColor: theme.colors.text.secondary + '20' }]}>
+                    <MaterialCommunityIcons name="apple" size={20} color={theme.colors.text.secondary} />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={styles.cardTitle}>Ajustes de iPhone</Text>
+                    <Text style={styles.cardDesc}>Alertas, sonido y distintivos para esta app</Text>
+                  </View>
+                  <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.text.secondary} />
+                </View>
+              </TouchableOpacity>
+            )}
           </View>
         ) : (
           <View style={styles.section}>
@@ -396,6 +528,17 @@ const createStyles = (theme) =>
     },
     settingsCard: {
       paddingVertical: 14,
+    },
+    actionBtn: {
+      backgroundColor: theme.colors.primary,
+      borderRadius: 10,
+      paddingVertical: 12,
+      alignItems: 'center',
+    },
+    actionBtnText: {
+      color: '#fff',
+      fontWeight: '700',
+      fontSize: 14,
     },
     disabledCard: {
       backgroundColor: theme.colors.surface,

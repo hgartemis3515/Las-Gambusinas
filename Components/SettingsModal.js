@@ -14,9 +14,11 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CommonActions, useNavigation } from '@react-navigation/native';
 import apiConfig from '../config/apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
 import { useSocket } from '../context/SocketContext';
+import { clearAuthSession, isSameServer } from '../utils/authSession';
 
 /**
  * Modal de Configuración de Servidor - Patrón Profesional
@@ -28,8 +30,9 @@ import { useSocket } from '../context/SocketContext';
  * - Feedback visual del estado
  * - Persistencia automática
  */
-const SettingsModal = ({ visible, onClose }) => {
-  const { connected, authToken } = useSocket();
+const SettingsModal = ({ visible, onClose, logoutOnServerChange = false }) => {
+  const navigation = useNavigation();
+  const { connected, authToken, updateToken } = useSocket();
   const [socketWaitTick, setSocketWaitTick] = useState(0);
   const [config, setConfig] = useState({
     baseURL: '',
@@ -111,10 +114,18 @@ const SettingsModal = ({ visible, onClose }) => {
       const result = await apiConfig.testConnection(testConfig.baseURL);
 
       if (result.success) {
-        await apiConfig.setConfig(testConfig);
-        setIsConfigured(true);
+        const currentUrl = apiConfig.baseURL || '';
+        const serverChanged = currentUrl && !isSameServer(currentUrl, testConfig.baseURL);
+        // Si cambia de IP y hay sesión, no persistir aún: el JWT del servidor anterior no vale.
+        if (!serverChanged || !authToken) {
+          await apiConfig.setConfig(testConfig);
+          setIsConfigured(true);
+        }
 
-        if (authToken) {
+        if (serverChanged && authToken) {
+          setTestStatus('success');
+          setTestMessage('Servidor OK. Al guardar se cerrará la sesión para iniciar en la nueva IP.');
+        } else if (authToken) {
           setSocketWaitTick((t) => t + 1);
           setTestStatus('success');
           setTestMessage(result.message
@@ -168,12 +179,37 @@ const SettingsModal = ({ visible, onClose }) => {
         timeout: parseInt(config.timeout) || 10000
       };
 
+      const previousUrl = apiConfig.baseURL || '';
+      const serverChanged = previousUrl && !isSameServer(previousUrl, configToSave.baseURL);
+
       await apiConfig.setConfig(configToSave);
       setIsConfigured(true);
+
+      if (serverChanged && (authToken || logoutOnServerChange)) {
+        await clearAuthSession();
+        if (typeof updateToken === 'function') updateToken(null);
+        Alert.alert(
+          'Servidor actualizado',
+          'Cambiaste la IP o el servidor. Vuelve a iniciar sesión.',
+          [{
+            text: 'OK',
+            onPress: () => {
+              onClose();
+              try {
+                navigation.dispatch(
+                  CommonActions.reset({ index: 0, routes: [{ name: 'Login' }] })
+                );
+              } catch (_) { /* ya en Login */ }
+            }
+          }]
+        );
+        return;
+      }
+
       if (authToken) {
         setSocketWaitTick((t) => t + 1);
       }
-      
+
       Alert.alert(
         '✅ Configuración Guardada',
         authToken
