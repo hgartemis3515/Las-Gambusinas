@@ -379,30 +379,35 @@ const PagosScreen = () => {
     }
   }, []);
 
+  const cargarConfigMoneda = React.useCallback(async (forceRefresh = false) => {
+    try {
+      const config = await configuracionService.obtenerConfigMoneda(forceRefresh);
+      setConfigMoneda(config);
+    } catch (error) {
+      console.error('Error al cargar configuración de moneda:', error);
+    }
+  }, []);
+
   // Cargar configuración al iniciar
   useEffect(() => {
     const cargarConfiguracion = async () => {
-      try {
-        const config = await configuracionService.obtenerConfigMoneda();
-        setConfigMoneda(config);
-        console.log('✅ Configuración de moneda cargada en PagosScreen:', {
-          igv: config.igvPorcentaje,
-          incluyeIGV: config.preciosIncluyenIGV,
-          simbolo: config.simboloMoneda
-        });
-      } catch (error) {
-        console.error('Error al cargar configuración de moneda:', error);
-      }
+      await cargarConfigMoneda(true);
       try {
         const habilitado = await configuracionService.imprimirComandaHabilitadoMozos();
         setImprimirComandaHabilitado(habilitado);
       } catch (e) {
-        // Mantener false por defecto
+        console.warn('No se pudo leer flag imprimir comanda:', e?.message);
       }
     };
     cargarConfiguracion();
     cargarPlantillaVoucher();
-  }, [cargarPlantillaVoucher]);
+  }, [cargarConfigMoneda, cargarPlantillaVoucher]);
+
+  useEffect(() => {
+    return configuracionService.subscribeCambio(() => {
+      cargarConfigMoneda(false);
+    });
+  }, [cargarConfigMoneda]);
 
   /** Headers JWT mozos (mismo token que login /admin/mozos/auth). */
   const getHeadersAuth = React.useCallback(async () => {
@@ -701,8 +706,9 @@ const PagosScreen = () => {
   // También recargar datos si vienen nuevos params al enfocar la pantalla
   useFocusEffect(
     React.useCallback(() => {
-      // Plantilla puede cambiar en el admin mientras el mozo usa la app: refrescar al entrar a Pagos
+      // Plantilla e IGV pueden cambiar en el admin mientras el mozo usa la app
       cargarPlantillaVoucher();
+      cargarConfigMoneda(true);
 
       // Leer params directamente del route al enfocar
       const currentParams = route.params || {};
@@ -846,7 +852,7 @@ const PagosScreen = () => {
           onNuevaComanda: null
         });
       };
-    }, [cargarPlantillaVoucher, cargarBouchersParcialesMesa, handleComandaActualizada, handleNuevaComanda, subscribeToEvents, route.params])
+    }, [cargarPlantillaVoucher, cargarConfigMoneda, cargarBouchersParcialesMesa, handleComandaActualizada, handleNuevaComanda, subscribeToEvents, route.params])
   );
 
   useEffect(() => {
@@ -1063,13 +1069,13 @@ const PagosScreen = () => {
 
   // Inicializar selección: todos los platos pagables al cargar comandas
   useEffect(() => {
-    if (boucherData || boucherFromParams) return;
+    if (usarPlatosDeBoucher) return;
     if (platosPagables.length === 0) {
       setPlatosSeleccionadosPago([]);
       return;
     }
     setPlatosSeleccionadosPago(platosPagables.map((p) => p.key));
-  }, [platosPagables, boucherData, boucherFromParams]);
+  }, [platosPagables, usarPlatosDeBoucher]);
 
   useEffect(() => {
     totalAnim.value = withTiming(totalCalculado, {
@@ -1174,8 +1180,13 @@ const PagosScreen = () => {
       return;
     }
 
-    // Verificar si la mesa ya está en estado "pagado" o "pendiente_aprobar"
-    const mesaYaPagada = mesa.estado?.toLowerCase() === "pagado" || mesa.estado?.toLowerCase() === "pendiente_aprobar";
+    // Mesa pagada (aprobada) o pendiente_aprobar sin platos restantes: solo imprimir.
+    // Con pago parcial aún hay platos entregados por cobrar — no bloquear el segundo cobro.
+    const estadoMesaPago = mesa.estado?.toLowerCase();
+    const quedanPorCobrar = platosPagables.length > 0;
+    const mesaYaPagada =
+      estadoMesaPago === 'pagado' ||
+      (estadoMesaPago === 'pendiente_aprobar' && !quedanPorCobrar);
     
     if (mesaYaPagada) {
       // Si ya está pagada o pendiente de aprobación, solo generar la comanda si está habilitado
@@ -2228,7 +2239,7 @@ const PagosScreen = () => {
         <View style={styles.platosCard}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <Text style={styles.sectionTitle}>Platos</Text>
-            {!boucherData && !boucherFromParams && platosPagables.length > 0 && (
+            {!usarPlatosDeBoucher && platosPagables.length > 0 && (
               <TouchableOpacity
                 onPress={() => {
                   Haptics.selectionAsync();
@@ -2244,7 +2255,7 @@ const PagosScreen = () => {
               </TouchableOpacity>
             )}
           </View>
-          {!boucherData && !boucherFromParams && totalRestante != null && totalRestante > 0 && (
+          {!usarPlatosDeBoucher && totalRestante != null && totalRestante > 0 && (
             <Text style={{ fontSize: 13, color: theme.colors?.text?.secondary, marginBottom: 8 }}>
               Restante por cobrar: {configMoneda?.simboloMoneda || 'S/.'}{' '}
               {Number(totalRestante).toFixed(configMoneda?.decimales ?? 2)}
@@ -2596,7 +2607,7 @@ const PagosScreen = () => {
         )}
 
         {/* Botón "Pagar": solo si la mesa no está pagada Y hay platos cobrables pendientes Y no hay boucher consolidado */}
-        {mesa?.estado?.toLowerCase() !== "pagado" && platosPagables.length > 0 && !(boucherData || boucherFromParams) && (
+        {mesa?.estado?.toLowerCase() !== "pagado" && platosPagables.length > 0 && !usarPlatosDeBoucher && (
           <TouchableOpacity
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -2618,7 +2629,7 @@ const PagosScreen = () => {
         )}
 
         {/* Botón Registrar Propina: cuando hay boucher y la mesa está pagada o todos los platos están pagados */}
-        {(boucherData || boucherFromParams) && (['pagado', 'pendiente_aprobar'].includes(mesa?.estado?.toLowerCase()) || platosPagables.length === 0) && (
+        {(boucherData || boucherFromParams) && (mesa?.estado?.toLowerCase() === 'pagado' || platosPagables.length === 0) && (
           <TouchableOpacity
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

@@ -11,6 +11,7 @@ import {
   notifyPlatoListoLocal,
   notifyPlatoSalioLocal,
 } from '../services/pushNotifications';
+import configuracionService from '../services/configuracionService';
 
 /**
  * Hook personalizado para manejar conexión Socket.io con namespace /mozos
@@ -656,6 +657,14 @@ const useSocketMozos = ({
           onSocketStatus({ connected: true, status: 'conectado' });
         }, 2000);
       }
+    });
+
+    socket.on('configuracion-moneda-actualizada', (data) => {
+      const igv = data?.configuracion?.igvPorcentaje;
+      console.log('💰 [MOZOS] Configuración de moneda/IGV actualizada:', igv);
+      configuracionService.aplicarConfigRemota().catch((e) => {
+        console.warn('⚠️ [MOZOS] No se pudo recargar configuración de moneda:', e?.message);
+      });
     });
 
     // ========== PLAN_PLANTILLA_COMANDAS: Eventos de aprobación y reporte ==========

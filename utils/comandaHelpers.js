@@ -26,6 +26,11 @@ export const esComandaActiva = (comanda) => {
   const status = (comanda.status || '').toString().toLowerCase().trim();
   if (ESTADOS_COMANDA_CERRADA.some((e) => status === e)) return false;
 
+  // Entregado = aún en la mesa (falta Pagar o Liberar tras PPA). El boucher del adelanto no cierra.
+  if (status === 'entregado') return true;
+  // Pago parcial enviado a cocina: quedan platos por cobrar; no tratar la comanda como cerrada.
+  if (status === 'pendiente_aprobar') return true;
+
   // PPA: el boucher del adelanto no cierra el ciclo (platos siguen en cocina/entrega).
   const tienePPAVigente = (comanda.platos || []).some((p) => {
     if (!p?.pagoAdelantado) return false;
@@ -68,6 +73,29 @@ export const filtrarComandasPorPedido = (comandas, pedidoId) => {
     const p = c.pedido?._id ?? c.pedido;
     return p != null && String(p) === pid;
   });
+};
+
+/**
+ * Endpoints de ciclo según estado de mesa.
+ * pendiente_aprobar / pendiente_pago: para-pagos (parciales) y fallbacks;
+ * no usar solo /pagadas (tickets aprobados de otra visita vacían Ver pedido).
+ */
+export const rutasComandasSegunEstadoMesa = (estadoMesa) => {
+  const st = (estadoMesa || '').toLowerCase();
+  if (st === 'pendiente_aprobar' || st === 'pendiente_pago') {
+    return ['para-pagos', 'activas', 'pagadas'];
+  }
+  if (st === 'pagado' || st === 'pagando') return ['pagadas'];
+  return ['activas'];
+};
+
+/** Filtra por pedidoId; si el filtro deja la lista vacía, conserva el original. */
+export const aplicarPedidoSinVaciar = (comandas, pedidoId) => {
+  if (!pedidoId || !Array.isArray(comandas) || comandas.length === 0) {
+    return comandas || [];
+  }
+  const filtradas = filtrarComandasPorPedido(comandas, pedidoId);
+  return filtradas.length > 0 ? filtradas : comandas;
 };
 
 /** Acota comandas a un subconjunto explícito de IDs (visita / pedido actual). */
@@ -265,14 +293,24 @@ export const validarEliminacionCompleta = (platosActuales, platosAEliminar) => {
  * @param {Array} platos - Array de platos con precio y cantidad
  * @returns {Object} { subtotal, igv, total }
  */
-export const calcularTotales = (platos) => {
+export const calcularTotales = (platos, configMoneda = null) => {
   const subtotal = platos.reduce((sum, p) => {
     return sum + ((p.precio || 0) * (p.cantidad || 1));
   }, 0);
-  
-  const igv = subtotal * 0.18;
-  const total = subtotal + igv;
-  
+
+  const igvPorcentaje = configMoneda?.igvPorcentaje ?? 18;
+  const igvFactor = igvPorcentaje / 100;
+  let igv;
+  let total;
+
+  if (configMoneda?.preciosIncluyenIGV) {
+    igv = subtotal * (igvFactor / (1 + igvFactor));
+    total = subtotal;
+  } else {
+    igv = subtotal * igvFactor;
+    total = subtotal + igv;
+  }
+
   return {
     subtotal: subtotal.toFixed(2),
     igv: igv.toFixed(2),

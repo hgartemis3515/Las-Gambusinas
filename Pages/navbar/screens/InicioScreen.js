@@ -46,7 +46,7 @@ import { MotiPressable } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { slideInRightDelay, springConfig } from "../../../constants/animations";
 import { LinearGradient } from 'expo-linear-gradient';
-import { filtrarComandasActivas, filtrarComandasPorPedido, acotarComandasAlCicloActual, comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../../../utils/comandaHelpers';
+import { filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../../../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
@@ -1676,12 +1676,23 @@ const InicioScreen = () => {
       const comandaBase = apiConfig.isConfigured
         ? apiConfig.getEndpoint('/comanda')
         : COMANDASEARCH_API_GET;
-      const esPagadas = st === 'pagado' || st === 'pagando' || st === 'pendiente_aprobar';
-      const url = `${comandaBase}/mesa/${mesa._id}/${esPagadas ? 'pagadas' : 'activas'}`;
-      const res = await axios.get(url, { timeout: 10000 });
-      let lista = res.data?.comandas || [];
-      const pedidoId = res.data?.pedidoId || null;
-      if (pedidoId) lista = filtrarComandasPorPedido(lista, pedidoId);
+      const rutas = rutasComandasSegunEstadoMesa(st);
+      let lista = [];
+      let pedidoId = null;
+      for (const ruta of rutas) {
+        try {
+          const res = await axios.get(`${comandaBase}/mesa/${mesa._id}/${ruta}`, { timeout: 10000 });
+          const batch = res.data?.comandas || [];
+          if (res.data?.pedidoId) pedidoId = res.data.pedidoId;
+          if (batch.length > 0) {
+            lista = batch;
+            break;
+          }
+        } catch (inner) {
+          console.warn(`⚠️ [ciclo mesa ${mesa.nummesa}] /${ruta}:`, inner.message);
+        }
+      }
+      lista = aplicarPedidoSinVaciar(lista, pedidoId);
       return acotarComandasAlCicloActual(lista);
     } catch (error) {
       console.error(`❌ Error obteniendo ciclo de mesa ${mesa.nummesa}:`, error.message);
@@ -1872,7 +1883,7 @@ const InicioScreen = () => {
         if (cancelled) return;
         if (!mesa?._id) continue;
         const st = mesa.estado?.toLowerCase();
-        if (st !== "pedido" && st !== "preparado") continue;
+        if (st !== "pedido" && st !== "preparado" && st !== "entregado" && st !== "pendiente_pago") continue;
 
         const locales = getComandasPorMesa(mesa.nummesa);
         if (locales.length > 0) continue;

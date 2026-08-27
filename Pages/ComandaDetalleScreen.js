@@ -29,7 +29,7 @@ import { useSocket } from '../context/SocketContext';
 import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
-import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, filtrarComandasPorPedido, acotarComandasAlCicloActual, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../utils/comandaHelpers';
+import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
 import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA } from '../helpers/pagoAdelantadoHelpers';
@@ -127,6 +127,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // Estados
   const [comandas, setComandasState] = useState(() => acotarComandasAlCicloActual(comandasIniciales || []));
+  const comandasRef = useRef(comandas);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
@@ -225,7 +226,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     const loadConfiguracion = async () => {
       try {
         const [config, permitirTomadas] = await Promise.all([
-          configuracionService.obtenerConfigMoneda(),
+          configuracionService.obtenerConfigMoneda(true),
           configuracionService.editarEliminarTomadasPorCocinaHabilitadoMozos()
         ]);
         setConfigMoneda(config);
@@ -235,6 +236,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       }
     };
     loadConfiguracion();
+    return configuracionService.subscribeCambio(async () => {
+      try {
+        const config = await configuracionService.obtenerConfigMoneda();
+        setConfigMoneda(config);
+      } catch (e) {
+        console.warn('No se pudo refrescar IGV:', e?.message);
+      }
+    });
   }, []);
   
   // Preparar todos los platos ordenados por prioridad (sin logs en bucle para evitar loops)
@@ -329,40 +338,20 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
       const mesaEstado = (mesa?.estado || '').toLowerCase();
       let pedidoIdCiclo = null;
-      if ((mesaEstado === 'pagado' || mesaEstado === 'pagando' || mesaEstado === 'pendiente_aprobar') && mesaIdRef) {
-        try {
-          const pagadasURL = `${comandaBase}/mesa/${mesaIdRef}/pagadas`;
-          const resPagadas = await axios.get(pagadasURL, { timeout: 10000 });
-          if (resPagadas.data?.success && Array.isArray(resPagadas.data.comandas)) {
-            pedidoIdCiclo = resPagadas.data.pedidoId || null;
-            let lista = resPagadas.data.comandas;
-            if (pedidoIdCiclo) {
-              lista = filtrarComandasPorPedido(lista, pedidoIdCiclo);
+      if (mesaIdRef) {
+        const rutas = rutasComandasSegunEstadoMesa(mesaEstado);
+        for (const ruta of rutas) {
+          try {
+            const res = await axios.get(`${comandaBase}/mesa/${mesaIdRef}/${ruta}`, { timeout: 10000 });
+            if (res.data?.pedidoId) pedidoIdCiclo = res.data.pedidoId;
+            if (res.data?.success && Array.isArray(res.data.comandas) && res.data.comandas.length > 0) {
+              comandasMesa = acotarComandasAlCicloActual(
+                aplicarPedidoSinVaciar(res.data.comandas, pedidoIdCiclo)
+              );
+              break;
             }
-            comandasMesa = acotarComandasAlCicloActual(lista);
-          }
-        } catch (e) {
-          if (__DEV__) console.warn('[ComandaDetalle] /mesa/pagadas:', e?.message);
-        }
-      }
-
-      if (comandasMesa.length === 0) {
-        if (mesaEstado !== 'pagado' && mesaEstado !== 'pagando' && mesaEstado !== 'pendiente_aprobar') {
-          if (mesaIdRef) {
-            try {
-              const activasURL = `${comandaBase}/mesa/${mesaIdRef}/activas`;
-              const resActivas = await axios.get(activasURL, { timeout: 10000 });
-              if (resActivas.data?.success && Array.isArray(resActivas.data.comandas)) {
-                pedidoIdCiclo = resActivas.data.pedidoId || pedidoIdCiclo;
-                let lista = resActivas.data.comandas;
-                if (pedidoIdCiclo) {
-                  lista = filtrarComandasPorPedido(lista, pedidoIdCiclo);
-                }
-                comandasMesa = acotarComandasAlCicloActual(lista);
-              }
-            } catch (e) {
-              if (__DEV__) console.warn('[ComandaDetalle] /mesa/activas falló:', e?.message);
-            }
+          } catch (e) {
+            if (__DEV__) console.warn(`[ComandaDetalle] /mesa/${ruta}:`, e?.message);
           }
         }
       }
@@ -386,6 +375,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         mesaEstado === 'pagado' || mesaEstado === 'pagando' || mesaEstado === 'pendiente_aprobar'
           ? acotarComandasAlCicloActual(comandasMesa)
           : acotarComandasAlCicloActual(filtrarComandasActivas(comandasMesa));
+
+      if (comandasFinales.length === 0) {
+        const prev = comandasRef.current || [];
+        const mesaSigueEnServicio = ['pedido', 'preparado', 'entregado', 'pendiente_pago', 'esperando', 'pendiente_aprobar'].includes(mesaEstado);
+        if (mesaSigueEnServicio && prev.length > 0) {
+          comandasFinales = filtrarComandasActivas(prev);
+        }
+      }
 
       if ((filterByCliente || clienteId) && comandasFinales.length > 0 && clienteId) {
         const idStr = typeof clienteId === 'string' ? clienteId : clienteId?.toString?.() || '';
@@ -468,7 +465,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const mesaId = mesa?._id || null;
 
   // Refs para evitar loops: listeners leen estado actual sin estar en deps del effect
-  const comandasRef = useRef(comandas);
   const refrescarComandasRef = useRef(refrescarComandas);
   const prevConnectedRef = useRef(connected);
 
@@ -700,6 +696,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   useFocusEffect(
     useCallback(() => {
       refrescarComandas();
+      configuracionService.obtenerConfigMoneda(true).then(setConfigMoneda).catch(() => {});
     }, [refrescarComandas])
   );
   
@@ -1811,12 +1808,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       return;
     }
     Alert.alert(
-      'Confirmar entrega',
-      '¿Confirmas que entregaste el pedido ya cobrado por adelantado? La mesa quedará libre.',
+      'Liberar mesa',
+      'El pedido ya está cobrado por adelantado y entregado. ¿Liberar la mesa? La comanda pasará a pagado y la mesa quedará libre.',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Sí, confirmar',
+          text: 'Liberar',
           style: 'default',
           onPress: async () => {
             setConfirmandoEntrega(true);
@@ -2275,11 +2272,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               >
                 <MaterialCommunityIcons name="table-furniture" size={20} color="#fff" />
                 <Text style={styles.actionButtonText}>
-                  {confirmandoEntrega
-                    ? 'Liberando…'
-                    : reglasPPA.composicion === 'solo_para_llevar'
-                      ? 'Confirmar entrega'
-                      : 'Liberar mesa'}
+                  {confirmandoEntrega ? 'Liberando…' : 'Liberar'}
                 </Text>
               </TouchableOpacity>
             )}

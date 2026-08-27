@@ -28,6 +28,7 @@ import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
+import configuracionService from "../../../services/configuracionService";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -198,6 +199,7 @@ const OrdenesScreen = ({ route }) => {
   const [mensajeCarga, setMensajeCarga] = useState("Creando comanda...");
   const [searchPlatoDebounced, setSearchPlatoDebounced] = useState("");
   const [reservaActiva, setReservaActiva] = useState(null); // Reserva activa para asociar a la comanda
+  const [configMoneda, setConfigMoneda] = useState(null);
 
   // Estado para el modal de complementos
   const [platoParaComplementar, setPlatoParaComplementar] = useState(null); // Cuando no es null, el modal de complementos está abierto
@@ -245,8 +247,16 @@ const OrdenesScreen = ({ route }) => {
       // Esto previene que el botón quede en "Enviando..." si el usuario navega y vuelve
       setIsSendingComanda(false);
       setMostrarOverlayCarga(false);
+      configuracionService.obtenerConfigMoneda(true).then(setConfigMoneda).catch(() => {});
     }, [])
   );
+
+  useEffect(() => {
+    configuracionService.obtenerConfigMoneda(true).then(setConfigMoneda).catch(() => {});
+    return configuracionService.subscribeCambio(() => {
+      configuracionService.obtenerConfigMoneda().then(setConfigMoneda).catch(() => {});
+    });
+  }, []);
 
   const obtenerAreas = async () => {
     try {
@@ -517,8 +527,43 @@ const OrdenesScreen = ({ route }) => {
       const precio = plato.precioUnitario != null ? Number(plato.precioUnitario) : Number(plato.precio || 0);
       total += precio * cantidad;
     });
-    return total.toFixed(2);
+    return total;
   };
+
+  const subtotalPlatos = useMemo(() => calcularSubtotal(), [selectedPlatos, cantidades]);
+  const totalesOrden = useMemo(
+    () => configuracionService.calcularTotales(subtotalPlatos, configMoneda),
+    [subtotalPlatos, configMoneda]
+  );
+  const simboloOrden = configMoneda?.simboloMoneda || 'S/.';
+  const decimalesOrden = configMoneda?.decimales ?? 2;
+  const igvPctOrden = configMoneda?.igvPorcentaje ?? 18;
+  const nombreImpuestoOrden = configMoneda?.nombreImpuestoPrincipal || 'IGV';
+
+  const renderTotalesOrden = (landscape) => (
+    <View style={[styles.totalSection, landscape && styles.totalSectionLandscape]}>
+      <View style={styles.totalBreakdown}>
+        <View style={styles.totalBreakdownRow}>
+          <Text style={styles.totalBreakdownLabel}>Subtotal</Text>
+          <Text style={styles.totalBreakdownValue}>
+            {simboloOrden} {Number(totalesOrden.subtotalSinIGV || 0).toFixed(decimalesOrden)}
+          </Text>
+        </View>
+        <View style={styles.totalBreakdownRow}>
+          <Text style={styles.totalBreakdownLabel}>{nombreImpuestoOrden} ({igvPctOrden}%)</Text>
+          <Text style={styles.totalBreakdownValue}>
+            {simboloOrden} {Number(totalesOrden.igv || 0).toFixed(decimalesOrden)}
+          </Text>
+        </View>
+        <View style={styles.totalBreakdownRow}>
+          <Text style={styles.totalLabel}>TOTAL</Text>
+          <Text style={styles.totalText}>
+            {simboloOrden} {Number(totalesOrden.total || 0).toFixed(decimalesOrden)}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
 
   // 🔥 Función para verificar si la comanda se creó en el backend
   const verificarComandaEnBackend = async (mesaId, mozoId, comandaNumber = null) => {
@@ -1314,10 +1359,7 @@ const OrdenesScreen = ({ route }) => {
                 numberOfLines={3}
               />
             </View>
-            <View style={[styles.totalSection, styles.totalSectionLandscape]}>
-              <Text style={styles.totalLabel}>TOTAL</Text>
-              <Text style={styles.totalText}>S/. {calcularSubtotal()}</Text>
-            </View>
+            {renderTotalesOrden(true)}
           </View>
         ) : (
           <>
@@ -1333,10 +1375,7 @@ const OrdenesScreen = ({ route }) => {
                 numberOfLines={3}
               />
             </View>
-            <View style={styles.totalSection}>
-              <Text style={styles.totalLabel}>TOTAL</Text>
-              <Text style={styles.totalText}>S/. {calcularSubtotal()}</Text>
-            </View>
+            {renderTotalesOrden(false)}
           </>
         )}
 
@@ -1746,9 +1785,9 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
   totalSection: {
     backgroundColor: theme.colors.primary,
     padding: orientation.isLandscape ? theme.spacing.md : theme.spacing.lg,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: "column",
+    justifyContent: "center",
+    alignItems: "stretch",
     marginHorizontal: orientation.isLandscape ? 0 : theme.spacing.lg,
     marginVertical: orientation.isLandscape ? 0 : theme.spacing.md,
     borderRadius: theme.borderRadius.lg,
@@ -1756,18 +1795,35 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
   },
   totalSectionLandscape: {
     flex: 1,
-    flexDirection: "column",
-    justifyContent: "center",
-    alignItems: "center",
-    minHeight: 100,
+    minHeight: 110,
   },
-  totalLabel: {
-    fontSize: 18,
+  totalBreakdown: {
+    width: "100%",
+  },
+  totalBreakdownRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginVertical: 2,
+  },
+  totalBreakdownLabel: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: theme.colors.text.white,
+    opacity: 0.9,
+  },
+  totalBreakdownValue: {
+    fontSize: 14,
     fontWeight: "600",
     color: theme.colors.text.white,
   },
+  totalLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: theme.colors.text.white,
+  },
   totalText: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: "700",
     color: theme.colors.text.white,
   },

@@ -15,6 +15,7 @@ const CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
 let cachedConfig = null;
 let lastFetchTime = 0;
+const configChangeListeners = new Set();
 
 /** Headers para endpoints que el backend puede proteger con el mismo JWT que el login de mozos */
 export const getMozoAuthHeaders = async () => {
@@ -99,8 +100,8 @@ export const obtenerConfiguracion = async (forceRefresh = false) => {
  * Obtiene solo la configuración de moneda y precios
  * Útil para cálculos rápidos
  */
-export const obtenerConfigMoneda = async () => {
-    const config = await obtenerConfiguracion();
+export const obtenerConfigMoneda = async (forceRefresh = false) => {
+    const config = await obtenerConfiguracion(forceRefresh);
     
     return {
         moneda: config.moneda || 'PEN',
@@ -299,6 +300,36 @@ export const invalidarCache = async () => {
     console.log('🗑️ Caché de configuración invalidado');
 };
 
+/**
+ * Suscribe un listener a cambios de moneda/IGV (socket o recarga forzada).
+ * @returns {Function} unsubscribe
+ */
+export const subscribeCambio = (listener) => {
+    if (typeof listener !== 'function') return () => {};
+    configChangeListeners.add(listener);
+    return () => configChangeListeners.delete(listener);
+};
+
+const emitirCambioLocal = (config) => {
+    configChangeListeners.forEach((fn) => {
+        try {
+            fn(config);
+        } catch (e) {
+            console.warn('⚠️ Listener de configuración:', e?.message || e);
+        }
+    });
+};
+
+/**
+ * Invalida caché, recarga del servidor y notifica pantallas (Pagos, Órdenes, detalle).
+ */
+export const aplicarConfigRemota = async () => {
+    await invalidarCache();
+    const config = await obtenerConfiguracion(true);
+    emitirCambioLocal(config);
+    return config;
+};
+
 export default {
     obtenerConfiguracion,
     obtenerConfigMoneda,
@@ -310,5 +341,7 @@ export default {
     formatearMonto,
     formatearMontoAsync,
     invalidarCache,
+    subscribeCambio,
+    aplicarConfigRemota,
     getMozoAuthHeaders
 };
