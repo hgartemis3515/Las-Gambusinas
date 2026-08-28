@@ -426,7 +426,8 @@ const OrdenesScreen = ({ route }) => {
   }, []);
 
   // Función para agregar un plato sin complementos (comportamiento original)
-  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitarioV3 = null, extraComplementosV3 = null) => {
+  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1) => {
+    const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
     // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
     const instanceId = `${plato._id}_${Date.now()}`;
 
@@ -483,23 +484,21 @@ const OrdenesScreen = ({ route }) => {
     });
 
     if (existsWithSameComplements) {
-      // Si existe con los mismos complementos, solo incrementar cantidad
-      const newCant = (cantidades[existsWithSameComplements.instanceId || existsWithSameComplements._id] || 1) + 1;
+      const newCant = (cantidades[existsWithSameComplements.instanceId || existsWithSameComplements._id] || 1) + n;
       setCantidades({ ...cantidades, [existsWithSameComplements.instanceId || existsWithSameComplements._id]: newCant });
     } else {
-      // Es un plato nuevo o con complementos diferentes, agregar como item separado
       setSelectedPlatos([...selectedPlatos, platoConComplementos]);
-      setCantidades({ ...cantidades, [instanceId]: 1 });
+      setCantidades({ ...cantidades, [instanceId]: n });
     }
   };
 
   // Función para confirmar complementos desde el modal
-  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos }) => {
+  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
     if (platoParaComplementar) {
       const nombre = platoParaComplementar.nombre;
-      // v3.0: pasar totales pre-calculados desde ModalComplementos
-      agregarPlatoSinComplementos(platoParaComplementar, complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos);
-      Alert.alert("✅", `${nombre} agregado`);
+      const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
+      agregarPlatoSinComplementos(platoParaComplementar, complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos, n);
+      Alert.alert("✅", n > 1 ? `${nombre} ×${n} agregado` : `${nombre} agregado`);
       cerrarModalComplementosYReabrirMenu();
     }
   };

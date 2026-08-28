@@ -379,15 +379,35 @@ export default function ReservaWizardScreen() {
   const ant = () => { haptic(); setPaso((p) => Math.max(p - 1, 0)); };
 
   // --- Platos con instancias + complementos ---
-  const agregarPlato = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitario = null, extraComplementosV3 = null) => {
+  const agregarPlato = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitario = null, extraComplementosV3 = null, cantidadPlatos = 1) => {
+    const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
     const instanceId = `${plato._id}_${Date.now()}`;
     const pu = precioUnitario != null ? Number(precioUnitario) : Number(plato.precio || 0);
-    setSelPlatos((c) => [...c, {
-      instanceId, _id: plato._id, nombre: plato.nombre, precio: plato.precio,
-      precioUnitario: pu, cantidad: 1, notaEspecial: notaEspecial || "",
-      complementosElegidos: complementosSeleccionados || [],
-      tipoServicio: "mesa", extraComplementosV3: extraComplementosV3 || null,
-    }]);
+    setSelPlatos((c) => {
+      const same = c.find((p) => {
+        if (p._id !== plato._id) return false;
+        const pComps = p.complementosElegidos || [];
+        const newComps = complementosSeleccionados || [];
+        const pNota = (p.notaEspecial || "").trim();
+        const newNota = (notaEspecial || "").trim();
+        if (pComps.length !== newComps.length || pNota !== newNota) return false;
+        if (pComps.length === 0) return true;
+        return pComps.every((pc) =>
+          newComps.some((nc) => nc.grupo === pc.grupo && nc.opcion === pc.opcion && nc.cantidad === pc.cantidad)
+        );
+      });
+      if (same) {
+        return c.map((p) => p.instanceId === same.instanceId
+          ? { ...p, cantidad: Math.max(1, (p.cantidad || 1) + n) }
+          : p);
+      }
+      return [...c, {
+        instanceId, _id: plato._id, nombre: plato.nombre, precio: plato.precio,
+        precioUnitario: pu, cantidad: n, notaEspecial: notaEspecial || "",
+        complementosElegidos: complementosSeleccionados || [],
+        tipoServicio: "mesa", extraComplementosV3: extraComplementosV3 || null,
+      }];
+    });
     haptic();
   };
 
@@ -399,8 +419,17 @@ export default function ReservaWizardScreen() {
     }
   };
 
-  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos }) => {
-    if (platoParaComplementar) agregarPlato(platoParaComplementar, complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos);
+  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
+    if (platoParaComplementar) {
+      agregarPlato(
+        platoParaComplementar,
+        complementosSeleccionados,
+        notaEspecial,
+        _precioUnitario,
+        _extraComplementos,
+        Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1))
+      );
+    }
     setPlatoParaComplementar(null);
   };
 

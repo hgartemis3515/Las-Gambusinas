@@ -219,6 +219,22 @@ export async function generarPdfComandaNativo(opts) {
 
   // === TOTAL ===
   if (b.mostrarTotal !== false) {
+    const sumaLineas = (datos.productos || []).reduce((s, p) => {
+      const linea = Number(p?.subtotal);
+      if (Number.isFinite(linea) && linea > 0) return s + linea;
+      return s + (Number(p?.precio) || 0) * (Number(p?.cantidad) || 1);
+    }, 0);
+    const subtotalPlatos = sumaLineas > 0
+      ? sumaLineas
+      : (Number(datos.totalSinDescuento) > 0 ? Number(datos.totalSinDescuento) : (Number(datos.subtotal) || 0));
+    if (subtotalPlatos > 0) {
+      addPad('Subtotal:', `${simboloMoneda} ${Number(subtotalPlatos).toFixed(2)}`, { size: fontSize });
+    }
+    const montoDesc = Number(datos.montoDescuento || 0);
+    if (montoDesc > 0) {
+      const motivoDesc = datos.descuentos?.[0]?.motivo ? ` (${datos.descuentos[0].motivo})` : '';
+      addPad(`Descuento${motivoDesc}:`, `-${simboloMoneda} ${montoDesc.toFixed(2)}`, { size: fontSize });
+    }
     addPad(obtenerEtiqueta('total', p) + ':', `${simboloMoneda} ${(datos.total || 0).toFixed(2)}`, { bold: true, size: SIZE_TITLE });
     addRule();
   }

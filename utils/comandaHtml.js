@@ -218,12 +218,21 @@ export function generarHtmlComanda({ datos, plantilla, serverOrigin }) {
 
   // === TOTAL ===
   if (mostrarTotal && bloques.mostrarTotal !== false) {
+    const simboloMoneda = datos.moneda === 'USD' ? '$' : 'S/.';
+    const subtotalPlatos = resolverSubtotalPlatos(datos);
+    if (mostrarPrecios && subtotalPlatos > 0) {
+      html += `<div style="font-size:${fontSize}px;text-align:right;padding:1px 0;">Subtotal: ${simboloMoneda}${subtotalPlatos.toFixed(2)}</div>`;
+    }
+    const montoDesc = Number(datos.montoDescuento || 0);
+    if (montoDesc > 0) {
+      const motivoDesc = datos.descuentos?.[0]?.motivo ? ` (${escapeHtml(datos.descuentos[0].motivo)})` : '';
+      html += `<div style="font-size:${fontSize}px;text-align:right;padding:1px 0;">Descuento${motivoDesc}: -${simboloMoneda}${montoDesc.toFixed(2)}</div>`;
+    }
     html += '<div style="font-weight:bold;font-size:' + (fontSize + 2) + 'px;text-align:right;margin:4px 0;">';
-    html += `${etiquetas.total}: ${datos.moneda === 'USD' ? '$' : 'S/.'}${(datos.total || 0).toFixed(2)}`;
+    html += `${etiquetas.total}: ${simboloMoneda}${(datos.total || 0).toFixed(2)}`;
     html += '</div>';
 
     // Bloque efectivo: monto recibido + vuelto (solo si método de pago es efectivo)
-    const simboloMoneda = datos.moneda === 'USD' ? '$' : 'S/.';
     if (String(datos.tipoPago || '').toLowerCase() === 'efectivo' && (datos.montoRecibido != null || datos.vuelto != null)) {
       html += `<div style="font-size:${fontSize}px;text-align:right;padding:2px 0 1px;">Recibido: ${simboloMoneda}${(datos.montoRecibido || 0).toFixed(2)}</div>`;
       html += `<div style="font-size:${fontSize + 1}px;font-weight:bold;text-align:right;padding:1px 0;">Vuelto: ${simboloMoneda}${(datos.vuelto || 0).toFixed(2)}</div>`;
@@ -278,6 +287,19 @@ function escapeHtml(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function resolverSubtotalPlatos(datos) {
+  const suma = (datos?.productos || []).reduce((s, p) => {
+    const linea = Number(p?.subtotal);
+    if (Number.isFinite(linea) && linea > 0) return s + linea;
+    return s + (Number(p?.precio) || 0) * (Number(p?.cantidad) || 1);
+  }, 0);
+  if (suma > 0) return Number(suma.toFixed(2));
+  const sinDesc = Number(datos?.totalSinDescuento);
+  if (sinDesc > 0) return sinDesc;
+  const sub = Number(datos?.subtotal);
+  return Number.isFinite(sub) && sub > 0 ? sub : 0;
+}
+
 function divider() {
   return '<div style="border-top:1px dashed #999;margin:6px 0;"></div>';
 }
@@ -299,6 +321,11 @@ function formatFecha(date) {
   }
 }
 
+function resolverPrecioLineaImpresion(p) {
+  const n = Number(p?.precioUnitario ?? p?.precio ?? p?.plato?.precio ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
 /**
  * Mapa datos reales de comanda + boucher → formato ticket para plantilla comanda.
  * Se usa tanto en App Mozos como en el dashboard.
@@ -306,6 +333,28 @@ function formatFecha(date) {
 export function mapComandaATicket(comanda, boucherOpcional, config = {}) {
   const comandasNumbers = boucherOpcional?.comandasNumbers
     || (comanda.comandaNumber ? [comanda.comandaNumber] : []);
+  const productos = (comanda.platos || [])
+    .filter(p => !p.eliminado && !p.anulado)
+    .map(p => {
+      const precio = resolverPrecioLineaImpresion(p);
+      const cantidad = p.cantidad || 1;
+      return {
+        nombre: p.plato?.nombre || p.nombre || 'Plato',
+        cantidad,
+        precio,
+        subtotal: precio * cantidad,
+        tipoServicio: p.tipoServicio || 'mesa',
+        complementos: (p.complementosSeleccionados || []).map(c => ({
+          grupo: c.grupo,
+          opcion: c.opcion,
+        })),
+        notaEspecial: p.notaEspecial || '',
+        paraLlevar: p.tipoServicio === 'para_llevar',
+      };
+    });
+  const sumaPlatos = productos.reduce((s, p) => s + (Number(p.subtotal) || 0), 0);
+  const totalFuente = Number(boucherOpcional?.total ?? comanda.total ?? comanda.precioTotal);
+  const subtotalFuente = Number(comanda.totalSinDescuento ?? boucherOpcional?.subtotal ?? comanda.subtotal);
   return {
     comandaNumero: comanda.comandaNumber || comanda.comandaNumber || null,
     comandasNumbers,
@@ -316,24 +365,15 @@ export function mapComandaATicket(comanda, boucherOpcional, config = {}) {
     moneda: boucherOpcional?.moneda || config.moneda || 'PEN',
     tipoPago: boucherOpcional?.metodoPagoLabel || boucherOpcional?.metodoPago || 'Pendiente',
     observaciones: comanda.observaciones || '',
-    productos: (comanda.platos || [])
-      .filter(p => !p.eliminado && !p.anulado)
-      .map(p => ({
-        nombre: p.plato?.nombre || p.nombre || 'Plato',
-        cantidad: p.cantidad || 1,
-        precio: p.plato?.precio || p.precio || 0,
-        subtotal: (p.plato?.precio || p.precio || 0) * (p.cantidad || 1),
-        tipoServicio: p.tipoServicio || 'mesa',
-        complementos: (p.complementosSeleccionados || []).map(c => ({
-          grupo: c.grupo,
-          opcion: c.opcion,
-        })),
-        notaEspecial: p.notaEspecial || '',
-        paraLlevar: p.tipoServicio === 'para_llevar',
-      })),
-    subtotal: boucherOpcional?.subtotal ?? comanda.subtotal ?? 0,
+    productos,
+    subtotal: sumaPlatos > 0 ? sumaPlatos : (subtotalFuente > 0 ? subtotalFuente : 0),
+    totalSinDescuento: sumaPlatos > 0 ? sumaPlatos : (Number(comanda.totalSinDescuento) || subtotalFuente || 0),
     igv: boucherOpcional?.igv ?? comanda.igv ?? 0,
-    total: boucherOpcional?.total ?? comanda.total ?? comanda.precioTotal ?? 0,
+    total: (Number(comanda.descuento) > 0 && Number(comanda.totalCalculado) > 0)
+      ? Number(comanda.totalCalculado)
+      : (totalFuente > 0 ? totalFuente : sumaPlatos),
+    montoDescuento: Number(boucherOpcional?.montoDescuento ?? comanda.montoDescuento ?? 0) || 0,
+    descuentos: boucherOpcional?.descuentos || (comanda.descuento > 0 ? [{ porcentaje: comanda.descuento, motivo: comanda.motivoDescuento, monto: comanda.montoDescuento }] : []),
     cliente: {
       nombre: comanda.clienteNombre || comanda.cliente?.nombre || (typeof boucherOpcional?.cliente === 'object' ? boucherOpcional.cliente?.nombre : null) || 'Cliente',
       dni: comanda.cliente?.dni || (typeof boucherOpcional?.cliente === 'object' ? boucherOpcional.cliente?.dni : null) || '',

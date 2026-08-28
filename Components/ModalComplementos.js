@@ -19,6 +19,11 @@ import {
   calcularPrecioUnitarioConComplementos,
 } from "../utils/precioComplementos";
 
+const findGrupoModal = (grupos, nombre) => {
+  const key = String(nombre || "").trim().toLowerCase();
+  return (grupos || []).find((g) => String(g.grupo || "").trim().toLowerCase() === key) || null;
+};
+
 /**
  * Modal para seleccionar complementos/variantes de un plato
  * v2.0 - Soporte para cantidades por opción
@@ -38,6 +43,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   // Estructura: { "Proteína": { "Pollo": 2, "Res": 1 }, "Guarnición": { "Ensalada": 1 } }
   const [seleccionesPorGrupo, setSeleccionesPorGrupo] = useState({});
   const [notaEspecial, setNotaEspecial] = useState("");
+  const [cantidadClones, setCantidadClones] = useState(1);
 
   // Los complementos del plato (array de grupos)
   const complementos = plato?.complementos || [];
@@ -76,6 +82,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
         setSeleccionesPorGrupo({});
       }
       setNotaEspecial("");
+      setCantidadClones(1);
     }
   }, [visible, complementosIniciales]);
 
@@ -248,6 +255,11 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     return Object.values(estadoGrupos).some(e => !e.esValido);
   }, [estadoGrupos]);
 
+  const nClones = Math.max(1, Math.min(99, Number(cantidadClones) || 1));
+  const cambiarClones = (delta) => {
+    setCantidadClones((c) => Math.max(1, Math.min(99, (Number(c) || 1) + delta)));
+  };
+
   // v3.0: Cálculo de precios en tiempo real
   // - Si plato.complementosAfectanPrecio === false, los extras son informativos (no suman).
   // - El footer muestra base + extras = unitario.
@@ -257,7 +269,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const preciosResumen = useMemo(() => {
     const seleccionesParaCalc = [];
     Object.entries(seleccionesPorGrupo).forEach(([grupoNombre, opciones]) => {
-      const grupoConfig = complementos.find((g) => g.grupo === grupoNombre);
+      const grupoConfig = findGrupoModal(complementos, grupoNombre);
       Object.entries(opciones).forEach(([opcion, cantidad]) => {
         if (cantidad > 0) {
           const precioOpcion = grupoConfig ? getPrecioOpcion(grupoConfig, opcion) : 0;
@@ -291,7 +303,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     const complementosSeleccionados = [];
     
     Object.entries(seleccionesPorGrupo).forEach(([grupoNombre, opciones]) => {
-      const grupoConfig = complementos.find((g) => g.grupo === grupoNombre);
+      const grupoConfig = findGrupoModal(complementos, grupoNombre);
       Object.entries(opciones).forEach(([opcion, cantidad]) => {
         if (cantidad > 0) {
           const precioOpcion = grupoConfig ? getPrecioOpcion(grupoConfig, opcion) : 0;
@@ -309,20 +321,21 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     onConfirm({
       complementosSeleccionados,
       notaEspecial: notaEspecial.trim(),
-      // v3.0: enviar totales pre-calculados para que el carrito no tenga que recalcular
       _precioUnitario: preciosResumen.unitario,
       _extraComplementos: preciosResumen.extra,
+      _cantidadPlatos: Math.max(1, Math.min(99, Number(cantidadClones) || 1)),
     });
 
-    // Resetear estado local
     setSeleccionesPorGrupo({});
     setNotaEspecial("");
+    setCantidadClones(1);
   };
 
   // Cerrar sin guardar
   const handleCancelar = () => {
     setSeleccionesPorGrupo({});
     setNotaEspecial("");
+    setCantidadClones(1);
     onClose();
   };
 
@@ -358,6 +371,47 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                 color={theme.colors.text.primary}
               />
             </TouchableOpacity>
+          </View>
+
+          <View style={styles.cloneBar}>
+            <View style={styles.cloneBarText}>
+              <View style={styles.cloneTitleRow}>
+                <MaterialCommunityIcons
+                  name="plus-box-multiple"
+                  size={18}
+                  color={theme.colors.primary}
+                />
+                <Text style={styles.cloneTitle}>Clonar plato</Text>
+              </View>
+              <Text style={styles.cloneHint}>
+                {nClones === 1
+                  ? "Misma guarnición en cada unidad que agregues"
+                  : `Se agregan ${nClones} platos con estas guarniciones`}
+              </Text>
+            </View>
+            <View style={styles.cloneControls}>
+              <TouchableOpacity
+                style={[styles.cloneBtn, nClones <= 1 && styles.cantidadButtonDisabled]}
+                onPress={() => cambiarClones(-1)}
+                disabled={nClones <= 1}
+                activeOpacity={0.8}
+                accessibilityLabel="Quitar un plato clonado"
+              >
+                <MaterialCommunityIcons name="minus" size={18} color={theme.colors.text.white} />
+              </TouchableOpacity>
+              <Text style={styles.cloneCount} accessibilityLabel={`Cantidad ${nClones}`}>
+                {nClones}
+              </Text>
+              <TouchableOpacity
+                style={[styles.cloneBtn, nClones >= 99 && styles.cantidadButtonDisabled]}
+                onPress={() => cambiarClones(1)}
+                disabled={nClones >= 99}
+                activeOpacity={0.8}
+                accessibilityLabel="Agregar un plato clonado"
+              >
+                <MaterialCommunityIcons name="plus" size={18} color={theme.colors.text.white} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <ScrollView
@@ -531,6 +585,14 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                 <Text style={styles.precioResumenTotalLabel}>Total unitario</Text>
                 <Text style={styles.precioResumenTotalValor}>S/. {preciosResumen.unitario.toFixed(2)}</Text>
               </View>
+              {nClones > 1 && (
+                <View style={[styles.precioResumenRow, styles.precioResumenTotalRow]}>
+                  <Text style={styles.precioResumenTotalLabel}>Total × {nClones}</Text>
+                  <Text style={styles.precioResumenTotalValor}>
+                    S/. {(preciosResumen.unitario * nClones).toFixed(2)}
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
@@ -563,7 +625,9 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                 size={20}
                 color={theme.colors.text.white}
               />
-              <Text style={styles.confirmButtonText}>Agregar a la orden</Text>
+              <Text style={styles.confirmButtonText}>
+                {nClones > 1 ? `Agregar ${nClones} a la orden` : "Agregar a la orden"}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -622,6 +686,59 @@ const modalComplementosStyles = (theme) =>
     },
     closeButton: {
       padding: theme.spacing.xs,
+    },
+    cloneBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: theme.spacing.md,
+      paddingHorizontal: theme.spacing.lg,
+      paddingVertical: theme.spacing.sm,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+      backgroundColor: theme.colors.background,
+    },
+    cloneBarText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    cloneTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.xs,
+    },
+    cloneTitle: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: theme.colors.text.primary,
+    },
+    cloneHint: {
+      fontSize: 11,
+      color: theme.colors.text.secondary,
+      marginTop: 2,
+    },
+    cloneControls: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: theme.colors.surface,
+      borderRadius: 12,
+      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    cloneBtn: {
+      width: 36,
+      height: 36,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: theme.colors.primary,
+    },
+    cloneCount: {
+      fontSize: 16,
+      fontWeight: "700",
+      color: theme.colors.text.primary,
+      minWidth: 36,
+      textAlign: "center",
     },
     modalScrollView: {
       maxHeight: 450,

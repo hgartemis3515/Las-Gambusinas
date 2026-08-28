@@ -818,7 +818,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
 
   // Función para agregar un plato sin complementos
-  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = '', precioUnitarioV3 = null, extraComplementosV3 = null) => {
+  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = '', precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1) => {
+    const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
     // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
     const instanceId = `${plato._id}_${Date.now()}`;
 
@@ -837,7 +838,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       plato: plato._id,
       platoId: plato.id || null,
       estado: 'pedido',
-      cantidad: 1,
+      cantidad: n,
       nombre: plato.nombre,
       precio: plato.precio,
       complementosSeleccionados: complementosNormalizados,
@@ -879,16 +880,23 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
     if (existsWithSameComplements) {
       const index = platosEditados.indexOf(existsWithSameComplements);
-      handleCambiarCantidad(index, 1);
+      handleCambiarCantidad(index, n);
     } else {
       setPlatosEditados([...platosEditados, platoConComplementos]);
     }
   };
 
   // Función para confirmar complementos desde el modal
-  const handleConfirmarComplementosEdicion = ({ complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos }) => {
+  const handleConfirmarComplementosEdicion = ({ complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
     if (platoParaComplementar) {
-      agregarPlatoSinComplementos(platoParaComplementar, complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos);
+      agregarPlatoSinComplementos(
+        platoParaComplementar,
+        complementosSeleccionados,
+        notaEspecial,
+        _precioUnitario,
+        _extraComplementos,
+        Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1))
+      );
       setPlatoParaComplementar(null);
     }
   };
