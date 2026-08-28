@@ -173,6 +173,15 @@ export const permitirCrearReservasMozos = async () => {
     }
 };
 
+export const entregarPlatoEnteroAbsolutoCocina = async () => {
+    try {
+        const config = await obtenerConfiguracion();
+        return config?.cocina?.entregarPlatoEnteroAbsoluto !== false;
+    } catch (e) {
+        return true;
+    }
+};
+
 /**
  * Configuración por defecto (fallback)
  */
@@ -187,6 +196,9 @@ export const getConfiguracionPorDefecto = () => ({
     politicaRedondeo: 'total',
     redondearA: 0.01,
     zonaHoraria: 'America/Lima',
+    cocina: {
+        entregarPlatoEnteroAbsoluto: true
+    },
     datosFiscales: {
         nombreComercial: 'Las Gambusinas',
         razonSocial: '',
@@ -337,6 +349,7 @@ export default {
     imprimirComandaHabilitadoMozos,
     editarEliminarTomadasPorCocinaHabilitadoMozos,
     permitirCrearReservasMozos,
+    entregarPlatoEnteroAbsolutoCocina,
     calcularTotales,
     formatearMonto,
     formatearMontoAsync,

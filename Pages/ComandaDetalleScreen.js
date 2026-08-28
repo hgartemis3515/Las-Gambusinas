@@ -139,6 +139,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [configMoneda, setConfigMoneda] = useState(null);
   // Regla cocina: por defecto bloqueo activo (config desmarcada)
   const [permitirEditarEliminarTomadas, setPermitirEditarEliminarTomadas] = useState(false);
+  const [omitirEntregaMozo, setOmitirEntregaMozo] = useState(true);
   
   // Estados para modales
   const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
@@ -225,12 +226,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   useEffect(() => {
     const loadConfiguracion = async () => {
       try {
-        const [config, permitirTomadas] = await Promise.all([
+        const [config, permitirTomadas, absolutoCocina] = await Promise.all([
           configuracionService.obtenerConfigMoneda(true),
-          configuracionService.editarEliminarTomadasPorCocinaHabilitadoMozos()
+          configuracionService.editarEliminarTomadasPorCocinaHabilitadoMozos(),
+          configuracionService.entregarPlatoEnteroAbsolutoCocina()
         ]);
         setConfigMoneda(config);
         setPermitirEditarEliminarTomadas(permitirTomadas);
+        setOmitirEntregaMozo(absolutoCocina !== false);
       } catch (error) {
         console.error('Error cargando configuración de moneda:', error);
       }
@@ -238,10 +241,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     loadConfiguracion();
     return configuracionService.subscribeCambio(async () => {
       try {
-        const config = await configuracionService.obtenerConfigMoneda();
+        const [config, absolutoCocina] = await Promise.all([
+          configuracionService.obtenerConfigMoneda(),
+          configuracionService.entregarPlatoEnteroAbsolutoCocina()
+        ]);
         setConfigMoneda(config);
+        setOmitirEntregaMozo(absolutoCocina !== false);
       } catch (e) {
-        console.warn('No se pudo refrescar IGV:', e?.message);
+        console.warn('No se pudo refrescar configuración:', e?.message);
       }
     });
   }, []);
@@ -778,7 +785,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // SALIO: Condición para mostrar botón Entregar: hay platos en estado "salio"
   // (recoger ya no habilita la entrega; el mozo espera a que cocina confirme la salida)
-  const puedeEntregar = platosEnSalio.length > 0;
+  const puedeEntregar = !omitirEntregaMozo && platosEnSalio.length > 0;
   
   // Obtener platos disponibles
   const obtenerPlatos = async () => {
@@ -2021,8 +2028,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       <FilaPlatoCompacta
         plato={plato}
         estilos={estilos}
-        onMarcarEntregado={handleMarcarPlatoEntregado}
-        onToggleSeleccion={toggleSeleccionarPlatoEntregar}
+        onMarcarEntregado={omitirEntregaMozo ? undefined : handleMarcarPlatoEntregado}
+        onToggleSeleccion={omitirEntregaMozo ? undefined : toggleSeleccionarPlatoEntregar}
         seleccionado={estaSeleccionado}
       />
     );

@@ -127,7 +127,7 @@ const FilaPlatoCompacta = ({
               </Text>
             </View>
           </View>
-        ) : esSalio ? (
+        ) : esSalio && onToggleSeleccion ? (
           /* SALIO: Checkbox resaltante — el plato salió de cocina y puede entregarse */
           <TouchableOpacity
             style={[
