@@ -220,16 +220,16 @@ export function generarHtmlComanda({ datos, plantilla, serverOrigin }) {
   if (mostrarTotal && bloques.mostrarTotal !== false) {
     const simboloMoneda = datos.moneda === 'USD' ? '$' : 'S/.';
     const subtotalPlatos = resolverSubtotalPlatos(datos);
-    if (mostrarPrecios && subtotalPlatos > 0) {
-      html += `<div style="font-size:${fontSize}px;text-align:right;padding:1px 0;">Subtotal: ${simboloMoneda}${subtotalPlatos.toFixed(2)}</div>`;
+    const { bruto, neto, montoDesc } = resolverBrutoYNetoImpresion(datos, subtotalPlatos);
+    if (mostrarPrecios && (montoDesc > 0 ? bruto : subtotalPlatos) > 0) {
+      html += `<div style="font-size:${fontSize}px;text-align:right;padding:1px 0;">Subtotal: ${simboloMoneda}${(montoDesc > 0 ? bruto : subtotalPlatos).toFixed(2)}</div>`;
     }
-    const montoDesc = Number(datos.montoDescuento || 0);
     if (montoDesc > 0) {
       const motivoDesc = datos.descuentos?.[0]?.motivo ? ` (${escapeHtml(datos.descuentos[0].motivo)})` : '';
       html += `<div style="font-size:${fontSize}px;text-align:right;padding:1px 0;">Descuento${motivoDesc}: -${simboloMoneda}${montoDesc.toFixed(2)}</div>`;
     }
     html += '<div style="font-weight:bold;font-size:' + (fontSize + 2) + 'px;text-align:right;margin:4px 0;">';
-    html += `${etiquetas.total}: ${simboloMoneda}${(datos.total || 0).toFixed(2)}`;
+    html += `${etiquetas.total}: ${simboloMoneda}${neto.toFixed(2)}`;
     html += '</div>';
 
     // Bloque efectivo: monto recibido + vuelto (solo si método de pago es efectivo)
@@ -298,6 +298,19 @@ function resolverSubtotalPlatos(datos) {
   if (sinDesc > 0) return sinDesc;
   const sub = Number(datos?.subtotal);
   return Number.isFinite(sub) && sub > 0 ? sub : 0;
+}
+
+function resolverBrutoYNetoImpresion(datos, subtotalPlatos) {
+  const montoDesc = Number(datos?.montoDescuento || 0);
+  const sin = Number(datos?.totalSinDescuento);
+  const tot = Number(datos?.total);
+  const bruto = (Number.isFinite(sin) && sin > 0)
+    ? sin
+    : (subtotalPlatos > 0 ? subtotalPlatos : (Number.isFinite(tot) && tot > 0 ? tot : 0));
+  const neto = montoDesc > 0
+    ? Number(Math.max(0, bruto - montoDesc).toFixed(2))
+    : (Number.isFinite(tot) && tot > 0 ? tot : bruto);
+  return { bruto, neto, montoDesc };
 }
 
 function divider() {
