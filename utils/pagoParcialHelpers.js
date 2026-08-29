@@ -188,30 +188,78 @@ export function calcularSubtotalSeleccion(selectedKeys, items) {
     .reduce((s, p) => s + (p.subtotal || 0), 0);
 }
 
+export function comandaTieneDescuento(c) {
+  return Number(c?.descuento) > 0
+    || Number(c?.montoDescuento) > 0
+    || Number(c?.descuentoMontoFijo) > 0;
+}
+
+export function montoDescuentoDeComanda(c) {
+  const n = Number(c?.montoDescuento);
+  if (Number.isFinite(n) && n > 0) return n;
+  const fijo = Number(c?.descuentoMontoFijo);
+  if (Number.isFinite(fijo) && fijo > 0) return fijo;
+  const sin = Number(c?.totalSinDescuento);
+  const neto = c?.totalCalculado != null ? Number(c.totalCalculado) : NaN;
+  if (comandaTieneDescuento(c) && Number.isFinite(sin) && Number.isFinite(neto) && sin > neto) {
+    return Math.round((sin - neto) * 100) / 100;
+  }
+  return 0;
+}
+
+/**
+ * Descuento de las comandas prorrateado a los platos seleccionados (igual que el backend).
+ */
+export function prorratearDescuentoSeleccion(comandas, selectedKeys, items) {
+  let desc = 0;
+  (comandas || []).forEach((comanda) => {
+    if (!comandaTieneDescuento(comanda)) return;
+    const monto = montoDescuentoDeComanda(comanda);
+    if (!(monto > 0)) return;
+    const comandaId = comanda._id?.toString?.() || comanda._id;
+    const subTotal = (comanda.platos || []).reduce((s, p, i) => {
+      if (p?.eliminado || p?.anulado) return s;
+      return s + resolverSubtotalLineaPlato(p, comanda, i);
+    }, 0);
+    if (!(subTotal > 0)) return;
+    const set = new Set(selectedKeys || []);
+    const subSel = (items || [])
+      .filter((it) => set.has(it.key) && !it.yaPagado && String(it.comandaId) === String(comandaId))
+      .reduce((s, it) => s + (it.subtotal || 0), 0);
+    desc += monto * Math.min(1, subSel / subTotal);
+  });
+  return Math.round(desc * 100) / 100;
+}
+
 /**
  * Preview de totales alineado con calculosPrecios del backend.
+ * montoDescuento se resta del total (con IGV), como en la comanda.
  */
-export function calcularTotalesPreview(subtotalPlatos, configMoneda) {
+export function calcularTotalesPreview(subtotalPlatos, configMoneda, montoDescuento = 0) {
   const igvPct = configMoneda?.igvPorcentaje ?? 18;
   const incluyeIGV = configMoneda?.preciosIncluyenIGV ?? false;
   const decs = configMoneda?.decimales ?? 2;
+  const desc = Number(montoDescuento) > 0 ? Number(montoDescuento) : 0;
 
+  let bruto;
+  let subtotal;
+  let igv;
   if (incluyeIGV) {
-    const total = subtotalPlatos;
-    const subtotalSinIGV = total / (1 + igvPct / 100);
-    const igv = total - subtotalSinIGV;
-    return {
-      subtotal: Number(subtotalSinIGV.toFixed(decs)),
-      igv: Number(igv.toFixed(decs)),
-      total: Number(total.toFixed(decs)),
-    };
+    bruto = subtotalPlatos;
+    subtotal = bruto / (1 + igvPct / 100);
+    igv = bruto - subtotal;
+  } else {
+    subtotal = subtotalPlatos;
+    igv = subtotalPlatos * (igvPct / 100);
+    bruto = subtotalPlatos + igv;
   }
-  const igv = subtotalPlatos * (igvPct / 100);
-  const total = subtotalPlatos + igv;
+  const totalNeto = Math.max(0, bruto - desc);
   return {
-    subtotal: Number(subtotalPlatos.toFixed(decs)),
+    subtotal: Number(subtotal.toFixed(decs)),
     igv: Number(igv.toFixed(decs)),
-    total: Number(total.toFixed(decs)),
+    total: Number(totalNeto.toFixed(decs)),
+    totalSinDescuento: Number(bruto.toFixed(decs)),
+    montoDescuento: Number(desc.toFixed(decs)),
   };
 }
 

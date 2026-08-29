@@ -36,6 +36,9 @@ import {
   parseBoucherResponse,
   calcularSubtotalSeleccion,
   calcularTotalesPreview,
+  prorratearDescuentoSeleccion,
+  comandaTieneDescuento,
+  montoDescuentoDeComanda,
   toggleSeleccionarTodos,
 } from "../../../utils/pagoParcialHelpers";
 // Animaciones Premium 60fps
@@ -890,7 +893,7 @@ const PagosScreen = () => {
     // 🔥 FIX: Usar totalCalculado de la comanda si tiene descuento aplicado
     // IMPORTANTE: totalCalculado puede ser 0 (descuento 100%), no usar como booleano
     comandasACalcular.forEach((comanda) => {
-      if (comanda.descuento > 0 && comanda.totalCalculado != null) {
+      if (comandaTieneDescuento(comanda) && comanda.totalCalculado != null) {
         totalCalculado += comanda.totalCalculado;
       } else if (comanda.platos) {
         // Sin descuento: calcular normalmente
@@ -924,7 +927,7 @@ const PagosScreen = () => {
     // 🔥 FIX: Usar totalCalculado de la comanda si tiene descuento aplicado
     // IMPORTANTE: totalCalculado puede ser 0 (descuento 100%), no usar como booleano
     comandasParaCalcular.forEach((comanda) => {
-      if (comanda.descuento > 0 && comanda.totalCalculado != null) {
+      if (comandaTieneDescuento(comanda) && comanda.totalCalculado != null) {
         total += comanda.totalCalculado;
       } else if (comanda.platos) {
         // Sin descuento: calcular normalmente
@@ -969,10 +972,8 @@ const PagosScreen = () => {
     let ahorroTotal = 0;
     
     comandasParaDesc.forEach((comanda) => {
-      if (comanda.descuento > 0) {
-        // 🔥 CORREGIDO: Usar montoDescuento del backend si está disponible
-        // Si no, calcular basándose en totalSinDescuento y totalCalculado
-        let montoAhorro = comanda.montoDescuento;
+      if (comandaTieneDescuento(comanda)) {
+        let montoAhorro = montoDescuentoDeComanda(comanda);
         
         if (!montoAhorro || montoAhorro === 0) {
           // Si no hay montoDescuento, calcularlo
@@ -1050,9 +1051,12 @@ const PagosScreen = () => {
   }, [platosPagables, platosSeleccionadosPago]);
 
   const totalesPagoActual = useMemo(() => {
+    const params = route.params || {};
+    const comandasFuente = comandas.length > 0 ? comandas : (params.comandasParaPagar || []);
     const sub = calcularSubtotalSeleccion(platosSeleccionadosPago, platosEnPantalla);
-    return calcularTotalesPreview(sub, configMoneda);
-  }, [platosSeleccionadosPago, platosEnPantalla, configMoneda]);
+    const desc = prorratearDescuentoSeleccion(comandasFuente, platosSeleccionadosPago, platosEnPantalla);
+    return calcularTotalesPreview(sub, configMoneda, desc);
+  }, [comandas, route.params, platosSeleccionadosPago, platosEnPantalla, configMoneda]);
 
   // Total a cobrar en la moneda base (PEN) que se pasará al modal.
   // Prioriza el total de los platos seleccionados (pago parcial / PPA).
@@ -1372,7 +1376,7 @@ const PagosScreen = () => {
           : total;
 
     // FIX: Verificar si hay descuento aplicado (permite total=0 con descuento 100%)
-    const tieneDescuento = comandasFinales.some(c => c.descuento > 0);
+    const tieneDescuento = comandasFinales.some((c) => comandaTieneDescuento(c));
 
     // ✅ Validaciones antes de procesar
     if (comandasFinales.length === 0) {
@@ -2657,6 +2661,8 @@ const PagosScreen = () => {
         onClienteSeleccionado={handleClienteSeleccionado}
         onPagoConfirmado={handlePagoConfirmado}
         totalACobrar={totalBaseCobro}
+        montoDescuento={totalesPagoActual?.montoDescuento || infoDescuentos.ahorroTotal || 0}
+        totalSinDescuento={totalesPagoActual?.totalSinDescuento}
         tipoCambioUsd={tipoCambioUsd}
         permitirUsd={permitirUsd}
         decimales={decimalesMoneda}

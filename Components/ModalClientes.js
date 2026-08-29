@@ -40,6 +40,8 @@ const ModalClientes = ({
   // Nuevas props de pago (opcionales para compatibilidad, pero recomendadas)
   onPagoConfirmado,
   totalACobrar = 0,
+  montoDescuento = 0,
+  totalSinDescuento = null,
   tipoCambioUsd = null,
   permitirUsd = false,
   decimales = 2,
@@ -78,6 +80,19 @@ const ModalClientes = ({
   const totalEnMoneda = useMemo(() => {
     return convertirMoneda(totalACobrar, monedaSeleccionada, tipoCambioUsd);
   }, [totalACobrar, monedaSeleccionada, tipoCambioUsd]);
+
+  const descEnMoneda = useMemo(() => {
+    if (!(Number(montoDescuento) > 0)) return 0;
+    return convertirMoneda(Number(montoDescuento), monedaSeleccionada, tipoCambioUsd);
+  }, [montoDescuento, monedaSeleccionada, tipoCambioUsd]);
+
+  const brutoEnMoneda = useMemo(() => {
+    if (!(Number(montoDescuento) > 0)) return null;
+    const bruto = totalSinDescuento != null
+      ? Number(totalSinDescuento)
+      : Number(totalACobrar) + Number(montoDescuento);
+    return convertirMoneda(bruto, monedaSeleccionada, tipoCambioUsd);
+  }, [montoDescuento, totalSinDescuento, totalACobrar, monedaSeleccionada, tipoCambioUsd]);
 
   const montoRecibidoNum = useMemo(() => parseMonto(montoRecibidoStr), [montoRecibidoStr]);
 
@@ -321,12 +336,39 @@ const ModalClientes = ({
               <View style={styles.modalBody}>
                 {/* Total a cobrar */}
                 <View style={styles.totalCobroContainer}>
-                  <Text style={styles.totalCobroLabel}>Total a cobrar:</Text>
-                  <Text style={styles.totalCobroValue}>
-                    {totalEnMoneda == null
-                      ? '—'
-                      : formatearMontoConMoneda(totalEnMoneda, monedaSeleccionada, decimales)}
-                  </Text>
+                  {Number(montoDescuento) > 0 && brutoEnMoneda != null ? (
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.totalCobroFila}>
+                        <Text style={styles.totalCobroLabelSec}>Subtotal:</Text>
+                        <Text style={styles.totalCobroValueSec}>
+                          {formatearMontoConMoneda(brutoEnMoneda, monedaSeleccionada, decimales)}
+                        </Text>
+                      </View>
+                      <View style={styles.totalCobroFila}>
+                        <Text style={[styles.totalCobroLabelSec, { color: '#C0392B' }]}>Descuento:</Text>
+                        <Text style={[styles.totalCobroValueSec, { color: '#C0392B' }]}>
+                          - {formatearMontoConMoneda(descEnMoneda, monedaSeleccionada, decimales)}
+                        </Text>
+                      </View>
+                      <View style={[styles.totalCobroFila, { marginTop: 4 }]}>
+                        <Text style={styles.totalCobroLabel}>Total a cobrar:</Text>
+                        <Text style={styles.totalCobroValue}>
+                          {totalEnMoneda == null
+                            ? '—'
+                            : formatearMontoConMoneda(totalEnMoneda, monedaSeleccionada, decimales)}
+                        </Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <>
+                      <Text style={styles.totalCobroLabel}>Total a cobrar:</Text>
+                      <Text style={styles.totalCobroValue}>
+                        {totalEnMoneda == null
+                          ? '—'
+                          : formatearMontoConMoneda(totalEnMoneda, monedaSeleccionada, decimales)}
+                      </Text>
+                    </>
+                  )}
                 </View>
 
                 {/* Selector de moneda (toggle) */}
@@ -691,6 +733,22 @@ const modalStyles = (theme) => StyleSheet.create({
   },
   totalCobroLabel: {
     fontSize: 15,
+    fontWeight: "600",
+    color: "#333333",
+  },
+  totalCobroFila: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 2,
+  },
+  totalCobroLabelSec: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#555555",
+  },
+  totalCobroValueSec: {
+    fontSize: 14,
     fontWeight: "600",
     color: "#333333",
   },

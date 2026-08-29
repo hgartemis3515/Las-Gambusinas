@@ -104,8 +104,8 @@ export function requiereEfectivo(metodo) {
  * @returns {{ ok: boolean, mensaje?: string }}
  */
 export function validarEfectivo(totalEnMoneda, montoRecibido) {
-  const total = Number(totalEnMoneda) || 0;
-  const recibido = Number(montoRecibido) || 0;
+  const total = Math.round((Number(totalEnMoneda) || 0) * 100) / 100;
+  const recibido = Math.round((Number(montoRecibido) || 0) * 100) / 100;
   if (recibido < total) {
     return {
       ok: false,
