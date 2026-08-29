@@ -28,6 +28,7 @@ import { useSocket } from "../../../context/SocketContext";
 import logger from "../../../utils/logger";
 import configuracionService from "../../../services/configuracionService";
 import { filtrarComandasActivas, filtrarComandasPorIds } from "../../../utils/comandaHelpers";
+import { cantidadGuarnicionEfectiva } from "../../../utils/platoGuarniciones";
 import { mostrarOpcionesComanda } from "../../../services/comandaPrint";
 import {
   listarPlatosPagables,
@@ -2297,7 +2298,7 @@ const PagosScreen = () => {
                                 lineHeight: 16,
                               }}
                             >
-                              · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion} x{comp.cantidad || 1}
+                              · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion} x{cantidadGuarnicionEfectiva(comp, platoItem)}
                             </Text>
                           ))}
                         </View>
@@ -2368,7 +2369,7 @@ const PagosScreen = () => {
                                 }}
                               >
                                 · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion} x
-                                {comp.cantidad || 1}
+                                {cantidadGuarnicionEfectiva(comp, item)}
                               </Text>
                             ))}
                           </View>

@@ -18,6 +18,7 @@ import {
   getPrecioOpcion,
   calcularPrecioUnitarioConComplementos,
 } from "../utils/precioComplementos";
+import { textosGuarnicionesTotales, preseleccionComplementosDePlato } from "../utils/platoGuarniciones";
 
 const findGrupoModal = (grupos, nombre) => {
   const key = String(nombre || "").trim().toLowerCase();
@@ -34,7 +35,7 @@ const findGrupoModal = (grupos, nombre) => {
  * @param {function} onClose - Callback para cerrar el modal sin guardar
  * @param {array} complementosIniciales - Complementos ya seleccionados (para edición)
  */
-const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIniciales = null }) => {
+const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIniciales = null, notaInicial = "" }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const styles = modalComplementosStyles(theme);
@@ -63,28 +64,30 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     };
   }, []);
 
-  // Inicializar selecciones desde complementosIniciales (para edición)
+  const platoKey = plato?._id || plato?.id || '';
+
+  // null = plato nuevo → preselección de platos.html. Array = edición (aunque esté vacío).
   useEffect(() => {
-    if (visible) {
-      if (complementosIniciales && Array.isArray(complementosIniciales)) {
-        // Convertir array de complementos a estructura por grupo
-        const nuevaSeleccion = {};
-        complementosIniciales.forEach(comp => {
-          if (!nuevaSeleccion[comp.grupo]) {
-            nuevaSeleccion[comp.grupo] = {};
-          }
-          const cantidad = comp.cantidad || 1;
-          nuevaSeleccion[comp.grupo][comp.opcion] = cantidad;
-        });
-        setSeleccionesPorGrupo(nuevaSeleccion);
-      } else {
-        // Limpiar para nuevo plato
-        setSeleccionesPorGrupo({});
-      }
-      setNotaEspecial("");
-      setCantidadClones(1);
+    if (!visible) return;
+    const fuente = Array.isArray(complementosIniciales)
+      ? complementosIniciales
+      : preseleccionComplementosDePlato(plato);
+    if (fuente.length) {
+      const nuevaSeleccion = {};
+      fuente.forEach(comp => {
+        if (!nuevaSeleccion[comp.grupo]) {
+          nuevaSeleccion[comp.grupo] = {};
+        }
+        const cantidad = comp.cantidad || 1;
+        nuevaSeleccion[comp.grupo][comp.opcion] = cantidad;
+      });
+      setSeleccionesPorGrupo(nuevaSeleccion);
+    } else {
+      setSeleccionesPorGrupo({});
     }
-  }, [visible, complementosIniciales]);
+    setNotaEspecial(typeof notaInicial === 'string' ? notaInicial : "");
+    setCantidadClones(1);
+  }, [visible, complementosIniciales, notaInicial, platoKey, plato]);
 
   // Obtener cantidad actual de una opción
   const getCantidadOpcion = useCallback((grupoNombre, opcion) => {
@@ -260,6 +263,16 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     setCantidadClones((c) => Math.max(1, Math.min(99, (Number(c) || 1) + delta)));
   };
 
+  const totalesGuarnicion = useMemo(() => {
+    const comps = [];
+    Object.entries(seleccionesPorGrupo).forEach(([grupo, opciones]) => {
+      Object.entries(opciones).forEach(([opcion, cantidad]) => {
+        if (cantidad > 0) comps.push({ grupo, opcion, cantidad });
+      });
+    });
+    return textosGuarnicionesTotales(comps, nClones);
+  }, [seleccionesPorGrupo, nClones]);
+
   // v3.0: Cálculo de precios en tiempo real
   // - Si plato.complementosAfectanPrecio === false, los extras son informativos (no suman).
   // - El footer muestra base + extras = unitario.
@@ -385,8 +398,8 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
               </View>
               <Text style={styles.cloneHint}>
                 {nClones === 1
-                  ? "Misma guarnición en cada unidad que agregues"
-                  : `Se agregan ${nClones} platos con estas guarniciones`}
+                  ? "Las cantidades de abajo son por cada plato"
+                  : `Se agregan ${nClones} platos: cada guarnición se multiplica`}
               </Text>
             </View>
             <View style={styles.cloneControls}>
@@ -413,6 +426,15 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
               </TouchableOpacity>
             </View>
           </View>
+
+          {totalesGuarnicion.length > 0 && (
+            <View style={styles.totalesBar}>
+              <Text style={styles.totalesBarTitle}>
+                {nClones > 1 ? `Guarniciones a agregar (${nClones} platos)` : "Guarniciones a agregar"}
+              </Text>
+              <Text style={styles.totalesBarText}>{totalesGuarnicion.join(" · ")}</Text>
+            </View>
+          )}
 
           <ScrollView
             style={styles.modalScrollView}
@@ -503,7 +525,6 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                               </TouchableOpacity>
                               
                               <Text style={styles.cantidadText}>{cantidad}</Text>
-                              
                               <TouchableOpacity
                                 style={[styles.cantidadButton, !puedeIncrementar && styles.cantidadButtonDisabled]}
                                 onPress={() => incrementarOpcion(grupoNormalizado.grupo, opcionNombre, grupoNormalizado)}
@@ -512,6 +533,9 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                                 <MaterialCommunityIcons name="plus" size={16} color={puedeIncrementar ? theme.colors.text.white : theme.colors.text.light} />
                               </TouchableOpacity>
                             </View>
+                            {nClones > 1 && cantidad > 0 && (
+                              <Text style={styles.cantidadTotalHint}>={cantidad * nClones}</Text>
+                            )}
                           </View>
                         );
                       }
@@ -717,6 +741,24 @@ const modalComplementosStyles = (theme) =>
       color: theme.colors.text.secondary,
       marginTop: 2,
     },
+    totalesBar: {
+      paddingHorizontal: theme.spacing.lg,
+      paddingVertical: theme.spacing.sm,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
+    },
+    totalesBarTitle: {
+      fontSize: 11,
+      fontWeight: "700",
+      color: theme.colors.primary,
+      marginBottom: 2,
+    },
+    totalesBarText: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: theme.colors.text.primary,
+    },
     cloneControls: {
       flexDirection: "row",
       alignItems: "center",
@@ -859,6 +901,12 @@ const modalComplementosStyles = (theme) =>
       color: theme.colors.text.primary,
       minWidth: 32,
       textAlign: "center",
+    },
+    cantidadTotalHint: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: theme.colors.primary,
+      minWidth: 28,
     },
     notaContainer: {
       marginTop: theme.spacing.md,

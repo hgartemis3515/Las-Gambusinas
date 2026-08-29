@@ -147,7 +147,7 @@ const MasScreen = () => {
         name: data.name != null && String(data.name).trim() ? data.name : prev.name,
         rol: data.rol != null ? data.rol : prev.rol,
       };
-      if (Array.isArray(data.permisosEfectivos) && data.permisosEfectivos.length > 0) {
+      if (Array.isArray(data.permisosEfectivos) && data.permisosEfectivos.length > 0 && data.permisosEfectivos.every((p) => typeof p === "string")) {
         next.permisos = data.permisosEfectivos;
       }
       if (data.fotoUrl !== undefined && data.fotoUrl !== null) {

@@ -9,6 +9,35 @@
 /** Estados que indican comanda cerrada (fin de ciclo de servicio) */
 const ESTADOS_COMANDA_CERRADA = ['pagado', 'completado', 'cerrado', 'cancelado', 'anulado'];
 
+/** Primer paso (mesa o para llevar, aún sin pago / sin cocina): se pueden editar y eliminar. */
+const ESTADOS_PLATO_PRE_COCINA = ['pedido', 'en_espera', 'pendiente'];
+const ESTADOS_PLATO_YA_PREPARADOS = ['recoger', 'salio', 'entregado', 'pagado'];
+
+export const esEstadoPlatoPreCocina = (estado) =>
+  ESTADOS_PLATO_PRE_COCINA.includes(String(estado || 'pedido').toLowerCase());
+
+export const esEstadoPlatoYaPreparados = (estado) =>
+  ESTADOS_PLATO_YA_PREPARADOS.includes(String(estado || '').toLowerCase());
+
+/** Unifica en_espera y pendiente con pedido para acciones (eliminar/editar). */
+export const normalizarEstadoPlatoAccion = (estado) => {
+  const e = String(estado || 'pedido').toLowerCase();
+  if (e === 'en_espera' || e === 'pendiente') return 'pedido';
+  return e;
+};
+
+/**
+ * Estado visual en ComandaDetalle: el ticket PPA manda sobre plato.estado.
+ * Tras aprobar, platos de reserva siguen `pendiente` hasta T−20; no pintar "PENDIENTE" de aprobación.
+ */
+export const estadoVisualPlatoDetalle = (plato) => {
+  const ticket = plato?.pagoAdelantado?.estadoTicket;
+  if (ticket === 'pendiente_aprobacion') return 'pendiente_pago';
+  const estado = String(plato?.estado || '').toLowerCase();
+  if (estado === 'pendiente' && ticket === 'aprobado') return 'pedido';
+  return plato?.estado;
+};
+
 /**
  * Determina si una comanda está activa (en ciclo de servicio actual, sin pago/boucher).
  * Fuente única de verdad para filtrar comandas en toda la app.
@@ -169,8 +198,8 @@ export const filtrarSoloPlatosPagados = (comandas) => {
  * 
  * REGLA DE NEGOCIO - DIFERENCIA ENTRE ELIMINACIÓN Y EDICIÓN:
  * 
- * - PARA ELIMINACIÓN: Usar SOLO ['pedido'] como estadosPermitidos.
- *   Los platos en estado 'recoger' ya están preparados y NO deben eliminarse.
+ * - PARA ELIMINACIÓN: Usar ['pedido'] (incluye en_espera y pendiente: primer paso sin pago).
+ *   Los platos en recoger/salió/entregado ya están preparados y NO deben eliminarse.
  *   Esta función se usa en:
  *   - handleEliminarPlatos() → Solo muestra platos "Pedido"
  *   - handleEliminarComanda() → Solo permite eliminar si hay platos "Pedido"
@@ -193,7 +222,7 @@ export const filtrarPlatosPorEstado = (comandas, estadosPermitidos) => {
     
     comanda.platos.forEach((platoItem, index) => {
       const estado = platoItem.estado || 'pedido';
-      const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado;
+      const estadoNormalizado = normalizarEstadoPlatoAccion(estado);
       
       if (estadosPermitidos.includes(estadoNormalizado) && !platoItem.eliminado) {
         const cantidad = comanda.cantidades?.[index] || 1;
@@ -245,7 +274,7 @@ export const separarPlatosEditables = (comandas) => {
     comanda.platos.forEach((platoItem, index) => {
       const cantidad = comanda.cantidades?.[index] || 1;
       const estado = platoItem.estado || 'pedido';
-      const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado;
+      const estadoNormalizado = normalizarEstadoPlatoAccion(estado);
       
       if (platoItem.eliminado) return;
       

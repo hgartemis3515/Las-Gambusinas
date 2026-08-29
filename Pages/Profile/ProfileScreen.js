@@ -183,7 +183,9 @@ const ProfileScreen = () => {
       _id: updatedMozo._id || prev._id,
       name: updatedMozo.name || prev.name,
       rol: updatedMozo.rol != null ? updatedMozo.rol : prev.rol,
-      permisos: Array.isArray(updatedMozo.permisos) ? updatedMozo.permisos : prev.permisos,
+      permisos: Array.isArray(updatedMozo.permisosEfectivos) && updatedMozo.permisosEfectivos.every((p) => typeof p === "string")
+        ? updatedMozo.permisosEfectivos
+        : prev.permisos,
     };
     if (Object.prototype.hasOwnProperty.call(updatedMozo, "fotoUrl")) {
       next.fotoUrl = updatedMozo.fotoUrl || "";

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { cantidadGuarnicionEfectiva } from '../utils/platoGuarniciones';
 
 /**
  * Componente para renderizar una fila compacta de plato en la tabla
@@ -88,7 +89,7 @@ const FilaPlatoCompacta = ({
                   lineHeight: 16,
                 }}
               >
-                · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion} x{comp.cantidad || 1}
+                · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion} x{cantidadGuarnicionEfectiva(comp, plato)}
               </Text>
             ))}
           </View>

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, Pressable
+  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, Pressable, Switch
 } from "react-native";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -15,6 +15,7 @@ import { apiConfig } from "../apiConfig";
 import { getFallbackApiBase } from "../config/envDefaults";
 import configuracionService from "../services/configuracionService";
 import ModalComplementos from "../Components/ModalComplementos";
+import { platoRequiereGuarniciones, resolverPlatoConGrupos, guarnicionesElegidas } from "../utils/platoGuarniciones";
 import StepIndicator, { PASOS } from "../Components/reserva/StepIndicator";
 import HoraPicker from "../Components/reserva/HoraPicker";
 
@@ -103,7 +104,11 @@ export default function ReservaWizardScreen() {
   const [searchPlato, setSearchPlato] = useState("");
   const [searchDebounced, setSearchDebounced] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
+  const [tipoServicioModal, setTipoServicioModal] = useState("mesa");
+  const tipoServicioAlComplementarRef = useRef(null);
   const [platoParaComplementar, setPlatoParaComplementar] = useState(null);
+  const [complementosInicialesModal, setComplementosInicialesModal] = useState(null);
+  const [notaInicialModal, setNotaInicialModal] = useState("");
   const [errorBanner, setErrorBanner] = useState(null);
   const [exito, setExito] = useState(null);
   const [aprobado, setAprobado] = useState(false);
@@ -148,13 +153,12 @@ export default function ReservaWizardScreen() {
       } catch (err) {}
     }
     const mesaSrc = e.mesaObj || route.params?.mesa || {};
-    const estadoMesa = reservaFull?.mesa?.estado || mesaSrc.estado || "reservado";
     navigation.replace("ComandaDetalle", {
       mesa: {
         ...mesaSrc,
         _id: e.mesaId || mesaSrc._id,
         nummesa: e.mesa || mesaSrc.nummesa,
-        estado: estadoMesa === "pendiente_aprobar" ? "reservado" : estadoMesa,
+        estado: "reservado",
       },
       comandas,
       reserva: reservaFull || { _id: e.reservaId },
@@ -173,7 +177,18 @@ export default function ReservaWizardScreen() {
           if (rr.data) reserva = rr.data;
         } catch (err) {}
       } else if (mesa?._id) {
-        const rr = await axios.get(getApiUrl(`/reservas/mesa/${mesa._id}/activa`), { timeout: 5000, headers });
+        let mozoId = userInfo?._id;
+        if (!mozoId) {
+          try {
+            const u = JSON.parse((await AsyncStorage.getItem("user")) || "{}");
+            mozoId = u._id || u.id;
+          } catch (_) { /* sesión local opcional */ }
+        }
+        const rr = await axios.get(getApiUrl(`/reservas/mesa/${mesa._id}/activa`), {
+          timeout: 5000,
+          headers,
+          params: mozoId ? { mozoId } : undefined,
+        });
         reserva = rr.data?.reserva || null;
       }
       if (!reserva) {
@@ -347,6 +362,10 @@ export default function ReservaWizardScreen() {
   }, [fechaReserva, cfg.minutosAntesCocina]);
 
   const total = useMemo(() => selPlatos.reduce((a, p) => a + (Number(p.precioUnitario ?? p.precio) || 0) * (parseInt(p.cantidad) || 1), 0), [selPlatos]);
+  const totalUnidadesPlatos = useMemo(
+    () => selPlatos.reduce((a, p) => a + Math.max(1, parseInt(p.cantidad, 10) || 1), 0),
+    [selPlatos]
+  );
 
   const categorias = useMemo(() => {
     const set = new Set();
@@ -379,13 +398,15 @@ export default function ReservaWizardScreen() {
   const ant = () => { haptic(); setPaso((p) => Math.max(p - 1, 0)); };
 
   // --- Platos con instancias + complementos ---
-  const agregarPlato = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitario = null, extraComplementosV3 = null, cantidadPlatos = 1) => {
+  const agregarPlato = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitario = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null) => {
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
+    const tipoServicio = tipoServicioOverride || (tipoServicioModal === "para_llevar" ? "para_llevar" : "mesa");
     const instanceId = `${plato._id}_${Date.now()}`;
     const pu = precioUnitario != null ? Number(precioUnitario) : Number(plato.precio || 0);
     setSelPlatos((c) => {
       const same = c.find((p) => {
         if (p._id !== plato._id) return false;
+        if ((p.tipoServicio || "mesa") !== tipoServicio) return false;
         const pComps = p.complementosElegidos || [];
         const newComps = complementosSeleccionados || [];
         const pNota = (p.notaEspecial || "").trim();
@@ -405,7 +426,8 @@ export default function ReservaWizardScreen() {
         instanceId, _id: plato._id, nombre: plato.nombre, precio: plato.precio,
         precioUnitario: pu, cantidad: n, notaEspecial: notaEspecial || "",
         complementosElegidos: complementosSeleccionados || [],
-        tipoServicio: "mesa", extraComplementosV3: extraComplementosV3 || null,
+        complementos: plato.complementos || [],
+        tipoServicio, extraComplementosV3: extraComplementosV3 || null,
       }];
     });
     haptic();
@@ -413,6 +435,9 @@ export default function ReservaWizardScreen() {
 
   const tocarPlato = (plato) => {
     if (plato.complementos && plato.complementos.length > 0) {
+      tipoServicioAlComplementarRef.current = tipoServicioModal === "para_llevar" ? "para_llevar" : "mesa";
+      setComplementosInicialesModal(null);
+      setNotaInicialModal("");
       setPlatoParaComplementar(plato);
     } else {
       agregarPlato(plato);
@@ -427,15 +452,39 @@ export default function ReservaWizardScreen() {
         notaEspecial,
         _precioUnitario,
         _extraComplementos,
-        Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1))
+        Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1)),
+        tipoServicioAlComplementarRef.current
       );
     }
+    tipoServicioAlComplementarRef.current = null;
     setPlatoParaComplementar(null);
+    setComplementosInicialesModal(null);
+    setNotaInicialModal("");
   };
 
   const cantInstancia = (instanceId, d) => setSelPlatos((c) => c.map((p) => p.instanceId === instanceId ? { ...p, cantidad: Math.max(1, (p.cantidad || 1) + d) } : p));
+  const incrementarInstancia = (linea) => {
+    if (!platoRequiereGuarniciones(linea, platos)) {
+      cantInstancia(linea.instanceId, 1);
+      return;
+    }
+    const resuelto = resolverPlatoConGrupos(linea, platos);
+    if (!resuelto?.complementos?.length) {
+      Alert.alert("Guarniciones", "No se pueden cargar las guarniciones de este combo. Agrégalo otra vez desde el menú.");
+      return;
+    }
+    setComplementosInicialesModal(guarnicionesElegidas(linea));
+    setNotaInicialModal(linea.notaEspecial || "");
+    tipoServicioAlComplementarRef.current = linea.tipoServicio === "para_llevar" ? "para_llevar" : "mesa";
+    setPlatoParaComplementar(resuelto);
+  };
   const quitarInstancia = (instanceId) => { setSelPlatos((c) => c.filter((p) => p.instanceId !== instanceId)); haptic(); };
   const notaInstancia = (instanceId, t) => setSelPlatos((c) => c.map((p) => p.instanceId === instanceId ? { ...p, notaEspecial: t } : p));
+  const setTipoServicioInstancia = (instanceId, tipo) => {
+    const next = tipo === "para_llevar" ? "para_llevar" : "mesa";
+    setSelPlatos((c) => c.map((p) => p.instanceId === instanceId ? { ...p, tipoServicio: next } : p));
+    haptic();
+  };
 
   const adelantoMonto = ppaModo === "completo" ? total : (ppaModo === "parcial" ? (Number(ppaMonto) || 0) : 0);
   const saldoPendiente = useMemo(() => Math.max(0, total - adelantoMonto), [total, adelantoMonto]);
@@ -644,6 +693,18 @@ export default function ReservaWizardScreen() {
             {paso === 2 && (
               <View>
                 <Text style={s.label}>Platos *</Text>
+                <View style={s.tipoServicioRow}>
+                  <Text style={[s.tipoServicioLabel, tipoServicioModal === "mesa" && s.tipoServicioLabelActive, { color: tipoServicioModal === "mesa" ? "#F59E0B" : cMuted }]}>Mesa</Text>
+                  <Switch
+                    value={tipoServicioModal === "para_llevar"}
+                    onValueChange={(v) => { setTipoServicioModal(v ? "para_llevar" : "mesa"); haptic(); }}
+                    trackColor={{ false: "#F59E0B", true: "#8B5CF6" }}
+                    thumbColor="#FFFFFF"
+                    accessibilityLabel="Tipo de servicio: Mesa o Para llevar"
+                    accessibilityHint="Cambia el destino de los platos que agregues a continuación"
+                  />
+                  <Text style={[s.tipoServicioLabel, tipoServicioModal === "para_llevar" && s.tipoServicioLabelActive, { color: tipoServicioModal === "para_llevar" ? "#8B5CF6" : cMuted }]}>Para llevar</Text>
+                </View>
                 <View style={s.searchWrap}>
                   <MaterialCommunityIcons name="magnify" size={18} color={cMuted} style={s.searchIcon} />
                   <TextInput style={s.searchInput} value={searchPlato} onChangeText={setSearchPlato} placeholder="Buscar plato…" placeholderTextColor={cMuted} />
@@ -673,6 +734,7 @@ export default function ReservaWizardScreen() {
                   const instancias = selPlatos.filter((p) => p._id === item._id);
                   const seleccionado = instancias.length > 0;
                   const cantTotal = instancias.reduce((a, p) => a + (p.cantidad || 1), 0);
+                  const cantLlevar = instancias.filter((p) => p.tipoServicio === "para_llevar").reduce((a, p) => a + (p.cantidad || 1), 0);
                   return (
                     <Pressable key={item._id} onPress={() => tocarPlato(item)}>
                       <MotiView style={[s.platoRow, seleccionado && s.platoRowActive]} from={{ scale: 0.98 }} animate={{ scale: seleccionado ? 1.01 : 1 }} transition={{ type: "spring", stiffness: 300, damping: 20 }}>
@@ -683,7 +745,11 @@ export default function ReservaWizardScreen() {
                         {tieneComp && <MaterialCommunityIcons name="plus-circle-multiple-outline" size={18} color={cPrimary} style={{ marginRight: 8 }} />}
                         {seleccionado ? (
                           <View style={s.platoBadge}>
-                            <Text style={s.platoBadgeText}>{cantTotal}</Text>
+                            {cantLlevar > 0 ? (
+                              <Text style={s.platoBadgeText}>{cantTotal - cantLlevar}+{cantLlevar}</Text>
+                            ) : (
+                              <Text style={s.platoBadgeText}>{cantTotal}</Text>
+                            )}
                           </View>
                         ) : (
                           <View style={s.platoAddBtn}>
@@ -694,12 +760,20 @@ export default function ReservaWizardScreen() {
                     </Pressable>
                   );
                 })}
-                <Text style={s.label}>Seleccionados ({selPlatos.length})</Text>
+                <Text style={s.label}>Seleccionados ({totalUnidadesPlatos})</Text>
                 {selPlatos.length === 0 && <Text style={s.muted}>Toca un plato para agregarlo.</Text>}
                 {selPlatos.map((p) => (
                   <MotiView key={p.instanceId} from={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: "spring", stiffness: 260, damping: 20 }} style={s.selPlato}>
                     <View style={s.selTop}>
-                      <Text style={s.platoNombre}>{p.cantidad}× {p.nombre}</Text>
+                      <View style={{ flex: 1, flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                        <Text style={s.platoNombre}>{p.cantidad}× {p.nombre}</Text>
+                        {p.tipoServicio === "para_llevar" && (
+                          <View style={s.paraLlevarBadge}>
+                            <MaterialCommunityIcons name="bag-personal" size={12} color="#fff" />
+                            <Text style={s.paraLlevarBadgeText}>Para llevar</Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={s.muted}>S/ {(Number(p.precioUnitario ?? p.precio) * p.cantidad).toFixed(2)}</Text>
                     </View>
                     {p.complementosElegidos?.length > 0 && (
@@ -709,11 +783,19 @@ export default function ReservaWizardScreen() {
                         ))}
                       </View>
                     )}
+                    <View style={s.tipoServicioMiniRow}>
+                      <Pressable onPress={() => setTipoServicioInstancia(p.instanceId, "mesa")} style={[s.tipoServicioMiniChip, (p.tipoServicio || "mesa") === "mesa" && s.tipoServicioMiniChipMesa]}>
+                        <Text style={[s.tipoServicioMiniText, (p.tipoServicio || "mesa") === "mesa" && s.tipoServicioMiniTextActive]}>Mesa</Text>
+                      </Pressable>
+                      <Pressable onPress={() => setTipoServicioInstancia(p.instanceId, "para_llevar")} style={[s.tipoServicioMiniChip, p.tipoServicio === "para_llevar" && s.tipoServicioMiniChipLlevar]}>
+                        <Text style={[s.tipoServicioMiniText, p.tipoServicio === "para_llevar" && s.tipoServicioMiniTextActive]}>Para llevar</Text>
+                      </Pressable>
+                    </View>
                     <TextInput style={s.notaInput} value={p.notaEspecial} onChangeText={(t) => notaInstancia(p.instanceId, t)} placeholder="Nota especial (opcional)" placeholderTextColor={cMuted} />
                     <View style={s.cantRow}>
                       <TouchableOpacity onPress={() => cantInstancia(p.instanceId, -1)} style={s.cantBtn}><Text style={s.cantBtnText}>−</Text></TouchableOpacity>
                       <Text style={s.cantNum}>{p.cantidad}</Text>
-                      <TouchableOpacity onPress={() => cantInstancia(p.instanceId, +1)} style={s.cantBtn}><Text style={s.cantBtnText}>+</Text></TouchableOpacity>
+                      <TouchableOpacity onPress={() => incrementarInstancia(p)} style={s.cantBtn}><Text style={s.cantBtnText}>+</Text></TouchableOpacity>
                       <TouchableOpacity onPress={() => quitarInstancia(p.instanceId)} style={s.quitarBtn}><MaterialCommunityIcons name="trash-can-outline" size={16} color={cDanger} /></TouchableOpacity>
                     </View>
                   </MotiView>
@@ -788,7 +870,12 @@ export default function ReservaWizardScreen() {
                   <View style={s.resumenRow}><MaterialCommunityIcons name="clock-outline" size={16} color={cPrimary} /><Text style={s.resumenLine}>Atención: {moment.tz(fechaReserva, TZ).format("DD/MM HH:mm")}</Text></View>
                   <View style={s.resumenRow}><MaterialCommunityIcons name="fire" size={16} color={cWarn} /><Text style={s.resumenLine}>Cocina: {fechaCocina ? fechaCocina.format("DD/MM HH:mm") : "—"}</Text></View>
                   <View style={s.resumenRow}><MaterialCommunityIcons name="account-group" size={16} color={cMuted} /><Text style={s.resumenLine}>Personas: {numPersonas}</Text></View>
-                  <View style={s.resumenRow}><MaterialCommunityIcons name="silverware-fork-knife" size={16} color={cMuted} /><Text style={s.resumenLine}>Platos: {selPlatos.length}</Text></View>
+                  <View style={s.resumenRow}><MaterialCommunityIcons name="silverware-fork-knife" size={16} color={cMuted} /><Text style={s.resumenLine}>Platos: {totalUnidadesPlatos}</Text></View>
+                  {selPlatos.map((p) => (
+                    <Text key={p.instanceId} style={s.resumenPlatoDetalle}>
+                      {Math.max(1, parseInt(p.cantidad, 10) || 1)}× {p.nombre}{p.tipoServicio === "para_llevar" ? " · Para llevar" : ""}
+                    </Text>
+                  ))}
                   <View style={s.resumenRow}><MaterialCommunityIcons name="cash" size={16} color={cSuccess} /><Text style={s.resumenLine}>Total: S/ {total.toFixed(2)}</Text></View>
                   <View style={s.resumenRow}><MaterialCommunityIcons name="cash-multiple" size={16} color={cPrimary} /><Text style={s.resumenLine}>Adelanto: {ppaModo === "ninguno" ? "Sin adelanto" : `S/ ${adelantoMonto.toFixed(2)} (${ppaMetodo})`}</Text></View>
                   {notas ? <View style={s.resumenRow}><MaterialCommunityIcons name="note-text" size={16} color={cMuted} /><Text style={s.resumenLine}>Notas: {notas.trim()}</Text></View> : null}
@@ -825,7 +912,13 @@ export default function ReservaWizardScreen() {
         visible={!!platoParaComplementar}
         plato={platoParaComplementar}
         onConfirm={handleConfirmarComplementos}
-        onClose={() => setPlatoParaComplementar(null)}
+        onClose={() => {
+          setPlatoParaComplementar(null);
+          setComplementosInicialesModal(null);
+          setNotaInicialModal("");
+        }}
+        complementosIniciales={complementosInicialesModal}
+        notaInicial={notaInicialModal}
       />
     </View>
   );
@@ -888,7 +981,19 @@ const makeStyles = (theme) => {
     resumenCocina: { marginTop: 10, padding: 12, borderRadius: 12, backgroundColor: cSurface, borderWidth: 1, borderColor: cBorder, ...sh },
     resumenRow: { flexDirection: "row", alignItems: "center", gap: 8, marginVertical: 3 },
     resumenLine: { fontSize: 13, color: cText, fontWeight: "500" },
+    resumenPlatoDetalle: { fontSize: 12, color: cMuted, marginLeft: 24, marginVertical: 1 },
     searchWrap: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: cBorder, borderRadius: 12, paddingHorizontal: 10, backgroundColor: cSurface, marginBottom: 8 },
+    tipoServicioRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 10, paddingVertical: 6 },
+    tipoServicioLabel: { fontSize: 13, fontWeight: "600" },
+    tipoServicioLabelActive: { fontWeight: "800" },
+    tipoServicioMiniRow: { flexDirection: "row", gap: 8, marginTop: 8 },
+    tipoServicioMiniChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: cBorder, backgroundColor: cBg },
+    tipoServicioMiniChipMesa: { borderColor: "#F59E0B", backgroundColor: "#F59E0B22" },
+    tipoServicioMiniChipLlevar: { borderColor: "#8B5CF6", backgroundColor: "#8B5CF622" },
+    tipoServicioMiniText: { fontSize: 11, fontWeight: "600", color: cMuted },
+    tipoServicioMiniTextActive: { color: cText, fontWeight: "800" },
+    paraLlevarBadge: { flexDirection: "row", alignItems: "center", backgroundColor: "#8B5CF6", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, gap: 4 },
+    paraLlevarBadgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
     searchIcon: { marginRight: 6 },
     searchInput: { flex: 1, paddingVertical: 10, fontSize: 14, color: cText },
     searchClear: { padding: 4 },

@@ -29,7 +29,8 @@ import { useSocket } from '../context/SocketContext';
 import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
-import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../utils/comandaHelpers';
+import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle } from '../utils/comandaHelpers';
+import { platoRequiereGuarniciones, resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva } from '../utils/platoGuarniciones';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
 import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA } from '../helpers/pagoAdelantadoHelpers';
@@ -168,6 +169,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // Estado para el modal de complementos (edición de comanda)
   const [platoParaComplementar, setPlatoParaComplementar] = useState(null);
+  const [complementosInicialesModal, setComplementosInicialesModal] = useState(null);
+  const [notaInicialModal, setNotaInicialModal] = useState('');
+  const tipoServicioAlComplementarRef = useRef(null);
   const [platosEditados, setPlatosEditados] = useState([]);
   
   // Estados para selección de platos a entregar
@@ -210,7 +214,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           const res = await axios.get(`${base}/${reservaId}`, { timeout: 5000 });
           if (!cancelled && res.data) setReservaEfectiva(res.data);
         } else if (mesaIdRef) {
-          const res = await axios.get(`${base}/mesa/${mesaIdRef}/activa`, { timeout: 5000 });
+          const mozoQ = userInfo?._id ? `?mozoId=${encodeURIComponent(userInfo._id)}` : '';
+          const res = await axios.get(`${base}/mesa/${mesaIdRef}/activa${mozoQ}`, { timeout: 5000 });
           if (!cancelled && res.data?.reserva) setReservaEfectiva(res.data.reserva);
         }
       } catch (e) {
@@ -219,7 +224,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     };
     cargarReserva();
     return () => { cancelled = true; };
-  }, [comandas, mesaIdRef, reserva?._id]);
+  }, [comandas, mesaIdRef, reserva?._id, userInfo?._id]);
 
   // Cargar configuración de moneda
   useEffect(() => {
@@ -372,13 +377,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       }
 
       let comandasFinales =
-        mesaEstado === 'pagado' || mesaEstado === 'pagando' || mesaEstado === 'pendiente_aprobar'
+        mesaEstado === 'pagado' || mesaEstado === 'pagando' || mesaEstado === 'pendiente_aprobar' || mesaEstado === 'reservado'
           ? acotarComandasAlCicloActual(comandasMesa)
           : acotarComandasAlCicloActual(filtrarComandasActivas(comandasMesa));
 
       if (comandasFinales.length === 0) {
         const prev = comandasRef.current || [];
-        const mesaSigueEnServicio = ['pedido', 'preparado', 'entregado', 'pendiente_pago', 'esperando', 'pendiente_aprobar'].includes(mesaEstado);
+        const mesaSigueEnServicio = ['pedido', 'preparado', 'entregado', 'pendiente_pago', 'esperando', 'pendiente_aprobar', 'reservado'].includes(mesaEstado);
         if (mesaSigueEnServicio && prev.length > 0) {
           comandasFinales = filtrarComandasActivas(prev);
         }
@@ -467,6 +472,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Refs para evitar loops: listeners leen estado actual sin estar en deps del effect
   const refrescarComandasRef = useRef(refrescarComandas);
   const prevConnectedRef = useRef(connected);
+  const reservaIdRef = useRef(reservaEfectiva?._id || reserva?._id);
 
   useEffect(() => {
     comandasRef.current = comandas;
@@ -474,6 +480,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   useEffect(() => {
     refrescarComandasRef.current = refrescarComandas;
   }, [refrescarComandas]);
+  useEffect(() => {
+    reservaIdRef.current = reservaEfectiva?._id || reserva?._id;
+  }, [reservaEfectiva?._id, reserva?._id]);
 
   // Re-fetch SOLO al reconectar (transición desconectado → conectado), no en cada mount
   useEffect(() => {
@@ -586,6 +595,28 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       }
     });
 
+    const refrescarSiReservaOTicket = (data) => {
+      const comandasActuales = comandasRef.current;
+      const idsComanda = new Set(
+        (data?.comandas || []).map((id) => id?.toString?.() || String(id))
+      );
+      const esNuestraComanda = comandasActuales.some((c) => {
+        const cId = c._id?.toString?.() || String(c._id);
+        return idsComanda.has(cId) || cId === (data?.comandaId?.toString?.() || data?.comandaId);
+      });
+      const mesaEvento = data?.mesa || data?.cambios?.mesa;
+      const esNuestraMesa = mesaEvento && mesaId && (
+        mesaEvento.toString() === mesaId.toString() || mesaEvento === mesaId
+      );
+      const rid = data?.reservaId?.toString?.() || data?.reservaId;
+      const esNuestraReserva = rid && reservaIdRef.current && String(rid) === String(reservaIdRef.current);
+      if (esNuestraComanda || esNuestraMesa || esNuestraReserva) {
+        refrescarComandasRef.current?.();
+      }
+    };
+    socket.on('ticket-ppa-aprobado', refrescarSiReservaOTicket);
+    socket.on('reserva-actualizada', refrescarSiReservaOTicket);
+
     const refrescarSiNuestraComanda = (data) => {
       const comandasActuales = comandasRef.current;
       const esNuestraComanda = data?.comandaId && comandasActuales.some(c => {
@@ -683,6 +714,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       socket.off('plato-agregado');
       socket.off('plato-entregado');
       socket.off('comanda-actualizada');
+      socket.off('ticket-ppa-aprobado');
+      socket.off('reserva-actualizada');
       socket.off('plato-procesando');
       socket.off('plato-liberado');
       socket.off('comanda-procesando');
@@ -739,7 +772,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const totales = calcularTotales();
   
   // Validaciones para habilitación de botones
-  const platosEnPedido = todosLosPlatos.filter(p => p.estado === 'pedido');
+  const platosEnPedido = todosLosPlatos.filter(p => esEstadoPlatoPreCocina(p.estado));
   const platosEnPedidoSinBloqueoCocina = permitirEditarEliminarTomadas
     ? platosEnPedido
     : platosEnPedido.filter(p => !p.procesandoPor?.cocineroId && !comandas.some(c =>
@@ -754,7 +787,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   const puedeEditar = platosEnPedidoSinBloqueoCocina.length > 0;
   const puedeEliminarPlatos = platosEnPedidoSinBloqueoCocina.length > 0;
-  const puedeEliminarComanda = comandas.length > 0 && comandas[0].status !== 'pagado' && !hayBloqueoCocinaEnComandas;
+  const puedeEliminarComanda = comandas.length > 0
+    && !['pagado', 'completado', 'cancelado'].includes(String(comandas[0].status || '').toLowerCase())
+    && !hayBloqueoCocinaEnComandas
+    && todosLosPlatos.some(p => esEstadoPlatoPreCocina(p.estado))
+    && !todosLosPlatos.some(p => esEstadoPlatoYaPreparados(p.estado));
   const esReservaFlow = !!(reserva || reservaEfectiva)
     || comandas.some((c) => c.origenCreacion === 'reserva' || c.origenReserva);
   const puedeNuevaComanda = esReservaFlow
@@ -803,23 +840,43 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     nuevosPlatos[index].cantidad = nuevaCantidad;
     setPlatosEditados(nuevosPlatos);
   };
+
+  const handleIncrementarPlatoEditado = (platoLinea, index) => {
+    if (!platoRequiereGuarniciones(platoLinea, platos)) {
+      handleCambiarCantidad(index, 1);
+      return;
+    }
+    const resuelto = resolverPlatoConGrupos(platoLinea, platos);
+    if (!resuelto?.complementos?.length) {
+      Alert.alert(
+        'Guarniciones',
+        'No se pueden cargar las guarniciones de este combo. Agrégalo otra vez desde el menú.'
+      );
+      return;
+    }
+    tipoServicioAlComplementarRef.current = platoLinea.tipoServicio || 'mesa';
+    setComplementosInicialesModal(guarnicionesElegidas(platoLinea));
+    setNotaInicialModal(platoLinea.notaEspecial || '');
+    setPlatoParaComplementar(resuelto);
+  };
   
   const handleAgregarPlato = (plato) => {
-    // Verificar si el plato tiene complementos definidos
     const tieneComplementos = plato.complementos && plato.complementos.length > 0;
 
     if (tieneComplementos) {
-      // Abrir modal de complementos
+      tipoServicioAlComplementarRef.current = null;
+      setComplementosInicialesModal(null);
+      setNotaInicialModal('');
       setPlatoParaComplementar(plato);
     } else {
-      // Agregar directamente (comportamiento actual)
       agregarPlatoSinComplementos(plato);
     }
   };
 
   // Función para agregar un plato sin complementos
-  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = '', precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1) => {
+  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = '', precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null) => {
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
+    const tipoServicio = tipoServicioOverride || (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa');
     // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
     const instanceId = `${plato._id}_${Date.now()}`;
 
@@ -843,7 +900,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       precio: plato.precio,
       complementosSeleccionados: complementosNormalizados,
       notaEspecial,
-      tipoServicio: tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa', // NUEVO
+      tipoServicio,
       // v3.0: precio unitario con extras (para mostrar subtotal correcto)
       ...(precioUnitarioV3 != null ? { precioUnitario: Number(precioUnitarioV3) } : {}),
       ...(extraComplementosV3 != null ? { extraComplementos: Number(extraComplementosV3) } : {}),
@@ -852,11 +909,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     // Verificar si ya existe el mismo plato CON LOS MISMOS complementos Y mismo tipoServicio.
     // Si cambia tipoServicio (uno mesa y otro para llevar), debe ir en línea separada.
     const existsWithSameComplements = platosEditados.find(p => {
-      if (p.plato !== plato._id && p.plato?.toString() !== plato._id?.toString()) return false;
+      if (idCatalogoPlato(p) !== idCatalogoPlato(plato)) return false;
 
       // NUEVO: comparar tipo de servicio
       const pTipo = p.tipoServicio || 'mesa';
-      if (pTipo !== (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa')) return false;
+      if (pTipo !== tipoServicio) return false;
 
       const pComps = p.complementosSeleccionados || [];
       const newComps = complementosNormalizados || [];
@@ -895,9 +952,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         notaEspecial,
         _precioUnitario,
         _extraComplementos,
-        Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1))
+        Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1)),
+        tipoServicioAlComplementarRef.current
       );
       setPlatoParaComplementar(null);
+      setComplementosInicialesModal(null);
+      setNotaInicialModal('');
+      tipoServicioAlComplementarRef.current = null;
     }
   };
 
@@ -1221,7 +1282,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         'Sin Platos Eliminables',
         hayBloqueoCocinaEnComandas
           ? mensajeBloqueoCocina(comandas.find(c => comandaBloqueadaPorCocina(c, false)) || comandas[0])
-          : 'No hay platos en estado Pedido para eliminar. Solo se pueden eliminar platos que aún no han sido preparados.'
+          : 'No hay platos para eliminar. Solo se pueden quitar en el primer paso (mesa o para llevar, aún sin pago ni preparación).'
       );
       return;
     }
@@ -1436,17 +1497,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     
     // Detectar platos en estados que bloquean eliminación: Recoger, Entregado, Pagado
     const hayPlatosEnRecoger = todosLosPlatos.some(p => 
-      p.estado === 'recoger' && !p.eliminado
+      esEstadoPlatoYaPreparados(p.estado) && !p.eliminado
     );
     const hayPlatosEntregados = todosLosPlatos.some(p => 
-      (p.estado === 'entregado' || p.estado === 'pagado') && !p.eliminado
+      ['entregado', 'pagado'].includes(String(p.estado || '').toLowerCase()) && !p.eliminado
     );
     
     // Regla: No eliminar comandas con platos Recoger/Entregado (igual que Entregado existente)
     if (hayPlatosEnRecoger || hayPlatosEntregados) {
       Alert.alert(
         'No se puede eliminar esta comanda',
-        'Contiene platos en estado Recoger o Entregado. Solo se pueden eliminar comandas con platos exclusivamente en estado Pedido.',
+        'Contiene platos ya preparados o cobrados. Solo se pueden eliminar comandas en el primer paso (sin pago, platos aún en pedido).',
         [{ text: 'Entendido' }]
       );
       return;
@@ -1456,7 +1517,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     if (platosEliminables.length === 0) {
       Alert.alert(
         'No se puede eliminar esta comanda',
-        'Todos los platos ya están en estado Recoger o posterior. Solo se pueden eliminar comandas con platos en estado Pedido.',
+        'No hay platos en el primer paso (pedido / pendiente, sin pago). Solo se pueden eliminar comandas que aún no fueron a cocina ni cobradas.',
         [{ text: 'Entendido' }]
       );
       return;
@@ -1503,10 +1564,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     
     // Detectar si hay platos en estados que bloquean eliminación
     const hayPlatosEnRecogerActualizados = todosLosPlatos.some(p => 
-      p.estado === 'recoger' && !p.eliminado
+      esEstadoPlatoYaPreparados(p.estado) && !p.eliminado
     );
     const hayPlatosEntregadosActualizados = todosLosPlatos.some(p => 
-      (p.estado === 'entregado' || p.estado === 'pagado') && !p.eliminado
+      ['entregado', 'pagado'].includes(String(p.estado || '').toLowerCase()) && !p.eliminado
     );
     
     // Bloquear si no hay platos eliminables O si hay platos en Recoger/Entregado
@@ -2001,9 +2062,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Renderizar fila de plato
   const renderFilaPlato = ({ item: plato, index }) => {
     // Si el plato tiene pago adelantado pendiente, mostrar estado PENDIENTE en naranja
-    const estadoPlato = (plato.pagoAdelantado?.estadoTicket === 'pendiente_aprobacion')
-      ? 'pendiente_pago'
-      : plato.estado;
+    const estadoPlato = estadoVisualPlatoDetalle(plato);
     // PLAN_PLANTILLA_COMANDAS: si la mesa está pagada, mostrar el plato como COBRADO
     // aunque su estado BD sea 'pedido'/'pendiente' (KDS). Solo si tiene tiempos.pagado.
     const mesaEstado = (mesa?.estado || '').toLowerCase();
@@ -2402,7 +2461,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   const pKey = p._id || `${p.platoId}-${p.index}`;
                   return pKey === platoKey && p.comandaId === plato.comandaId;
                 });
-                const estilos = obtenerEstilosPorEstado(plato.pagoAdelantado?.estadoTicket === 'pendiente_aprobacion' ? 'pendiente_pago' : plato.estado);
+                const estilos = obtenerEstilosPorEstado(estadoVisualPlatoDetalle(plato));
                 
                 return (
                     <TouchableOpacity
@@ -2493,7 +2552,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                         <View style={{ marginTop: 2 }}>
                           {plato.complementosSeleccionados.map((comp, ci) => {
                             // v2.0: Mostrar cantidad si es mayor a 1
-                            const cantidadComp = comp.cantidad || 1;
+                            const cantidadComp = cantidadGuarnicionEfectiva(comp, plato);
                             const opcionTexto = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion;
                             
                             return (
@@ -2931,7 +2990,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                               <View style={{ marginTop: 2 }}>
                                 {plato.complementosSeleccionados.map((comp, ci) => {
                                   // v2.0: Mostrar cantidad si es mayor a 1
-                                  const cantidadComp = comp.cantidad || 1;
+                                  const cantidadComp = cantidadGuarnicionEfectiva(comp, plato);
                                   const opcionTexto = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion;
                                   
                                   return (
@@ -3005,7 +3064,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                                 backgroundColor: isDark ? '#4B5563' : '#E5E7EB'
                               }
                             ]}
-                            onPress={() => handleCambiarCantidad(index, 1)}
+                            onPress={() => handleIncrementarPlatoEditado(plato, index)}
                           >
                             <Text style={[
                               styles.cantidadButtonText, 
@@ -3282,7 +3341,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 </Text>
                 <ScrollView style={{ maxHeight: 200, marginBottom: 12 }}>
                   {platosEliminablesComanda.map((plato, index) => {
-                    const estilos = obtenerEstilosPorEstado(plato.pagoAdelantado?.estadoTicket === 'pendiente_aprobacion' ? 'pendiente_pago' : plato.estado);
+                    const estilos = obtenerEstilosPorEstado(estadoVisualPlatoDetalle(plato));
                     return (
                       <View
                         key={`${plato.comandaId}-${plato.platoId}-${index}`}
@@ -3360,7 +3419,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                             <View style={{ marginTop: 2 }}>
                               {plato.complementosSeleccionados.map((comp, ci) => {
                                 // v2.0: Mostrar cantidad si es mayor a 1
-                                const cantidadComp = comp.cantidad || 1;
+                                const cantidadComp = cantidadGuarnicionEfectiva(comp, plato);
                                 const opcionTexto = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion;
                                 
                                 return (
@@ -3661,8 +3720,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         visible={platoParaComplementar !== null}
         plato={platoParaComplementar}
         onConfirm={handleConfirmarComplementosEdicion}
-        onClose={() => setPlatoParaComplementar(null)}
-        complementosIniciales={platoParaComplementar?.complementosSeleccionados || null}
+        onClose={() => {
+          setPlatoParaComplementar(null);
+          setComplementosInicialesModal(null);
+          setNotaInicialModal('');
+          tipoServicioAlComplementarRef.current = null;
+        }}
+        complementosIniciales={complementosInicialesModal}
+        notaInicial={notaInicialModal}
       />
     </View>
   );

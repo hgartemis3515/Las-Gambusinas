@@ -26,6 +26,7 @@ import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
 import logger from "../../../utils/logger";
+import { usuarioPuedeCrearReservas, elegirReservaDeMesa, elegirReservaEspera, reservaEsDeMozo } from "../../../utils/reservasMozo";
 import { useSocket } from "../../../context/SocketContext";
 // Animaciones Premium 60fps
 import Animated, {
@@ -1544,6 +1545,7 @@ const InicioScreen = () => {
       const user = await AsyncStorage.getItem("user");
       if (user) {
         const parsed = JSON.parse(user);
+        if (!parsed._id && parsed.id) parsed._id = parsed.id;
         setUserInfo(parsed);
       }
     } catch (error) {
@@ -1938,26 +1940,23 @@ const InicioScreen = () => {
       }
     }
 
+    const reservaMesa = elegirReservaDeMesa(reservas, mesa, userInfo?._id);
+    const estadoReserva = (reservaMesa?.estado || "").toLowerCase();
+
     // PLAN_PLANTILLA_COMANDAS: prioridad 0 — si el backend marcó la mesa como "libre",
     // mostrarla Libre SIEMPRE aunque queden comandas huérfanas en el state local (se limpian
     // al liberar via cleanup en mesas.repository.js, pero el state de React puede estar desactualizado).
     if (mesa.estado && mesa.estado.toLowerCase() === "libre") {
-      const reservaEspera = reservas.find((r) => {
-        const mesaId = r.mesa?._id?.toString() || r.mesa?.toString();
-        return mesaId === mesa._id?.toString() && r.estado === "pendiente_aprobar";
-      });
-      if (reservaEspera) return "Espera...";
+      if (estadoReserva === "pendiente_aprobar") return "Espera...";
+      if (estadoReserva === "pendiente" || estadoReserva === "activa") return "Reservado";
       return "Libre";
     }
 
     // PLAN_PLANTILLA_COMANDAS: estados de aprobación de cocina
     // pendiente_aprobar de reserva = Espera...; el de pago sigue como "Pendiente de aprobación"
     if (mesa.estado && mesa.estado.toLowerCase() === "pendiente_aprobar") {
-      const reservaEspera = reservas.find((r) => {
-        const mesaId = r.mesa?._id?.toString() || r.mesa?.toString();
-        return mesaId === mesa._id?.toString() && r.estado === "pendiente_aprobar";
-      });
-      if (reservaEspera) return "Espera...";
+      if (estadoReserva === "pendiente_aprobar") return "Espera...";
+      if (estadoReserva === "pendiente" || estadoReserva === "activa") return "Reservado";
       return "Pendiente de aprobación";
     }
     // reportado = cocina reportó un problema (rojo)
@@ -2130,10 +2129,7 @@ const InicioScreen = () => {
     
     // Si la mesa está reservada o en espera de reserva, buscar el mozo en la reserva
     if (mesa.estado?.toLowerCase() === "reservado" || mesa.estado?.toLowerCase() === "pendiente_aprobar") {
-      const reservaActiva = reservas.find(r => {
-        const mesaId = r.mesa?._id?.toString() || r.mesa?.toString();
-        return mesaId === mesa._id?.toString();
-      });
+      const reservaActiva = elegirReservaDeMesa(reservas, mesa, userInfo?._id);
       if (reservaActiva?.mozo?.name) {
         return reservaActiva.mozo.name;
       }
@@ -2236,10 +2232,7 @@ const InicioScreen = () => {
     const estado = getEstadoMesa(mesa);
 
     if (estado === "Espera...") {
-      const reservaEspera = reservas.find((r) => {
-        const mesaId = r.mesa?._id?.toString() || r.mesa?.toString();
-        return mesaId === mesa._id?.toString() && r.estado === "pendiente_aprobar";
-      });
+      const reservaEspera = elegirReservaEspera(reservas, mesa, userInfo?._id);
       navigation.navigate("ReservaWizard", {
         mesa,
         esperaReserva: true,
@@ -2254,59 +2247,64 @@ const InicioScreen = () => {
       // Solo seleccionar la mesa, no navegar automáticamente
       // El usuario puede usar la barra derecha para navegar
     } else if (estado === "Reservado") {
-      // Mesa reservada - verificar si el mozo actual está asignado a la reserva
       try {
-        const reservaURL = apiConfig.isConfigured 
+        const reservaURL = apiConfig.isConfigured
           ? apiConfig.getEndpoint(`/reservas/mesa/${mesa._id}/activa`)
           : `${getFallbackApiBase()}/reservas/mesa/${mesa._id}/activa`;
-        
-        const response = await axios.get(reservaURL, { timeout: 5000 });
-        
-        if (response.data.tieneReservaActiva && response.data.reserva) {
-          const reserva = response.data.reserva;
-          const mozoAsignadoId = reserva.mozo?._id || reserva.mozo;
-          const mozoActualId = userInfo?._id;
-          
-          // Si hay mozo asignado y no es el actual, denegar acceso
-          if (mozoAsignadoId && mozoActualId && mozoAsignadoId.toString() !== mozoActualId.toString()) {
-            Alert.alert(
-              "Acceso Denegado",
-              `Esta mesa está reservada para ${reserva.clienteNombre || 'un cliente'}. Solo el mozo asignado puede atender esta mesa.`,
-              [{ text: "OK" }]
-            );
-            return;
+        const mozoActualId = userInfo?._id || userInfo?.id;
+        let reserva = elegirReservaDeMesa(reservas, mesa, mozoActualId);
+        try {
+          const response = await axios.get(reservaURL, {
+            timeout: 5000,
+            params: mozoActualId ? { mozoId: mozoActualId } : undefined,
+          });
+          const remota = response.data?.reserva;
+          if (remota) {
+            if (!reserva || reservaEsDeMozo(remota, mozoActualId) || !reservaEsDeMozo(reserva, mozoActualId)) {
+              reserva = remota;
+            }
           }
-          
-          // Si es el mozo asignado, abrir el detalle con la comanda de la reserva si existe
-          Alert.alert(
-            "Mesa Reservada",
-            `Esta mesa tiene una reserva a nombre de ${reserva.clienteNombre || 'Cliente'}${reserva.numPersonas ? ` para ${reserva.numPersonas} personas` : ''}.`,
-            [
-              { text: "Cancelar", style: "cancel" },
-              { 
-                text: "Atender", 
-                onPress: async () => {
-                  let cmds = getComandasPorMesa(mesa.nummesa);
-                  if ((!cmds || cmds.length === 0) && mesa._id) {
-                    cmds = await obtenerComandasMesa(mesa._id);
-                  }
-                  navigation.navigate('ComandaDetalle', {
-                    mesa: mesa,
-                    comandas: cmds || [],
-                    reserva: reserva
-                  });
-                }
-              }
-            ]
-          );
-        } else {
-          // No hay reserva activa pero la mesa está en estado reservado (inconsistencia)
+        } catch (e) {
+          if (!reserva) throw e;
+        }
+
+        if (!reserva) {
           Alert.alert(
             "Mesa Reservada",
             "Esta mesa está marcada como reservada. Contacta al administrador.",
             [{ text: "OK" }]
           );
+          return;
         }
+
+        if (mozoActualId && !reservaEsDeMozo(reserva, mozoActualId)) {
+          Alert.alert(
+            "Acceso Denegado",
+            `Esta mesa está reservada para ${reserva.clienteNombre || "un cliente"}. Solo el mozo asignado puede ver esta reserva.`,
+            [{ text: "OK" }]
+          );
+          return;
+        }
+
+        const cid = reserva.comandaGenerada?._id || reserva.comandaGenerada;
+        let cmds = getComandasPorMesa(mesa.nummesa);
+        if ((!cmds || cmds.length === 0) && mesa._id) {
+          cmds = await obtenerComandasMesa(mesa._id);
+        }
+        if ((!cmds || cmds.length === 0) && cid) {
+          const comandaBase = apiConfig.isConfigured
+            ? apiConfig.getEndpoint("/comanda")
+            : COMANDASEARCH_API_GET;
+          try {
+            const cr = await axios.get(`${comandaBase}/${cid}`, { timeout: 8000 });
+            if (cr.data?._id) cmds = [cr.data];
+          } catch (e) {}
+        }
+        navigation.navigate("ComandaDetalle", {
+          mesa: { ...mesa, estado: "reservado" },
+          comandas: cmds || [],
+          reserva,
+        });
       } catch (error) {
         console.error("Error al verificar reserva:", error);
         Alert.alert(
@@ -3536,7 +3534,7 @@ const InicioScreen = () => {
               } catch (e) { /* ignorar */ }
 
               // PLAN_PLANTILLA_COMANDAS: purgar del state local las comandas de esta mesa.
-              // El backend ya las marca IsActive=false + status='completado' al liberar,
+              // El backend las marca IsActive=false + status='pagado' al liberar,
               // pero el state de React puede seguir mostrándolas hasta el próximo fetch.
               // Esto previene el "fantasma" de mesa Libre con comandas activas en mapa.
               setComandas(prev => prev.filter(c => {
@@ -5405,8 +5403,7 @@ const InicioScreen = () => {
                   Alert.alert("Reservas deshabilitadas", "El administrador desactivó la creación de reservas desde App Mozos.");
                   return;
                 }
-                const tienePermiso = userInfo?.permisos?.includes('crear-reservas-mozos');
-                if (!tienePermiso) {
+                if (!usuarioPuedeCrearReservas(userInfo)) {
                   Alert.alert("Sin permisos", "No tienes permiso para crear reservas");
                   return;
                 }

@@ -26,9 +26,11 @@ import debounce from "lodash.debounce";
 // Componente de modal de complementos
 import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
+import { platoRequiereGuarniciones, resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones } from "../../../utils/platoGuarniciones";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
 import configuracionService from "../../../services/configuracionService";
+import { reservaEsDeMozo } from "../../../utils/reservasMozo";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -203,6 +205,9 @@ const OrdenesScreen = ({ route }) => {
 
   // Estado para el modal de complementos
   const [platoParaComplementar, setPlatoParaComplementar] = useState(null); // Cuando no es null, el modal de complementos está abierto
+  const [complementosInicialesModal, setComplementosInicialesModal] = useState(null);
+  const [notaInicialModal, setNotaInicialModal] = useState("");
+  const tipoServicioAlComplementarRef = useRef(null);
   // Overlay in-tree: complementos (Modal) se abre encima del menú sin cerrarlo
   const platosListScrollRef = useRef(null);
 
@@ -386,6 +391,9 @@ const OrdenesScreen = ({ route }) => {
     const tieneComplementos = plato.complementos && plato.complementos.length > 0;
 
     if (tieneComplementos) {
+      tipoServicioAlComplementarRef.current = null;
+      setComplementosInicialesModal(null);
+      setNotaInicialModal("");
       setPlatoParaComplementar(plato);
     } else {
       agregarPlatoSinComplementos(plato);
@@ -406,7 +414,11 @@ const OrdenesScreen = ({ route }) => {
       const instanceId = ultimaInstancia.instanceId || ultimaInstancia._id;
       const currentCant = cantidades[instanceId] || 1;
       if (currentCant > 1) {
-        setCantidades({ ...cantidades, [instanceId]: currentCant - 1 });
+        const newCant = currentCant - 1;
+        setCantidades({ ...cantidades, [instanceId]: newCant });
+        setSelectedPlatos(selectedPlatos.map((p) =>
+          (p.instanceId || p._id) === instanceId ? { ...p, cantidad: newCant } : p
+        ));
       } else if (instanciasDelPlato.length === 1) {
         handleRemovePlato(instanceId);
       }
@@ -415,6 +427,24 @@ const OrdenesScreen = ({ route }) => {
 
   const cerrarModalComplementosYReabrirMenu = () => {
     setPlatoParaComplementar(null);
+    setComplementosInicialesModal(null);
+    setNotaInicialModal("");
+    tipoServicioAlComplementarRef.current = null;
+  };
+
+  const abrirModalGuarniciones = (platoLinea, { iniciales = null, nota = "", tipoServicio = null } = {}) => {
+    const resuelto = resolverPlatoConGrupos(platoLinea, platos);
+    if (!resuelto?.complementos?.length) {
+      Alert.alert(
+        "Guarniciones",
+        "No se pueden cargar las guarniciones de este combo. Agrégalo otra vez desde el menú."
+      );
+      return;
+    }
+    tipoServicioAlComplementarRef.current = tipoServicio || null;
+    setComplementosInicialesModal(Array.isArray(iniciales) ? iniciales : null);
+    setNotaInicialModal(nota || "");
+    setPlatoParaComplementar(resuelto);
   };
 
   const cerrarModalPlatos = useCallback(() => {
@@ -426,8 +456,9 @@ const OrdenesScreen = ({ route }) => {
   }, []);
 
   // Función para agregar un plato sin complementos (comportamiento original)
-  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1) => {
+  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null) => {
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
+    const tipoServicio = tipoServicioOverride || (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa');
     // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
     const instanceId = `${plato._id}_${Date.now()}`;
 
@@ -443,9 +474,10 @@ const OrdenesScreen = ({ route }) => {
     const platoConComplementos = {
       ...plato,
       instanceId, // ID único para esta instancia
+      cantidad: n,
       complementosElegidos: complementosNormalizados,
       notaEspecial: notaEspecial,
-      tipoServicio: tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa', // NUEVO: Mesa vs Para llevar
+      tipoServicio,
       // v3.0: precio unitario con extras (para mostrar subtotal correcto al mozo antes de enviar)
       ...(precioUnitarioV3 != null ? { precioUnitario: Number(precioUnitarioV3) } : {}),
       ...(extraComplementosV3 != null ? { extraComplementos: Number(extraComplementosV3) } : {}),
@@ -459,7 +491,7 @@ const OrdenesScreen = ({ route }) => {
 
       // NUEVO: comparar tipo de servicio
       const pTipo = p.tipoServicio || 'mesa';
-      if (pTipo !== (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa')) return false;
+      if (pTipo !== tipoServicio) return false;
 
       // Si ambos NO tienen complementos, son iguales
       const pComps = p.complementosElegidos || [];
@@ -474,18 +506,16 @@ const OrdenesScreen = ({ route }) => {
       // Si tienen complementos, compararlos (incluyendo cantidad)
       if (pComps.length !== newComps.length) return false;
       if (pNota !== newNota) return false;
-
-      // Comparar cada complemento incluyendo cantidad
-      return pComps.every(pc => 
-        newComps.some(nc => nc.grupo === pc.grupo && nc.opcion === pc.opcion && nc.cantidad === pc.cantidad)
-      ) && newComps.every(nc =>
-        pComps.some(pc => pc.grupo === nc.grupo && pc.opcion === nc.opcion && pc.cantidad === nc.cantidad)
-      );
+      return mismasGuarniciones(pComps, newComps);
     });
 
     if (existsWithSameComplements) {
-      const newCant = (cantidades[existsWithSameComplements.instanceId || existsWithSameComplements._id] || 1) + n;
-      setCantidades({ ...cantidades, [existsWithSameComplements.instanceId || existsWithSameComplements._id]: newCant });
+      const id = existsWithSameComplements.instanceId || existsWithSameComplements._id;
+      const newCant = (cantidades[id] || 1) + n;
+      setCantidades({ ...cantidades, [id]: newCant });
+      setSelectedPlatos(selectedPlatos.map((p) =>
+        (p.instanceId || p._id) === id ? { ...p, cantidad: newCant } : p
+      ));
     } else {
       setSelectedPlatos([...selectedPlatos, platoConComplementos]);
       setCantidades({ ...cantidades, [instanceId]: n });
@@ -497,7 +527,15 @@ const OrdenesScreen = ({ route }) => {
     if (platoParaComplementar) {
       const nombre = platoParaComplementar.nombre;
       const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
-      agregarPlatoSinComplementos(platoParaComplementar, complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos, n);
+      agregarPlatoSinComplementos(
+        platoParaComplementar,
+        complementosSeleccionados,
+        notaEspecial,
+        _precioUnitario,
+        _extraComplementos,
+        n,
+        tipoServicioAlComplementarRef.current
+      );
       Alert.alert("✅", n > 1 ? `${nombre} ×${n} agregado` : `${nombre} agregado`);
       cerrarModalComplementosYReabrirMenu();
     }
@@ -513,9 +551,33 @@ const OrdenesScreen = ({ route }) => {
   };
 
   const handleUpdateCantidad = (platoInstanceId, delta) => {
+    const linea = selectedPlatos.find((p) => (p.instanceId || p._id) === platoInstanceId);
+    if (!linea) return;
+
     const current = cantidades[platoInstanceId] || 1;
     const newCant = Math.max(1, current + delta);
     setCantidades({ ...cantidades, [platoInstanceId]: newCant });
+    setSelectedPlatos(selectedPlatos.map((p) =>
+      (p.instanceId || p._id) === platoInstanceId ? { ...p, cantidad: newCant } : p
+    ));
+  };
+
+  const handleClonarPlato = (platoLinea) => {
+    if (!platoRequiereGuarniciones(platoLinea, platos)) {
+      const id = platoLinea.instanceId || platoLinea._id;
+      const current = cantidades[id] || 1;
+      const newCant = current + 1;
+      setCantidades({ ...cantidades, [id]: newCant });
+      setSelectedPlatos(selectedPlatos.map((p) =>
+        (p.instanceId || p._id) === id ? { ...p, cantidad: newCant } : p
+      ));
+      return;
+    }
+    abrirModalGuarniciones(platoLinea, {
+      iniciales: guarnicionesElegidas(platoLinea),
+      nota: platoLinea.notaEspecial || "",
+      tipoServicio: platoLinea.tipoServicio || "mesa",
+    });
   };
 
   const calcularSubtotal = () => {
@@ -665,15 +727,16 @@ const OrdenesScreen = ({ route }) => {
               ? apiConfig.getEndpoint(`/reservas/mesa/${mesaActualizada._id}/activa`)
               : `${getFallbackApiBase()}/reservas/mesa/${mesaActualizada._id}/activa`;
             
-            const reservaResponse = await axios.get(reservaURL, { timeout: 5000 });
+            const reservaResponse = await axios.get(reservaURL, {
+              timeout: 5000,
+              params: userInfo._id ? { mozoId: userInfo._id } : undefined,
+            });
             
             if (reservaResponse.data.tieneReservaActiva && reservaResponse.data.reserva) {
               const reserva = reservaResponse.data.reserva;
-              const mozoAsignadoId = reserva.mozo?._id || reserva.mozo;
               const mozoActualId = userInfo._id;
               
-              // Si hay mozo asignado y no es el actual, denegar acceso
-              if (mozoAsignadoId && mozoActualId && mozoAsignadoId.toString() !== mozoActualId.toString()) {
+              if (mozoActualId && !reservaEsDeMozo(reserva, mozoActualId)) {
                 Alert.alert(
                   "Acceso Denegado",
                   `Esta mesa está reservada. Solo el mozo asignado puede atenderla.`,
@@ -1289,7 +1352,7 @@ const OrdenesScreen = ({ route }) => {
                       <View style={styles.complementosContainer}>
                         {plato.complementosElegidos.map((comp, idx) => {
                           // v2.0: Mostrar siempre la cantidad del complemento
-                          const cantidadComp = comp.cantidad || 1;
+                          const cantidadComp = cantidadGuarnicionEfectiva(comp, { cantidad });
                           
                           return (
                             <View key={idx} style={styles.complementoBadge}>
@@ -1330,6 +1393,15 @@ const OrdenesScreen = ({ route }) => {
                     >
                       <MaterialCommunityIcons name="plus" size={16} color={theme.colors.text.white} />
                     </TouchableOpacity>
+                    {platoRequiereGuarniciones(plato, platos) && (
+                      <TouchableOpacity
+                        style={styles.cloneButton}
+                        onPress={() => handleClonarPlato(plato)}
+                        accessibilityLabel="Clonar plato con guarniciones"
+                      >
+                        <MaterialCommunityIcons name="plus-box-multiple" size={20} color={theme.colors.primary} />
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity
                       style={styles.removeButton}
                       onPress={() => handleRemovePlato(platoInstanceId)}
@@ -1543,6 +1615,8 @@ const OrdenesScreen = ({ route }) => {
         plato={platoParaComplementar}
         onConfirm={handleConfirmarComplementos}
         onClose={cerrarModalComplementosYReabrirMenu}
+        complementosIniciales={complementosInicialesModal}
+        notaInicial={notaInicialModal}
       />
     </SafeAreaView>
   );
@@ -1768,6 +1842,9 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     color: theme.colors.text.primary,
   },
   removeButton: {
+    padding: theme.spacing.xs,
+  },
+  cloneButton: {
     padding: theme.spacing.xs,
   },
   observacionesInput: {
