@@ -811,7 +811,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     : subtotalPlatosReserva;
   const puedeLiberarReserva = esReservaFlow && puedePagar && saldoReserva <= 0.009;
   const puedeConfirmarEntrega = puedeLiberarMesaTrasPPA(todosLosPlatos);
-  const puedePagarNormal = puedePagar && reglasPPA.composicion !== 'solo_para_llevar' && !puedeLiberarReserva && !puedeConfirmarEntrega;
+  const comandaYaPagada = String(mesa?.estado || '').toLowerCase() === 'pagado'
+    || comandas.some((c) => ['pagado', 'completado'].includes(String(c.status || '').toLowerCase()));
+  const puedeLiberarMesaPagada = comandaYaPagada && !!mesa?._id;
+  const mostrarLiberar = !!(mesa?._id && (puedeLiberarReserva || puedeConfirmarEntrega || puedeLiberarMesaPagada));
+  const puedePagarNormal = puedePagar && reglasPPA.composicion !== 'solo_para_llevar' && !puedeLiberarReserva && !puedeConfirmarEntrega && !comandaYaPagada;
   
   // SALIO: el mozo entrega platos en "salio". El atajo de cocina "entregar plato entero"
   // deja el plato ya en "entregado"; si cocina solo marca salida, el mozo sigue pudiendo entregar.
@@ -1749,6 +1753,40 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }
   };
 
+  const handleLiberarMesaPagada = () => {
+    if (!mesa?._id) return;
+    Alert.alert(
+      'Liberar mesa',
+      `La comanda ya está pagada. ¿Liberar la mesa ${mesa.nummesa}? Quedará libre para otros mozos.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Liberar',
+          onPress: async () => {
+            setLiberandoMesa(true);
+            try {
+              const mesaId = mesa._id?.toString?.() || mesa._id;
+              const mesaURL = apiConfig.isConfigured
+                ? `${apiConfig.getEndpoint('/mesas')}/${mesaId}/estado`
+                : `${getFallbackApiBase()}/mesas/${mesaId}/estado`;
+              await axios.put(mesaURL, { estado: 'libre' }, { timeout: 5000 });
+              try {
+                await AsyncStorage.multiRemove(['ultimoBoucher', 'mesaPagada']);
+              } catch (_) { /* ignorar */ }
+              Alert.alert('Mesa liberada', `La mesa ${mesa.nummesa} está libre.`);
+              navigation.navigate('Inicio', { refresh: true });
+            } catch (error) {
+              const msg = error.response?.data?.error || error.response?.data?.message || error.message;
+              Alert.alert('Error', `No se pudo liberar la mesa.\n${msg}`);
+            } finally {
+              setLiberandoMesa(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleLiberarMesaReserva = () => {
     if (!puedeLiberarReserva || !mesa?._id) return;
     Alert.alert(
@@ -2311,35 +2349,23 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               <Text style={styles.actionButtonText}>Pagar</Text>
             </TouchableOpacity>
 
-            {puedeLiberarReserva && (
+            {mostrarLiberar && (
               <TouchableOpacity
                 style={[
                   styles.actionButton,
-                  { backgroundColor: '#7C3AED' },
-                  liberandoMesa && styles.actionButtonDisabled
+                  { backgroundColor: puedeLiberarReserva || comandaYaPagada ? '#7C3AED' : '#0EA5E9' },
+                  (liberandoMesa || confirmandoEntrega) && styles.actionButtonDisabled,
                 ]}
-                onPress={handleLiberarMesaReserva}
-                disabled={liberandoMesa}
-              >
-                <MaterialCommunityIcons name="table-furniture" size={20} color="#fff" />
-                <Text style={styles.actionButtonText}>{liberandoMesa ? 'Liberando…' : 'Liberar'}</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* PPA / para llevar: cerrar ciclo y liberar mesa (ya cobrado por adelantado) */}
-            {puedeConfirmarEntrega && (
-              <TouchableOpacity
-                style={[
-                  styles.actionButton,
-                  { backgroundColor: '#0EA5E9' },
-                  confirmandoEntrega && styles.actionButtonDisabled,
-                ]}
-                onPress={handleConfirmarEntrega}
-                disabled={confirmandoEntrega}
+                onPress={() => {
+                  if (puedeLiberarReserva) handleLiberarMesaReserva();
+                  else if (comandaYaPagada) handleLiberarMesaPagada();
+                  else handleConfirmarEntrega();
+                }}
+                disabled={liberandoMesa || confirmandoEntrega}
               >
                 <MaterialCommunityIcons name="table-furniture" size={20} color="#fff" />
                 <Text style={styles.actionButtonText}>
-                  {confirmandoEntrega ? 'Liberando…' : 'Liberar'}
+                  {(liberandoMesa || confirmandoEntrega) ? 'Liberando…' : 'Liberar'}
                 </Text>
               </TouchableOpacity>
             )}
