@@ -580,6 +580,52 @@ const OrdenesScreen = ({ route }) => {
     );
   };
 
+  const handleToggleTipoServicio = (platoInstanceId) => {
+    const linea = selectedPlatos.find((p) => (p.instanceId || p._id) === platoInstanceId);
+    if (!linea) return;
+    const nextTipo = linea.tipoServicio === 'para_llevar' ? 'mesa' : 'para_llevar';
+
+    const mismaLineaSinTipo = (a, b) => {
+      if (a._id !== b._id) return false;
+      if ((a.notaEspecial || '').trim() !== (b.notaEspecial || '').trim()) return false;
+      const aComps = a.complementosElegidos || [];
+      const bComps = b.complementosElegidos || [];
+      if (aComps.length === 0 && bComps.length === 0) return true;
+      if (aComps.length !== bComps.length) return false;
+      return mismasGuarniciones(aComps, bComps);
+    };
+
+    const gemela = selectedPlatos.find((p) => {
+      if ((p.instanceId || p._id) === platoInstanceId) return false;
+      if ((p.tipoServicio || 'mesa') !== nextTipo) return false;
+      return mismaLineaSinTipo(p, linea);
+    });
+
+    if (gemela) {
+      const gemelaId = gemela.instanceId || gemela._id;
+      const cantLinea = cantidades[platoInstanceId] || linea.cantidad || 1;
+      const cantGemela = cantidades[gemelaId] || gemela.cantidad || 1;
+      const newCant = cantGemela + cantLinea;
+      setCantidades((prev) => {
+        const next = { ...prev, [gemelaId]: newCant };
+        delete next[platoInstanceId];
+        return next;
+      });
+      setSelectedPlatos((prev) =>
+        prev
+          .filter((p) => (p.instanceId || p._id) !== platoInstanceId)
+          .map((p) => ((p.instanceId || p._id) === gemelaId ? { ...p, cantidad: newCant } : p))
+      );
+      return;
+    }
+
+    setSelectedPlatos((prev) =>
+      prev.map((p) =>
+        (p.instanceId || p._id) === platoInstanceId ? { ...p, tipoServicio: nextTipo } : p
+      )
+    );
+  };
+
   const handleUpdateCantidad = (platoInstanceId, delta) => {
     const linea = selectedPlatos.find((p) => (p.instanceId || p._id) === platoInstanceId);
     if (!linea) return;
@@ -1436,6 +1482,20 @@ const OrdenesScreen = ({ route }) => {
                   </View>
                   <View style={styles.platoActions}>
                     <TouchableOpacity
+                      style={[
+                        styles.tipoServicioLineaBtn,
+                        esParaLlevar ? styles.tipoServicioLineaBtnLlevar : styles.tipoServicioLineaBtnMesa,
+                      ]}
+                      onPress={() => handleToggleTipoServicio(platoInstanceId)}
+                      accessibilityLabel={esParaLlevar ? 'Para llevar. Tocar para cambiar a mesa' : 'Mesa. Tocar para cambiar a para llevar'}
+                    >
+                      <MaterialCommunityIcons
+                        name={esParaLlevar ? 'bag-personal' : 'table-chair'}
+                        size={16}
+                        color="#FFFFFF"
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
                       style={styles.cantidadButton}
                       onPress={() => handleUpdateCantidad(platoInstanceId, -1)}
                     >
@@ -1874,6 +1934,19 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "flex-end",
     gap: theme.spacing.sm,
+  },
+  tipoServicioLineaBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tipoServicioLineaBtnMesa: {
+    backgroundColor: "#F59E0B",
+  },
+  tipoServicioLineaBtnLlevar: {
+    backgroundColor: "#8B5CF6",
   },
   cantidadButton: {
     width: 32,

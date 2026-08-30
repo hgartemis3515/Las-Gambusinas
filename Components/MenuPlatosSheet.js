@@ -189,8 +189,13 @@ export default function MenuPlatosSheet({
             <View onLayout={onChromeLayout} style={styles.chrome}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Menú</Text>
-                <TouchableOpacity onPress={onClose}>
-                  <MaterialCommunityIcons name="close" size={24} color={theme.colors.text.primary} />
+                <TouchableOpacity
+                  onPress={onClose}
+                  style={styles.closeButton}
+                  accessibilityLabel="Cerrar menú"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <MaterialCommunityIcons name="close" size={32} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
 
@@ -373,6 +378,14 @@ const makeStyles = (theme) => StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: theme.spacing.md,
+  },
+  closeButton: {
+    backgroundColor: '#DC2626',
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalTitle: {
     fontSize: 24,
