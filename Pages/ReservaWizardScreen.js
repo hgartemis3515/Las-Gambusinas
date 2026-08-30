@@ -479,6 +479,21 @@ export default function ReservaWizardScreen() {
     setPlatoParaComplementar(resuelto);
   };
   const quitarInstancia = (instanceId) => { setSelPlatos((c) => c.filter((p) => p.instanceId !== instanceId)); haptic(); };
+  const borrarTodosPlatos = () => {
+    if (selPlatos.length === 0) return;
+    Alert.alert(
+      "Borrar todos los platos",
+      "Se quitarán todos los platos de esta reserva.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Borrar",
+          style: "destructive",
+          onPress: () => { setSelPlatos([]); haptic(); },
+        },
+      ]
+    );
+  };
   const notaInstancia = (instanceId, t) => setSelPlatos((c) => c.map((p) => p.instanceId === instanceId ? { ...p, notaEspecial: t } : p));
   const setTipoServicioInstancia = (instanceId, tipo) => {
     const next = tipo === "para_llevar" ? "para_llevar" : "mesa";
@@ -737,7 +752,7 @@ export default function ReservaWizardScreen() {
                   const cantLlevar = instancias.filter((p) => p.tipoServicio === "para_llevar").reduce((a, p) => a + (p.cantidad || 1), 0);
                   return (
                     <Pressable key={item._id} onPress={() => tocarPlato(item)}>
-                      <MotiView style={[s.platoRow, seleccionado && s.platoRowActive]} from={{ scale: 0.98 }} animate={{ scale: seleccionado ? 1.01 : 1 }} transition={{ type: "spring", stiffness: 300, damping: 20 }}>
+                      <MotiView style={[s.platoRow, seleccionado && s.platoRowActive, tipoServicioModal === 'para_llevar' && s.platoRowLlevar]} from={{ scale: 0.98 }} animate={{ scale: seleccionado ? 1.01 : 1 }} transition={{ type: "spring", stiffness: 300, damping: 20 }}>
                         <View style={{ flex: 1 }}>
                           <Text style={[s.platoNombre, seleccionado && s.platoNombreActive]}>{item.nombre}</Text>
                           <Text style={s.muted}>S/ {Number(item.precio || 0).toFixed(2)}</Text>
@@ -760,7 +775,14 @@ export default function ReservaWizardScreen() {
                     </Pressable>
                   );
                 })}
-                <Text style={s.label}>Seleccionados ({totalUnidadesPlatos})</Text>
+                <View style={s.selHeader}>
+                  <Text style={s.selHeaderTitle}>Seleccionados ({totalUnidadesPlatos})</Text>
+                  {selPlatos.length > 0 && (
+                    <Pressable onPress={borrarTodosPlatos} hitSlop={8} accessibilityLabel="Borrar todos los platos">
+                      <MaterialCommunityIcons name="close" size={22} color={cPrimary} />
+                    </Pressable>
+                  )}
+                </View>
                 {selPlatos.length === 0 && <Text style={s.muted}>Toca un plato para agregarlo.</Text>}
                 {selPlatos.map((p) => (
                   <MotiView key={p.instanceId} from={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: "spring", stiffness: 260, damping: 20 }} style={s.selPlato}>
@@ -952,6 +974,8 @@ const makeStyles = (theme) => {
     stepBarDone: { backgroundColor: cSuccess },
     body: { flex: 1, padding: 16 },
     label: { fontSize: 14, fontWeight: "600", color: cText, marginTop: 12, marginBottom: 4 },
+    selHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 12, marginBottom: 4 },
+    selHeaderTitle: { fontSize: 14, fontWeight: "600", color: cText, flex: 1, marginRight: 8 },
     hint: { fontSize: 12, color: cMuted, marginBottom: 6 },
     warn: { fontSize: 12, color: cDanger, fontWeight: "600", marginTop: 6 },
     bold: { fontWeight: "700", color: cText },
@@ -1004,6 +1028,7 @@ const makeStyles = (theme) => {
     catChipTextActive: { color: "#fff" },
     platoRow: { flexDirection: "row", alignItems: "center", padding: 12, borderWidth: 1, borderColor: cBorder, borderRadius: 12, marginBottom: 6, backgroundColor: cSurface },
     platoRowActive: { borderColor: cPrimary, backgroundColor: cPrimary + "12", borderWidth: 1.5 },
+    platoRowLlevar: { borderColor: "#8B5CF6", borderWidth: 2 },
     platoNombre: { fontSize: 14, fontWeight: "600", color: cText },
     platoNombreActive: { color: cPrimary },
     platoAddBtn: { width: 30, height: 30, borderRadius: 15, borderWidth: 1.5, borderColor: cPrimary, justifyContent: "center", alignItems: "center" },

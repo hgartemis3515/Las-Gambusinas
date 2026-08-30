@@ -223,6 +223,37 @@ export function montoDescuentoDeComanda(c) {
   return 0;
 }
 
+const CAMPOS_DESCUENTO_COMANDA = [
+  'descuento',
+  'montoDescuento',
+  'descuentoMontoFijo',
+  'motivoDescuento',
+  'totalCalculado',
+  'totalSinDescuento',
+  'precioTotal',
+  'descuentoAplicadoPor',
+  'descuentoAplicadoAt',
+];
+
+/** Copia campos de descuento/totales sin reemplazar platos ni el resto de la comanda. */
+export function parcheDescuentoComanda(destino, fuente) {
+  if (!destino || !fuente) return destino;
+  const next = { ...destino };
+  for (const k of CAMPOS_DESCUENTO_COMANDA) {
+    if (fuente[k] !== undefined) next[k] = fuente[k];
+  }
+  return next;
+}
+
+export function fuenteTraeCamposDescuento(c) {
+  return c != null && (
+    c.descuento !== undefined
+    || c.montoDescuento !== undefined
+    || c.descuentoMontoFijo !== undefined
+    || c.totalCalculado !== undefined
+  );
+}
+
 /**
  * Descuento de las comandas prorrateado a los platos seleccionados (igual que el backend).
  */

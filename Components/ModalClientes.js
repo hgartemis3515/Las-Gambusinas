@@ -51,8 +51,11 @@ const ModalClientes = ({
   const styles = useMemo(() => modalStyles(theme), [theme]);
   const { width } = useWindowDimensions();
   const escala = width < 390 ? 0.88 : 1;
-  const scrollRef = useRef(null);
   const overlayRef = useRef(null);
+  const scrollRef = useRef(null);
+  const efectivoBlockRef = useRef(null);
+  const scrollYRef = useRef(0);
+  const metodoPagoRef = useRef(null);
   const [overlayH, setOverlayH] = useState(0);
   const [headerH, setHeaderH] = useState(64);
   const [footerH, setFooterH] = useState(92);
@@ -62,6 +65,37 @@ const ModalClientes = ({
     setTimeout(() => {
       scrollRef.current?.scrollToEnd({ animated: true });
     }, 80);
+  };
+
+  const revelarEfectivo = () => {
+    setTimeout(() => {
+      const scroll = scrollRef.current;
+      const block = efectivoBlockRef.current;
+      if (!scroll || !block) return;
+      block.measureInWindow((bx, by, bw, bh) => {
+        scroll.measureInWindow((sx, sy, sw, sh) => {
+          if (typeof by !== "number" || typeof sy !== "number") {
+            scroll.scrollTo({ y: 140, animated: true });
+            return;
+          }
+          const margen = 16;
+          const blockBottom = by + (bh || 0);
+          const visBottom = sy + sh;
+          let delta = 0;
+          if (blockBottom > visBottom - margen) {
+            delta = blockBottom - visBottom + margen;
+          } else if (by < sy + margen) {
+            delta = by - sy - margen;
+          }
+          if (delta !== 0) {
+            scroll.scrollTo({
+              y: Math.max(0, scrollYRef.current + delta),
+              animated: true,
+            });
+          }
+        });
+      });
+    }, Platform.OS === "ios" ? 80 : 180);
   };
 
   // Estado de cliente (original)
@@ -75,6 +109,7 @@ const ModalClientes = ({
   const [monedaSeleccionada, setMonedaSeleccionada] = useState(MONEDA_DEFAULT); // 'PEN' | 'USD'
   const [metodoPago, setMetodoPago] = useState(null); // 'efectivo' | 'digital' | 'tarjeta'
   const [montoRecibidoStr, setMontoRecibidoStr] = useState("");
+  metodoPagoRef.current = metodoPago;
 
   // Total en la moneda seleccionada
   const totalEnMoneda = useMemo(() => {
@@ -266,8 +301,10 @@ const ModalClientes = ({
     const subShow = Keyboard.addListener(showEvt, (e) => {
       const kbY = e?.endCoordinates?.screenY;
       const applyPad = (overlap) => {
-        setKbPad(overlap);
-        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
+        // Android: adjustResize ya encoge la ventana; un padding extra baja el sheet
+        // y oculta el campo de efectivo. iOS sí necesita el inset.
+        setKbPad(Platform.OS === "android" ? 0 : overlap);
+        if (metodoPagoRef.current === "efectivo") revelarEfectivo();
       };
       if (typeof kbY !== "number") {
         applyPad(e?.endCoordinates?.height ?? 0);
@@ -293,6 +330,12 @@ const ModalClientes = ({
       back.remove();
     };
   }, [visible, onClose]);
+
+  useEffect(() => {
+    if (metodoPago !== "efectivo") return undefined;
+    revelarEfectivo();
+    return undefined;
+  }, [metodoPago]);
 
   if (!visible) return null;
 
@@ -327,11 +370,18 @@ const ModalClientes = ({
             <ScrollView
               ref={scrollRef}
               style={[styles.modalScrollView, { maxHeight: scrollMax }]}
-              contentContainerStyle={styles.modalScrollContent}
+              contentContainerStyle={[
+                styles.modalScrollContent,
+                metodoPago === "efectivo" && { paddingBottom: 40 },
+              ]}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
               nestedScrollEnabled
               showsVerticalScrollIndicator={true}
+              onScroll={(e) => {
+                scrollYRef.current = e.nativeEvent.contentOffset.y;
+              }}
+              scrollEventThrottle={16}
             >
               <View style={styles.modalBody}>
                 {/* Total a cobrar */}
@@ -459,7 +509,7 @@ const ModalClientes = ({
 
                 {/* Bloque efectivo: monto recibido + vuelto */}
                 {requiereEfectivo(metodoPago) && (
-                  <View style={styles.bloqueEfectivo}>
+                  <View ref={efectivoBlockRef} collapsable={false} style={styles.bloqueEfectivo}>
                     <View style={styles.inputContainer}>
                       <MaterialCommunityIcons
                         name="cash"
@@ -478,7 +528,7 @@ const ModalClientes = ({
                         underlineColorAndroid="transparent"
                         importantForAutofill="no"
                         autoComplete="off"
-                        onFocus={revelarCampo}
+                        onFocus={revelarEfectivo}
                       />
                     </View>
                     {totalEnMoneda != null && (

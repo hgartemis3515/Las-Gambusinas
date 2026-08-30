@@ -172,6 +172,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [complementosInicialesModal, setComplementosInicialesModal] = useState(null);
   const [notaInicialModal, setNotaInicialModal] = useState('');
   const tipoServicioAlComplementarRef = useRef(null);
+  const autoEntregaSalioRef = useRef(new Set());
   const [platosEditados, setPlatosEditados] = useState([]);
   
   // Estados para selección de platos a entregar
@@ -480,6 +481,36 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   useEffect(() => {
     refrescarComandasRef.current = refrescarComandas;
   }, [refrescarComandas]);
+
+  // Platos que ya salieron de cocina quedan entregados sin que el mozo pulse Entregar.
+  useEffect(() => {
+    const pendientes = todosLosPlatos.filter((p) =>
+      String(p.estado || '').toLowerCase() === 'salio' && !p.anulado && !p.eliminado
+    );
+    if (pendientes.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      let hizoCambio = false;
+      for (const plato of pendientes) {
+        const key = `${plato.comandaId}-${plato._id || plato.platoId}`;
+        if (autoEntregaSalioRef.current.has(key)) continue;
+        autoEntregaSalioRef.current.add(key);
+        try {
+          const platoIdentifier = plato._id || plato.platoId || plato.plato?._id;
+          const endpoint = apiConfig.isConfigured
+            ? `${apiConfig.getEndpoint('/comanda')}/${plato.comandaId}/plato/${platoIdentifier}/estado`
+            : `${getFallbackApiBase()}/comanda/${plato.comandaId}/plato/${platoIdentifier}/estado`;
+          await axios.put(endpoint, { nuevoEstado: 'entregado' });
+          hizoCambio = true;
+        } catch (_) {
+          autoEntregaSalioRef.current.delete(key);
+        }
+        if (cancelled) return;
+      }
+      if (!cancelled && hizoCambio) await refrescarComandasRef.current?.();
+    })();
+    return () => { cancelled = true; };
+  }, [todosLosPlatos]);
   useEffect(() => {
     reservaIdRef.current = reservaEfectiva?._id || reserva?._id;
   }, [reservaEfectiva?._id, reserva?._id]);
@@ -780,8 +811,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     ));
   const hayBloqueoCocinaEnComandas = !permitirEditarEliminarTomadas && comandas.some(c => comandaBloqueadaPorCocina(c, false));
   const platosEnRecoger = todosLosPlatos.filter(p => p.estado === 'recoger');
-  // SALIO: platos que ya salieron de cocina y pueden entregarse al comensal
-  const platosEnSalio = todosLosPlatos.filter(p => p.estado === 'salio');
   const platosEntregados = todosLosPlatos.filter(p => p.estado === 'entregado');
   const platosPagados = todosLosPlatos.filter(p => p.estado === 'pagado');
   
@@ -813,13 +842,19 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const puedeConfirmarEntrega = puedeLiberarMesaTrasPPA(todosLosPlatos);
   const comandaYaPagada = String(mesa?.estado || '').toLowerCase() === 'pagado'
     || comandas.some((c) => ['pagado', 'completado'].includes(String(c.status || '').toLowerCase()));
-  const puedeLiberarMesaPagada = comandaYaPagada && !!mesa?._id;
+  const mesaAunEnServicio = ['pedido', 'reservado', 'preparado', 'recoger', 'entregado'].includes(
+    String(mesa?.estado || '').toLowerCase()
+  );
+  const pagoForzadoCaja = mesaAunEnServicio && comandas.some((c) => !!c.tiempoPagado);
+  const puedeLiberarTrasPagoForzado = pagoForzadoCaja
+    && todosLosPlatos.length > 0
+    && todosLosPlatos.every((p) => p.estado === 'entregado' || p.estado === 'pagado');
+  const puedeLiberarMesaPagada = (comandaYaPagada || puedeLiberarTrasPagoForzado) && !!mesa?._id;
   const mostrarLiberar = !!(mesa?._id && (puedeLiberarReserva || puedeConfirmarEntrega || puedeLiberarMesaPagada));
-  const puedePagarNormal = puedePagar && reglasPPA.composicion !== 'solo_para_llevar' && !puedeLiberarReserva && !puedeConfirmarEntrega && !comandaYaPagada;
+  const puedePagarNormal = puedePagar && reglasPPA.composicion !== 'solo_para_llevar' && !puedeLiberarReserva && !puedeConfirmarEntrega && !comandaYaPagada && !pagoForzadoCaja;
   
-  // SALIO: el mozo entrega platos en "salio". El atajo de cocina "entregar plato entero"
-  // deja el plato ya en "entregado"; si cocina solo marca salida, el mozo sigue pudiendo entregar.
-  const puedeEntregar = platosEnSalio.length > 0;
+  // Entrega al comensal es automática al salir de cocina; el mozo no confirma.
+  const puedeEntregar = false;
   
   // Obtener platos disponibles
   const obtenerPlatos = async () => {
@@ -2353,12 +2388,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               <TouchableOpacity
                 style={[
                   styles.actionButton,
-                  { backgroundColor: puedeLiberarReserva || comandaYaPagada ? '#7C3AED' : '#0EA5E9' },
+                  { backgroundColor: puedeLiberarReserva || comandaYaPagada || puedeLiberarTrasPagoForzado ? '#7C3AED' : '#0EA5E9' },
                   (liberandoMesa || confirmandoEntrega) && styles.actionButtonDisabled,
                 ]}
                 onPress={() => {
                   if (puedeLiberarReserva) handleLiberarMesaReserva();
-                  else if (comandaYaPagada) handleLiberarMesaPagada();
+                  else if (comandaYaPagada || puedeLiberarTrasPagoForzado) handleLiberarMesaPagada();
                   else handleConfirmarEntrega();
                 }}
                 disabled={liberandoMesa || confirmandoEntrega}
@@ -2897,7 +2932,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                             styles.platoSelectItem,
                             {
                               backgroundColor: themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB'),
-                              borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                              borderColor: tipoServicioModal === 'para_llevar'
+                                ? '#8B5CF6'
+                                : (themeColors.colors?.border || themeColors.border || '#E5E7EB'),
+                              borderWidth: tipoServicioModal === 'para_llevar' ? 2 : 1,
                             }
                           ]}
                           onPress={() => handleAgregarPlato(plato)}

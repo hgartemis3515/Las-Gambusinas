@@ -47,6 +47,13 @@ export function reservaEsDeMozo(reserva, mozoId) {
   return idEntidad(reserva.mozo) === yo || idEntidad(reserva.creadoPor) === yo;
 }
 
+/** Comanda del ciclo actual del mozo (populate o id suelto). */
+export function comandaEsDeMozo(comanda, mozoId) {
+  const yo = idEntidad(mozoId);
+  if (!yo || !comanda) return false;
+  return idEntidad(comanda.mozos) === yo || idEntidad(comanda.mozo) === yo;
+}
+
 function ordenarReservasVigentes(arr) {
   const prio = { activa: 3, pendiente: 2, pendiente_aprobar: 1 };
   return [...arr].sort((a, b) => {
@@ -77,4 +84,22 @@ export function elegirReservaEspera(reservas, mesa, mozoId) {
   if (deMesa.length === 0) return null;
   const mias = deMesa.filter((r) => reservaEsDeMozo(r, mozoId));
   return (mias.length ? mias : deMesa)[0];
+}
+
+/** Tras crear comanda, la mesa de reserva puede seguir reservado / pendiente_aprobar. */
+export function estadoMesaConfirmadoTrasCrearComanda(estado, esDeReserva) {
+  const st = String(estado || '').toLowerCase();
+  if (esDeReserva) {
+    return st === 'pedido' || st === 'reservado' || st === 'pendiente_aprobar';
+  }
+  return st === 'pedido';
+}
+
+export function estadoMesaLocalTrasCrearComanda(estadoServidor, esDeReserva, estadoAnterior) {
+  if (esDeReserva) {
+    const st = String(estadoServidor || estadoAnterior || 'reservado').toLowerCase();
+    if (st === 'pedido' || st === 'reservado' || st === 'pendiente_aprobar') return st;
+    return 'reservado';
+  }
+  return 'pedido';
 }

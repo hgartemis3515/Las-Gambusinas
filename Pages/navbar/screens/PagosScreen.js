@@ -40,6 +40,8 @@ import {
   prorratearDescuentoSeleccion,
   comandaTieneDescuento,
   montoDescuentoDeComanda,
+  parcheDescuentoComanda,
+  fuenteTraeCamposDescuento,
   toggleSeleccionarTodos,
 } from "../../../utils/pagoParcialHelpers";
 // Animaciones Premium 60fps
@@ -360,6 +362,8 @@ const PagosScreen = () => {
   const pedidoIdCicloRef = React.useRef(null);
   /** IDs de comandas del pedido actual (ancla para no mezclar visitas anteriores). */
   const comandaIdsCicloRef = React.useRef([]);
+  const mesaRef = React.useRef(null);
+  mesaRef.current = mesa;
 
   // Obtener socket del contexto
   const { subscribeToEvents, connected: socketConnected } = useSocket();
@@ -501,13 +505,33 @@ const PagosScreen = () => {
     }
   }, [getHeadersAuth]);
 
-  // ❌ DESHABILITADO: No actualizar comandas desde WebSocket en PagosScreen
-  // Backend = única fuente de verdad. Solo usar route.params
-  // Los handlers de WebSocket pueden mezclar comandas antiguas con nuevas
-  // y causar loops infinitos de re-suscripción si tienen dependencias.
-  // El refresco de vouchers parciales se hace al enfocar la pantalla y tras cada pago.
+  // ❌ DESHABILITADO: No agregar comandas nuevas desde WebSocket (mezclaría visitas).
+  // Sí aplicar descuento/totales de una comanda que ya está en este cobro.
   const handleComandaActualizada = React.useCallback((comanda) => {
-    console.log('📥 [PAGOS] Comanda actualizada vía WebSocket (ignorada en PagosScreen):', comanda._id, 'Status:', comanda.status);
+    const id = comanda?._id?.toString?.() || comanda?._id;
+    if (!id || id === 'refresh') return;
+    const idsCiclo = (comandaIdsCicloRef.current || []).map(String);
+    const enCiclo = idsCiclo.includes(String(id));
+
+    setComandas((prev) => {
+      const idx = prev.findIndex((c) => String(c._id) === String(id));
+      if (idx < 0 || !fuenteTraeCamposDescuento(comanda)) return prev;
+      const next = [...prev];
+      next[idx] = parcheDescuentoComanda(next[idx], comanda);
+      return next;
+    });
+
+    if (fuenteTraeCamposDescuento(comanda)) return;
+    const mesaId = mesaRef.current?._id;
+    if (!mesaId || (!enCiclo && idsCiclo.length > 0)) return;
+    const idsFetch = idsCiclo.length > 0 ? idsCiclo : [String(id)];
+    fetchComandasCicloParaPagos(mesaId, idsFetch).then((list) => {
+      if (!Array.isArray(list) || list.length === 0) return;
+      setComandas((prev) => prev.map((c) => {
+        const fresh = list.find((x) => String(x._id) === String(c._id));
+        return fresh ? parcheDescuentoComanda(c, fresh) : c;
+      }));
+    }).catch(() => {});
   }, []);
 
   // ❌ DESHABILITADO: No agregar comandas desde WebSocket en PagosScreen
@@ -807,22 +831,17 @@ const PagosScreen = () => {
       }
 
       let syncCancelled = false;
-      if (currentMesa?._id && !currentBoucher && currentComandas?.length > 0) {
-        // No re-sincronizar con el ciclo completo de mesa: mezcla pedidos anteriores.
-        // ComandaDetalle e Inicio ya envían comandas filtradas por comandaIds.
-        if (
-          currentParams.origen === 'PagoAdelantado' ||
-          currentParams.origen === 'ComandaDetalle' ||
-          comandaIdsCicloRef.current.length > 0
-        ) {
-          console.log('⏭️ [PAGOS] Omitiendo re-sincronización amplia (ciclo acotado por comandaIds)');
-        } else {
+      if (currentMesa?._id && !currentBoucher && (currentComandas?.length > 0 || comandaIdsCicloRef.current.length > 0)) {
         (async () => {
           try {
+            const idsCiclo =
+              comandaIdsCicloRef.current.length > 0
+                ? comandaIdsCicloRef.current
+                : (currentComandas || []).map((c) => c._id).filter(Boolean);
             const backend = await fetchComandasBackendParaMesa(
               currentMesa._id,
               currentMesa.nummesa,
-              comandaIdsCicloRef.current
+              idsCiclo
             );
             if (syncCancelled) return;
             const validas = filtrarComandasPagablesParaPago(
@@ -830,11 +849,8 @@ const PagosScreen = () => {
               String(currentMesa._id),
               currentMesa.nummesa
             );
-            const acotadas = filtrarComandasPorIds(validas, comandaIdsCicloRef.current);
+            const acotadas = filtrarComandasPorIds(validas, idsCiclo);
             if (acotadas.length > 0) {
-              console.log(
-                `🔄 [PAGOS] Sincronización automática al enfocar: ${acotadas.length} comanda(s) desde servidor`
-              );
               setComandas(acotadas);
               setMesa({ ...currentMesa });
             }
@@ -842,7 +858,6 @@ const PagosScreen = () => {
             if (__DEV__) console.warn("[PAGOS] Sync al enfocar:", e?.message);
           }
         })();
-        } // fin else sync amplio
       }
 
       subscribeToEvents({
@@ -1059,6 +1074,30 @@ const PagosScreen = () => {
     const desc = prorratearDescuentoSeleccion(comandasFuente, platosSeleccionadosPago, platosEnPantalla, cantidadesPago);
     return calcularTotalesPreview(sub, configMoneda, desc);
   }, [comandas, route.params, platosSeleccionadosPago, platosEnPantalla, cantidadesPago, configMoneda]);
+
+  const descuentoEnPantalla = useMemo(() => {
+    const lineasInfo = infoDescuentos.descuentos || [];
+    const boucher = boucherData || boucherFromParams;
+    const lineasBoucher = (boucher?.descuentos || []).map((d, i) => ({
+      comandaNumber: d.comandaNumber || d.comanda,
+      porcentaje: d.porcentaje,
+      motivo: d.motivo,
+      montoAhorro: d.monto || d.montoAhorro || 0,
+    }));
+    if (boucher && (Number(boucher.montoDescuento) > 0 || lineasBoucher.length > 0)) {
+      return {
+        monto: Number(boucher.montoDescuento) || 0,
+        lineas: lineasBoucher.length ? lineasBoucher : lineasInfo,
+      };
+    }
+    if (platosSeleccionadosPago.length > 0) {
+      const monto = Number(totalesPagoActual?.montoDescuento) || 0;
+      if (monto > 0 || lineasInfo.length > 0) {
+        return { monto, lineas: lineasInfo };
+      }
+    }
+    return { monto: infoDescuentos.ahorroTotal || 0, lineas: lineasInfo };
+  }, [boucherData, boucherFromParams, infoDescuentos, platosSeleccionadosPago, totalesPagoActual]);
 
   // Total a cobrar en la moneda base (PEN) que se pasará al modal.
   // Prioriza el total de los platos seleccionados (pago parcial / PPA).
@@ -2602,21 +2641,30 @@ const PagosScreen = () => {
               })()}
             </Text>
           </View>
-          {/* 🔥 FIX: Mostrar información de descuentos si aplica */}
-          {infoDescuentos.descuentos.length > 0 && (
+          {/* Descuento (comanda, monto fijo o %): mismo dato que cocina */}
+          {(descuentoEnPantalla.monto > 0 || descuentoEnPantalla.lineas.length > 0) && (
             <View style={styles.totalRow}>
               <View style={{ flexDirection: 'column', flex: 1 }}>
                 <Text style={[styles.totalLabel, { color: '#EF4444' }]}>
                   DESCUENTO:
                 </Text>
-                {infoDescuentos.descuentos.map((desc, idx) => (
-                  <Text key={idx} style={{ fontSize: 11, color: theme.colors?.text?.secondary || '#6B7280' }}>
-                    C#{desc.comandaNumber}: {configMoneda?.simboloMoneda || 'S/.'} {Number(desc.montoAhorro || 0).toFixed(configMoneda?.decimales ?? 2)} ({Number.isInteger(Number(desc.porcentaje)) ? Number(desc.porcentaje) : Number(desc.porcentaje).toFixed(2)}%){desc.motivo ? ` - ${desc.motivo}` : ''}
-                  </Text>
-                ))}
+                {descuentoEnPantalla.lineas.map((desc, idx) => {
+                  const pct = Number(desc.porcentaje);
+                  const pctTxt = Number.isFinite(pct) && pct > 0
+                    ? ` (${Number.isInteger(pct) ? pct : pct.toFixed(2)}%)`
+                    : '';
+                  return (
+                    <Text key={idx} style={{ fontSize: 11, color: theme.colors?.text?.secondary || '#6B7280' }}>
+                      {desc.comandaNumber != null && desc.comandaNumber !== '' ? `C#${desc.comandaNumber}: ` : ''}
+                      {configMoneda?.simboloMoneda || 'S/.'} {Number(desc.montoAhorro || 0).toFixed(configMoneda?.decimales ?? 2)}
+                      {pctTxt}
+                      {desc.motivo ? ` - ${desc.motivo}` : ''}
+                    </Text>
+                  );
+                })}
               </View>
               <Text style={[styles.totalValue, { color: '#EF4444' }]}>
-                - {configMoneda?.simboloMoneda || 'S/.'} {infoDescuentos.ahorroTotal.toFixed(configMoneda?.decimales ?? 2)}
+                - {configMoneda?.simboloMoneda || 'S/.'} {Number(descuentoEnPantalla.monto || 0).toFixed(configMoneda?.decimales ?? 2)}
               </Text>
             </View>
           )}
@@ -2757,7 +2805,7 @@ const PagosScreen = () => {
         onClienteSeleccionado={handleClienteSeleccionado}
         onPagoConfirmado={handlePagoConfirmado}
         totalACobrar={totalBaseCobro}
-        montoDescuento={totalesPagoActual?.montoDescuento || infoDescuentos.ahorroTotal || 0}
+        montoDescuento={descuentoEnPantalla?.monto || totalesPagoActual?.montoDescuento || infoDescuentos.ahorroTotal || 0}
         totalSinDescuento={totalesPagoActual?.totalSinDescuento}
         tipoCambioUsd={tipoCambioUsd}
         permitirUsd={permitirUsd}

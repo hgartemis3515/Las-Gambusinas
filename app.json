@@ -22,7 +22,19 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.carlos121.appmozo",
+      "buildNumber": "25",
+      "infoPlist": {
+        "CFBundleShortVersionString": "1.5.1",
+        "NSCameraUsageDescription": "Permite tomar una foto para tu perfil de mozo.",
+        "NSPhotoLibraryUsageDescription": "Permite elegir una foto para tu perfil de mozo.",
+        "NSMicrophoneUsageDescription": "Permite grabar audio si una función lo requiere.",
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
     },
     "android": {
       "versionCode": 25,

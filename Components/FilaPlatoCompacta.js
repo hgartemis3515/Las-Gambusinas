@@ -21,7 +21,7 @@ const FilaPlatoCompacta = ({
   // 'recoger' pasa a ser solo aviso informativo (sin checkbox).
   const esSalio = plato.estado === 'salio' && !plato.anulado;
   const esSoloAviso = plato.estado === 'recoger' && !plato.anulado;
-  const puedeMarcarEntregado = esSalio;
+  const puedeMarcarEntregado = false;
   const nombrePlato = plato.plato?.nombre || 'Plato desconocido';
   
   // 🔥 NUEVO: Estilos especiales para plato anulado
@@ -131,7 +131,7 @@ const FilaPlatoCompacta = ({
               </Text>
             </View>
           </View>
-        ) : esSalio && onToggleSeleccion ? (
+        ) : esSalio && onToggleSeleccion && puedeMarcarEntregado ? (
           /* SALIO: Checkbox resaltante — el plato salió de cocina y puede entregarse */
           <TouchableOpacity
             style={[

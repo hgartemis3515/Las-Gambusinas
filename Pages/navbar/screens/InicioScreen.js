@@ -26,7 +26,7 @@ import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
 import logger from "../../../utils/logger";
-import { usuarioPuedeCrearReservas, elegirReservaDeMesa, elegirReservaEspera, reservaEsDeMozo } from "../../../utils/reservasMozo";
+import { usuarioPuedeCrearReservas, elegirReservaDeMesa, elegirReservaEspera, reservaEsDeMozo, comandaEsDeMozo } from "../../../utils/reservasMozo";
 import { useSocket } from "../../../context/SocketContext";
 // Animaciones Premium 60fps
 import Animated, {
@@ -590,6 +590,7 @@ const InicioScreen = () => {
   const [horaActual, setHoraActual] = useState(moment().tz("America/Lima"));
   const [adaptMobile, setAdaptMobile] = useState(false);
   const [seccionActiva, setSeccionActiva] = useState(null);
+  const SECCION_YO = "__yo__";
   const [mesaSeleccionada, setMesaSeleccionada] = useState(null);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   // Catálogo dinámico de tipos de plato desde el backend
@@ -2287,10 +2288,8 @@ const InicioScreen = () => {
         }
 
         const cid = reserva.comandaGenerada?._id || reserva.comandaGenerada;
-        let cmds = getComandasPorMesa(mesa.nummesa);
-        if ((!cmds || cmds.length === 0) && mesa._id) {
-          cmds = await obtenerComandasMesa(mesa._id);
-        }
+        const fromApi = mesa._id ? await obtenerComandasMesa(mesa._id) : [];
+        let cmds = fromApi.length ? fromApi : (getComandasPorMesa(mesa.nummesa) || []);
         if ((!cmds || cmds.length === 0) && cid) {
           const comandaBase = apiConfig.isConfigured
             ? apiConfig.getEndpoint("/comanda")
@@ -4963,11 +4962,37 @@ const InicioScreen = () => {
     );
   };
 
+  // Mesas que atiende este mozo (cualquier estado hasta Liberar). Libre = ya no es suya.
+  const mesaAtendidaPorMi = useCallback((mesa) => {
+    const yo = userInfo?._id || userInfo?.id;
+    if (!yo || !mesa) return false;
+    const st = String(mesa.estado || "").toLowerCase();
+
+    const reservaMia = elegirReservaDeMesa(reservas, mesa, yo);
+    if (reservaMia && reservaEsDeMozo(reservaMia, yo)) {
+      const estR = String(reservaMia.estado || "").toLowerCase();
+      if (["pendiente", "activa", "pendiente_aprobar"].includes(estR)) return true;
+    }
+
+    const algunaMia = (lista) => (lista || []).some((c) => comandaEsDeMozo(c, yo));
+
+    if (st === "libre") return false;
+
+    if (algunaMia(getComandasPorMesa(mesa.nummesa))) return true;
+    if (algunaMia(getComandasActivasPorMesaId(mesa))) return true;
+    if (algunaMia(getComandasHistorialMesaPorNumero(mesa.nummesa))) return true;
+    if (algunaMia(getComandasHistorialMesaPorMesaId(mesa))) return true;
+
+    return false;
+  }, [userInfo, reservas, comandas]);
+
   // Obtener mesas por área/sección (mantiene ordenamiento numérico)
   // OCULTA las mesas secundarias (las que están unidas a otra mesa principal)
   const getMesasPorArea = useCallback((areaId) => {
     let mesasFiltradas;
-    if (areaId === "All") {
+    if (areaId === SECCION_YO) {
+      mesasFiltradas = mesas.filter(mesaAtendidaPorMi);
+    } else if (areaId === "All") {
       mesasFiltradas = mesas;
     } else {
       mesasFiltradas = mesas.filter(mesa => {
@@ -4986,7 +5011,7 @@ const InicioScreen = () => {
     
     // Aplicar ordenamiento numérico a las mesas filtradas
     return ordenarMesasPorNumero(mesasFiltradas);
-  }, [mesas, ordenarMesasPorNumero]);
+  }, [mesas, ordenarMesasPorNumero, mesaAtendidaPorMi]);
 
   // Obtener TODAS las áreas activas (no solo las que tienen mesas)
   // Esto permite mostrar áreas vacías como "Don" y "JUGOS"
@@ -5136,6 +5161,24 @@ const InicioScreen = () => {
               ]}>
                 Default
               </Text>
+              </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.tabButton,
+                seccionActiva === SECCION_YO && styles.tabButtonActive
+              ]}
+              onPress={() => handleSeccionActivaChange(seccionActiva === SECCION_YO ? null : SECCION_YO)}
+              onLayout={(event) => {
+                const { x } = event.nativeEvent.layout;
+                tabPositionsRef.current[SECCION_YO] = x;
+              }}
+            >
+              <Text style={[
+                styles.tabButtonText,
+                seccionActiva === SECCION_YO && styles.tabButtonTextActive
+              ]}>
+                {seccionActiva === SECCION_YO ? "☆ " : ""}YO
+              </Text>
             </TouchableOpacity>
             {areasConMesas.map((area) => (
               <TouchableOpacity
@@ -5180,9 +5223,9 @@ const InicioScreen = () => {
           {vistaInicio === 'mapa' && !modoSeleccion ? (
             // ========== VISTA DE MAPA ==========
             <MesaMapView
-              mesas={mesas}
+              mesas={seccionActiva === SECCION_YO ? mesas.filter(mesaAtendidaPorMi) : mesas}
               reservas={reservas}
-              areaId={seccionActiva?._id || seccionActiva}
+              areaId={seccionActiva === SECCION_YO ? null : (seccionActiva?._id || seccionActiva)}
               onMesaPress={handleSelectMesa}
               style={{ flex: 1 }}
             />
@@ -5193,7 +5236,13 @@ const InicioScreen = () => {
               contentContainerStyle={styles.canvasContent}
             >
               {seccionActiva ? (
-                getMesasPorArea(seccionActiva).map((mesa, index) => {
+                <>
+                  {seccionActiva === SECCION_YO && getMesasPorArea(SECCION_YO).length === 0 && (
+                    <Text style={{ textAlign: "center", padding: 24, opacity: 0.7, color: theme.colors?.text?.secondary || theme.colors?.text?.muted }}>
+                      No tienes mesas en atención
+                    </Text>
+                  )}
+                  {getMesasPorArea(seccionActiva).map((mesa, index) => {
                   const estado = getEstadoMesa(mesa);
                   const estadoColor = getEstadoColor(estado);
                   const mozo = getMozoMesa(mesa);
@@ -5225,7 +5274,8 @@ const InicioScreen = () => {
                       formatearGrupo={formatearGrupoMesas(mesa)}
                     />
                   );
-                })
+                })}
+                </>
               ) : (
                 // Vista de todas las mesas (sin filtro de área) - excluye mesas secundarias
                 mesas.filter(mesa => mesa.esMesaPrincipal !== false).map((mesa, index) => {

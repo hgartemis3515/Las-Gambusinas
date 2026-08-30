@@ -30,7 +30,7 @@ import { platoRequiereGuarniciones, resolverPlatoConGrupos, guarnicionesElegidas
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
 import configuracionService from "../../../services/configuracionService";
-import { reservaEsDeMozo } from "../../../utils/reservasMozo";
+import { reservaEsDeMozo, estadoMesaConfirmadoTrasCrearComanda, estadoMesaLocalTrasCrearComanda } from "../../../utils/reservasMozo";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -165,6 +165,14 @@ const AnimatedOverlay = ({ mensaje }) => {
       </View>
     </Animated.View>
   );
+};
+
+const TIPO_SERVICIO_ORDENES_KEY = "tipoServicioOrdenes";
+
+const persistTipoServicioOrdenes = (tipo) => {
+  const v = tipo === "para_llevar" ? "para_llevar" : "mesa";
+  AsyncStorage.setItem(TIPO_SERVICIO_ORDENES_KEY, v).catch(() => {});
+  return v;
 };
 
 const OrdenesScreen = ({ route }) => {
@@ -354,6 +362,10 @@ const OrdenesScreen = ({ route }) => {
       if (storedObs) {
         setObservaciones(storedObs);
       }
+      const storedTipo = await AsyncStorage.getItem(TIPO_SERVICIO_ORDENES_KEY);
+      if (storedTipo === "para_llevar" || storedTipo === "mesa") {
+        setTipoServicioModal(storedTipo);
+      }
     } catch (error) {
       console.error("Error cargando platos seleccionados:", error);
     }
@@ -452,7 +464,6 @@ const OrdenesScreen = ({ route }) => {
     setTipoPlatoFiltro(null);
     setCategoriaFiltro(null);
     setSearchPlato("");
-    setTipoServicioModal('mesa');
   }, []);
 
   // Función para agregar un plato sin complementos (comportamiento original)
@@ -548,6 +559,25 @@ const OrdenesScreen = ({ route }) => {
     const newCantidades = { ...cantidades };
     delete newCantidades[platoInstanceId];
     setCantidades(newCantidades);
+  };
+
+  const handleClearAllPlatos = () => {
+    if (selectedPlatos.length === 0) return;
+    Alert.alert(
+      "Borrar todos los platos",
+      "Se quitarán todos los platos de esta orden.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Borrar",
+          style: "destructive",
+          onPress: () => {
+            setSelectedPlatos([]);
+            setCantidades({});
+          },
+        },
+      ]
+    );
   };
 
   const handleUpdateCantidad = (platoInstanceId, delta) => {
@@ -989,14 +1019,16 @@ const OrdenesScreen = ({ route }) => {
       setMensajeCarga(`¡Comanda #${comandaNumber} creada!`);
       console.log(`✅ Comanda #${comandaNumber} creada correctamente`);
       
-      // Verificar que la mesa esté en estado "pedido" en el servidor (opcional, no bloqueante)
+      // Verificar estado de mesa (pedido, o reservado si es extra sobre reserva)
       setMensajeCarga("Verificando estado de la mesa...");
       const mesaId = mesaActualizada._id;
       const mesaNum = mesaActualizada.nummesa;
+      const esEnvioReserva = !!(reservaActiva || comandaData.origenReserva);
       
       let mesaVerificada = false;
       let intentos = 0;
       const maxIntentos = 10; // Máximo 10 intentos (5 segundos)
+      let estadoMesaServidor = mesaActualizada.estado;
       
       while (!mesaVerificada && intentos < maxIntentos) {
         try {
@@ -1014,11 +1046,12 @@ const OrdenesScreen = ({ route }) => {
           
           if (mesaEncontrada) {
             const estadoMesaVerificado = (mesaEncontrada.estado || '').toLowerCase();
+            estadoMesaServidor = estadoMesaVerificado;
             console.log(`🔄 Intento ${intentos + 1}/${maxIntentos}: Mesa ${mesaNum} en estado "${estadoMesaVerificado}"`);
             
-            if (estadoMesaVerificado === 'pedido') {
+            if (estadoMesaConfirmadoTrasCrearComanda(estadoMesaVerificado, esEnvioReserva)) {
               mesaVerificada = true;
-              console.log(`✅ Mesa ${mesaNum} confirmada en estado "pedido"`);
+              console.log(`✅ Mesa ${mesaNum} confirmada en estado "${estadoMesaVerificado}"`);
               break;
             }
           }
@@ -1035,10 +1068,16 @@ const OrdenesScreen = ({ route }) => {
         // Continuar de todas formas, el backend debería haber actualizado la mesa
       }
       
+      const estadoLocal = estadoMesaLocalTrasCrearComanda(
+        estadoMesaServidor,
+        esEnvioReserva,
+        mesaActualizada.estado
+      );
+      
       // Actualizar estado local de la mesa
       try {
         if (mesaActualizada) {
-          const mesaActualizadaLocal = { ...mesaActualizada, estado: 'pedido' };
+          const mesaActualizadaLocal = { ...mesaActualizada, estado: estadoLocal };
           setSelectedMesa(mesaActualizadaLocal);
         }
         
@@ -1046,7 +1085,7 @@ const OrdenesScreen = ({ route }) => {
           const index = prev.findIndex(m => m._id === mesaActualizada._id);
           if (index !== -1) {
             const nuevas = [...prev];
-            nuevas[index] = { ...nuevas[index], estado: 'pedido' };
+            nuevas[index] = { ...nuevas[index], estado: estadoLocal };
             return nuevas;
           }
           return prev;
@@ -1070,7 +1109,6 @@ const OrdenesScreen = ({ route }) => {
       setSelectedPlatos([]);
       setCantidades({});
       setObservaciones("");
-      setTipoServicioModal('mesa'); // Reset toggle tras envío exitoso
       
       // Esperar un momento antes de navegar para que el usuario vea el mensaje de éxito
       await new Promise(resolve => setTimeout(resolve, 800));
@@ -1079,8 +1117,11 @@ const OrdenesScreen = ({ route }) => {
       setIsSendingComanda(false);
       setMostrarOverlayCarga(false);
       
-      // Navegar a Inicio
-      navigation.navigate("Inicio");
+      if (origen === 'ComandaDetalle' && navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate("Inicio");
+      }
     } catch (error) {
       // 🔥 MEJORADO: Verificación exhaustiva antes de mostrar cualquier error
       console.warn("⚠️ Error capturado, verificando si comanda se creó:", error.message);
@@ -1115,14 +1156,16 @@ const OrdenesScreen = ({ route }) => {
         setSelectedPlatos([]);
         setCantidades({});
         setObservaciones("");
-        setTipoServicioModal('mesa'); // Reset toggle tras envío (rama error-validado)
         
         // 🔥 CRÍTICO: Resetear estado ANTES de navegar
         setIsSendingComanda(false);
         setMostrarOverlayCarga(false);
         
-        // Navegar a Inicio
+      if (origen === 'ComandaDetalle' && navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
         navigation.navigate("Inicio");
+      }
         return; // Salir sin mostrar error
       }
       
@@ -1311,12 +1354,24 @@ const OrdenesScreen = ({ route }) => {
         {/* Platos Seleccionados */}
         <View style={[styles.section, orientation.isLandscape && styles.sectionLandscape]}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
-              Platos Seleccionados
-            </Text>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{selectedPlatos.length}</Text>
+            <View style={styles.sectionHeaderLeft}>
+              <Text style={styles.sectionTitle}>
+                Platos Seleccionados
+              </Text>
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{selectedPlatos.length}</Text>
+              </View>
             </View>
+            {selectedPlatos.length > 0 && (
+              <TouchableOpacity
+                onPress={handleClearAllPlatos}
+                style={styles.clearAllButton}
+                accessibilityLabel="Borrar todos los platos"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <MaterialCommunityIcons name="close" size={22} color={theme.colors.primary} />
+              </TouchableOpacity>
+            )}
           </View>
           {selectedPlatos.length === 0 ? (
             <View style={styles.emptyContainer}>
@@ -1459,7 +1514,6 @@ const OrdenesScreen = ({ route }) => {
               setTipoPlatoFiltro(null);
               setCategoriaFiltro(null);
               setSearchPlato("");
-              setTipoServicioModal('mesa'); // Reset toggle al abrir el modal
               setModalPlatosVisible(true);
             }}
           >
@@ -1584,11 +1638,12 @@ const OrdenesScreen = ({ route }) => {
           setTipoPlatoFiltro(null);
           setCategoriaFiltro(null);
           setSearchPlato("");
-          setTipoServicioModal('mesa');
         }}
         labelForTipo={labelForTipo}
         tipoServicioModal={tipoServicioModal}
-        onTipoServicioChange={setTipoServicioModal}
+        onTipoServicioChange={(v) => {
+          setTipoServicioModal(persistTipoServicioOrdenes(v));
+        }}
         searchPlato={searchPlato}
         onSearchChange={handleSearchChangeText}
         onSearchFocus={handleSearchFocus}
@@ -1671,6 +1726,20 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: theme.spacing.md,
+  },
+  sectionHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    flex: 1,
+    marginRight: theme.spacing.sm,
+  },
+  clearAllButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
   sectionLabel: {
     fontSize: 14,

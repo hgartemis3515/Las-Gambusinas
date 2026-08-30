@@ -22,6 +22,16 @@
         "simulator": true
       }
     },
+    "iphone": {
+      "distribution": "internal",
+      "channel": "preview",
+      "cache": {
+        "disabled": true
+      },
+      "ios": {
+        "simulator": false
+      }
+    },
     "production": {
       "channel": "production",
       "android": {

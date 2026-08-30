@@ -13,7 +13,7 @@
  *    generaba un boucher ahora debe generar una COMANDA."
  */
 import { Alert, Platform } from 'react-native';
-import { generarHtmlComanda, mapComandaATicket, aplicarComandaNumeroDisplay, formatComandasNumbersLabel } from '../../utils/comandaHtml';
+import { generarHtmlComanda, mapComandasATicket, aplicarComandaNumeroDisplay, formatComandasNumbersLabel } from '../../utils/comandaHtml';
 import { compartirComandaPdf } from '../../utils/comandaPdfShare';
 import apiConfig from '../../config/apiConfig';
 
@@ -64,15 +64,15 @@ export async function mostrarOpcionesComanda(opts, { onStart, onEnd } = {}) {
       }
     }
 
-    // Construir datos del ticket usando mapComandaATicket
-    const primeraComanda = comandas[0];
-    let datos = primeraComanda
-      ? mapComandaATicket(primeraComanda, boucher, configMoneda)
-      : mapComandaATicket(
-          { platos: boucher?.platos || [], comandaNumber: boucher?.comandasNumbers?.[0], observaciones: boucher?.observaciones, createdAt: boucher?.fechaPedido || boucher?.fechaPago },
-          boucher,
-          configMoneda
-        );
+    const fuenteComandas = comandas.length
+      ? comandas
+      : [{
+          platos: boucher?.platos || [],
+          comandaNumber: boucher?.comandasNumbers?.[0],
+          observaciones: boucher?.observaciones,
+          createdAt: boucher?.fechaPedido || boucher?.fechaPago,
+        }];
+    let datos = mapComandasATicket(fuenteComandas, boucher, configMoneda);
 
     // Enriquecer con números agrupados del boucher si hay varias comandas
     const comandasNumbers = boucher?.comandasNumbers

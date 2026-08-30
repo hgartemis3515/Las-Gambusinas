@@ -200,7 +200,10 @@ export async function generarPdfComandaNativo(opts) {
       const marcadorPL = prod.paraLlevar ? ' (P.L.)' : '';
       addWrapped(`${nombre}${marcadorPL}`, 'left', { size: SIZE_BODY });
       const cant = prod.cantidad || 1;
-      const subtotal = prod.subtotal || (prod.precio || 0) * cant;
+      const subRaw = Number(prod.subtotal);
+      const subtotal = Number.isFinite(subRaw) && subRaw > 0
+        ? subRaw
+        : (Number(prod.precioUnitario ?? prod.precio) || 0) * cant;
       if (mostrarPrecios) {
         addPad(`  x${cant}`, `${simboloMoneda} ${subtotal.toFixed(2)}`, { size: SIZE_SM });
       } else {
@@ -226,7 +229,7 @@ export async function generarPdfComandaNativo(opts) {
     const sumaLineas = (datos.productos || []).reduce((s, p) => {
       const linea = Number(p?.subtotal);
       if (Number.isFinite(linea) && linea > 0) return s + linea;
-      return s + (Number(p?.precio) || 0) * (Number(p?.cantidad) || 1);
+      return s + (Number(p?.precioUnitario ?? p?.precio) || 0) * (Number(p?.cantidad) || 1);
     }, 0);
     const subtotalPlatos = sumaLineas > 0
       ? sumaLineas
@@ -239,7 +242,10 @@ export async function generarPdfComandaNativo(opts) {
       const motivoDesc = datos.descuentos?.[0]?.motivo ? ` (${datos.descuentos[0].motivo})` : '';
       addPad(`Descuento${motivoDesc}:`, `-${simboloMoneda} ${montoDesc.toFixed(2)}`, { size: fontSize });
     }
-    addPad(obtenerEtiqueta('total', p) + ':', `${simboloMoneda} ${(datos.total || 0).toFixed(2)}`, { bold: true, size: SIZE_TITLE });
+    const totalFinal = montoDesc > 0
+      ? Number(Math.max(0, subtotalPlatos - montoDesc).toFixed(2))
+      : (Number(datos.total) > 0 ? Number(datos.total) : subtotalPlatos);
+    addPad(obtenerEtiqueta('total', p) + ':', `${simboloMoneda} ${totalFinal.toFixed(2)}`, { bold: true, size: SIZE_TITLE });
     addRule();
   }
 

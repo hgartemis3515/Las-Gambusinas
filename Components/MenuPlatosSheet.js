@@ -131,7 +131,10 @@ export default function MenuPlatosSheet({
     const cantidadLlevar = instanciasLlevar.reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
 
     return (
-      <View style={styles.platoModalItem}>
+      <View style={[
+        styles.platoModalItem,
+        tipoServicioModal === 'para_llevar' && styles.platoModalItemLlevar,
+      ]}>
         <View style={styles.platoModalInfo}>
           <View style={styles.platoModalNombreContainer}>
             <Text style={styles.platoModalNombre}>{plato.nombre}</Text>
@@ -167,7 +170,7 @@ export default function MenuPlatosSheet({
         </View>
       </View>
     );
-  }, [selectedPlatos, cantidades, onDecrementPlato, onAddPlato, styles, theme.colors.text.white]);
+  }, [selectedPlatos, cantidades, onDecrementPlato, onAddPlato, styles, theme.colors.text.white, tipoServicioModal]);
 
   if (!visible) return null;
 
@@ -238,7 +241,10 @@ export default function MenuPlatosSheet({
                       <MaterialCommunityIcons name="arrow-left" size={20} color={theme.colors.text.white} />
                       <Text style={styles.changeTipoButtonText}>{labelForTipo(tipoPlatoFiltro) || 'Tipo'}</Text>
                     </TouchableOpacity>
-                    <View style={styles.tipoServicioToggle}>
+                    <View style={[
+                      styles.tipoServicioToggle,
+                      tipoServicioModal === 'para_llevar' && { borderColor: '#8B5CF6' },
+                    ]}>
                       <Text
                         style={[
                           styles.tipoServicioLabel,
@@ -428,6 +434,10 @@ const makeStyles = (theme) => StyleSheet.create({
     marginBottom: theme.spacing.sm,
     borderWidth: 1,
     borderColor: theme.colors.border,
+  },
+  platoModalItemLlevar: {
+    borderWidth: 2,
+    borderColor: '#8B5CF6',
   },
   platoModalInfo: {
     flexDirection: 'row',

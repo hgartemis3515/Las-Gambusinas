@@ -9,11 +9,12 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "build:apk:preview": "eas build --platform android --profile preview",
-    "build:apk:production": "eas build --platform android --profile production",
+    "build:apk:preview": "npx --yes eas-cli build --platform android --profile preview",
+    "build:apk:production": "npx --yes eas-cli build --platform android --profile production",
+    "build:ios:iphone": "npx --yes eas-cli build --platform ios --profile iphone",
     "eas-build-post-install": "node -e \"require('fs').rmSync('android/build',{recursive:true,force:true});require('fs').rmSync('android/.gradle',{recursive:true,force:true});\"",
-    "update:preview": "eas update --channel preview",
-    "update:production": "eas update --channel production"
+    "update:preview": "npx --yes eas-cli update --channel preview",
+    "update:production": "npx --yes eas-cli update --channel production"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",

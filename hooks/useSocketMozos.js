@@ -672,7 +672,12 @@ const useSocketMozos = ({
     // Evento: Ticket de aprobación nuevo (mesa pasa a pendiente_aprobar)
     socket.on('ticket-aprobacion-nuevo', (data) => {
       console.log('🎫 [MOZOS] Ticket de aprobación nuevo:', data.ticketNumber, 'Mesa:', data.numMesa);
-      if (onMesaActualizada && data.mesaId) {
+      const origen = String(data?.origen || data?.ticket?.origen || '').toLowerCase();
+      if (origen === 'alta_comanda') {
+        // Caja ve el ticket PENDIENTE; la mesa sigue en pedido/reservado.
+      } else if (origen === 'forzado' || data?.ticket?.pagoForzado) {
+        if (onComandaActualizada) onComandaActualizada({ _id: 'refresh' });
+      } else if (onMesaActualizada && data.mesaId) {
         // Refrescar mesas para que InicioScreen muestre verde claro
         onMesaActualizada({ _id: data.mesaId, estado: 'pendiente_aprobar', nummesa: data.numMesa });
       }
