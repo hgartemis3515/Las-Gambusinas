@@ -348,6 +348,7 @@ const PagosScreen = () => {
   const [imprimirComandaHabilitado, setImprimirComandaHabilitado] = useState(false);
   /** Claves de platos seleccionados para pago parcial (ver pagoParcialHelpers). */
   const [platosSeleccionadosPago, setPlatosSeleccionadosPago] = useState([]);
+  const [cantidadesPago, setCantidadesPago] = useState({});
   const [totalRestante, setTotalRestante] = useState(null);
   const [totalAcumuladoPagado, setTotalAcumuladoPagado] = useState(0);
   const [hayPendienteTrasPago, setHayPendienteTrasPago] = useState(false);
@@ -1054,10 +1055,10 @@ const PagosScreen = () => {
   const totalesPagoActual = useMemo(() => {
     const params = route.params || {};
     const comandasFuente = comandas.length > 0 ? comandas : (params.comandasParaPagar || []);
-    const sub = calcularSubtotalSeleccion(platosSeleccionadosPago, platosEnPantalla);
-    const desc = prorratearDescuentoSeleccion(comandasFuente, platosSeleccionadosPago, platosEnPantalla);
+    const sub = calcularSubtotalSeleccion(platosSeleccionadosPago, platosEnPantalla, cantidadesPago);
+    const desc = prorratearDescuentoSeleccion(comandasFuente, platosSeleccionadosPago, platosEnPantalla, cantidadesPago);
     return calcularTotalesPreview(sub, configMoneda, desc);
-  }, [comandas, route.params, platosSeleccionadosPago, platosEnPantalla, configMoneda]);
+  }, [comandas, route.params, platosSeleccionadosPago, platosEnPantalla, cantidadesPago, configMoneda]);
 
   // Total a cobrar en la moneda base (PEN) que se pasará al modal.
   // Prioriza el total de los platos seleccionados (pago parcial / PPA).
@@ -1077,9 +1078,11 @@ const PagosScreen = () => {
     if (usarPlatosDeBoucher) return;
     if (platosPagables.length === 0) {
       setPlatosSeleccionadosPago([]);
+      setCantidadesPago({});
       return;
     }
     setPlatosSeleccionadosPago(platosPagables.map((p) => p.key));
+    setCantidadesPago(Object.fromEntries(platosPagables.map((p) => [p.key, p.cantidad])));
   }, [platosPagables, usarPlatosDeBoucher]);
 
   useEffect(() => {
@@ -1405,17 +1408,24 @@ const PagosScreen = () => {
       return;
     }
 
-    // Confirmación adicional cuando el pago es parcial (selección < 100% de platos pagables)
+    // Confirmación adicional cuando el pago es parcial (no cubre todos los platos/unidades pendientes)
+    const hayCantidadMenor = platosPagables.some((p) => {
+      if (!platosSeleccionadosPago.includes(p.key)) return false;
+      const qty = Number(cantidadesPago[p.key] ?? p.cantidad) || 0;
+      return qty < (Number(p.cantidad) || 1);
+    });
     const esSeleccionParcial = platosPagables.length > 0 &&
       platosSeleccionadosPago.length > 0 &&
-      platosSeleccionadosPago.length < platosPagables.length;
+      (platosSeleccionadosPago.length < platosPagables.length || hayCantidadMenor);
     if (esSeleccionParcial && !omitirConfirmacionParcial) {
       const simboloParcial = configMoneda?.simboloMoneda || 'S/.';
       const decsParcial = configMoneda?.decimales ?? 2;
       const totalParcialStr = totalCobroSeleccion.toFixed(decsParcial);
       Alert.alert(
         "Pago parcial",
-        `Cobrarás solo ${platosSeleccionadosPago.length} de ${platosPagables.length} plato(s) pendiente(s).\n\n` +
+        `Cobrarás solo parte del pedido (${platosSeleccionadosPago.length} de ${platosPagables.length} plato(s) pendiente(s)` +
+          (hayCantidadMenor ? ', con cantidad personalizada' : '') +
+          `).\n\n` +
           `Total a cobrar: ${simboloParcial} ${totalParcialStr}\n\n` +
           `El resto quedará pendiente para un pago posterior. ¿Continuar?`,
         [
@@ -1436,7 +1446,8 @@ const PagosScreen = () => {
     try {
       const platosPayload = buildPlatosSeleccionadosPayload(
         platosSeleccionadosPago,
-        platosPagables
+        platosPagables,
+        cantidadesPago
       );
 
       if (platosPayload.length === 0) {
@@ -1581,7 +1592,8 @@ const PagosScreen = () => {
                   // Actualizar boucherData con solo comandas válidas
                   boucherData.platosSeleccionados = buildPlatosSeleccionadosPayload(
                     platosSeleccionadosPago,
-                    listarPlatosPagables(comandasFrescas.validas)
+                    listarPlatosPagables(comandasFrescas.validas),
+                    cantidadesPago
                   );
                   
                   // Retry automático con comandas válidas
@@ -1622,7 +1634,8 @@ const PagosScreen = () => {
               
               boucherData.platosSeleccionados = buildPlatosSeleccionadosPayload(
                 listarPlatosPagables(comandasValidasDelError).map((p) => p.key),
-                listarPlatosPagables(comandasValidasDelError)
+                listarPlatosPagables(comandasValidasDelError),
+                cantidadesPago
               );
               
               // Retry automático
@@ -2248,8 +2261,16 @@ const PagosScreen = () => {
               <TouchableOpacity
                 onPress={() => {
                   Haptics.selectionAsync();
-                  setPlatosSeleccionadosPago(
-                    toggleSeleccionarTodos(platosSeleccionadosPago, platosPagables)
+                  const nextKeys = toggleSeleccionarTodos(platosSeleccionadosPago, platosPagables);
+                  setPlatosSeleccionadosPago(nextKeys);
+                  setCantidadesPago(
+                    nextKeys.length === 0
+                      ? {}
+                      : Object.fromEntries(
+                          platosPagables
+                            .filter((p) => nextKeys.includes(p.key))
+                            .map((p) => [p.key, p.cantidad])
+                        )
                   );
                 }}
                 style={{ paddingVertical: 6, paddingHorizontal: 10 }}
@@ -2375,11 +2396,19 @@ const PagosScreen = () => {
                           </View>
                         )}
                       </View>
-                      <Text style={styles.platoCantidad}>x{item.cantidad}</Text>
+                      <Text style={styles.platoCantidad}>
+                        x{seleccionado ? (cantidadesPago[item.key] ?? item.cantidad) : item.cantidad}
+                        {seleccionado && (cantidadesPago[item.key] ?? item.cantidad) < item.cantidad
+                          ? `/${item.cantidad}`
+                          : ''}
+                      </Text>
                     </View>
                     <Text style={styles.platoSubtotal}>
                       {configMoneda?.simboloMoneda || 'S/.'}{' '}
-                      {item.subtotal.toFixed(configMoneda?.decimales ?? 2)}
+                      {((seleccionado
+                        ? (Number(item.precio) || 0) * (Number(cantidadesPago[item.key] ?? item.cantidad) || 0)
+                        : item.subtotal
+                      )).toFixed(configMoneda?.decimales ?? 2)}
                     </Text>
                   </View>
                 </>
@@ -2408,11 +2437,18 @@ const PagosScreen = () => {
                   ]}
                   onPress={() => {
                     Haptics.selectionAsync();
+                    const yaSel = platosSeleccionadosPago.includes(item.key);
                     setPlatosSeleccionadosPago((prev) =>
-                      prev.includes(item.key)
-                        ? prev.filter((k) => k !== item.key)
-                        : [...prev, item.key]
+                      yaSel ? prev.filter((k) => k !== item.key) : [...prev, item.key]
                     );
+                    setCantidadesPago((prev) => {
+                      if (yaSel) {
+                        const next = { ...prev };
+                        delete next[item.key];
+                        return next;
+                      }
+                      return { ...prev, [item.key]: item.cantidad };
+                    });
                   }}
                   activeOpacity={0.7}
                 >
@@ -2428,6 +2464,65 @@ const PagosScreen = () => {
             </View>
           )}
         </View>
+
+        {!usarPlatosDeBoucher && platosSeleccionadosPago.length > 0 && (
+          <View style={styles.platosCard}>
+            <Text style={styles.sectionTitle}>Cantidad a cobrar</Text>
+            <Text style={{ fontSize: 12, color: theme.colors?.text?.secondary, marginBottom: 10 }}>
+              Ajusta unidades por plato. Si cobras menos que el total pendiente, es un pago parcial.
+            </Text>
+            {platosEnPantalla
+              .filter((item) => platosSeleccionadosPago.includes(item.key) && !item.yaPagado)
+              .map((item) => {
+                const max = Number(item.cantidad) || 1;
+                const qty = Number(cantidadesPago[item.key] ?? max) || 1;
+                return (
+                  <View key={`qty-${item.key}`} style={styles.platoItem}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={styles.platoNombre} numberOfLines={1}>{item.nombre}</Text>
+                      <Text style={{ fontSize: 11, color: theme.colors?.text?.secondary }}>
+                        Máx. {max} · {configMoneda?.simboloMoneda || 'S/.'}{' '}
+                        {((Number(item.precio) || 0) * qty).toFixed(configMoneda?.decimales ?? 2)}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          if (qty <= 1) return;
+                          Haptics.selectionAsync();
+                          setCantidadesPago((prev) => ({ ...prev, [item.key]: qty - 1 }));
+                        }}
+                        disabled={qty <= 1}
+                        style={{
+                          width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+                          backgroundColor: qty <= 1 ? theme.colors?.border : (theme.colors?.primary || colors.primary),
+                        }}
+                      >
+                        <MaterialCommunityIcons name="minus" size={18} color="#fff" />
+                      </TouchableOpacity>
+                      <Text style={{ minWidth: 28, textAlign: 'center', fontWeight: '700', color: theme.colors?.text?.primary }}>
+                        {qty}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          if (qty >= max) return;
+                          Haptics.selectionAsync();
+                          setCantidadesPago((prev) => ({ ...prev, [item.key]: qty + 1 }));
+                        }}
+                        disabled={qty >= max}
+                        style={{
+                          width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+                          backgroundColor: qty >= max ? theme.colors?.border : (theme.colors?.primary || colors.primary),
+                        }}
+                      >
+                        <MaterialCommunityIcons name="plus" size={18} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+          </View>
+        )}
 
         {(() => {
           // Leer route.params directamente

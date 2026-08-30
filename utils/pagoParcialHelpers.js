@@ -151,16 +151,24 @@ export function calcularSubtotalPlatosPagables(comandas, esPagoAdelantado = fals
 }
 
 /** Construye payload platosSeleccionados para POST /boucher. */
-export function buildPlatosSeleccionadosPayload(selectedKeys, pagables) {
+export function buildPlatosSeleccionadosPayload(selectedKeys, pagables, cantidadesPago) {
   const set = new Set(selectedKeys);
   return pagables
     .filter((p) => set.has(p.key))
-    .map((p) => ({
-      comandaId: p.comandaId,
-      platoIndex: p.platoIndex,
-      platoSubdocId: p.platoSubdocId,
-      cantidad: p.cantidad,
-    }));
+    .map((p) => {
+      const max = Number(p.cantidad) || 1;
+      let qty = cantidadesPago && cantidadesPago[p.key] != null
+        ? Number(cantidadesPago[p.key])
+        : max;
+      if (!Number.isFinite(qty) || qty < 1) qty = 1;
+      if (qty > max) qty = max;
+      return {
+        comandaId: p.comandaId,
+        platoIndex: p.platoIndex,
+        platoSubdocId: p.platoSubdocId,
+        cantidad: qty,
+      };
+    });
 }
 
 /** Extrae boucher y resumen de la respuesta del backend (compat legacy). */
@@ -176,16 +184,24 @@ export function parseBoucherResponse(data) {
 }
 
 /**
- * Calcula subtotal de platos seleccionados (precio * cantidad, sin IGV).
- * Usa platosEnPantalla (o cualquier lista con key/subtotal/yaPagado).
- * Excluye platos ya cobrados aunque sigan en selectedKeys por estado stale.
+ * Calcula subtotal de platos seleccionados (precio * cantidad a cobrar).
  */
-export function calcularSubtotalSeleccion(selectedKeys, items) {
+export function subtotalLineaSeleccion(item, cantidadesPago) {
+  const max = Number(item?.cantidad) || 1;
+  let qty = cantidadesPago && item?.key != null && cantidadesPago[item.key] != null
+    ? Number(cantidadesPago[item.key])
+    : max;
+  if (!Number.isFinite(qty) || qty < 0) qty = 0;
+  if (qty > max) qty = max;
+  return (Number(item?.precio) || 0) * qty;
+}
+
+export function calcularSubtotalSeleccion(selectedKeys, items, cantidadesPago) {
   if (!selectedKeys?.length || !items?.length) return 0;
   const set = new Set(selectedKeys);
   return items
     .filter((p) => set.has(p.key) && !p.yaPagado)
-    .reduce((s, p) => s + (p.subtotal || 0), 0);
+    .reduce((s, it) => s + subtotalLineaSeleccion(it, cantidadesPago), 0);
 }
 
 export function comandaTieneDescuento(c) {
@@ -210,7 +226,7 @@ export function montoDescuentoDeComanda(c) {
 /**
  * Descuento de las comandas prorrateado a los platos seleccionados (igual que el backend).
  */
-export function prorratearDescuentoSeleccion(comandas, selectedKeys, items) {
+export function prorratearDescuentoSeleccion(comandas, selectedKeys, items, cantidadesPago) {
   let desc = 0;
   (comandas || []).forEach((comanda) => {
     if (!comandaTieneDescuento(comanda)) return;
@@ -225,7 +241,7 @@ export function prorratearDescuentoSeleccion(comandas, selectedKeys, items) {
     const set = new Set(selectedKeys || []);
     const subSel = (items || [])
       .filter((it) => set.has(it.key) && !it.yaPagado && String(it.comandaId) === String(comandaId))
-      .reduce((s, it) => s + (it.subtotal || 0), 0);
+      .reduce((s, it) => s + subtotalLineaSeleccion(it, cantidadesPago), 0);
     desc += monto * Math.min(1, subSel / subTotal);
   });
   return Math.round(desc * 100) / 100;

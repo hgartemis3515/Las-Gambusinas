@@ -1397,7 +1397,7 @@ const OrdenesScreen = ({ route }) => {
                       <TouchableOpacity
                         style={styles.cloneButton}
                         onPress={() => handleClonarPlato(plato)}
-                        accessibilityLabel="Clonar plato con guarniciones"
+                        accessibilityLabel="Sumar plato con guarniciones"
                       >
                         <MaterialCommunityIcons name="plus-box-multiple" size={20} color={theme.colors.primary} />
                       </TouchableOpacity>

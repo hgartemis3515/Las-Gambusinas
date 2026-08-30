@@ -13,8 +13,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import moment from 'moment-timezone';
 import { PUNTOS_ANCHO } from './boucherPrint';
+import { aplicarOpcionesImpresionProductos, formatComandasNumbersLabel } from './comandaHtml';
 import { loadLogoBytes } from './logoPlantilla';
-import { formatComandasNumbersLabel } from './comandaHtml';
 
 const MARGIN_X = 6;
 const CONTENT_W = PUNTOS_ANCHO - MARGIN_X * 2;
@@ -98,8 +98,12 @@ const uint8ToBase64 = (bytes) => {
  * @returns {Promise<string>} URI del PDF en cache
  */
 export async function generarPdfComandaNativo(opts) {
-  const { datos, plantilla, serverOrigin } = opts;
+  const { plantilla, serverOrigin } = opts;
   const p = plantilla || {};
+  const datos = {
+    ...(opts.datos || {}),
+    productos: aplicarOpcionesImpresionProductos(opts.datos?.productos, p),
+  };
   const b = p.bloques || {};
   const v = p.visibilidad || {};
   const esp = p.espaciado || {};

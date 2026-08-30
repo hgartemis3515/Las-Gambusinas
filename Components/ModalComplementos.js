@@ -394,7 +394,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                   size={18}
                   color={theme.colors.primary}
                 />
-                <Text style={styles.cloneTitle}>Clonar plato</Text>
+                <Text style={styles.cloneTitle}>SUMAR</Text>
               </View>
               <Text style={styles.cloneHint}>
                 {nClones === 1

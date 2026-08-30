@@ -64,8 +64,7 @@ const FilaPlatoCompacta = ({
           style={[
             styles.nombre, 
             esAnulado && styles.nombreAnulado
-          ]} 
-          numberOfLines={1}
+          ]}
         >
           {nombrePlato}
         </Text>
@@ -104,7 +103,11 @@ const FilaPlatoCompacta = ({
       
       {/* Cantidad (10%) */}
       <View style={styles.columnaCantidad}>
-        <Text style={[styles.cantidad, esAnulado && styles.textoTachado]}>
+        <Text style={[
+          styles.cantidad,
+          esAnulado && styles.textoTachado,
+          !esAnulado && estilosAplicar.textoEstado === 'ENTREGADO' && styles.cantidadEntregado,
+        ]}>
           x{plato.cantidad || 1}
         </Text>
       </View>
@@ -211,6 +214,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     color: '#1F2937',
+    flexWrap: 'wrap',
   },
   nombreAnulado: {
     textDecorationLine: 'line-through',
@@ -230,6 +234,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: '#6B7280',
+  },
+  cantidadEntregado: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   precio: {
     fontSize: 15,
