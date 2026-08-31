@@ -18,6 +18,19 @@ const Tab = createMaterialBottomTabNavigator();
 
 const PERMISO_PANEL = "ver-panel-gestion-mozos";
 
+function listaPermisosUsuario(user) {
+  const raw = user?.permisos;
+  if (!Array.isArray(raw)) return [];
+  return raw.map((p) => (typeof p === "string" ? p : p?.permiso)).filter(Boolean);
+}
+
+function puedeVerPanelGestion(user) {
+  const rol = String(user?.rol || "").toLowerCase();
+  if (rol === "cocinero") return false;
+  if (rol === "admin") return true;
+  return listaPermisosUsuario(user).includes(PERMISO_PANEL);
+}
+
 // Componente interno que usa el contexto
 const NavbarContent = () => {
   const route = useRoute();
@@ -37,9 +50,7 @@ const NavbarContent = () => {
       try {
         const raw = await AsyncStorage.getItem("user");
         const user = raw ? JSON.parse(raw) : null;
-        const permisos = Array.isArray(user?.permisos) ? user.permisos : [];
-        const tiene =
-          user?.rol === "admin" || permisos.includes(PERMISO_PANEL);
+        const tiene = puedeVerPanelGestion(user);
         setShowPanel(!!tiene);
         if (tiene) setActiveRoute("Panel");
       } catch (_) {
