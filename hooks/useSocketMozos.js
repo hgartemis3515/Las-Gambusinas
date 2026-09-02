@@ -676,6 +676,13 @@ const useSocketMozos = ({
       if (origen === 'alta_comanda') {
         // Caja ve el ticket PENDIENTE; la mesa sigue en pedido/reservado.
       } else if (origen === 'forzado' || data?.ticket?.pagoForzado) {
+        if (onMesaActualizada && data.mesaId) {
+          onMesaActualizada({
+            _id: data.mesaId,
+            estado: data.estadoMesa && data.estadoMesa !== 'pagado' ? data.estadoMesa : 'pedido',
+            nummesa: data.numMesa,
+          });
+        }
         if (onComandaActualizada) onComandaActualizada({ _id: 'refresh' });
       } else if (onMesaActualizada && data.mesaId) {
         // Refrescar mesas para que InicioScreen muestre verde claro
@@ -694,13 +701,15 @@ const useSocketMozos = ({
     // Evento: Comanda aprobada por cocina (mesa pasa a pagado, verde oscuro)
     socket.on('comanda-aprobada', (data) => {
       console.log('✅ [MOZOS] Comanda aprobada:', data.ticketNumber, 'Mesa:', data.numMesa);
+      const forzado = data?.pagoForzado || data?.origen === 'forzado' || data?.ticket?.pagoForzado;
+      const estadoMesa = forzado
+        ? (data.mesaEstado && data.mesaEstado !== 'pagado' ? data.mesaEstado : 'pedido')
+        : (data.mesaEstado || data.estadoMesa || 'pagado');
       if (onMesaActualizada && data.mesaId) {
-        onMesaActualizada({ _id: data.mesaId, estado: 'pagado', nummesa: data.numMesa });
+        onMesaActualizada({ _id: data.mesaId, estado: estadoMesa, nummesa: data.numMesa });
       }
-      // También refrescar comandas si el callback existe
       if (onComandaActualizada) {
-        // Refrescar la lista completa de comandas del día
-        onComandaActualizada({ _id: 'refresh', status: 'pagado' });
+        onComandaActualizada({ _id: 'refresh', status: estadoMesa });
       }
       if (onSocketStatus) {
         setConnectionStatus('online-active');
@@ -746,7 +755,23 @@ const useSocketMozos = ({
           });
         }
         if (onReservaCambio) onReservaCambio(data);
+        return;
       }
+      if (data?.pagoForzado || data?.origen === 'forzado') {
+        const mesaId = data.mesaId || data.mesa || data.ticket?.mesa;
+        if (onMesaActualizada && mesaId) {
+          onMesaActualizada({
+            _id: mesaId,
+            estado: data.estadoMesa && data.estadoMesa !== 'pagado' && data.estadoMesa !== 'pendiente_pago'
+              ? data.estadoMesa
+              : 'pedido',
+            nummesa: data.nummesa || data.ticket?.numMesa,
+          });
+        }
+        if (onComandaActualizada) onComandaActualizada({ _id: 'refresh' });
+        return;
+      }
+      if (onComandaActualizada) onComandaActualizada({ _id: 'refresh' });
     });
 
     socket.on('reserva-creada', (data) => {
@@ -777,6 +802,18 @@ const useSocketMozos = ({
     });
 
     socket.on('ticket-ppa-aprobado', (data) => {
+      if (data?.pagoForzado || data?.origen === 'forzado') {
+        if (onMesaActualizada && (data.mesa || data.mesaId)) {
+          onMesaActualizada({
+            _id: data.mesa || data.mesaId,
+            estado: data.estadoMesa && data.estadoMesa !== 'pagado' ? data.estadoMesa : 'pedido',
+            nummesa: data.nummesa,
+          });
+        }
+        if (onComandaActualizada) onComandaActualizada({ _id: 'refresh' });
+        if (onReservaCambio) onReservaCambio(data);
+        return;
+      }
       if (onMesaActualizada && data?.mesa && data.estadoMesa) {
         onMesaActualizada({
           _id: data.mesa,
@@ -784,6 +821,7 @@ const useSocketMozos = ({
           nummesa: data.nummesa,
         });
       }
+      if (onComandaActualizada) onComandaActualizada({ _id: 'refresh' });
       if (onReservaCambio) onReservaCambio(data);
     });
 
@@ -794,6 +832,7 @@ const useSocketMozos = ({
       if (onMesaActualizada && data?.mesa) {
         onMesaActualizada({ _id: data.mesa, estado: 'libre', nummesa: data.nummesa });
       }
+      if (onComandaActualizada) onComandaActualizada({ _id: 'refresh' });
       if (onReservaCambio) onReservaCambio(data);
     });
 

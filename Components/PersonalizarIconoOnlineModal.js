@@ -6,10 +6,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   Pressable,
+  Switch,
+  ScrollView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useOnlineBadge, DEFAULT_ONLINE_BADGE_OPACITY } from '../context/OnlineBadgeContext';
+import { useAvisoPlatoAgregado } from '../context/AvisoPlatoAgregadoContext';
 import { themeLight } from '../constants/theme';
 
 const PRESETS = [
@@ -68,6 +71,7 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const { opacity, setOpacity } = useOnlineBadge();
+  const { mostrarAviso, setMostrarAviso } = useAvisoPlatoAgregado();
   const pct = Math.round(opacity * 100);
 
   return (
@@ -77,12 +81,43 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
         <View style={[styles.sheet, { backgroundColor: theme.colors.surface }]}>
           <View style={styles.header}>
             <Text style={[styles.title, { color: theme.colors.text.primary }]}>
-              Icono ONLINE
+              Personalizar
             </Text>
             <TouchableOpacity onPress={onClose} hitSlop={12} accessibilityLabel="Cerrar">
               <MaterialCommunityIcons name="close" size={24} color={theme.colors.text.secondary} />
             </TouchableOpacity>
           </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Aviso al agregar platos
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            Al buscar un plato y tocar Agregar o +, puede salir una nota tipo «Papa a la huancaína agregado». Desactívala para elegir más rápido.
+          </Text>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+                Mostrar nota al agregar
+              </Text>
+              <Text style={[styles.switchHint, { color: theme.colors.text.secondary }]}>
+                {mostrarAviso ? 'Se muestra el aviso' : 'Sin aviso: el plato entra directo'}
+              </Text>
+            </View>
+            <Switch
+              value={mostrarAviso}
+              onValueChange={setMostrarAviso}
+              trackColor={{ false: theme.colors.border, true: theme.colors.primary + '88' }}
+              thumbColor={mostrarAviso ? theme.colors.primary : theme.colors.text.light}
+              accessibilityLabel="Mostrar nota al agregar un plato"
+            />
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Icono ONLINE
+          </Text>
           <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
             Ajusta la transparencia. El icono no bloquea botones detrás.
           </Text>
@@ -144,9 +179,10 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
             onPress={() => setOpacity(DEFAULT_ONLINE_BADGE_OPACITY)}
           >
             <Text style={[styles.resetText, { color: theme.colors.text.secondary }]}>
-              Restaurar valor por defecto
+              Restaurar transparencia por defecto
             </Text>
           </TouchableOpacity>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -165,6 +201,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 28,
+    maxHeight: '88%',
   },
   header: {
     flexDirection: 'row',
@@ -176,10 +213,29 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
   hint: {
     fontSize: 13,
-    marginBottom: 16,
+    marginBottom: 12,
     lineHeight: 18,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  switchHint: {
+    fontSize: 12,
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 16,
   },
   previewWrap: {
     alignItems: 'center',

@@ -27,6 +27,8 @@ import { themeLight } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
 import logger from "../../../utils/logger";
 import { usuarioPuedeCrearReservas, elegirReservaDeMesa, elegirReservaEspera, reservaEsDeMozo, comandaEsDeMozo } from "../../../utils/reservasMozo";
+import { calcularPendienteCobroComandas, formatPendienteCobro } from "../../../helpers/pendienteCobroMozo";
+import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 import { useSocket } from "../../../context/SocketContext";
 // Animaciones Premium 60fps
 import Animated, {
@@ -587,6 +589,7 @@ const InicioScreen = () => {
   const [platos, setPlatos] = useState([]);
   const [areas, setAreas] = useState([]);
   const [userInfo, setUserInfo] = useState(null);
+  const [pendienteCobroApi, setPendienteCobroApi] = useState(null);
   const [horaActual, setHoraActual] = useState(moment().tz("America/Lima"));
   const [adaptMobile, setAdaptMobile] = useState(false);
   const [seccionActiva, setSeccionActiva] = useState(null);
@@ -631,6 +634,9 @@ const InicioScreen = () => {
   const postPagoHandledRef = useRef(false);
   // Ref para Liberar Mesa en Alert post-pago (evita dep en handleLiberarMesa que cambia cada render)
   const handleLiberarMesaRef = useRef(null);
+  const obtenerComandasHoyRef = useRef(async () => null);
+  const fetchPendienteCobroRef = useRef(async () => {});
+  const userInfoRef = useRef(null);
   const [scrollX, setScrollX] = useState(0);
   const [contentWidth, setContentWidth] = useState(0);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -1159,6 +1165,10 @@ const InicioScreen = () => {
   }, [ordenarMesasPorNumero]);
 
   const handleComandaActualizada = useCallback(async (comanda) => {
+    if (String(comanda?._id) === 'refresh') {
+      obtenerComandasHoyRef.current?.();
+      return;
+    }
     console.log('📥 [MOZOS] Comanda actualizada vía WebSocket:', comanda._id, 'Status:', comanda.status);
     
     // Actualizar la comanda en el estado local (usar datos del servidor directamente)
@@ -1288,11 +1298,20 @@ const InicioScreen = () => {
     // Actualizar estado local
     setComandas(prev => {
       const existe = prev.find(c => c._id === comanda._id);
-      if (existe) {
-        return prev.map(c => c._id === comanda._id ? comanda : c);
-      } else {
+      if (!existe) {
+        const add = Number(comanda.totalCalculado);
+        if (
+          Number.isFinite(add)
+          && add > 0
+          && comandaEsDeMozo(comanda, userInfoRef.current?._id)
+        ) {
+          setPendienteCobroApi((p) => (
+            p == null ? p : Math.round((p + add) * 100) / 100
+          ));
+        }
         return [comanda, ...prev];
       }
+      return prev.map(c => c._id === comanda._id ? comanda : c);
     });
     
     // Actualizar AsyncStorage
@@ -1317,6 +1336,7 @@ const InicioScreen = () => {
     if (comanda.mesas) {
       handleMesaActualizada(comanda.mesas);
     }
+    fetchPendienteCobroRef.current?.();
   }, [handleMesaActualizada, ordenarMesasPorNumero]);
 
   // 🔥 ESTÁNDAR INDUSTRIA: Unirse a rooms de todas las mesas activas
@@ -1548,11 +1568,35 @@ const InicioScreen = () => {
         const parsed = JSON.parse(user);
         if (!parsed._id && parsed.id) parsed._id = parsed.id;
         setUserInfo(parsed);
+        userInfoRef.current = parsed;
       }
     } catch (error) {
       console.error("Error cargando usuario:", error);
     }
   };
+
+  const fetchPendienteCobro = useCallback(async () => {
+    const mozoId = userInfo?._id;
+    if (!mozoId) return;
+    try {
+      const url = apiConfig.isConfigured
+        ? `${apiConfig.getEndpoint('/aprobacion')}/pendiente-cobro?mozoId=${encodeURIComponent(mozoId)}`
+        : `${getFallbackApiBase()}/aprobacion/pendiente-cobro?mozoId=${encodeURIComponent(mozoId)}`;
+      const response = await axios.get(url, { timeout: 5000 });
+      if (response.data?.success && response.data.total != null) {
+        setPendienteCobroApi(Number(response.data.total) || 0);
+      }
+    } catch (error) {
+      console.warn('Pendiente de cobro del mozo no disponible:', error?.message);
+    }
+  }, [userInfo?._id]);
+
+  fetchPendienteCobroRef.current = fetchPendienteCobro;
+  userInfoRef.current = userInfo;
+
+  useEffect(() => {
+    if (userInfo?._id) fetchPendienteCobro();
+  }, [userInfo?._id, fetchPendienteCobro]);
 
   // Función para ordenar mesas numéricamente
   const ordenarMesasPorNumero = useCallback((mesas) => {
@@ -1633,12 +1677,15 @@ const InicioScreen = () => {
       setComandas(data);
       // Corrección automática de status: comandas con todos los platos entregados → status recoger (workaround backend).
       verificarComandasEnLote(data || [], axios).catch(() => {});
+      fetchPendienteCobroRef.current?.();
       return data;
     } catch (error) {
       console.error("Error al obtener las comandas de hoy:", error.message);
       return null;
     }
   }, []);
+
+  obtenerComandasHoyRef.current = obtenerComandasHoy;
 
   // 🔥 NUEVO: Obtener comandas activas de una mesa específica (para casos de desincronización)
   const obtenerComandasMesa = useCallback(async (mesaId) => {
@@ -1965,8 +2012,28 @@ const InicioScreen = () => {
       return "Reportado";
     }
 
-    // Prioridad 1: si el backend marcó la mesa como "pagado", mostrarla verde aunque no haya comandas activas
+    // Prioridad 1: si el backend marcó la mesa como "pagado", mostrarla verde SOLO
+    // si cocina ya entregó (KDS: salio/entregado). Forzar pago no cierra la mesa.
     if (mesa.estado && (mesa.estado.toLowerCase() === "pagado" || mesa.estado.toLowerCase() === "pagando")) {
+      const comandasMesaPagado = comandas.filter((c) =>
+        c.mesas?.nummesa != null
+        && mesa.nummesa != null
+        && String(c.mesas.nummesa) === String(mesa.nummesa)
+        && c.eliminada !== true
+      );
+      const sigueEnCocina = comandasMesaPagado.some((c) => {
+        const activos = (c.platos || []).filter((p) => p.eliminado !== true && p.anulado !== true);
+        return activos.some((p) => {
+          const e = (p.estado || '').toLowerCase();
+          return e === 'pedido' || e === 'en_espera' || e === 'recoger';
+        });
+      });
+      if (sigueEnCocina) {
+        const hayRecoger = comandasMesaPagado.some((c) =>
+          (c.platos || []).some((p) => (p.estado || '').toLowerCase() === 'recoger')
+        );
+        return hayRecoger ? "Preparado" : "Pedido";
+      }
       return mesa.estado.charAt(0).toUpperCase() + mesa.estado.slice(1).toLowerCase();
     }
 
@@ -3431,7 +3498,7 @@ const InicioScreen = () => {
       // Si ya existe, aumentar la cantidad
       const index = comandaEditando.platosEditados.indexOf(platoExistente);
       handleCambiarCantidad(index, 1);
-      Alert.alert("✅", `Cantidad de ${plato.nombre} aumentada`);
+      avisarPlatoAgregado(plato.nombre);
     } else {
       // Si no existe, agregarlo
       // CRÍTICO: Guardar tanto _id como id numérico para evitar problemas de búsqueda
@@ -3450,7 +3517,7 @@ const InicioScreen = () => {
         ...comandaEditando,
         platosEditados: [...comandaEditando.platosEditados, nuevoPlato],
       });
-      Alert.alert("✅", `${plato.nombre} agregado`);
+      avisarPlatoAgregado(plato.nombre);
     }
   };
 
@@ -5101,6 +5168,12 @@ const InicioScreen = () => {
     }
   }, [contentWidth, containerWidth, scrollX]);
 
+  const pendienteCobroLocal = useMemo(
+    () => calcularPendienteCobroComandas(comandas, userInfo?._id),
+    [comandas, userInfo?._id]
+  );
+  const pendienteCobroMostrar = pendienteCobroApi != null ? pendienteCobroApi : pendienteCobroLocal;
+
   return (
     <SafeAreaView style={styles.container} edges={[]}>
       {/* Header */}
@@ -5108,7 +5181,14 @@ const InicioScreen = () => {
         <TouchableOpacity style={styles.profileButton}>
           <MaterialCommunityIcons name="account-circle" size={32} color={theme.colors.text.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>LAS GAMBUSINAS</Text>
+        <View style={styles.headerTitleRow}>
+          <Text style={styles.headerTitle} numberOfLines={1}>SAN BENITO</Text>
+          <View style={styles.pendienteCobroBox}>
+            <Text style={styles.pendienteCobroText} numberOfLines={1}>
+              Pendiente : {formatPendienteCobro(pendienteCobroMostrar)}
+            </Text>
+          </View>
+        </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <TouchableOpacity 
             onPress={sincronizarManual}
@@ -6990,10 +7070,32 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
     justifyContent: "center",
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: isMobile ? 18 : 24,
     fontWeight: "700",
     color: theme.colors.text.white,
     letterSpacing: 1,
+    flexShrink: 0,
+  },
+  headerTitleRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 0,
+    paddingHorizontal: 4,
+  },
+  pendienteCobroBox: {
+    backgroundColor: "#000000",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginLeft: 8,
+    flexShrink: 1,
+  },
+  pendienteCobroText: {
+    color: "#FF9500",
+    fontWeight: "800",
+    fontSize: isMobile ? 11 : 13,
   },
   headerTime: {
     fontSize: 18,

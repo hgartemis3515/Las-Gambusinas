@@ -111,8 +111,14 @@ axios.interceptors.response.use(
           status === 401 &&
           method === "POST" &&
           /\/admin\/mozos\/auth/i.test(urlStr);
+        const platoEstadoNoop =
+          status === 400 &&
+          method === "PUT" &&
+          /\/plato\/[^/]+\/estado/i.test(urlStr);
         if (loginMozo401 && __DEV__) {
           console.warn(`[HTTP] Login mozos no autorizado (401): ${urlStr}`);
+        } else if (platoEstadoNoop) {
+          if (__DEV__) console.warn(`[HTTP] PUT plato/estado 400 (ya entregado/pagado o carrera): ${urlStr}`);
         } else {
           console.error(`❌ [HTTP] ${method} ${url} → ${status} ${error.response.statusText || ""}`);
         }

@@ -31,6 +31,7 @@ import { platoRequiereGuarniciones, resolverPlatoConGrupos, guarnicionesElegidas
 import useTiposPlato from "../../../hooks/useTiposPlato";
 import configuracionService from "../../../services/configuracionService";
 import { reservaEsDeMozo, estadoMesaConfirmadoTrasCrearComanda, estadoMesaLocalTrasCrearComanda } from "../../../utils/reservasMozo";
+import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -415,7 +416,7 @@ const OrdenesScreen = ({ route }) => {
   const handleAddPlatoFromMenu = (plato) => {
     handleAddPlato(plato);
     if (!plato.complementos || plato.complementos.length === 0) {
-      Alert.alert("✅", `${plato.nombre} agregado`);
+      avisarPlatoAgregado(plato.nombre);
     }
   };
 
@@ -547,7 +548,7 @@ const OrdenesScreen = ({ route }) => {
         n,
         tipoServicioAlComplementarRef.current
       );
-      Alert.alert("✅", n > 1 ? `${nombre} ×${n} agregado` : `${nombre} agregado`);
+      avisarPlatoAgregado(nombre, n);
       cerrarModalComplementosYReabrirMenu();
     }
   };
@@ -884,9 +885,8 @@ const OrdenesScreen = ({ route }) => {
             } else {
               // Si no hay comandas activas pero la mesa está en "preparado", permitir crear comanda
               // (puede ser un estado inconsistente o la comanda ya fue pagada)
-              if (estadoMesa === 'preparado' || estadoMesa === 'entregado') {
+              if (estadoMesa === 'preparado' || estadoMesa === 'entregado' || estadoMesa === 'pagado' || estadoMesa === 'pedido') {
                 console.log(`✅ Creando nueva comanda en mesa ${mesaActualizada.nummesa} (estado: ${estadoMesa}) - Sin comandas activas`);
-                // Permitir continuar con la creación de la comanda
               } else {
                 // Para otros estados sin comandas activas, rechazar
                 Alert.alert(
@@ -910,7 +910,7 @@ const OrdenesScreen = ({ route }) => {
               
               // Si la mesa está en "preparado", permitir crear comanda aunque falle la verificación
               // (el backend validará y actualizará el estado correctamente)
-              if (estadoMesa === 'preparado' || estadoMesa === 'entregado') {
+              if (estadoMesa === 'preparado' || estadoMesa === 'entregado' || estadoMesa === 'pagado') {
                 console.log(`⚠️ [ORDENES] Error de red, pero permitiendo crear comanda en mesa ${mesaActualizada.nummesa} (estado: ${estadoMesa})`);
                 // Continuar con la creación de la comanda - NO retornar aquí
               } else {

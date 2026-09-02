@@ -64,7 +64,7 @@ export function platoCobradoViaPPA(plato) {
 
 export function platoCerradoParaLiberar(plato) {
   const e = (plato?.estado || '').toLowerCase();
-  return e === 'entregado' || e === 'pagado';
+  return e === 'salio' || e === 'entregado' || e === 'pagado';
 }
 
 /**

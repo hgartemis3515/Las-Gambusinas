@@ -114,7 +114,7 @@ export const rutasComandasSegunEstadoMesa = (estadoMesa) => {
   if (st === 'pendiente_aprobar' || st === 'pendiente_pago') {
     return ['para-pagos', 'activas', 'pagadas'];
   }
-  if (st === 'pagado' || st === 'pagando') return ['pagadas'];
+  if (st === 'pagado' || st === 'pagando') return ['activas', 'pagadas'];
   return ['activas'];
 };
 

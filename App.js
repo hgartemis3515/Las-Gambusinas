@@ -10,6 +10,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { ThemeProvider } from './context/ThemeContext';
 import { SocketProvider } from './context/SocketContext';
 import { OnlineBadgeProvider } from './context/OnlineBadgeContext';
+import { AvisoPlatoAgregadoProvider } from './context/AvisoPlatoAgregadoContext';
 import SplashScreen from './Pages/Splash/SplashScreen';
 import Login from './Pages/Login/Login';
 import Navbar from './Pages/navbar/navbar';
@@ -68,6 +69,7 @@ export default function App() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <ThemeProvider>
           <OnlineBadgeProvider>
+          <AvisoPlatoAgregadoProvider>
           <SocketProvider>
             <>
               <AlertaOverlayMozos />
@@ -129,6 +131,7 @@ export default function App() {
             </NavigationContainer>
             </>
           </SocketProvider>
+          </AvisoPlatoAgregadoProvider>
           </OnlineBadgeProvider>
         </ThemeProvider>
       </GestureHandlerRootView>

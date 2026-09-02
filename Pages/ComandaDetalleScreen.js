@@ -33,7 +33,7 @@ import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparado
 import { platoRequiereGuarniciones, resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva } from '../utils/platoGuarniciones';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
-import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA } from '../helpers/pagoAdelantadoHelpers';
+import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA, platoCobradoViaPPA } from '../helpers/pagoAdelantadoHelpers';
 import { calcularSubtotalPlatosPagables } from '../utils/pagoParcialHelpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -502,8 +502,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             : `${getFallbackApiBase()}/comanda/${plato.comandaId}/plato/${platoIdentifier}/estado`;
           await axios.put(endpoint, { nuevoEstado: 'entregado' });
           hizoCambio = true;
-        } catch (_) {
-          autoEntregaSalioRef.current.delete(key);
+        } catch (error) {
+          const msg = String(error.response?.data?.error || error.response?.data?.message || error.message || '');
+          const yaCerrado = /pagado|ya está entregado|ya esta entregado/i.test(msg);
+          if (!yaCerrado) autoEntregaSalioRef.current.delete(key);
         }
         if (cancelled) return;
       }
@@ -646,6 +648,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       }
     };
     socket.on('ticket-ppa-aprobado', refrescarSiReservaOTicket);
+    socket.on('ticket-ppa-creado', refrescarSiReservaOTicket);
     socket.on('reserva-actualizada', refrescarSiReservaOTicket);
 
     const refrescarSiNuestraComanda = (data) => {
@@ -746,6 +749,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       socket.off('plato-entregado');
       socket.off('comanda-actualizada');
       socket.off('ticket-ppa-aprobado');
+      socket.off('ticket-ppa-creado');
       socket.off('reserva-actualizada');
       socket.off('plato-procesando');
       socket.off('plato-liberado');
@@ -823,16 +827,18 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     && !todosLosPlatos.some(p => esEstadoPlatoYaPreparados(p.estado));
   const esReservaFlow = !!(reserva || reservaEfectiva)
     || comandas.some((c) => c.origenCreacion === 'reserva' || c.origenReserva);
-  const puedeNuevaComanda = esReservaFlow
-    || mesa?.estado === 'pedido'
-    || mesa?.estado === 'preparado'
-    || mesa?.estado === 'recoger'
-    || mesa?.estado === 'entregado'
-    || mesa?.estado === 'reservado';
+  const cocinaPendienteDetalle = todosLosPlatos.some((p) => {
+    if (p.eliminado || p.anulado) return false;
+    const e = (p.estado || '').toLowerCase();
+    return e === 'pedido' || e === 'en_espera' || e === 'recoger';
+  });
   const puedePagar = todosLosPlatos.length > 0 && todosLosPlatos.every(p => p.estado === 'entregado' || p.estado === 'pagado');
   
   // 🔥 PAGO ADELANTADO (PPA): Reglas de habilitación de botones
   const reglasPPA = getReglasBotonesComandaDetalle(todosLosPlatos);
+  const platosActivosDetalle = todosLosPlatos.filter((p) => !p.eliminado && !p.anulado);
+  const cobroAdelantadoVigente = platosActivosDetalle.length > 0
+    && platosActivosDetalle.every(platoCobradoViaPPA);
   const abonoReservaMonto = Number(reservaEfectiva?.pagoAdelantado?.montoPagado) || 0;
   const subtotalPlatosReserva = todosLosPlatos.reduce((acc, p) => acc + ((Number(p.precio) || 0) * (Number(p.cantidad) || 1)), 0);
   const saldoReserva = esReservaFlow
@@ -845,13 +851,24 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const mesaAunEnServicio = ['pedido', 'reservado', 'preparado', 'recoger', 'entregado'].includes(
     String(mesa?.estado || '').toLowerCase()
   );
-  const pagoForzadoCaja = mesaAunEnServicio && comandas.some((c) => !!c.tiempoPagado);
-  const puedeLiberarTrasPagoForzado = pagoForzadoCaja
-    && todosLosPlatos.length > 0
-    && todosLosPlatos.every((p) => p.estado === 'entregado' || p.estado === 'pagado');
-  const puedeLiberarMesaPagada = (comandaYaPagada || puedeLiberarTrasPagoForzado) && !!mesa?._id;
-  const mostrarLiberar = !!(mesa?._id && (puedeLiberarReserva || puedeConfirmarEntrega || puedeLiberarMesaPagada));
-  const puedePagarNormal = puedePagar && reglasPPA.composicion !== 'solo_para_llevar' && !puedeLiberarReserva && !puedeConfirmarEntrega && !comandaYaPagada && !pagoForzadoCaja;
+  const todosEntregadosKds = platosActivosDetalle.length > 0
+    && platosActivosDetalle.every((p) => {
+      const e = (p.estado || '').toLowerCase();
+      return e === 'salio' || e === 'entregado' || e === 'pagado';
+    });
+  const pagoForzadoCaja = mesaAunEnServicio && (cobroAdelantadoVigente || comandas.some((c) => !!c.tiempoPagado));
+  const puedeLiberarTrasPagoForzado = cobroAdelantadoVigente && todosEntregadosKds;
+  const puedeLiberarMesaPagada = (comandaYaPagada || puedeLiberarTrasPagoForzado) && todosEntregadosKds && !!mesa?._id;
+  const mostrarLiberar = !!(mesa?._id && (puedeLiberarReserva || (puedeConfirmarEntrega && todosEntregadosKds) || puedeLiberarMesaPagada));
+  const puedeNuevaComanda = esReservaFlow
+    || mesa?.estado === 'pedido'
+    || mesa?.estado === 'preparado'
+    || mesa?.estado === 'recoger'
+    || mesa?.estado === 'entregado'
+    || mesa?.estado === 'reservado'
+    || (String(mesa?.estado || '').toLowerCase() === 'pagado' && cocinaPendienteDetalle)
+    || mostrarLiberar;
+  const puedePagarNormal = puedePagar && reglasPPA.composicion !== 'solo_para_llevar' && !puedeLiberarReserva && !puedeConfirmarEntrega && !comandaYaPagada && !pagoForzadoCaja && !cobroAdelantadoVigente;
   
   // Entrega al comensal es automática al salir de cocina; el mozo no confirma.
   const puedeEntregar = false;

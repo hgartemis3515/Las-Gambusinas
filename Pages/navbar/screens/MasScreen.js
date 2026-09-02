@@ -466,7 +466,7 @@ const MasScreen = () => {
             </View>
             <View style={{ flex: 1, paddingRight: 8 }}>
               <Text style={styles.menuItemText}>Personalizar</Text>
-              <Text style={styles.pushHint}>Transparencia del icono ONLINE</Text>
+              <Text style={styles.pushHint}>Icono ONLINE y aviso al agregar platos</Text>
             </View>
             <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.light} />
           </TouchableOpacity>

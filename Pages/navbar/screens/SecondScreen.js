@@ -36,6 +36,7 @@ import * as Haptics from 'expo-haptics';
 import { slideInUpCart, fadeInDownPlato, springConfig, moneyEasing } from "../../../constants/animations";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
+import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 
 // Map slug -> MaterialCommunityIcons name (fallback)
 function _iconForTipo(slug) {
@@ -912,7 +913,7 @@ const SecondScreen = () => {
                               style={styles.addPlatoButton}
                               onPress={() => {
                                 handleAddPlato(plato);
-                                Alert.alert("✅", `${plato.nombre} agregado`);
+                                avisarPlatoAgregado(plato.nombre);
                               }}
                             >
                               <Text style={styles.addPlatoButtonText}>➕ AGREGAR</Text>

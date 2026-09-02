@@ -20,6 +20,7 @@ import { editarEliminarTomadasPorCocinaHabilitadoMozos } from "../../../services
 import { comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from "../../../utils/comandaHelpers";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
+import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 
 const ThirdScreen = () => {
   const [comandas, setComandas] = useState([]);
@@ -311,7 +312,7 @@ const ThirdScreen = () => {
       ...comandaEditando,
       platosEditados: [...comandaEditando.platosEditados, nuevoPlato],
     });
-    Alert.alert("✅", `${plato.nombre} agregado`);
+    avisarPlatoAgregado(plato.nombre);
   };
 
   const handleRemoverPlato = (index) => {
