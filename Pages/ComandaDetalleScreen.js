@@ -132,6 +132,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
+  const [mesaEstadoOverride, setMesaEstadoOverride] = useState(null);
+  const mesaEstadoEfectivo = String(mesaEstadoOverride || mesa?.estado || '').toLowerCase();
   
   // Estados para todos los platos (ordenados)
   const [todosLosPlatos, setTodosLosPlatos] = useState([]);
@@ -342,7 +344,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         ? apiConfig.getEndpoint('/comanda')
         : COMANDASEARCH_API_GET;
 
-      const mesaEstado = (mesa?.estado || '').toLowerCase();
+      const mesaEstado = mesaEstadoEfectivo;
       let pedidoIdCiclo = null;
       if (mesaIdRef) {
         const rutas = rutasComandasSegunEstadoMesa(mesaEstado);
@@ -362,7 +364,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         }
       }
 
-      if (comandasMesa.length === 0) {
+      if (comandasMesa.length === 0 && mesaIdRef) {
         const cid = reservaEfectiva?.comandaGenerada?._id
           || reservaEfectiva?.comandaGenerada
           || reserva?.comandaGenerada?._id
@@ -377,8 +379,27 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         }
       }
 
+      if (comandasMesa.length === 0 && mesaIdRef
+        && ['pedido', 'preparado', 'entregado', 'pagado', 'pagando', 'reservado'].includes(mesaEstado)) {
+        try {
+          const resPag = await axios.get(`${comandaBase}/mesa/${mesaIdRef}/pagadas`, { timeout: 10000 });
+          if (resPag.data?.success && Array.isArray(resPag.data.comandas) && resPag.data.comandas.length > 0) {
+            comandasMesa = acotarComandasAlCicloActual(
+              aplicarPedidoSinVaciar(resPag.data.comandas, resPag.data.pedidoId || pedidoIdCiclo)
+            );
+          }
+        } catch (e) {
+          if (__DEV__) console.warn('[ComandaDetalle] /mesa/pagadas:', e?.message);
+        }
+      }
+
+      const hayCicloCerrado = comandasMesa.some((c) =>
+        c.IsActive === false
+        || !!c.tiempoPagado
+        || ['pagado', 'completado'].includes(String(c.status || '').toLowerCase())
+      );
       let comandasFinales =
-        mesaEstado === 'pagado' || mesaEstado === 'pagando' || mesaEstado === 'pendiente_aprobar' || mesaEstado === 'reservado'
+        mesaEstado === 'pagado' || mesaEstado === 'pagando' || mesaEstado === 'pendiente_aprobar' || mesaEstado === 'reservado' || hayCicloCerrado
           ? acotarComandasAlCicloActual(comandasMesa)
           : acotarComandasAlCicloActual(filtrarComandasActivas(comandasMesa));
 
@@ -386,7 +407,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         const prev = comandasRef.current || [];
         const mesaSigueEnServicio = ['pedido', 'preparado', 'entregado', 'pendiente_pago', 'esperando', 'pendiente_aprobar', 'reservado'].includes(mesaEstado);
         if (mesaSigueEnServicio && prev.length > 0) {
-          comandasFinales = filtrarComandasActivas(prev);
+          const prevCerradas = prev.some((c) => c.IsActive === false || !!c.tiempoPagado);
+          comandasFinales = prevCerradas ? prev : filtrarComandasActivas(prev);
         }
       }
 
@@ -412,7 +434,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     } finally {
       setRefreshing(false);
     }
-  }, [mesaIdRef, mesaNumRef, filterByCliente, clienteId, mesa?.estado, reservaEfectiva?.comandaGenerada, reserva?.comandaGenerada]);
+  }, [mesaIdRef, mesaNumRef, filterByCliente, clienteId, mesaEstadoEfectivo, reservaEfectiva?.comandaGenerada, reserva?.comandaGenerada]);
 
   // Marcar plato como entregado
   const handleMarcarPlatoEntregado = async (platoObj) => {
@@ -650,6 +672,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     socket.on('ticket-ppa-aprobado', refrescarSiReservaOTicket);
     socket.on('ticket-ppa-creado', refrescarSiReservaOTicket);
     socket.on('reserva-actualizada', refrescarSiReservaOTicket);
+    socket.on('mesa-actualizada', (data) => {
+      const mid = data?.mesaId || data?.mesa?._id;
+      if (!mid || !mesaId || String(mid) !== String(mesaId)) return;
+      const est = data.mesa?.estado || data.estado;
+      if (est) setMesaEstadoOverride(est);
+      refrescarComandasRef.current?.();
+    });
 
     const refrescarSiNuestraComanda = (data) => {
       const comandasActuales = comandasRef.current;
@@ -751,6 +780,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       socket.off('ticket-ppa-aprobado');
       socket.off('ticket-ppa-creado');
       socket.off('reserva-actualizada');
+      socket.off('mesa-actualizada');
       socket.off('plato-procesando');
       socket.off('plato-liberado');
       socket.off('comanda-procesando');
@@ -846,27 +876,28 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     : subtotalPlatosReserva;
   const puedeLiberarReserva = esReservaFlow && puedePagar && saldoReserva <= 0.009;
   const puedeConfirmarEntrega = puedeLiberarMesaTrasPPA(todosLosPlatos);
-  const comandaYaPagada = String(mesa?.estado || '').toLowerCase() === 'pagado'
+  const comandaYaPagada = mesaEstadoEfectivo === 'pagado'
     || comandas.some((c) => ['pagado', 'completado'].includes(String(c.status || '').toLowerCase()));
-  const mesaAunEnServicio = ['pedido', 'reservado', 'preparado', 'recoger', 'entregado'].includes(
-    String(mesa?.estado || '').toLowerCase()
-  );
+  const mesaAunEnServicio = ['pedido', 'reservado', 'preparado', 'recoger', 'entregado'].includes(mesaEstadoEfectivo);
   const todosEntregadosKds = platosActivosDetalle.length > 0
     && platosActivosDetalle.every((p) => {
       const e = (p.estado || '').toLowerCase();
       return e === 'salio' || e === 'entregado' || e === 'pagado';
     });
-  const pagoForzadoCaja = mesaAunEnServicio && (cobroAdelantadoVigente || comandas.some((c) => !!c.tiempoPagado));
-  const puedeLiberarTrasPagoForzado = cobroAdelantadoVigente && todosEntregadosKds;
+  const cobroHecho = cobroAdelantadoVigente
+    || comandas.some((c) => !!c.tiempoPagado)
+    || platosActivosDetalle.some(platoCobradoViaPPA);
+  const pagoForzadoCaja = mesaAunEnServicio && cobroHecho;
+  const puedeLiberarTrasPagoForzado = cobroHecho && todosEntregadosKds;
   const puedeLiberarMesaPagada = (comandaYaPagada || puedeLiberarTrasPagoForzado) && todosEntregadosKds && !!mesa?._id;
   const mostrarLiberar = !!(mesa?._id && (puedeLiberarReserva || (puedeConfirmarEntrega && todosEntregadosKds) || puedeLiberarMesaPagada));
   const puedeNuevaComanda = esReservaFlow
-    || mesa?.estado === 'pedido'
-    || mesa?.estado === 'preparado'
-    || mesa?.estado === 'recoger'
-    || mesa?.estado === 'entregado'
-    || mesa?.estado === 'reservado'
-    || (String(mesa?.estado || '').toLowerCase() === 'pagado' && cocinaPendienteDetalle)
+    || mesaEstadoEfectivo === 'pedido'
+    || mesaEstadoEfectivo === 'preparado'
+    || mesaEstadoEfectivo === 'recoger'
+    || mesaEstadoEfectivo === 'entregado'
+    || mesaEstadoEfectivo === 'reservado'
+    || (mesaEstadoEfectivo === 'pagado' && cocinaPendienteDetalle)
     || mostrarLiberar;
   const puedePagarNormal = puedePagar && reglasPPA.composicion !== 'solo_para_llevar' && !puedeLiberarReserva && !puedeConfirmarEntrega && !comandaYaPagada && !pagoForzadoCaja && !cobroAdelantadoVigente;
   
@@ -2155,7 +2186,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     const estadoPlato = estadoVisualPlatoDetalle(plato);
     // PLAN_PLANTILLA_COMANDAS: si la mesa está pagada, mostrar el plato como COBRADO
     // aunque su estado BD sea 'pedido'/'pendiente' (KDS). Solo si tiene tiempos.pagado.
-    const mesaEstado = (mesa?.estado || '').toLowerCase();
+    const mesaEstado = mesaEstadoEfectivo;
     const estilos = obtenerEstilosPorEstado(estadoPlato, {
       mesaPagada: mesaEstado === 'pagado' || mesaEstado === 'pagando',
       tieneTiempoPagado: !!plato.tiempos?.pagado,
