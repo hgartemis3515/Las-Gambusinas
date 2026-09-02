@@ -23,6 +23,7 @@ import { useOrientation } from "../../../hooks/useOrientation";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import moment from "moment-timezone";
 import debounce from "lodash.debounce";
+import * as Haptics from "expo-haptics";
 // Componente de modal de complementos
 import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
@@ -32,6 +33,12 @@ import useTiposPlato from "../../../hooks/useTiposPlato";
 import configuracionService from "../../../services/configuracionService";
 import { reservaEsDeMozo, estadoMesaConfirmadoTrasCrearComanda, estadoMesaLocalTrasCrearComanda } from "../../../utils/reservasMozo";
 import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
+import {
+  CAT_FAVORITOS,
+  loadFavoritosLocal,
+  saveFavoritosLocal,
+  normalizeFavoritoIds,
+} from "../../../helpers/platosFavoritosMozo";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -197,6 +204,7 @@ const OrdenesScreen = ({ route }) => {
   const [observaciones, setObservaciones] = useState("");
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
+  const [favoritoIds, setFavoritoIds] = useState([]);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   // Catálogo dinámico de tipos de plato desde el backend
   const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo } = useTiposPlato();
@@ -219,6 +227,8 @@ const OrdenesScreen = ({ route }) => {
   const tipoServicioAlComplementarRef = useRef(null);
   // Overlay in-tree: complementos (Modal) se abre encima del menú sin cerrarlo
   const platosListScrollRef = useRef(null);
+  const favoritosDirtyRef = useRef(false);
+  const userInfoRef = useRef(null);
 
   // Debounce búsqueda 300ms para no re-filtrar en cada tecla
   const debouncedSetSearchRef = useRef(
@@ -228,6 +238,72 @@ const OrdenesScreen = ({ route }) => {
     debouncedSetSearchRef(searchPlato);
     return () => debouncedSetSearchRef.cancel?.();
   }, [searchPlato, debouncedSetSearchRef]);
+
+  const persistFavoritosRemoteRef = useRef(
+    debounce(async (mozoId, ids) => {
+      if (!mozoId) return;
+      try {
+        const url = apiConfig.isConfigured
+          ? `${apiConfig.getEndpoint("/mozos")}/${mozoId}`
+          : `${getFallbackApiBase()}/mozos/${mozoId}`;
+        await axios.put(url, { platosFavoritos: ids }, { timeout: 8000 });
+        favoritosDirtyRef.current = false;
+      } catch (e) {
+        console.warn("No se pudieron guardar favoritos en el servidor:", e?.message);
+      }
+    }, 500)
+  ).current;
+
+  useEffect(() => {
+    return () => persistFavoritosRemoteRef.cancel?.();
+  }, [persistFavoritosRemoteRef]);
+
+  useEffect(() => {
+    userInfoRef.current = userInfo;
+  }, [userInfo]);
+
+  useEffect(() => {
+    const mozoId = userInfo?._id;
+    if (!mozoId) return;
+    let cancelled = false;
+    (async () => {
+      const local = await loadFavoritosLocal(mozoId);
+      if (!cancelled && local.length) setFavoritoIds(local);
+      try {
+        const url = apiConfig.isConfigured
+          ? `${apiConfig.getEndpoint("/mozos")}/${mozoId}`
+          : `${getFallbackApiBase()}/mozos/${mozoId}`;
+        const res = await axios.get(url, { timeout: 8000 });
+        const remoteRaw = res.data?.platosFavoritos;
+        if (!cancelled && !favoritosDirtyRef.current && Array.isArray(remoteRaw)) {
+          const remote = normalizeFavoritoIds(remoteRaw);
+          setFavoritoIds(remote);
+          saveFavoritosLocal(mozoId, remote);
+        }
+      } catch (_) {
+        /* se queda la copia local */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userInfo?._id]);
+
+  const toggleFavorito = useCallback((plato) => {
+    const id = String(plato?._id || "");
+    if (!id) return;
+    const mozoId = userInfoRef.current?._id;
+    setFavoritoIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      favoritosDirtyRef.current = true;
+      if (mozoId) {
+        saveFavoritosLocal(mozoId, next);
+        persistFavoritosRemoteRef(mozoId, next);
+      }
+      return next;
+    });
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (_) {}
+  }, [persistFavoritosRemoteRef]);
 
   useEffect(() => {
     loadUserData();
@@ -1312,8 +1388,11 @@ const OrdenesScreen = ({ route }) => {
       );
     }
     if (!categoriaFiltro) return base;
+    if (categoriaFiltro === CAT_FAVORITOS) {
+      return base.filter((p) => favoritoIds.includes(String(p._id)));
+    }
     return base.filter((p) => p.categoria === categoriaFiltro);
-  }, [platosPorTipoDisponibles, searchPlatoDebounced, categoriaFiltro]);
+  }, [platosPorTipoDisponibles, searchPlatoDebounced, categoriaFiltro, favoritoIds]);
 
   // Al enfocar o escribir en búsqueda → categoría a "Todos" para búsqueda global
   const handleSearchFocus = useCallback(() => {
@@ -1716,6 +1795,8 @@ const OrdenesScreen = ({ route }) => {
         cantidades={cantidades}
         onDecrementPlato={handleDecrementPlatoFromMenu}
         onAddPlato={handleAddPlatoFromMenu}
+        favoritoIds={favoritoIds}
+        onToggleFavorito={toggleFavorito}
         listRef={platosListScrollRef}
       />
 

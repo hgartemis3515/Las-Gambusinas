@@ -25,6 +25,7 @@ const BottomNavBar = ({ activeIndex = 0, activeRoute = null, navigation: navProp
     ...(showPanel
       ? [{ route: "Panel", icono: "📋", label: "Panel" }]
       : []),
+    { route: "Pendientes", icono: "🧾", label: "Pendientes" },
     { route: "Inicio", icono: "🏠", label: "Inicio" },
     { route: "Ordenes", icono: "🍽️", label: "Órdenes" },
     { route: "Pagos", icono: "💰", label: "Pagos" },
@@ -107,7 +108,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-evenly",
     alignItems: "center",
     flex: 1,
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     gap: 0,
   },
 });

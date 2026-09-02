@@ -16,6 +16,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { themeLight } from '../constants/theme';
+import { CAT_FAVORITOS } from '../helpers/platosFavoritosMozo';
 
 const MIN_LIST = 140;
 
@@ -82,6 +83,8 @@ export default function MenuPlatosSheet({
   cantidades = {},
   onDecrementPlato,
   onAddPlato,
+  favoritoIds = [],
+  onToggleFavorito,
   listRef,
   onListScroll,
 }) {
@@ -129,6 +132,7 @@ export default function MenuPlatosSheet({
     const instanciasLlevar = selectedPlatos.filter((p) => p._id === plato._id && p.tipoServicio === 'para_llevar');
     const cantidadMesa = instanciasMesa.reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
     const cantidadLlevar = instanciasLlevar.reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
+    const esFav = favoritoIds.includes(String(plato._id));
 
     return (
       <View style={[
@@ -146,6 +150,21 @@ export default function MenuPlatosSheet({
           </View>
           <Text style={styles.platoModalPrecio}>S/. {plato.precio.toFixed(2)}</Text>
         </View>
+        {onToggleFavorito ? (
+          <TouchableOpacity
+            style={styles.favoritoToggle}
+            onPress={() => onToggleFavorito(plato)}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            accessibilityRole="button"
+            accessibilityLabel={esFav ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+          >
+            <MaterialCommunityIcons
+              name={esFav ? 'star' : 'star-outline'}
+              size={22}
+              color={esFav ? '#FFC107' : '#9E9E9E'}
+            />
+          </TouchableOpacity>
+        ) : null}
         <View style={styles.platoModalActions}>
           <TouchableOpacity style={styles.cantidadButtonSmall} onPress={() => onDecrementPlato(plato)}>
             <MaterialCommunityIcons name="minus" size={14} color={theme.colors.text.white} />
@@ -170,7 +189,7 @@ export default function MenuPlatosSheet({
         </View>
       </View>
     );
-  }, [selectedPlatos, cantidades, onDecrementPlato, onAddPlato, styles, theme.colors.text.white, tipoServicioModal]);
+  }, [selectedPlatos, cantidades, onDecrementPlato, onAddPlato, onToggleFavorito, favoritoIds, styles, theme.colors.text.white, tipoServicioModal]);
 
   if (!visible) return null;
 
@@ -309,6 +328,30 @@ export default function MenuPlatosSheet({
                     >
                       <Text style={[styles.categoriaChipText, (!categoriaFiltro || searchActive) && styles.categoriaChipTextActive]}>Todos</Text>
                     </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.categoriaChip,
+                        styles.categoriaChipFavorito,
+                        categoriaFiltro === CAT_FAVORITOS && !searchActive && styles.categoriaChipFavoritoActive,
+                      ]}
+                      onPress={() => onSelectCategoria(CAT_FAVORITOS)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Favoritos"
+                    >
+                      <MaterialCommunityIcons
+                        name={categoriaFiltro === CAT_FAVORITOS && !searchActive ? 'star' : 'star-outline'}
+                        size={16}
+                        color={categoriaFiltro === CAT_FAVORITOS && !searchActive ? '#1A1A1A' : '#FFC107'}
+                      />
+                      <Text
+                        style={[
+                          styles.categoriaChipText,
+                          categoriaFiltro === CAT_FAVORITOS && !searchActive && styles.categoriaChipFavoritoTextActive,
+                        ]}
+                      >
+                        Favoritos
+                      </Text>
+                    </TouchableOpacity>
                     {categorias.map((cat) => (
                       <TouchableOpacity
                         key={cat}
@@ -331,7 +374,7 @@ export default function MenuPlatosSheet({
                 data={platosFiltrados}
                 keyExtractor={(item) => String(item._id)}
                 renderItem={renderPlato}
-                extraData={{ selectedPlatos, cantidades, tipoServicioModal }}
+                extraData={{ selectedPlatos, cantidades, tipoServicioModal, favoritoIds }}
                 style={{ height: listH }}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="on-drag"
@@ -339,7 +382,11 @@ export default function MenuPlatosSheet({
                 scrollEventThrottle={16}
                 ListEmptyComponent={
                   <View style={styles.emptyPlatosContainer}>
-                    <Text style={styles.emptyPlatosText}>No hay platos disponibles</Text>
+                    <Text style={styles.emptyPlatosText}>
+                      {categoriaFiltro === CAT_FAVORITOS && !searchActive
+                        ? 'No tienes platos favoritos. Toca la estrella debajo del nombre.'
+                        : 'No hay platos disponibles'}
+                    </Text>
                   </View>
                 }
               />
@@ -439,6 +486,26 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   categoriaChipTextActive: {
     color: theme.colors.text.white,
+  },
+  categoriaChipFavorito: {
+    minWidth: 40,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 4,
+  },
+  categoriaChipFavoritoActive: {
+    backgroundColor: '#FFC107',
+    borderColor: '#FFC107',
+  },
+  categoriaChipFavoritoTextActive: {
+    color: '#1A1A1A',
+  },
+  favoritoToggle: {
+    alignSelf: 'flex-start',
+    marginBottom: theme.spacing.sm,
+    paddingVertical: 2,
   },
   platoModalItem: {
     backgroundColor: theme.colors.background,

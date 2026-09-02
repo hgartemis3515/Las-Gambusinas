@@ -86,12 +86,11 @@ export function calcularPendienteCobroComandas(comandas, mozoId, reservas = []) 
     if (['pagado', 'completado', 'cancelado', 'anulado', 'cerrado'].includes(st)) continue;
     const platos = (c.platos || []).filter((p) => p.eliminado !== true && p.anulado !== true);
     if (!platos.length) continue;
-    if (platos.every((p) => String(p.estado || '').toLowerCase() === 'pagado')) continue;
+    if (platos.every(platoCobradoEnCaja)) continue;
 
     const neto = netoComanda(c);
     const reserva = esReservaComanda(c);
     const adelanto = reserva ? adelantoDeReserva(c, reservas) : 0;
-    if (!reserva && platos.every(platoCobradoEnCaja)) continue;
 
     const cobradoPlatos = reserva ? 0 : cobradoLineasNoReserva(c);
     total += round2(Math.max(0, neto - adelanto - cobradoPlatos));

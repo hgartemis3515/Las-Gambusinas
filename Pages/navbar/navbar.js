@@ -4,6 +4,7 @@ import { createMaterialBottomTabNavigator } from "@react-navigation/material-bot
 import { useNavigationState, useRoute } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../../Components/BottomNavBar";
+import PendientesCobroScreen from "./screens/PendientesCobroScreen";
 import InicioScreen from "./screens/InicioScreen";
 import OrdenesScreen from "./screens/OrdenesScreen";
 import PagosScreen from "./screens/PagosScreen";
@@ -35,7 +36,7 @@ function puedeVerPanelGestion(user) {
 const NavbarContent = () => {
   const route = useRoute();
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [activeRoute, setActiveRoute] = useState("Inicio");
+  const [activeRoute, setActiveRoute] = useState("Pendientes");
   const [showPanel, setShowPanel] = useState(false);
   const [permisoListo, setPermisoListo] = useState(false);
   const { isDarkMode } = useTheme();
@@ -52,7 +53,7 @@ const NavbarContent = () => {
         const user = raw ? JSON.parse(raw) : null;
         const tiene = puedeVerPanelGestion(user);
         setShowPanel(!!tiene);
-        if (tiene) setActiveRoute("Panel");
+        setActiveRoute(tiene ? "Panel" : "Pendientes");
       } catch (_) {
         setShowPanel(false);
       } finally {
@@ -82,13 +83,13 @@ const NavbarContent = () => {
     return <View style={{ flex: 1, backgroundColor: navBgColor }} />;
   }
 
-  // Admin con permiso: primer tab = Panel. Resto: Inicio.
+  // Admin con permiso: primer tab = Panel. Mozos: Pendientes (comandas por cobrar).
   const initialTab =
     route?.params?.initialTab === "Panel" && showPanel
       ? "Panel"
       : showPanel
         ? "Panel"
-        : "Inicio";
+        : "Pendientes";
 
   return (
     <View style={{ flex: 1 }}>
@@ -132,6 +133,7 @@ const NavbarContent = () => {
           {showPanel && (
             <Tab.Screen name="Panel" component={PanelGestionScreen} />
           )}
+          <Tab.Screen name="Pendientes" component={PendientesCobroScreen} />
           <Tab.Screen name="Inicio" component={InicioScreen} />
           <Tab.Screen name="Ordenes" component={OrdenesScreen} />
           <Tab.Screen name="Pagos" component={PagosScreen} />
