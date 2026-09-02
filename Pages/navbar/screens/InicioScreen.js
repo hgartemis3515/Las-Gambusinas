@@ -1290,6 +1290,7 @@ const InicioScreen = () => {
         });
       }
     }
+    fetchPendienteCobroRef.current?.();
   }, [ordenarMesasPorNumero]);
 
   const handleNuevaComanda = useCallback(async (comanda) => {
@@ -1299,16 +1300,6 @@ const InicioScreen = () => {
     setComandas(prev => {
       const existe = prev.find(c => c._id === comanda._id);
       if (!existe) {
-        const add = Number(comanda.totalCalculado);
-        if (
-          Number.isFinite(add)
-          && add > 0
-          && comandaEsDeMozo(comanda, userInfoRef.current?._id)
-        ) {
-          setPendienteCobroApi((p) => (
-            p == null ? p : Math.round((p + add) * 100) / 100
-          ));
-        }
         return [comanda, ...prev];
       }
       return prev.map(c => c._id === comanda._id ? comanda : c);
@@ -1495,6 +1486,7 @@ const InicioScreen = () => {
             });
           }
           obtenerReservasActivas();
+          fetchPendienteCobroRef.current?.();
         },
         onMesasJuntadas: (data) => {
           console.log('🔗 [INICIO] Evento mesas-juntadas recibido:', data);
@@ -5169,10 +5161,12 @@ const InicioScreen = () => {
   }, [contentWidth, containerWidth, scrollX]);
 
   const pendienteCobroLocal = useMemo(
-    () => calcularPendienteCobroComandas(comandas, userInfo?._id),
-    [comandas, userInfo?._id]
+    () => calcularPendienteCobroComandas(comandas, userInfo?._id, reservas),
+    [comandas, userInfo?._id, reservas]
   );
-  const pendienteCobroMostrar = pendienteCobroApi != null ? pendienteCobroApi : pendienteCobroLocal;
+  const pendienteCobroMostrar = pendienteCobroApi != null
+    ? Number(pendienteCobroApi) || 0
+    : pendienteCobroLocal;
 
   return (
     <SafeAreaView style={styles.container} edges={[]}>
@@ -5180,6 +5174,15 @@ const InicioScreen = () => {
       <View style={styles.header}>
         <TouchableOpacity style={styles.profileButton}>
           <MaterialCommunityIcons name="account-circle" size={32} color={theme.colors.text.white} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={sincronizarManual}
+          style={styles.syncButton}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Sincronizar"
+        >
+          <MaterialCommunityIcons name="sync" size={30} color={theme.colors.text.white} />
         </TouchableOpacity>
         <View style={styles.headerTitleRow}>
           <Text style={styles.headerTitle} numberOfLines={1}>SAN BENITO</Text>
@@ -5189,15 +5192,7 @@ const InicioScreen = () => {
             </Text>
           </View>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <TouchableOpacity 
-            onPress={sincronizarManual}
-            style={{ padding: 4 }}
-          >
-            <MaterialCommunityIcons name="sync" size={24} color={theme.colors.text.white} />
-          </TouchableOpacity>
-          <Text style={styles.headerTime}>{horaActual.format("HH:mm:ss")}</Text>
-        </View>
+        <Text style={styles.headerTime}>{horaActual.format("HH:mm:ss")}</Text>
       </View>
 
       {/* Barra de Tabs de Áreas - Fila 1: Tabs Scrollables */}
@@ -7069,12 +7064,21 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
     alignItems: "center",
     justifyContent: "center",
   },
+  syncButton: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 4,
+    zIndex: 20,
+    elevation: 8,
+  },
   headerTitle: {
     fontSize: isMobile ? 18 : 24,
     fontWeight: "700",
     color: theme.colors.text.white,
     letterSpacing: 1,
-    flexShrink: 0,
+    flexShrink: 1,
   },
   headerTitleRow: {
     flex: 1,
@@ -7090,7 +7094,7 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
     paddingVertical: 4,
     borderRadius: 4,
     marginLeft: 8,
-    flexShrink: 1,
+    flexShrink: 0,
   },
   pendienteCobroText: {
     color: "#FF9500",
@@ -7101,6 +7105,8 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
     fontSize: 18,
     fontWeight: "600",
     color: theme.colors.text.white,
+    flexShrink: 0,
+    marginLeft: 8,
   },
   mainContent: {
     flex: 1,

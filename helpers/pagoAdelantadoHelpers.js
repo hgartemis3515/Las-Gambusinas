@@ -35,6 +35,7 @@ export function esPlatoElegibleParaPPA(plato) {
   if (['recoger', 'entregado', 'pagado'].includes(estado)) return false;
   // Ya en TPA pendiente o aprobado
   if (plato.pagoAdelantado) {
+    if (plato.pagoAdelantado.cobrado === true) return false;
     const et = plato.pagoAdelantado.estadoTicket;
     if (et === 'pendiente_aprobacion' || et === 'aprobado') return false;
   }

@@ -83,10 +83,18 @@ const HeaderComandaDetalle = ({ mesa, comanda, onSync, navigation, connectionSta
           >
             <MaterialCommunityIcons name="arrow-left" size={24} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>
+          <TouchableOpacity
+            onPress={onSync}
+            style={styles.syncButton}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Sincronizar"
+          >
+            <MaterialCommunityIcons name="refresh" size={28} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle} numberOfLines={1}>
             Comanda #{comanda?.comandaNumber || 'N/A'}
           </Text>
-          {/* FASE 4.1: Indicador de estado online/offline con animación */}
           <Animated.View 
             style={[
               styles.statusIndicator, 
@@ -101,9 +109,6 @@ const HeaderComandaDetalle = ({ mesa, comanda, onSync, navigation, connectionSta
               {statusConfig.text}
             </Text>
           </Animated.View>
-          <TouchableOpacity onPress={onSync} style={styles.syncButton}>
-            <MaterialCommunityIcons name="refresh" size={20} color="#fff" />
-          </TouchableOpacity>
         </View>
         <View style={styles.headerRow}>
           <Text style={styles.headerText}>Mozo: {mozoNombre}</Text>
@@ -152,6 +157,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
     flex: 1,
+    minWidth: 0,
+    marginRight: 8,
   },
   // FASE 4.1: Estilos para indicador de estado
   statusIndicator: {
@@ -174,7 +181,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   syncButton: {
-    padding: 6,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+    zIndex: 20,
+    elevation: 8,
   },
   headerText: {
     fontSize: 13,
