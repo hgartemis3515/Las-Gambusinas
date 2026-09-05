@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -26,6 +26,7 @@ import {
   aplicarPedidoSinVaciar,
   rutasComandasSegunEstadoMesa,
 } from "../../../utils/comandaHelpers";
+import { agruparComandasPendientes } from "../../../utils/agruparComandasPendientes";
 
 function urlPendienteCobro(mozoId) {
   const q = `pendiente-cobro?mozoId=${encodeURIComponent(mozoId)}`;
@@ -89,6 +90,8 @@ const PendientesCobroScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [abriendoId, setAbriendoId] = useState(null);
+
+  const filas = useMemo(() => agruparComandasPendientes(comandas), [comandas]);
 
   const cargarRef = useRef(async () => {});
   const debounceRef = useRef(null);
@@ -165,7 +168,7 @@ const PendientesCobroScreen = () => {
 
   const abrirDetalle = useCallback(async (item) => {
     if (!item?._id || abriendoId) return;
-    setAbriendoId(String(item._id));
+    setAbriendoId(String(item.id || item._id));
     try {
       const mesa = {
         _id: item.mesaId || undefined,
@@ -198,15 +201,17 @@ const PendientesCobroScreen = () => {
   const styles = makeStyles(theme);
 
   const renderItem = ({ item }) => {
-    const id = String(item._id);
+    const id = String(item.id || item._id);
     const busy = abriendoId === id;
     const estado = labelEstadoMesaComanda(item);
     const estadoColor = colorEstadoMesa(estado, theme);
+    const comandaTxt = item.comandaLabel
+      || (item.comandaNumber != null ? `#${item.comandaNumber}` : "—");
     return (
       <View style={styles.row}>
         <Text style={[styles.cell, styles.colMesa]} numberOfLines={1}>{labelMesa(item)}</Text>
         <Text style={[styles.cell, styles.colComanda]} numberOfLines={1}>
-          {item.comandaNumber != null ? `#${item.comandaNumber}` : "—"}
+          {comandaTxt}
         </Text>
         <View style={[styles.colEstado, styles.estadoWrap]}>
           <View style={[styles.estadoDot, { backgroundColor: estadoColor }]} />
@@ -220,7 +225,7 @@ const PendientesCobroScreen = () => {
           onPress={() => abrirDetalle(item)}
           disabled={!!abriendoId}
           accessibilityRole="button"
-          accessibilityLabel={`Ver comanda ${item.comandaNumber || ""}`}
+          accessibilityLabel={`Ver ${comandaTxt}`}
         >
           {busy
             ? <ActivityIndicator size="small" color="#FFFFFF" />
@@ -244,15 +249,15 @@ const PendientesCobroScreen = () => {
         <View style={styles.colVer} />
       </View>
 
-      {loading && comandas.length === 0 ? (
+      {loading && filas.length === 0 ? (
         <View style={[styles.empty, { flex: 1 }]}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       ) : (
         <FlatList
           style={{ flex: 1 }}
-          data={comandas}
-          keyExtractor={(item) => String(item._id)}
+          data={filas}
+          keyExtractor={(item) => String(item.id || item._id)}
           renderItem={renderItem}
           refreshControl={(
             <RefreshControl
@@ -270,7 +275,7 @@ const PendientesCobroScreen = () => {
               <Text style={styles.emptyText}>No hay comandas pendientes de cobro</Text>
             </View>
           )}
-          contentContainerStyle={comandas.length === 0 ? styles.emptyList : styles.list}
+          contentContainerStyle={filas.length === 0 ? styles.emptyList : styles.list}
         />
       )}
 
@@ -341,7 +346,7 @@ const makeStyles = (theme) => StyleSheet.create({
     color: theme.colors.text?.primary || theme.colors.text?.white || "#111",
   },
   colMesa: { flex: 0.7 },
-  colComanda: { flex: 0.75 },
+  colComanda: { flex: 1.05 },
   colEstado: { flex: 1.15 },
   colTotal: { flex: 0.95, fontWeight: "700" },
   colVer: { width: 64 },
