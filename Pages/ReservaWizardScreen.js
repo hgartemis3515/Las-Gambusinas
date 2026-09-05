@@ -15,8 +15,8 @@ import { apiConfig } from "../apiConfig";
 import { getFallbackApiBase } from "../config/envDefaults";
 import configuracionService from "../services/configuracionService";
 import ModalComplementos from "../Components/ModalComplementos";
-import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, preseleccionComplementosDePlato } from "../utils/platoGuarniciones";
-import { partirLineaPorVariante, mismaVariantePlato } from "../utils/variantePlato";
+import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, preseleccionComplementosDePlato, cantidadGuarnicionEfectiva } from "../utils/platoGuarniciones";
+import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato } from "../utils/variantePlato";
 import { calcularPrecioUnitarioConComplementos } from "../utils/precioComplementos";
 import StepIndicator, { PASOS } from "../Components/reserva/StepIndicator";
 import HoraPicker from "../Components/reserva/HoraPicker";
@@ -827,11 +827,14 @@ export default function ReservaWizardScreen() {
                       </View>
                       <Text style={s.muted}>S/ {(Number(p.precioUnitario ?? p.precio) * p.cantidad).toFixed(2)}</Text>
                     </View>
-                    {p.complementosElegidos?.length > 0 && (
+                    {p.complementosElegidos?.filter((c) => !esSeleccionVariantePlato(c, p)).length > 0 && (
                       <View style={s.compChips}>
-                        {p.complementosElegidos.map((c, i) => (
-                          <View key={i} style={s.compChip}><Text style={s.compChipText}>{c.grupo}: {c.opcion || c.nombre}{c.cantidad > 1 ? ` ×${c.cantidad}` : ""}</Text></View>
-                        ))}
+                        {p.complementosElegidos.filter((c) => !esSeleccionVariantePlato(c, p)).map((c, i) => {
+                          const cantG = cantidadGuarnicionEfectiva(c, p);
+                          return (
+                          <View key={i} style={s.compChip}><Text style={s.compChipText}>{c.grupo}: {c.opcion || c.nombre}{cantG > 1 ? ` ×${cantG}` : ""}</Text></View>
+                          );
+                        })}
                       </View>
                     )}
                     <View style={s.tipoServicioMiniRow}>

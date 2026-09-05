@@ -33,7 +33,7 @@ import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../ap
 import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle } from '../utils/comandaHelpers';
 import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato } from '../utils/platoGuarniciones';
-import { partirLineaPorVariante, mismaVariantePlato } from '../utils/variantePlato';
+import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato } from '../utils/variantePlato';
 import { calcularPrecioUnitarioConComplementos } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
@@ -245,6 +245,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const tipoServicioAlComplementarRef = useRef(null);
   const autoEntregaSalioRef = useRef(new Set());
   const [platosEditados, setPlatosEditados] = useState([]);
+  const platosEditadosRef = useRef([]);
+  platosEditadosRef.current = platosEditados;
   
   // Estados para selección de platos a entregar
   const [platosSeleccionadosEntregar, setPlatosSeleccionadosEntregar] = useState([]); // Platos seleccionados para entregar
@@ -1104,7 +1106,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
     // Verificar si ya existe el mismo plato CON LOS MISMOS complementos Y mismo tipoServicio.
     // Si cambia tipoServicio (uno mesa y otro para llevar), debe ir en línea separada.
-    const existsWithSameComplements = platosEditados.find(p => {
+    const existsWithSameComplements = platosEditadosRef.current.find(p => {
       if (idCatalogoPlato(p) !== idCatalogoPlato(plato)) return false;
 
       // NUEVO: comparar tipo de servicio
@@ -1135,10 +1137,16 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     });
 
     if (existsWithSameComplements) {
-      const index = platosEditados.indexOf(existsWithSameComplements);
-      handleCambiarCantidad(index, n);
+      const index = platosEditadosRef.current.indexOf(existsWithSameComplements);
+      const next = platosEditadosRef.current.map((p, i) =>
+        i === index ? { ...p, cantidad: Math.max(1, Math.min(99, (p.cantidad || 1) + n)) } : p
+      );
+      platosEditadosRef.current = next;
+      setPlatosEditados(next);
     } else {
-      setPlatosEditados([...platosEditados, platoConComplementos]);
+      const next = [...platosEditadosRef.current, platoConComplementos];
+      platosEditadosRef.current = next;
+      setPlatosEditados(next);
     }
   };
 
@@ -2794,7 +2802,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                       {/* Mostrar complementos si existen */}
                       {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && (
                         <View style={{ marginTop: 2 }}>
-                          {plato.complementosSeleccionados.map((comp, ci) => {
+                          {plato.complementosSeleccionados.filter((comp) => !esSeleccionVariantePlato(comp, plato)).map((comp, ci) => {
                             // v2.0: Mostrar cantidad si es mayor a 1
                             const cantidadComp = cantidadGuarnicionEfectiva(comp, plato);
                             const opcionTexto = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion;
@@ -3238,7 +3246,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                             {/* Mostrar complementos si existen */}
                             {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && (
                               <View style={{ marginTop: 2 }}>
-                                {plato.complementosSeleccionados.map((comp, ci) => {
+                                {plato.complementosSeleccionados.filter((comp) => !esSeleccionVariantePlato(comp, plato)).map((comp, ci) => {
                                   // v2.0: Mostrar cantidad si es mayor a 1
                                   const cantidadComp = cantidadGuarnicionEfectiva(comp, plato);
                                   const opcionTexto = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion;
@@ -3649,7 +3657,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                           {/* Mostrar complementos si existen */}
                           {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && (
                             <View style={{ marginTop: 2 }}>
-                              {plato.complementosSeleccionados.map((comp, ci) => {
+                              {plato.complementosSeleccionados.filter((comp) => !esSeleccionVariantePlato(comp, plato)).map((comp, ci) => {
                                 // v2.0: Mostrar cantidad si es mayor a 1
                                 const cantidadComp = cantidadGuarnicionEfectiva(comp, plato);
                                 const opcionTexto = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion;

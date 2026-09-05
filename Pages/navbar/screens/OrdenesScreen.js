@@ -28,7 +28,7 @@ import * as Haptics from "expo-haptics";
 import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
 import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato } from "../../../utils/platoGuarniciones";
-import { partirLineaPorVariante, mismaVariantePlato } from "../../../utils/variantePlato";
+import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato } from "../../../utils/variantePlato";
 import { calcularPrecioUnitarioConComplementos } from "../../../utils/precioComplementos";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
@@ -225,6 +225,10 @@ const OrdenesScreen = ({ route }) => {
   const [complementosInicialesModal, setComplementosInicialesModal] = useState(null);
   const [notaInicialModal, setNotaInicialModal] = useState("");
   const tipoServicioAlComplementarRef = useRef(null);
+  const selectedPlatosRef = useRef([]);
+  const cantidadesRef = useRef({});
+  selectedPlatosRef.current = selectedPlatos;
+  cantidadesRef.current = cantidades;
   // Overlay in-tree: complementos (Modal) se abre encima del menú sin cerrarlo
   const platosListScrollRef = useRef(null);
   const favoritosDirtyRef = useRef(false);
@@ -556,72 +560,66 @@ const OrdenesScreen = ({ route }) => {
   const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null, metaVariante = null) => {
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
     const tipoServicio = tipoServicioOverride || (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa');
-    // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
-    const instanceId = `${plato._id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const instanceId = `${plato._id}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-    // v2.0: Normalizar complementos seleccionados (asegurar que tengan cantidad)
-    // v3.0: preservar precio del extra (snapshot) si vino del Modal
     const complementosNormalizados = complementosSeleccionados.map(comp => ({
       grupo: comp.grupo,
       opcion: comp.opcion,
-      cantidad: comp.cantidad || 1, // Si no tiene cantidad, asumir 1 (legacy)
+      cantidad: comp.cantidad || 1,
       ...(comp.precio != null ? { precio: Number(comp.precio) || 0 } : {})
     }));
 
     const platoConComplementos = {
       ...plato,
-      instanceId, // ID único para esta instancia
+      instanceId,
       cantidad: n,
       complementosElegidos: complementosNormalizados,
       notaEspecial: notaEspecial,
       tipoServicio,
       tipoPedido: slugTipoPedido(tipoPlatoFiltro),
-      // v3.0: precio unitario con extras (para mostrar subtotal correcto al mozo antes de enviar)
       ...(precioUnitarioV3 != null ? { precioUnitario: Number(precioUnitarioV3) } : {}),
       ...(extraComplementosV3 != null ? { extraComplementos: Number(extraComplementosV3) } : {}),
       ...(metaVariante?.nombreCocinaPedido ? { nombreCocinaPedido: metaVariante.nombreCocinaPedido } : {}),
       ...(metaVariante?.variantePlato ? { variantePlato: metaVariante.variantePlato } : {}),
     };
 
-    // Verificar si ya existe el mismo plato CON LOS MISMOS complementos Y mismo tipoServicio.
-    // Si cambia tipoServicio (uno mesa y otro para llevar), debe ir en línea separada.
-    const existsWithSameComplements = selectedPlatos.find(p => {
-      // Si es el mismo plato base
+    const coincideLinea = (p) => {
       if (p._id !== plato._id) return false;
-
-      // NUEVO: comparar tipo de servicio
       const pTipo = p.tipoServicio || 'mesa';
       if (pTipo !== tipoServicio) return false;
       if (!mismoTipoPedido(p.tipoPedido, tipoPlatoFiltro)) return false;
       if (!mismaVariantePlato(p, metaVariante || {})) return false;
-
-      // Si ambos NO tienen complementos, son iguales
       const pComps = p.complementosElegidos || [];
       const newComps = complementosNormalizados || [];
       const pNota = (p.notaEspecial || "").trim();
       const newNota = notaEspecial.trim();
-
-      if (pComps.length === 0 && newComps.length === 0 && pNota === newNota) {
-        return true;
-      }
-
-      // Si tienen complementos, compararlos (incluyendo cantidad)
+      if (pComps.length === 0 && newComps.length === 0 && pNota === newNota) return true;
       if (pComps.length !== newComps.length) return false;
       if (pNota !== newNota) return false;
       return mismasGuarniciones(pComps, newComps);
-    });
+    };
 
+    const prevPlatos = selectedPlatosRef.current;
+    const prevCant = cantidadesRef.current;
+    const existsWithSameComplements = prevPlatos.find(coincideLinea);
+
+    let nextPlatos;
+    let nextCant;
     if (existsWithSameComplements) {
       const id = existsWithSameComplements.instanceId || existsWithSameComplements._id;
-      const newCant = (cantidades[id] || 1) + n;
-      setCantidades({ ...cantidades, [id]: newCant });
-      setSelectedPlatos(selectedPlatos.map((p) =>
+      const newCant = Math.min(99, (prevCant[id] || existsWithSameComplements.cantidad || 1) + n);
+      nextCant = { ...prevCant, [id]: newCant };
+      nextPlatos = prevPlatos.map((p) =>
         (p.instanceId || p._id) === id ? { ...p, cantidad: newCant } : p
-      ));
+      );
     } else {
-      setSelectedPlatos([...selectedPlatos, platoConComplementos]);
-      setCantidades({ ...cantidades, [instanceId]: n });
+      nextPlatos = [...prevPlatos, platoConComplementos];
+      nextCant = { ...prevCant, [instanceId]: n };
     }
+    selectedPlatosRef.current = nextPlatos;
+    cantidadesRef.current = nextCant;
+    setSelectedPlatos(nextPlatos);
+    setCantidades(nextCant);
   };
 
   // Función para confirmar complementos desde el modal
@@ -1539,7 +1537,10 @@ const OrdenesScreen = ({ route }) => {
               // v3.0: usar precioUnitario si está disponible
               const precioLinea = plato.precioUnitario != null ? Number(plato.precioUnitario) : Number(plato.precio || 0);
               const subtotal = precioLinea * cantidad;
-              const tieneComplementos = plato.complementosElegidos && plato.complementosElegidos.length > 0;
+              const guarnicionesVisibles = (plato.complementosElegidos || []).filter(
+                (comp) => !esSeleccionVariantePlato(comp, plato)
+              );
+              const tieneComplementos = guarnicionesVisibles.length > 0;
               const tieneNota = plato.notaEspecial && plato.notaEspecial.trim().length > 0;
               const esParaLlevar = plato.tipoServicio === 'para_llevar';
 
@@ -1561,7 +1562,7 @@ const OrdenesScreen = ({ route }) => {
                     {/* Mostrar complementos si existen */}
                     {tieneComplementos && (
                       <View style={styles.complementosContainer}>
-                        {plato.complementosElegidos.map((comp, idx) => {
+                        {guarnicionesVisibles.map((comp, idx) => {
                           // v2.0: Mostrar siempre la cantidad del complemento
                           const cantidadComp = cantidadGuarnicionEfectiva(comp, { cantidad });
                           

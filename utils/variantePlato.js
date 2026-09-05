@@ -12,8 +12,23 @@ export function grupoEsVariantePlato(grupo) {
   return !!(grupo && grupo.esVariantePlato === true);
 }
 
+export function grupoVarianteSumaDeshabilitada(grupo) {
+  return grupoEsVariantePlato(grupo) && grupo?.deshabilitarSumaVariante === true;
+}
+
+export function platoVarianteSumaDeshabilitada(plato) {
+  return gruposVarianteDePlato(plato).some(grupoVarianteSumaDeshabilitada);
+}
+
 export function gruposVarianteDePlato(plato) {
   return (plato?.complementos || []).filter(grupoEsVariantePlato);
+}
+
+export function esSeleccionVariantePlato(comp, plato) {
+  const g = claveGrupo(comp?.grupo);
+  if (!g) return false;
+  if (plato?.variantePlato?.grupo && claveGrupo(plato.variantePlato.grupo) === g) return true;
+  return gruposVarianteDePlato(plato).some((x) => claveGrupo(x.grupo) === g);
 }
 
 export function nombreCocinaDeOpcion(grupo, opcionNombre) {
@@ -54,7 +69,10 @@ export function partirLineaPorVariante(plato, complementosSeleccionados, cantida
   if (!vars.length) {
     return [{ complementos: comps, cantidad: n, nombreCocinaPedido: '', variantePlato: null }];
   }
-  if (vars.length === 1) return [una(vars[0], n)];
+  if (vars.length === 1) {
+    const q = Math.max(1, Number(vars[0].cantidad) || 1);
+    return [una(vars[0], Math.max(n, q))];
+  }
   return vars.map((v) => una(v, Math.max(1, Number(v.cantidad) || 1)));
 }
 

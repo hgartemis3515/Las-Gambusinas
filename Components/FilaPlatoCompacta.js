@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cantidadGuarnicionEfectiva } from '../utils/platoGuarniciones';
+import { esSeleccionVariantePlato } from '../utils/variantePlato';
 
 /**
  * Componente para renderizar una fila compacta de plato en la tabla
@@ -81,7 +82,7 @@ const FilaPlatoCompacta = ({
         {/* Complementos seleccionados */}
         {plato.complementosSeleccionados && plato.complementosSeleccionados.length > 0 && !esAnulado && (
           <View style={{ marginTop: 2, paddingLeft: 0 }}>
-            {plato.complementosSeleccionados.map((comp, i) => (
+            {plato.complementosSeleccionados.filter((comp) => !esSeleccionVariantePlato(comp, plato)).map((comp, i) => (
               <Text
                 key={i}
                 style={{
