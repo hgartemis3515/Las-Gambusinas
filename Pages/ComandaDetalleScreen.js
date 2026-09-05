@@ -32,7 +32,7 @@ import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle } from '../utils/comandaHelpers';
-import { platoRequiereGuarniciones, resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva } from '../utils/platoGuarniciones';
+import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato } from '../utils/platoGuarniciones';
 import { partirLineaPorVariante, mismaVariantePlato } from '../utils/variantePlato';
 import { calcularPrecioUnitarioConComplementos } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
@@ -1026,7 +1026,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
 
   const handleIncrementarPlatoEditado = (platoLinea, index) => {
-    if (!platoRequiereGuarniciones(platoLinea, platos)) {
+    if (!platoRequiereEleccionComplementos(platoLinea, platos)) {
       handleCambiarCantidad(index, 1);
       return;
     }
@@ -1045,16 +1045,25 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
   
   const handleAgregarPlato = (plato) => {
-    const tieneComplementos = plato.complementos && plato.complementos.length > 0;
-
-    if (tieneComplementos) {
+    if (platoRequiereEleccionComplementos(plato)) {
       tipoServicioAlComplementarRef.current = null;
       setComplementosInicialesModal(null);
       setNotaInicialModal('');
       setPlatoParaComplementar(plato);
-    } else {
-      agregarPlatoSinComplementos(plato);
+      return;
     }
+    if (plato?.complementos?.length > 0) {
+      const comps = preseleccionComplementosDePlato(plato);
+      const afectan = plato.complementosAfectanPrecio !== false;
+      const calc = calcularPrecioUnitarioConComplementos(
+        plato.precio || 0,
+        comps,
+        { afectanPrecio: afectan }
+      );
+      agregarPlatoSinComplementos(plato, comps, '', calc.precioUnitario, calc.extraComplementos, 1);
+      return;
+    }
+    agregarPlatoSinComplementos(plato);
   };
 
   // Función para agregar un plato sin complementos

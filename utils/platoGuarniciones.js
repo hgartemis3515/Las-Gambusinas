@@ -89,43 +89,80 @@ export function resolverPlatoConGrupos(plato, catalogo = []) {
   return plato;
 }
 
+/** Grupo que el mozo no elige: las cantidades de platos.html se aplican solas. MIX no puede ser fijo. */
+export function grupoSeleccionFija(grupo) {
+  return grupo?.seleccionFija === true && grupo?.esVariantePlato !== true;
+}
+
+/** True si queda algún grupo que el mozo debe elegir (no fijo). */
+export function platoRequiereEleccionComplementos(plato, catalogo) {
+  const p = catalogo ? resolverPlatoConGrupos(plato, catalogo) : plato;
+  return gruposGuarnicion(p).some((g) => !grupoSeleccionFija(g));
+}
+
+function opcionesAAplicarDeGrupo(grupo) {
+  const ops = Array.isArray(grupo?.opciones) ? grupo.opciones : [];
+  const named = ops.filter((op) => getNombreOpcion(op));
+  if (grupoSeleccionFija(grupo)) {
+    const marked = named.filter((op) => op && typeof op === 'object' && op.preseleccionada === true);
+    return marked.length ? marked : named;
+  }
+  return named.filter((op) => op && typeof op === 'object' && op.preseleccionada === true);
+}
+
+function snapshotOpcionesGrupo(grupo, opciones) {
+  const out = [];
+  const grupoNombre = String(grupo?.grupo || '').trim();
+  if (!grupoNombre) return out;
+  const fija = grupoSeleccionFija(grupo);
+  const modoCant = grupo.modoSeleccion === 'cantidades' || fija;
+  const maxGrupoRaw = Number(grupo.maxUnidadesGrupo);
+  const maxGrupo = !fija && Number.isFinite(maxGrupoRaw) && maxGrupoRaw > 0 ? maxGrupoRaw : null;
+  const maxOpRaw = Number(grupo.maxUnidadesPorOpcion);
+  const maxOp = !fija && Number.isFinite(maxOpRaw) && maxOpRaw > 0 ? maxOpRaw : null;
+  const soloUna = !fija && !grupo.seleccionMultiple && grupo.modoSeleccion !== 'cantidades';
+  let unidadesGrupo = 0;
+  for (const op of opciones) {
+    const nombre = getNombreOpcion(op);
+    if (!nombre) continue;
+    let cant = modoCant ? Number(op?.cantidadPreseleccion) : 1;
+    if (!Number.isFinite(cant) || cant < 1) cant = 1;
+    cant = Math.floor(cant);
+    if (maxOp != null && cant > maxOp) cant = maxOp;
+    if (maxGrupo != null && unidadesGrupo + cant > maxGrupo) cant = maxGrupo - unidadesGrupo;
+    if (cant < 1) break;
+    const precio = Number(op?.precio);
+    out.push({
+      grupo: grupoNombre,
+      opcion: nombre,
+      cantidad: cant,
+      precio: Number.isFinite(precio) && precio > 0 ? precio : 0,
+      pronombre: typeof op === 'object' ? String(op.pronombre || '').trim() : '',
+    });
+    unidadesGrupo += cant;
+    if (soloUna) break;
+    if (maxGrupo != null && unidadesGrupo >= maxGrupo) break;
+  }
+  return out;
+}
+
 /**
  * Guarniciones marcadas en platos.html para Órdenes.
- * El mozo las ve ya seleccionadas (con cantidad si el grupo es por cantidades).
+ * Grupos fijos: las marcadas (o todas, si ninguna está marcada) con su cantidad.
  */
 export function preseleccionComplementosDePlato(plato) {
   const out = [];
   for (const grupo of gruposGuarnicion(plato)) {
-    const grupoNombre = String(grupo?.grupo || '').trim();
-    if (!grupoNombre) continue;
-    const modoCant = grupo.modoSeleccion === 'cantidades';
-    const maxGrupoRaw = Number(grupo.maxUnidadesGrupo);
-    const maxGrupo = Number.isFinite(maxGrupoRaw) && maxGrupoRaw > 0 ? maxGrupoRaw : null;
-    const maxOpRaw = Number(grupo.maxUnidadesPorOpcion);
-    const maxOp = Number.isFinite(maxOpRaw) && maxOpRaw > 0 ? maxOpRaw : null;
-    const soloUna = !grupo.seleccionMultiple && !modoCant;
-    let unidadesGrupo = 0;
-    for (const op of (grupo.opciones || [])) {
-      const nombre = getNombreOpcion(op);
-      if (!nombre) continue;
-      if (!op || typeof op !== 'object' || op.preseleccionada !== true) continue;
-      let cant = modoCant ? Number(op.cantidadPreseleccion) : 1;
-      if (!Number.isFinite(cant) || cant < 1) cant = 1;
-      cant = Math.floor(cant);
-      if (maxOp != null && cant > maxOp) cant = maxOp;
-      if (maxGrupo != null && unidadesGrupo + cant > maxGrupo) cant = maxGrupo - unidadesGrupo;
-      if (cant < 1) break;
-      const precio = Number(op.precio);
-      out.push({
-        grupo: grupoNombre,
-        opcion: nombre,
-        cantidad: cant,
-        precio: Number.isFinite(precio) && precio > 0 ? precio : 0,
-      });
-      unidadesGrupo += cant;
-      if (soloUna) break;
-      if (maxGrupo != null && unidadesGrupo >= maxGrupo) break;
-    }
+    out.push(...snapshotOpcionesGrupo(grupo, opcionesAAplicarDeGrupo(grupo)));
+  }
+  return out;
+}
+
+export function preseleccionComplementosFijosDePlato(plato) {
+  const out = [];
+  for (const grupo of gruposGuarnicion(plato)) {
+    if (!grupoSeleccionFija(grupo)) continue;
+    out.push(...snapshotOpcionesGrupo(grupo, opcionesAAplicarDeGrupo(grupo)));
   }
   return out;
 }

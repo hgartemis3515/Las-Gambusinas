@@ -15,7 +15,7 @@ import { apiConfig } from "../apiConfig";
 import { getFallbackApiBase } from "../config/envDefaults";
 import configuracionService from "../services/configuracionService";
 import ModalComplementos from "../Components/ModalComplementos";
-import { platoRequiereGuarniciones, resolverPlatoConGrupos, guarnicionesElegidas } from "../utils/platoGuarniciones";
+import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, preseleccionComplementosDePlato } from "../utils/platoGuarniciones";
 import { partirLineaPorVariante, mismaVariantePlato } from "../utils/variantePlato";
 import { calcularPrecioUnitarioConComplementos } from "../utils/precioComplementos";
 import StepIndicator, { PASOS } from "../Components/reserva/StepIndicator";
@@ -439,14 +439,25 @@ export default function ReservaWizardScreen() {
   };
 
   const tocarPlato = (plato) => {
-    if (plato.complementos && plato.complementos.length > 0) {
+    if (platoRequiereEleccionComplementos(plato)) {
       tipoServicioAlComplementarRef.current = tipoServicioModal === "para_llevar" ? "para_llevar" : "mesa";
       setComplementosInicialesModal(null);
       setNotaInicialModal("");
       setPlatoParaComplementar(plato);
-    } else {
-      agregarPlato(plato);
+      return;
     }
+    if (plato?.complementos?.length > 0) {
+      const comps = preseleccionComplementosDePlato(plato);
+      const afectan = plato.complementosAfectanPrecio !== false;
+      const calc = calcularPrecioUnitarioConComplementos(
+        plato.precio || 0,
+        comps,
+        { afectanPrecio: afectan }
+      );
+      agregarPlato(plato, comps, "", calc.precioUnitario, calc.extraComplementos, 1);
+      return;
+    }
+    agregarPlato(plato);
   };
 
   const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
@@ -480,7 +491,7 @@ export default function ReservaWizardScreen() {
 
   const cantInstancia = (instanceId, d) => setSelPlatos((c) => c.map((p) => p.instanceId === instanceId ? { ...p, cantidad: Math.max(1, (p.cantidad || 1) + d) } : p));
   const incrementarInstancia = (linea) => {
-    if (!platoRequiereGuarniciones(linea, platos)) {
+    if (!platoRequiereEleccionComplementos(linea, platos)) {
       cantInstancia(linea.instanceId, 1);
       return;
     }

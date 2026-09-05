@@ -27,7 +27,7 @@ import * as Haptics from "expo-haptics";
 // Componente de modal de complementos
 import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
-import { platoRequiereGuarniciones, resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones } from "../../../utils/platoGuarniciones";
+import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato } from "../../../utils/platoGuarniciones";
 import { partirLineaPorVariante, mismaVariantePlato } from "../../../utils/variantePlato";
 import { calcularPrecioUnitarioConComplementos } from "../../../utils/precioComplementos";
 // Hook catálogo de tipos de plato (dinámico desde backend)
@@ -477,21 +477,30 @@ const OrdenesScreen = ({ route }) => {
   };
 
   const handleAddPlato = (plato) => {
-    const tieneComplementos = plato.complementos && plato.complementos.length > 0;
-
-    if (tieneComplementos) {
+    if (platoRequiereEleccionComplementos(plato)) {
       tipoServicioAlComplementarRef.current = null;
       setComplementosInicialesModal(null);
       setNotaInicialModal("");
       setPlatoParaComplementar(plato);
-    } else {
-      agregarPlatoSinComplementos(plato);
+      return;
     }
+    if (plato?.complementos?.length > 0) {
+      const comps = preseleccionComplementosDePlato(plato);
+      const afectan = plato.complementosAfectanPrecio !== false;
+      const calc = calcularPrecioUnitarioConComplementos(
+        plato.precio || 0,
+        comps,
+        { afectanPrecio: afectan }
+      );
+      agregarPlatoSinComplementos(plato, comps, "", calc.precioUnitario, calc.extraComplementos, 1);
+      return;
+    }
+    agregarPlatoSinComplementos(plato);
   };
 
   const handleAddPlatoFromMenu = (plato) => {
     handleAddPlato(plato);
-    if (!plato.complementos || plato.complementos.length === 0) {
+    if (!platoRequiereEleccionComplementos(plato)) {
       avisarPlatoAgregado(plato.nombre);
     }
   };
@@ -733,7 +742,7 @@ const OrdenesScreen = ({ route }) => {
   };
 
   const handleClonarPlato = (platoLinea) => {
-    if (!platoRequiereGuarniciones(platoLinea, platos)) {
+    if (!platoRequiereEleccionComplementos(platoLinea, platos)) {
       const id = platoLinea.instanceId || platoLinea._id;
       const current = cantidades[id] || 1;
       const newCant = current + 1;
@@ -1609,7 +1618,7 @@ const OrdenesScreen = ({ route }) => {
                     >
                       <MaterialCommunityIcons name="plus" size={16} color={theme.colors.text.white} />
                     </TouchableOpacity>
-                    {platoRequiereGuarniciones(plato, platos) && (
+                    {platoRequiereEleccionComplementos(plato, platos) && (
                       <TouchableOpacity
                         style={styles.cloneButton}
                         onPress={() => handleClonarPlato(plato)}

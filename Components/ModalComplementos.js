@@ -18,7 +18,7 @@ import {
   getPrecioOpcion,
   calcularPrecioUnitarioConComplementos,
 } from "../utils/precioComplementos";
-import { textosGuarnicionesTotales, preseleccionComplementosDePlato } from "../utils/platoGuarniciones";
+import { textosGuarnicionesTotales, preseleccionComplementosDePlato, grupoSeleccionFija, preseleccionComplementosFijosDePlato } from "../utils/platoGuarniciones";
 import { grupoEsVariantePlato, gruposVarianteDePlato } from "../utils/variantePlato";
 
 const findGrupoModal = (grupos, nombre) => {
@@ -70,22 +70,27 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   // null = plato nuevo → preselección de platos.html. Array = edición (aunque esté vacío).
   useEffect(() => {
     if (!visible) return;
+    const fijos = preseleccionComplementosFijosDePlato(plato);
+    const nombresFijos = new Set(
+      fijos.map((c) => String(c.grupo || "").trim().toLowerCase())
+    );
     const fuente = Array.isArray(complementosIniciales)
       ? complementosIniciales
       : preseleccionComplementosDePlato(plato);
-    if (fuente.length) {
-      const nuevaSeleccion = {};
-      fuente.forEach(comp => {
-        if (!nuevaSeleccion[comp.grupo]) {
-          nuevaSeleccion[comp.grupo] = {};
-        }
-        const cantidad = comp.cantidad || 1;
-        nuevaSeleccion[comp.grupo][comp.opcion] = cantidad;
-      });
-      setSeleccionesPorGrupo(nuevaSeleccion);
-    } else {
-      setSeleccionesPorGrupo({});
-    }
+    const nuevaSeleccion = {};
+    fuente.forEach((comp) => {
+      const grupoKey = String(comp.grupo || "").trim();
+      if (!grupoKey || nombresFijos.has(grupoKey.toLowerCase())) return;
+      if (!nuevaSeleccion[grupoKey]) nuevaSeleccion[grupoKey] = {};
+      nuevaSeleccion[grupoKey][comp.opcion] = comp.cantidad || 1;
+    });
+    fijos.forEach((comp) => {
+      const grupoKey = String(comp.grupo || "").trim();
+      if (!grupoKey) return;
+      if (!nuevaSeleccion[grupoKey]) nuevaSeleccion[grupoKey] = {};
+      nuevaSeleccion[grupoKey][comp.opcion] = comp.cantidad || 1;
+    });
+    setSeleccionesPorGrupo(nuevaSeleccion);
     setNotaEspecial(typeof notaInicial === 'string' ? notaInicial : "");
     setCantidadClones(1);
   }, [visible, complementosIniciales, notaInicial, platoKey, plato]);
@@ -216,6 +221,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const estadoGrupos = useMemo(() => {
     const estados = {};
     complementos.forEach(grupoOriginal => {
+      if (grupoSeleccionFija(grupoOriginal)) return;
       const grupo = normalizarGrupo(grupoOriginal);
       const totalUnidades = getTotalUnidadesGrupo(grupo.grupo);
       const esVar = grupoEsVariantePlato(grupoOriginal);
@@ -259,6 +265,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   // Verificar si todos los grupos obligatorios tienen selección
   const obligatoriosCompletos = useMemo(() => {
     return complementos.every(grupoOriginal => {
+      if (grupoSeleccionFija(grupoOriginal)) return true;
       const grupo = normalizarGrupo(grupoOriginal);
       if (!grupo.obligatorio && !grupoEsVariantePlato(grupoOriginal)) return true;
       
@@ -330,11 +337,17 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const handleConfirmar = () => {
     if (!obligatoriosCompletos || hayErrores) return;
 
-    // Construir array de complementos seleccionados
-    // v3.0: incluir precio snapshot (respetando complementosAfectanPrecio del plato)
-    const complementosSeleccionados = [];
-    
+    const fijos = preseleccionComplementosFijosDePlato(plato).map((c) => ({
+      ...c,
+      precio: afectanPrecio ? (Number(c.precio) || 0) : 0,
+    }));
+    const nombresFijos = new Set(
+      fijos.map((c) => String(c.grupo || "").trim().toLowerCase())
+    );
+    const complementosSeleccionados = [...fijos];
+
     Object.entries(seleccionesPorGrupo).forEach(([grupoNombre, opciones]) => {
+      if (nombresFijos.has(String(grupoNombre || "").trim().toLowerCase())) return;
       const grupoConfig = findGrupoModal(complementos, grupoNombre);
       Object.entries(opciones).forEach(([opcion, cantidad]) => {
         if (cantidad > 0) {
@@ -353,12 +366,17 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       });
     });
 
-    // Llamar al callback con los datos
+    const calc = calcularPrecioUnitarioConComplementos(
+      basePlato,
+      complementosSeleccionados,
+      { afectanPrecio }
+    );
+
     onConfirm({
       complementosSeleccionados,
       notaEspecial: notaEspecial.trim(),
-      _precioUnitario: preciosResumen.unitario,
-      _extraComplementos: preciosResumen.extra,
+      _precioUnitario: calc.precioUnitario,
+      _extraComplementos: calc.extraComplementos,
       _cantidadPlatos: Math.max(1, Math.min(99, Number(cantidadClones) || 1)),
     });
 
@@ -464,6 +482,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
           >
             {/* Grupos de complementos */}
             {complementos.map((complemento, index) => {
+              if (grupoSeleccionFija(complemento)) return null;
               const grupoNormalizado = normalizarGrupo(complemento);
               const estado = estadoGrupos[grupoNormalizado.grupo] || {};
               const esModoCantidad = grupoNormalizado.modoSeleccion === 'cantidades';
