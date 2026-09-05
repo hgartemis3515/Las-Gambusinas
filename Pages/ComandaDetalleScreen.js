@@ -37,7 +37,7 @@ import { partirLineaPorVariante, mismaVariantePlato } from '../utils/variantePla
 import { calcularPrecioUnitarioConComplementos } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
-import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA, platoCobradoViaPPA } from '../helpers/pagoAdelantadoHelpers';
+import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA, platoCobradoViaPPA, puedeLiberarComandaCostoCero } from '../helpers/pagoAdelantadoHelpers';
 import { calcularSubtotalPlatosPagables } from '../utils/pagoParcialHelpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -972,6 +972,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     : subtotalPlatosReserva;
   const puedeLiberarReserva = esReservaFlow && puedePagar && saldoReserva <= 0.009;
   const puedeConfirmarEntrega = puedeLiberarMesaTrasPPA(todosLosPlatos);
+  const puedeLiberarCostoCero = puedeLiberarComandaCostoCero(todosLosPlatos);
   const comandaYaPagada = mesaEstadoEfectivo === 'pagado'
     || comandas.some((c) => ['pagado', 'completado'].includes(String(c.status || '').toLowerCase()));
   const todosEntregadosKds = platosActivosDetalle.length > 0
@@ -984,7 +985,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     || comandas.some((c) => !!c.tiempoPagado || c.pagoForzado === true);
   const puedeLiberarTrasPagoForzado = cobroHecho && todosEntregadosKds;
   const puedeLiberarMesaPagada = (comandaYaPagada || puedeLiberarTrasPagoForzado) && todosEntregadosKds && !!mesa?._id;
-  const mostrarLiberar = !!(mesa?._id && (puedeLiberarReserva || (puedeConfirmarEntrega && todosEntregadosKds) || puedeLiberarMesaPagada));
+  const mostrarLiberar = !!(mesa?._id && (puedeLiberarReserva || (puedeConfirmarEntrega && todosEntregadosKds) || puedeLiberarMesaPagada || puedeLiberarCostoCero));
   const puedeNuevaComanda = esReservaFlow
     || mesaEstadoEfectivo === 'pedido'
     || mesaEstadoEfectivo === 'preparado'
@@ -993,9 +994,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     || mesaEstadoEfectivo === 'reservado'
     || (mesaEstadoEfectivo === 'pagado' && cocinaPendienteDetalle)
     || mostrarLiberar;
-  const mostrarBotonPagar = !cobroHecho && !comandaYaPagada && reglasPPA.composicion !== 'solo_para_llevar';
+  const mostrarBotonPagar = !cobroHecho && !comandaYaPagada && reglasPPA.composicion !== 'solo_para_llevar' && !reglasPPA.esCostoCero;
   const mostrarBotonPagoAdelantado = reglasPPA.mostrarPagoAdelantado && !cobroHecho && !comandaYaPagada;
-  const puedePagarNormal = puedePagar && mostrarBotonPagar && !puedeLiberarReserva && !puedeConfirmarEntrega;
+  const puedePagarNormal = puedePagar && mostrarBotonPagar && !puedeLiberarReserva && !puedeConfirmarEntrega && !puedeLiberarCostoCero;
   
   // Entrega al comensal es automática al salir de cocina; el mozo no confirma.
   const puedeEntregar = false;
@@ -2120,7 +2121,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }
     Alert.alert(
       'Liberar mesa',
-      'El pedido ya está cobrado por adelantado y entregado. ¿Liberar la mesa? La comanda pasará a pagado y la mesa quedará libre.',
+      puedeLiberarCostoCero
+        ? 'Esta comanda no tiene cobro. Al liberar pasará a pagado y la mesa quedará libre.'
+        : 'El pedido ya está cobrado por adelantado y entregado. ¿Liberar la mesa? La comanda pasará a pagado y la mesa quedará libre.',
       [
         { text: 'Cancelar', style: 'cancel' },
         {

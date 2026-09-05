@@ -84,6 +84,33 @@ export function puedeLiberarMesaTrasPPA(todosLosPlatos) {
   return activos.some(platoCobradoViaPPA) && activos.every(platoCerradoParaLiberar);
 }
 
+function precioLineaPlato(plato) {
+  return Number(plato?.precioUnitario ?? plato?.precio ?? plato?.plato?.precio) || 0;
+}
+
+function netoPlatosActivos(platos) {
+  return (platos || [])
+    .filter((p) => !p?.eliminado && !p?.anulado)
+    .reduce((s, p) => s + precioLineaPlato(p) * (Number(p.cantidad) || 1), 0);
+}
+
+/** Plato 0 + extras 0 → no hay cobro. Un adicional con precio (> 0) sí cobra. */
+export function esCostoCeroPlatos(todosLosPlatos) {
+  const activos = (todosLosPlatos || []).filter((p) => !p?.eliminado && !p?.anulado);
+  if (activos.length === 0) return false;
+  return netoPlatosActivos(activos) <= 0.009;
+}
+
+/** Liberar sin caja: todo entregado/pagado y total 0. */
+export function puedeLiberarComandaCostoCero(todosLosPlatos) {
+  if (!esCostoCeroPlatos(todosLosPlatos)) return false;
+  const activos = (todosLosPlatos || []).filter((p) => !p?.eliminado && !p?.anulado);
+  return activos.every((p) => {
+    const e = String(p.estado || '').toLowerCase();
+    return e === 'entregado' || e === 'pagado';
+  });
+}
+
 export function getReglasBotonesComandaDetalle(todosLosPlatos) {
   if (!todosLosPlatos || todosLosPlatos.length === 0) {
     return {
@@ -92,6 +119,7 @@ export function getReglasBotonesComandaDetalle(todosLosPlatos) {
       mostrarPagoAdelantado: false,
       pagarDisabled: true,
       pagoAdelantadoDisabled: true,
+      esCostoCero: false,
     };
   }
 
@@ -106,12 +134,13 @@ export function getReglasBotonesComandaDetalle(todosLosPlatos) {
       return e === 'entregado' || e === 'pagado';
     });
 
-  const mostrarPagar = composicion !== 'solo_para_llevar';
-  const pagarDisabled = !todosEntregadosOPagados;
+  const costoCero = esCostoCeroPlatos(todosLosPlatos);
+  const mostrarPagar = composicion !== 'solo_para_llevar' && !costoCero;
+  const pagarDisabled = !todosEntregadosOPagados || costoCero;
 
   // Pago Adelantado: si hay al menos un plato elegible
-  const mostrarPagoAdelantado = platosElegibles.length > 0;
-  const pagoAdelantadoDisabled = platosElegibles.length === 0;
+  const mostrarPagoAdelantado = platosElegibles.length > 0 && !costoCero;
+  const pagoAdelantadoDisabled = platosElegibles.length === 0 || costoCero;
 
   return {
     composicion,
@@ -120,6 +149,7 @@ export function getReglasBotonesComandaDetalle(todosLosPlatos) {
     pagarDisabled,
     pagoAdelantadoDisabled,
     platosElegibles,
+    esCostoCero: costoCero,
   };
 }
 
