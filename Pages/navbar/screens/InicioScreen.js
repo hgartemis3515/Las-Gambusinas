@@ -54,6 +54,7 @@ import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCa
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
 import MesaMapView from '../../../Components/MesaMapView';
+import SelectorTipoMenu from "../../../Components/SelectorTipoMenu";
 
 /** Evita que un evento WebSocket con campos undefined borre datos ya mostrados en la tarjeta. */
 function mergeMesaServidorPatch(mesaAnterior, mesaServidor) {
@@ -112,16 +113,12 @@ const LoadingVerificacionEliminar = ({ visible, mensaje, pasos = [] }) => {
   };
 
   return (
+    <Modal visible transparent animationType="fade" statusBarTranslucent>
     <Animated.View style={[{
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
+      flex: 1,
       backgroundColor: 'rgba(0, 0, 0, 0.9)',
       justifyContent: 'center',
       alignItems: 'center',
-      zIndex: 99999,
     }, fadeStyle]}>
       <View style={{
         backgroundColor: theme.colors?.surface || '#FFFFFF',
@@ -177,6 +174,7 @@ const LoadingVerificacionEliminar = ({ visible, mensaje, pasos = [] }) => {
         )}
       </View>
     </Animated.View>
+    </Modal>
   );
 };
 
@@ -243,15 +241,10 @@ const AnimatedOverlay = ({ mensaje }) => {
 
   const overlayStyles = {
     overlayContainer: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
+      flex: 1,
       backgroundColor: 'rgba(0, 0, 0, 0.85)',
       justifyContent: 'center',
       alignItems: 'center',
-      zIndex: 9999,
     },
     overlayContent: {
       backgroundColor: theme.colors?.surface || '#FFFFFF',
@@ -281,6 +274,7 @@ const AnimatedOverlay = ({ mensaje }) => {
   };
 
   return (
+    <Modal visible transparent animationType="fade" statusBarTranslucent>
     <Animated.View style={[overlayStyles.overlayContainer, fadeStyle]}>
       <View style={overlayStyles.overlayContent}>
         <Animated.View style={[pulseStyle, { marginBottom: 20 }]}>
@@ -301,6 +295,7 @@ const AnimatedOverlay = ({ mensaje }) => {
         <Text style={overlayStyles.overlaySubtext}>Por favor espera...</Text>
       </View>
     </Animated.View>
+    </Modal>
   );
 };
 
@@ -596,6 +591,7 @@ const InicioScreen = () => {
   const SECCION_YO = "__yo__";
   const [mesaSeleccionada, setMesaSeleccionada] = useState(null);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
+  const [eligiendoTipoMenu, setEligiendoTipoMenu] = useState(false);
   // Catálogo dinámico de tipos de plato desde el backend
   const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo } = useTiposPlato();
   const [searchPlato, setSearchPlato] = useState("");
@@ -5904,6 +5900,7 @@ const InicioScreen = () => {
           setModalEditVisible(false);
           setComandaEditando(null);
           setTipoPlatoFiltro(null);
+          setEligiendoTipoMenu(false);
           setSearchPlato("");
           setCategoriaFiltro(null);
         }}
@@ -5918,6 +5915,7 @@ const InicioScreen = () => {
                 setModalEditVisible(false);
                 setComandaEditando(null);
                 setTipoPlatoFiltro(null);
+                setEligiendoTipoMenu(false);
                 setSearchPlato("");
                 setCategoriaFiltro(null);
               }}>
@@ -5983,28 +5981,23 @@ const InicioScreen = () => {
                     setTipoPlatoFiltro(null);
                     setSearchPlato("");
                     setCategoriaFiltro(null);
-                    // Mostrar selector de tipo
-                    Alert.alert(
-                      "Agregar Plato",
-                      "Selecciona el tipo de menú:",
-                      [
-                        { text: "Cancelar", style: "cancel" },
-                        ...(tiposPlatoCatalogo.length > 0
-                          ? tiposPlatoCatalogo.map((t) => ({
-                              text: t.nombre || t.slug,
-                              onPress: () => setTipoPlatoFiltro(t.slug),
-                            }))
-                          : [
-                              { text: "Desayuno", onPress: () => setTipoPlatoFiltro("platos-desayuno") },
-                              { text: "Carta Normal", onPress: () => setTipoPlatoFiltro("plato-carta normal") },
-                            ]),
-                      ]
-                    );
+                    setEligiendoTipoMenu(true);
                   }}
                 >
                   <MaterialCommunityIcons name="plus-circle" size={20} color={theme.colors.text.white} />
                   <Text style={styles.addPlatoButtonText}> Agregar Plato</Text>
                 </TouchableOpacity>
+
+                {eligiendoTipoMenu && !tipoPlatoFiltro ? (
+                  <SelectorTipoMenu
+                    tipos={tiposPlatoCatalogo}
+                    onSelect={(slug) => {
+                      setTipoPlatoFiltro(slug);
+                      setEligiendoTipoMenu(false);
+                    }}
+                    onCancel={() => setEligiendoTipoMenu(false)}
+                  />
+                ) : null}
 
                 {tipoPlatoFiltro && (
                   <>
@@ -6117,6 +6110,7 @@ const InicioScreen = () => {
                   setModalEditVisible(false);
                   setComandaEditando(null);
                   setTipoPlatoFiltro(null);
+                  setEligiendoTipoMenu(false);
                   setSearchPlato("");
                   setCategoriaFiltro(null);
                 }}

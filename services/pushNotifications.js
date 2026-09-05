@@ -1,9 +1,9 @@
 import { Platform, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { isRunningInExpoGo } from 'expo';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import * as Haptics from 'expo-haptics';
 import apiConfig from '../config/apiConfig';
 
@@ -87,10 +87,19 @@ const CHANNEL_DEFAULT = 'default';
 const CHANNEL_PLATO_LISTO = 'plato-listo-heads-up';
 const CHANNEL_PLATO_SALIO = 'plato-salio-heads-up';
 
-const isExpoGo = Constants.appOwnership === 'expo';
+const isExpoGo = isRunningInExpoGo();
+
+/**
+ * En Expo Go Android (SDK 53+) el import de expo-notifications ejecuta
+ * addPushTokenListener y lanza. No cargar el módulo ahí.
+ */
+function getNotifications() {
+  if (isExpoGo || Platform.OS === 'web') return null;
+  return require('expo-notifications');
+}
 
 if (isExpoGo) {
-  console.log('[push] Ejecutando en Expo Go - push notifications remotas no disponibles (SDK 53+)');
+  console.log('[push] Expo Go: sin expo-notifications (push remoto no soportado)');
 }
 
 export function isExpoGoPushLimited() {
@@ -237,7 +246,8 @@ export async function notifyPlatoSalioLocal(data) {
 }
 
 export function configureNotificationBehavior() {
-  if (Platform.OS === 'web') return;
+  const Notifications = getNotifications();
+  if (!Notifications) return;
   Notifications.setNotificationHandler({
     handleNotification: async () => {
       let shouldPlaySound = true;
@@ -256,7 +266,8 @@ export function configureNotificationBehavior() {
 }
 
 async function ensureAndroidChannels() {
-  if (Platform.OS !== 'android') return;
+  const Notifications = getNotifications();
+  if (!Notifications || Platform.OS !== 'android') return;
   try {
     const channelOpts = {
       importance: Notifications.AndroidImportance.MAX,
@@ -290,7 +301,8 @@ async function ensureAndroidChannels() {
 }
 
 export async function getNotificationPermissionStatus() {
-  if (Platform.OS === 'web') return { granted: false, status: 'undetermined' };
+  const Notifications = getNotifications();
+  if (!Notifications) return { granted: false, status: 'undetermined' };
   try {
     const { status, granted } = await Notifications.getPermissionsAsync();
     return { granted: granted || status === 'granted', status };
@@ -300,6 +312,8 @@ export async function getNotificationPermissionStatus() {
 }
 
 async function requestNativeNotificationPermissions() {
+  const Notifications = getNotifications();
+  if (!Notifications) return { status: 'undetermined', granted: false };
   if (Platform.OS === 'ios') {
     return Notifications.requestPermissionsAsync({
       ios: {
@@ -313,9 +327,9 @@ async function requestNativeNotificationPermissions() {
 }
 
 export async function registerForExpoPushAsync() {
-  if (Platform.OS === 'web') return null;
-  if (isExpoGo) {
-    console.log('[push] Saltando registro de push token en Expo Go (SDK 53+)');
+  const Notifications = getNotifications();
+  if (!Notifications) {
+    if (isExpoGo) console.log('[push] Saltando registro de push token en Expo Go (SDK 53+)');
     return null;
   }
   await ensureAndroidChannels();
@@ -369,7 +383,8 @@ export async function registerPushAfterLogin(mozoId) {
 }
 
 export function subscribeToNotificationResponses(navigationRef) {
-  if (Platform.OS === 'web') {
+  const Notifications = getNotifications();
+  if (!Notifications) {
     return { remove: () => {} };
   }
   const sub = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -394,7 +409,8 @@ export function subscribeToNotificationResponses(navigationRef) {
  * @param {'plato'|'comanda'} [type] - Filtra por preferencia de tipo
  */
 export async function showLocalPush(title, body, data = {}, channelId = CHANNEL_PLATO_LISTO, type = 'plato', options = {}) {
-  if (Platform.OS === 'web') return;
+  const Notifications = getNotifications();
+  if (!Notifications) return;
 
   if (data?.comandaId && data?.platoId && (type === 'plato' || type === 'plato-salio')) {
     const prefix = type === 'plato-salio' ? 'plato-salio' : 'plato';
@@ -451,6 +467,7 @@ export async function showLocalPush(title, body, data = {}, channelId = CHANNEL_
 }
 
 export async function sendTestLocalNotification() {
+  if (!getNotifications()) return;
   await ensureAndroidChannels();
   await showLocalPush(
     '🔔 Prueba de notificación',

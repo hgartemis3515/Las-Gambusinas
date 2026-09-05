@@ -12,6 +12,7 @@ import {
   Pressable,
   Keyboard,
   BackHandler,
+  Modal,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useWindowDimensions } from "react-native";
@@ -345,6 +346,14 @@ const ModalClientes = ({
   );
 
   return (
+    <Modal
+      visible
+      transparent
+      animationType="slide"
+      statusBarTranslucent
+      onRequestClose={handleCancelar}
+      presentationStyle={Platform.OS === "ios" ? "overFullScreen" : undefined}
+    >
     <View
       ref={overlayRef}
       collapsable={false}
@@ -711,12 +720,13 @@ const ModalClientes = ({
           </View>
         </View>
     </View>
+    </Modal>
   );
 };
 
 const modalStyles = (theme) => StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
     zIndex: 999,
     elevation: 24,
   },

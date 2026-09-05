@@ -21,7 +21,6 @@ import {
   getConversaciones,
   getMensajesConv,
   enviarMensajeTexto,
-  enviarMensajeVoz,
   marcarLeido,
   getNoLeidosCount,
   setSilenciado,
@@ -47,6 +46,15 @@ function cText(theme, variant = 'primary') {
   if (t && typeof t === 'object') return t[variant] || t.primary || '#fff';
   if (typeof t === 'string') return t;
   return variant === 'primary' ? '#1A1A1A' : '#888';
+}
+
+function ChatGrabadorMicLazy(props) {
+  try {
+    const Comp = require('../../Components/ChatGrabadorMic').default;
+    return <Comp {...props} />;
+  } catch (_) {
+    return null;
+  }
 }
 
 export default function ChatScreen() {
@@ -84,11 +92,8 @@ export default function ChatScreen() {
   const [busqueda, setBusqueda] = useState('');
   const [typingShown, setTypingShown] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
-  const [grabandoVoz, setGrabandoVoz] = useState(false);
-  const [estadoVoz, setEstadoVoz] = useState('idle');
   const typingTimeoutRef = useRef(null);
   const lastTypingEmitRef = useRef(0);
-  const grabacionRef = useRef(null);
 
   // === Nuevo grupo (modal) ===
   const [modalGrupo, setModalGrupo] = useState(false);
@@ -96,6 +101,9 @@ export default function ChatScreen() {
   const [grupoSeleccion, setGrupoSeleccion] = useState([]);
   const [usuariosLista, setUsuariosLista] = useState([]);
   const [cargandoUsuarios, setCargandoUsuarios] = useState(false);
+  const [busquedaUsuarios, setBusquedaUsuarios] = useState('');
+  const [busquedaHilo, setBusquedaHilo] = useState('');
+  const [menuConv, setMenuConv] = useState(null);
 
   const cargarUsuarios = useCallback(async () => {
     setCargandoUsuarios(true);
@@ -239,56 +247,25 @@ export default function ChatScreen() {
     }
   };
 
-  const iniciarGrabacion = async () => {
-    if (grabandoVoz) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      const AudioRes = await import('expo-av');
-      const { Audio } = AudioRes;
-      const perm = await Audio.requestPermissionsAsync();
-      if (!perm.granted) { Alert.alert('Permiso denegado', 'Se necesita acceso al micrófono'); return; }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const rec = new Audio.Recording();
-      await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await rec.startAsync();
-      grabacionRef.current = rec;
-      setGrabandoVoz(true);
-      setEstadoVoz('grabando');
-      setTimeout(async () => {
-        if (grabacionRef.current) await detenerYEnviar();
-      }, 60000);
-    } catch (e) {
-      setGrabandoVoz(false);
-      setEstadoVoz('idle');
-      Alert.alert('Error', 'No se pudo grabar audio');
-    }
-  };
-
-  const detenerYEnviar = async () => {
-    try {
-      const rec = grabacionRef.current;
-      if (!rec) return;
-      await rec.stopAndUnloadAsync();
-      const uri = rec.getURI();
-      grabacionRef.current = null;
-      setGrabandoVoz(false);
-      setEstadoVoz('enviando');
-      if (uri && convActiva) {
-        await enviarMensajeVoz(convActiva._id, uri, prioridad);
-        await cargarMensajes(convActiva._id);
-      }
-    } catch (_) { /* ignore */ }
-    setEstadoVoz('idle');
-  };
-
   const accionFila = async (conv, act) => {
     Haptics.selectionAsync();
     try {
       if (act === 'pin') await setPineado(conv._id, !conv.pineado);
       else if (act === 'mute') await setSilenciado(conv._id, !conv.silenciado);
       else if (act === 'archive') await setArchivado(conv._id, true);
+      setMenuConv(null);
       cargarInbox();
     } catch (_) {}
+  };
+
+  const abrirMenuConv = (conv) => {
+    setMenuConv(conv);
+    Alert.alert(conv.titulo || 'Conversación', undefined, [
+      { text: conv.pineado ? 'Quitar pin' : 'Fijar', onPress: () => accionFila(conv, 'pin') },
+      { text: conv.silenciado ? 'Activar avisos' : 'Silenciar', onPress: () => accionFila(conv, 'mute') },
+      { text: 'Archivar', style: 'destructive', onPress: () => accionFila(conv, 'archive') },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
   };
 
   const conversacionesFiltradas = conversaciones.filter(c => {
@@ -310,7 +287,7 @@ export default function ChatScreen() {
     return (
       <TouchableOpacity
         onPress={() => abrirConversacion(item)}
-        onLongPress={() => accionFila(item, 'pin')}
+        onLongPress={() => abrirMenuConv(item)}
         style={[styles.convItem, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}
         activeOpacity={0.7}
       >
@@ -332,6 +309,11 @@ export default function ChatScreen() {
               <View style={[styles.badgeNoLeidos, { backgroundColor: badgeColor }]}>
                 <Text style={styles.badgeText}>{item.noLeidos > 99 ? '99+' : item.noLeidos}</Text>
               </View>
+            )}
+            {item.noLeidos <= 0 && (
+              <Text style={[styles.convHora, { color: colors.textMuted }]}>
+                {formatDiaLista(item.ultimoMensajeAt || item.updatedAt)}
+              </Text>
             )}
           </View>
           <Text style={[styles.convPreview, { color: colors.textSecondary }]} numberOfLines={1}>
@@ -394,6 +376,45 @@ export default function ChatScreen() {
   const formatHora = (d) => {
     try { return new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
   };
+
+  const formatDiaLista = (d) => {
+    if (!d) return '';
+    try {
+      const dt = new Date(d);
+      const hoy = new Date();
+      const same = dt.toDateString() === hoy.toDateString();
+      if (same) return formatHora(d);
+      return dt.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+    } catch { return ''; }
+  };
+
+  const formatDiaSep = (d) => {
+    try {
+      const dt = new Date(d);
+      const hoy = new Date();
+      if (dt.toDateString() === hoy.toDateString()) return 'Hoy';
+      const ayer = new Date(hoy);
+      ayer.setDate(hoy.getDate() - 1);
+      if (dt.toDateString() === ayer.toDateString()) return 'Ayer';
+      return dt.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+    } catch { return ''; }
+  };
+
+  const usuariosFiltrados = useMemo(() => {
+    const q = busquedaUsuarios.trim().toLowerCase();
+    if (!q) return usuariosLista;
+    return usuariosLista.filter((u) =>
+      String(u.name || '').toLowerCase().includes(q) || String(u.rol || '').toLowerCase().includes(q)
+    );
+  }, [usuariosLista, busquedaUsuarios]);
+
+  const mensajesHilo = useMemo(() => {
+    const q = busquedaHilo.trim().toLowerCase();
+    const base = q
+      ? mensajes.filter((m) => String(m.texto || '').toLowerCase().includes(q))
+      : mensajes;
+    return base;
+  }, [mensajes, busquedaHilo]);
 
   if (!convActiva) {
     return (
@@ -462,8 +483,15 @@ export default function ChatScreen() {
               />
 
               <Text style={[grupoStyles.label, { color: colors.textSecondary }]}>Miembros ({grupoSeleccion.length})</Text>
+              <TextInput
+                value={busquedaUsuarios}
+                onChangeText={setBusquedaUsuarios}
+                placeholder="Buscar persona…"
+                placeholderTextColor={colors.textMuted}
+                style={[grupoStyles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border, marginBottom: 8 }]}
+              />
               <FlatList
-                data={usuariosLista}
+                data={usuariosFiltrados}
                 keyExtractor={(u) => u._id}
                 renderItem={({ item }) => {
                   const sel = grupoSeleccion.includes(item._id);
@@ -511,11 +539,34 @@ export default function ChatScreen() {
           {convActiva.tipo === 'anuncio' ? '📢 ' : (convActiva.tipo === 'canal' ? '# ' : '')}
           {convActiva.titulo || 'Conversación'}
         </Text>
+        <Text style={[styles.connectionText, { color: colors.textMuted, marginRight: 8 }]}>
+          {connected ? '🟢' : '🔴'}
+        </Text>
+      </View>
+      <View style={styles.searchRow}>
+        <TextInput
+          value={busquedaHilo}
+          onChangeText={setBusquedaHilo}
+          placeholder="Buscar en esta conversación…"
+          placeholderTextColor={colors.textMuted}
+          style={[styles.searchInput, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+        />
       </View>
       <FlatList
-        data={mensajes}
+        data={mensajesHilo}
         keyExtractor={(i) => i._id}
-        renderItem={renderMensaje}
+        renderItem={({ item, index }) => {
+          const prev = mensajesHilo[index - 1];
+          const showSep = !prev || formatDiaSep(prev.createdAt) !== formatDiaSep(item.createdAt);
+          return (
+            <View>
+              {showSep ? (
+                <Text style={[styles.daySep, { color: colors.textMuted }]}>{formatDiaSep(item.createdAt)}</Text>
+              ) : null}
+              {renderMensaje({ item })}
+            </View>
+          );
+        }}
         contentContainerStyle={styles.hilo}
         ListEmptyComponent={
           cargando
@@ -538,20 +589,32 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </View>
       )}
-      <View style={[styles.composer, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
-        <TouchableOpacity
-          onPress={grabandoVoz ? detenerYEnviar : iniciarGrabacion}
-          style={[styles.micBtn, { backgroundColor: colors.inputBg }, grabandoVoz && styles.micBtnGrabando]}
-          disabled={estadoVoz === 'enviando'}
-        >
-          <Text style={styles.micText}>
-            {estadoVoz === 'enviando' ? '…' : (grabandoVoz ? '⏹' : '🎤')}
-          </Text>
-        </TouchableOpacity>
+      <View style={[styles.composerCol, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
+        <View style={styles.prioRow}>
+          {['normal', 'alta', 'urgente'].map((p) => (
+            <TouchableOpacity
+              key={p}
+              onPress={() => setPrioridad(p)}
+              style={[styles.prioChip, { borderColor: PRIO_COLORS[p], backgroundColor: prioridad === p ? PRIO_COLORS[p] : 'transparent' }]}
+            >
+              <Text style={{ color: prioridad === p ? '#fff' : PRIO_COLORS[p], fontSize: 10, fontWeight: '700' }}>
+                {PRIO_LABELS[p]}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <View style={styles.composerInner}>
+        <ChatGrabadorMicLazy
+          convId={convActiva._id}
+          prioridad={prioridad}
+          onEnviado={() => cargarMensajes(convActiva._id)}
+          colors={colors}
+          styles={styles}
+        />
         <TextInput
           value={texto}
           onChangeText={onInputChange}
-          placeholder={grabandoVoz ? 'Grabando… toca ⏹ para enviar' : 'Mensaje…'}
+          placeholder="Mensaje…"
           placeholderTextColor={colors.textMuted}
           style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text }]}
           multiline
@@ -559,6 +622,7 @@ export default function ChatScreen() {
         <TouchableOpacity onPress={handleEnviar} style={[styles.sendBtn, { backgroundColor: colors.primary }]}>
           <Text style={[styles.sendText, { color: colors.textWhite }]}>➤</Text>
         </TouchableOpacity>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -583,6 +647,12 @@ const styles = StyleSheet.create({
   convAvatarText: { fontWeight: 'bold', fontSize: 18 },
   convContent: { flex: 1 },
   convHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  convHora: { fontSize: 11, marginLeft: 8 },
+  daySep: { textAlign: 'center', fontSize: 11, fontWeight: '600', paddingVertical: 8 },
+  composerCol: { borderTopWidth: 1, paddingTop: 6 },
+  composerInner: { flexDirection: 'row', alignItems: 'center', padding: 8, gap: 8 },
+  prioRow: { flexDirection: 'row', gap: 6, paddingHorizontal: 10, paddingBottom: 2 },
+  prioChip: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
   convTitulo: { fontSize: 15, fontWeight: '600', flex: 1 },
   convPreview: { fontSize: 12, marginTop: 2 },
   badgeNoLeidos: { borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2, minWidth: 20, alignItems: 'center' },

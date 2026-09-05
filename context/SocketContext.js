@@ -220,16 +220,32 @@ export const SocketProvider = ({ children }) => {
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
-      if (next !== 'active' || !authToken || connected) return;
+      if (next !== 'active' || !authToken) return;
+      if (socket?.connected) return;
       console.log('🔄 [MOZOS] App en primer plano — reconectando socket');
-      if (socket && !socket.connected) {
-        socket.connect();
+      if (socket) {
+        try {
+          socket.auth = { token: authToken };
+          socket.io.reconnection(true);
+          socket.connect();
+        } catch (_) {
+          setReconnectNonce((n) => n + 1);
+        }
       } else {
         setReconnectNonce((n) => n + 1);
       }
     });
     return () => sub.remove();
-  }, [authToken, connected, socket]);
+  }, [authToken, socket]);
+
+  useEffect(() => {
+    if (!authToken || connected || isLoadingToken || !configReady) return;
+    const t = setTimeout(() => {
+      console.log('🔄 [MOZOS] Watchdog 15s offline con sesión — recrear socket');
+      setReconnectNonce((n) => n + 1);
+    }, 15000);
+    return () => clearTimeout(t);
+  }, [authToken, connected, isLoadingToken, configReady]);
 
   return (
     <SocketContext.Provider value={{

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -253,15 +254,10 @@ const AnimatedOverlay = ({ mensaje }) => {
 
   const overlayStyles = {
     overlayContainer: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
+      flex: 1,
       backgroundColor: 'rgba(0, 0, 0, 0.85)',
       justifyContent: 'center',
       alignItems: 'center',
-      zIndex: 9999,
     },
     overlayContent: {
       backgroundColor: theme.colors?.surface || '#FFFFFF',
@@ -291,6 +287,7 @@ const AnimatedOverlay = ({ mensaje }) => {
   };
 
   return (
+    <Modal visible transparent animationType="fade" statusBarTranslucent>
     <Animated.View style={[overlayStyles.overlayContainer, fadeStyle]}>
       <View style={overlayStyles.overlayContent}>
         <Animated.View style={[pulseStyle, { marginBottom: 20 }]}>
@@ -311,6 +308,7 @@ const AnimatedOverlay = ({ mensaje }) => {
         <Text style={overlayStyles.overlaySubtext}>Por favor espera...</Text>
       </View>
     </Animated.View>
+    </Modal>
   );
 };
 

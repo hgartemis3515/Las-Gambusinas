@@ -22,7 +22,10 @@ const FilaPlatoCompacta = ({
   const esSalio = plato.estado === 'salio' && !plato.anulado;
   const esSoloAviso = plato.estado === 'recoger' && !plato.anulado;
   const puedeMarcarEntregado = false;
-  const nombrePlato = plato.plato?.nombre || 'Plato desconocido';
+  const nombreBase = plato.plato?.nombre || plato.nombre || 'Plato desconocido';
+  const nombrePlato = plato.nombreCocinaPedido
+    ? `${nombreBase} · ${plato.nombreCocinaPedido}`
+    : nombreBase;
   
   // 🔥 NUEVO: Estilos especiales para plato anulado
   const esAnulado = plato.anulado === true;

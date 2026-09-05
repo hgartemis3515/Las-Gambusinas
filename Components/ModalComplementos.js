@@ -19,6 +19,7 @@ import {
   calcularPrecioUnitarioConComplementos,
 } from "../utils/precioComplementos";
 import { textosGuarnicionesTotales, preseleccionComplementosDePlato } from "../utils/platoGuarniciones";
+import { grupoEsVariantePlato, gruposVarianteDePlato } from "../utils/variantePlato";
 
 const findGrupoModal = (grupos, nombre) => {
   const key = String(nombre || "").trim().toLowerCase();
@@ -201,24 +202,39 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     }
   }, [getCantidadOpcion, getTotalUnidadesGrupo, seleccionesPorGrupo]);
 
+  const nClones = Math.max(1, Math.min(99, Number(cantidadClones) || 1));
+  const hayVarianteMix = gruposVarianteDePlato(plato).length > 0;
+  const gruposVarianteDePlatoHint = hayVarianteMix
+    ? (nClones === 1
+      ? "Elegí 1 opción de la variante (TÉ, CAFÉ…). Las otras guarniciones van con cada MIX."
+      : `Repartí ${nClones} MIX entre TÉ / CAFÉ / etc. Cada uno lleva las demás guarniciones.`)
+    : (nClones === 1
+      ? "Las cantidades de abajo son por cada plato"
+      : `Se agregan ${nClones} platos: cada guarnición se multiplica`);
+
   // Calcular estado de validación para cada grupo
   const estadoGrupos = useMemo(() => {
     const estados = {};
     complementos.forEach(grupoOriginal => {
       const grupo = normalizarGrupo(grupoOriginal);
       const totalUnidades = getTotalUnidadesGrupo(grupo.grupo);
-      const minUnidades = grupo.minUnidadesGrupo || (grupo.obligatorio ? 1 : 0);
-      const maxUnidades = grupo.maxUnidadesGrupo;
+      const esVar = grupoEsVariantePlato(grupoOriginal);
+      const minUnidades = esVar ? nClones : (grupo.minUnidadesGrupo || (grupo.obligatorio ? 1 : 0));
+      const maxUnidades = esVar ? nClones : grupo.maxUnidadesGrupo;
       
       let esValido = true;
       let mensaje = '';
       
       if (totalUnidades < minUnidades) {
         esValido = false;
-        mensaje = `Faltan ${minUnidades - totalUnidades} unidad(es)`;
+        mensaje = esVar
+          ? `Repartí ${nClones} entre las opciones (faltan ${minUnidades - totalUnidades})`
+          : `Faltan ${minUnidades - totalUnidades} unidad(es)`;
       } else if (maxUnidades !== null && totalUnidades > maxUnidades) {
         esValido = false;
-        mensaje = `Excedido (máx: ${maxUnidades})`;
+        mensaje = esVar
+          ? `Suma ${totalUnidades}, debe ser ${nClones} (la cantidad del plato)`
+          : `Excedido (máx: ${maxUnidades})`;
       } else if (maxUnidades !== null && totalUnidades === maxUnidades) {
         mensaje = `✓ Máximo alcanzado`;
       } else if (totalUnidades >= minUnidades && minUnidades > 0) {
@@ -238,27 +254,28 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       };
     });
     return estados;
-  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo]);
+  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo, nClones]);
 
   // Verificar si todos los grupos obligatorios tienen selección
   const obligatoriosCompletos = useMemo(() => {
     return complementos.every(grupoOriginal => {
       const grupo = normalizarGrupo(grupoOriginal);
-      if (!grupo.obligatorio) return true;
+      if (!grupo.obligatorio && !grupoEsVariantePlato(grupoOriginal)) return true;
       
       const totalUnidades = getTotalUnidadesGrupo(grupo.grupo);
-      const minUnidades = grupo.minUnidadesGrupo || 1;
+      const minUnidades = grupoEsVariantePlato(grupoOriginal)
+        ? nClones
+        : (grupo.minUnidadesGrupo || 1);
       
       return totalUnidades >= minUnidades;
     });
-  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo]);
+  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo, nClones]);
 
   // Verificar si hay algún error de validación
   const hayErrores = useMemo(() => {
     return Object.values(estadoGrupos).some(e => !e.esValido);
   }, [estadoGrupos]);
 
-  const nClones = Math.max(1, Math.min(99, Number(cantidadClones) || 1));
   const cambiarClones = (delta) => {
     setCantidadClones((c) => Math.max(1, Math.min(99, (Number(c) || 1) + delta)));
   };
@@ -266,12 +283,14 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const totalesGuarnicion = useMemo(() => {
     const comps = [];
     Object.entries(seleccionesPorGrupo).forEach(([grupo, opciones]) => {
+      const grupoCfg = findGrupoModal(complementos, grupo);
+      if (grupoEsVariantePlato(grupoCfg)) return;
       Object.entries(opciones).forEach(([opcion, cantidad]) => {
         if (cantidad > 0) comps.push({ grupo, opcion, cantidad });
       });
     });
     return textosGuarnicionesTotales(comps, nClones);
-  }, [seleccionesPorGrupo, nClones]);
+  }, [seleccionesPorGrupo, nClones, complementos]);
 
   // v3.0: Cálculo de precios en tiempo real
   // - Si plato.complementosAfectanPrecio === false, los extras son informativos (no suman).
@@ -319,12 +338,16 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       const grupoConfig = findGrupoModal(complementos, grupoNombre);
       Object.entries(opciones).forEach(([opcion, cantidad]) => {
         if (cantidad > 0) {
+          const opDoc = (grupoConfig?.opciones || []).find((o) =>
+            String(o?.nombre || '').trim().toLowerCase() === String(opcion).trim().toLowerCase()
+          );
           const precioOpcion = grupoConfig ? getPrecioOpcion(grupoConfig, opcion) : 0;
           complementosSeleccionados.push({
             grupo: grupoNombre,
             opcion: opcion,
             cantidad: cantidad,
             precio: afectanPrecio ? precioOpcion : 0,
+            pronombre: String(opDoc?.pronombre || '').trim(),
           });
         }
       });
@@ -397,9 +420,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                 <Text style={styles.cloneTitle}>SUMAR</Text>
               </View>
               <Text style={styles.cloneHint}>
-                {nClones === 1
-                  ? "Las cantidades de abajo son por cada plato"
-                  : `Se agregan ${nClones} platos: cada guarnición se multiplica`}
+                {gruposVarianteDePlatoHint}
               </Text>
             </View>
             <View style={styles.cloneControls}>
@@ -450,7 +471,9 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
               return (
                 <View key={index} style={styles.grupoContainer}>
                   <View style={styles.grupoHeader}>
-                    <Text style={styles.grupoTitle}>{grupoNormalizado.grupo}</Text>
+                    <Text style={styles.grupoTitle}>
+                      {grupoEsVariantePlato(complemento) ? `${grupoNormalizado.grupo} · nombre en cocina` : grupoNormalizado.grupo}
+                    </Text>
                     {grupoNormalizado.obligatorio && (
                       <View style={styles.requeridoBadge}>
                         <Text style={styles.requeridoBadgeText}>Requerido</Text>

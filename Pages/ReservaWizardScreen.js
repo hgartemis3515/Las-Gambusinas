@@ -16,6 +16,8 @@ import { getFallbackApiBase } from "../config/envDefaults";
 import configuracionService from "../services/configuracionService";
 import ModalComplementos from "../Components/ModalComplementos";
 import { platoRequiereGuarniciones, resolverPlatoConGrupos, guarnicionesElegidas } from "../utils/platoGuarniciones";
+import { partirLineaPorVariante, mismaVariantePlato } from "../utils/variantePlato";
+import { calcularPrecioUnitarioConComplementos } from "../utils/precioComplementos";
 import StepIndicator, { PASOS } from "../Components/reserva/StepIndicator";
 import HoraPicker from "../Components/reserva/HoraPicker";
 
@@ -398,15 +400,16 @@ export default function ReservaWizardScreen() {
   const ant = () => { haptic(); setPaso((p) => Math.max(p - 1, 0)); };
 
   // --- Platos con instancias + complementos ---
-  const agregarPlato = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitario = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null) => {
+  const agregarPlato = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitario = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null, metaVariante = null) => {
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
     const tipoServicio = tipoServicioOverride || (tipoServicioModal === "para_llevar" ? "para_llevar" : "mesa");
-    const instanceId = `${plato._id}_${Date.now()}`;
+    const instanceId = `${plato._id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const pu = precioUnitario != null ? Number(precioUnitario) : Number(plato.precio || 0);
     setSelPlatos((c) => {
       const same = c.find((p) => {
         if (p._id !== plato._id) return false;
         if ((p.tipoServicio || "mesa") !== tipoServicio) return false;
+        if (!mismaVariantePlato(p, metaVariante || {})) return false;
         const pComps = p.complementosElegidos || [];
         const newComps = complementosSeleccionados || [];
         const pNota = (p.notaEspecial || "").trim();
@@ -428,6 +431,8 @@ export default function ReservaWizardScreen() {
         complementosElegidos: complementosSeleccionados || [],
         complementos: plato.complementos || [],
         tipoServicio, extraComplementosV3: extraComplementosV3 || null,
+        nombreCocinaPedido: metaVariante?.nombreCocinaPedido || "",
+        variantePlato: metaVariante?.variantePlato || null,
       }];
     });
     haptic();
@@ -446,15 +451,26 @@ export default function ReservaWizardScreen() {
 
   const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
     if (platoParaComplementar) {
-      agregarPlato(
-        platoParaComplementar,
-        complementosSeleccionados,
-        notaEspecial,
-        _precioUnitario,
-        _extraComplementos,
-        Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1)),
-        tipoServicioAlComplementarRef.current
-      );
+      const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
+      const partes = partirLineaPorVariante(platoParaComplementar, complementosSeleccionados, n);
+      const afectan = platoParaComplementar.complementosAfectanPrecio !== false;
+      partes.forEach((parte) => {
+        const calc = calcularPrecioUnitarioConComplementos(
+          platoParaComplementar.precio || 0,
+          parte.complementos,
+          { afectanPrecio: afectan }
+        );
+        agregarPlato(
+          platoParaComplementar,
+          parte.complementos,
+          notaEspecial,
+          calc.precioUnitario,
+          calc.extraComplementos,
+          parte.cantidad,
+          tipoServicioAlComplementarRef.current,
+          { nombreCocinaPedido: parte.nombreCocinaPedido, variantePlato: parte.variantePlato }
+        );
+      });
     }
     tipoServicioAlComplementarRef.current = null;
     setPlatoParaComplementar(null);
@@ -522,6 +538,8 @@ export default function ReservaWizardScreen() {
             grupo: c.grupo, opcion: c.opcion || c.nombre || "", cantidad: c.cantidad, precio: c.precio, pronombre: c.pronombre || "",
           })),
           precioUnitario: p.precioUnitario ?? p.precio,
+          nombreCocinaPedido: p.nombreCocinaPedido || "",
+          variantePlato: p.variantePlato || undefined,
         })),
         notas: notas.trim() || null, cocineroEncargado: encargadoId || null,
         pagoAdelantado: {

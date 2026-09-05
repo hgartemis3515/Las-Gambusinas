@@ -6,6 +6,8 @@
  * Una comanda se considera cerrada (no activa) si tiene boucher, está eliminada o está pagada.
  */
 
+import { slugTipoPedido } from './tipoPedidoLinea';
+
 /** Estados que indican comanda cerrada (fin de ciclo de servicio) */
 const ESTADOS_COMANDA_CERRADA = ['pagado', 'completado', 'cerrado', 'cancelado', 'anulado'];
 
@@ -239,7 +241,8 @@ export const filtrarPlatosPorEstado = (comandas, estadosPermitidos) => {
           eliminado: false,
           complementosSeleccionados: platoItem.complementosSeleccionados || [], // 🔥 NUEVO: Complementos del plato
           notaEspecial: platoItem.notaEspecial || '', // 🔥 NUEVO: Nota especial del plato
-          tipoServicio: platoItem.tipoServicio || 'mesa' // NUEVO: Mesa vs Para llevar
+          tipoServicio: platoItem.tipoServicio || 'mesa', // NUEVO: Mesa vs Para llevar
+          tipoPedido: slugTipoPedido(platoItem.tipoPedido),
         });
       }
     });
@@ -290,7 +293,8 @@ export const separarPlatosEditables = (comandas) => {
         comandaId: comanda._id,
         complementosSeleccionados: platoItem.complementosSeleccionados || [], // 🔥 NUEVO: Complementos del plato
         notaEspecial: platoItem.notaEspecial || '', // 🔥 NUEVO: Nota especial del plato
-        tipoServicio: platoItem.tipoServicio || 'mesa' // NUEVO: Mesa vs Para llevar
+        tipoServicio: platoItem.tipoServicio || 'mesa', // NUEVO: Mesa vs Para llevar
+        tipoPedido: slugTipoPedido(platoItem.tipoPedido)
       };
       
       if (estadoNormalizado === 'pedido' || estadoNormalizado === 'recoger' || estadoNormalizado === 'salio') {

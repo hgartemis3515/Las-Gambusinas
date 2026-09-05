@@ -18,8 +18,10 @@ import BadgeEstadoPlato from '../Components/BadgeEstadoPlato';
 import FilaPlatoCompacta from '../Components/FilaPlatoCompacta';
 import HeaderComandaDetalle from '../Components/HeaderComandaDetalle';
 import ModalComplementos from '../Components/ModalComplementos';
+import SelectorTipoMenu from '../Components/SelectorTipoMenu';
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from '../hooks/useTiposPlato';
+import { slugTipoPedido, mismoTipoPedido } from '../utils/tipoPedidoLinea';
 import useKeyboardInset from '../hooks/useKeyboardInset';
 import KeyboardAwareResults from '../Components/KeyboardAwareResults';
 
@@ -31,6 +33,8 @@ import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../ap
 import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle } from '../utils/comandaHelpers';
 import { platoRequiereGuarniciones, resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva } from '../utils/platoGuarniciones';
+import { partirLineaPorVariante, mismaVariantePlato } from '../utils/variantePlato';
+import { calcularPrecioUnitarioConComplementos } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
 import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA, platoCobradoViaPPA } from '../helpers/pagoAdelantadoHelpers';
@@ -226,6 +230,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [platosNoEditables, setPlatosNoEditables] = useState([]);
   const [searchPlato, setSearchPlato] = useState('');
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
+  const [eligiendoTipoMenu, setEligiendoTipoMenu] = useState(false);
   // Catálogo dinámico de tipos de plato desde el backend
   const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo } = useTiposPlato();
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
@@ -354,6 +359,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           complementosSeleccionados: platoItem.complementosSeleccionados || [],
           // NUEVO: Tipo de servicio (Mesa vs Para llevar). Default 'mesa' para comandas antiguas.
           tipoServicio: platoItem.tipoServicio || 'mesa',
+          tipoPedido: slugTipoPedido(platoItem.tipoPedido),
+          nombreCocinaPedido: platoItem.nombreCocinaPedido || '',
+          variantePlato: platoItem.variantePlato || null,
           procesandoPor: platoItem.procesandoPor || null,
           // PPA: preservar info de pago adelantado para mostrar estado "PENDIENTE" (naranja)
           pagoAdelantado: platoItem.pagoAdelantado || null
@@ -1049,11 +1057,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
 
   // Función para agregar un plato sin complementos
-  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = '', precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null) => {
+  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = '', precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null, metaVariante = null) => {
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
     const tipoServicio = tipoServicioOverride || (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa');
     // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
-    const instanceId = `${plato._id}_${Date.now()}`;
+    const instanceId = `${plato._id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     // v2.0: Normalizar complementos seleccionados (asegurar que tengan cantidad)
     // v3.0: preservar precio del extra (snapshot) si vino del Modal
@@ -1076,9 +1084,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       complementosSeleccionados: complementosNormalizados,
       notaEspecial,
       tipoServicio,
+      tipoPedido: slugTipoPedido(plato.tipoPedido) || slugTipoPedido(tipoPlatoFiltro),
       // v3.0: precio unitario con extras (para mostrar subtotal correcto)
       ...(precioUnitarioV3 != null ? { precioUnitario: Number(precioUnitarioV3) } : {}),
       ...(extraComplementosV3 != null ? { extraComplementos: Number(extraComplementosV3) } : {}),
+      ...(metaVariante?.nombreCocinaPedido ? { nombreCocinaPedido: metaVariante.nombreCocinaPedido } : {}),
+      ...(metaVariante?.variantePlato ? { variantePlato: metaVariante.variantePlato } : {}),
     };
 
     // Verificar si ya existe el mismo plato CON LOS MISMOS complementos Y mismo tipoServicio.
@@ -1089,6 +1100,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       // NUEVO: comparar tipo de servicio
       const pTipo = p.tipoServicio || 'mesa';
       if (pTipo !== tipoServicio) return false;
+      const tipoPedidoNuevo = slugTipoPedido(plato.tipoPedido) || slugTipoPedido(tipoPlatoFiltro);
+      if (!mismoTipoPedido(p.tipoPedido, tipoPedidoNuevo)) return false;
+      if (!mismaVariantePlato(p, metaVariante || {})) return false;
 
       const pComps = p.complementosSeleccionados || [];
       const newComps = complementosNormalizados || [];
@@ -1121,15 +1135,26 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Función para confirmar complementos desde el modal
   const handleConfirmarComplementosEdicion = ({ complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
     if (platoParaComplementar) {
-      agregarPlatoSinComplementos(
-        platoParaComplementar,
-        complementosSeleccionados,
-        notaEspecial,
-        _precioUnitario,
-        _extraComplementos,
-        Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1)),
-        tipoServicioAlComplementarRef.current
-      );
+      const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
+      const partes = partirLineaPorVariante(platoParaComplementar, complementosSeleccionados, n);
+      const afectan = platoParaComplementar.complementosAfectanPrecio !== false;
+      partes.forEach((parte) => {
+        const calc = calcularPrecioUnitarioConComplementos(
+          platoParaComplementar.precio || 0,
+          parte.complementos,
+          { afectanPrecio: afectan }
+        );
+        agregarPlatoSinComplementos(
+          platoParaComplementar,
+          parte.complementos,
+          notaEspecial,
+          calc.precioUnitario,
+          calc.extraComplementos,
+          parte.cantidad,
+          tipoServicioAlComplementarRef.current,
+          { nombreCocinaPedido: parte.nombreCocinaPedido, variantePlato: parte.variantePlato }
+        );
+      });
       setPlatoParaComplementar(null);
       setComplementosInicialesModal(null);
       setNotaInicialModal('');
@@ -1228,8 +1253,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           platoId: platoCompleto?.id || p.platoId || null,
           estado: p.estado || 'pedido',
           tipoServicio: p.tipoServicio === 'para_llevar' ? 'para_llevar' : 'mesa',
+          tipoPedido: slugTipoPedido(p.tipoPedido),
           complementosSeleccionados: p.complementosSeleccionados || [],
-          notaEspecial: p.notaEspecial || ''
+          notaEspecial: p.notaEspecial || '',
+          nombreCocinaPedido: p.nombreCocinaPedido || '',
+          variantePlato: p.variantePlato || undefined
         };
       });
       
@@ -1252,6 +1280,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       setModalEditarVisible(false);
       setComandaEditando(null);
       setTipoPlatoFiltro(null);
+      setEligiendoTipoMenu(false);
       setSearchPlato('');
       setCategoriaFiltro(null);
       setPlatosEditados([]);
@@ -1397,6 +1426,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     
     // Limpiar filtros al abrir modal
     setTipoPlatoFiltro(null);
+    setEligiendoTipoMenu(false);
     setSearchPlato('');
     setCategoriaFiltro(null);
     
@@ -1424,7 +1454,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         comandaId: e.comandaId,
         complementosSeleccionados: platoItem.complementosSeleccionados || [],
         notaEspecial: platoItem.notaEspecial || '',
-        tipoServicio: platoItem.tipoServicio || e.tipoServicio || 'mesa' // NUEVO: Mesa vs Para llevar
+        tipoServicio: platoItem.tipoServicio || e.tipoServicio || 'mesa',
+        tipoPedido: slugTipoPedido(platoItem.tipoPedido || e.tipoPedido),
+        nombreCocinaPedido: platoItem.nombreCocinaPedido || '',
+        variantePlato: platoItem.variantePlato || null,
       };
     }).filter(p => p !== null);
     
@@ -2890,6 +2923,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           setModalEditarVisible(false);
           setComandaEditando(null);
           setTipoPlatoFiltro(null);
+          setEligiendoTipoMenu(false);
           setSearchPlato('');
           setCategoriaFiltro(null);
         }}
@@ -2911,6 +2945,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 <TouchableOpacity
                   onPress={() => {
                     setTipoPlatoFiltro(null);
+                    setEligiendoTipoMenu(false);
                     setSearchPlato('');
                     setCategoriaFiltro(null);
                   }}
@@ -2926,6 +2961,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 setModalEditarVisible(false);
                 setComandaEditando(null);
                 setTipoPlatoFiltro(null);
+                setEligiendoTipoMenu(false);
                 setSearchPlato('');
                 setCategoriaFiltro(null);
               }}>
@@ -3354,43 +3390,24 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                     setTipoPlatoFiltro(null);
                     setSearchPlato('');
                     setCategoriaFiltro(null);
-                    setTipoServicioModal('mesa'); // Reset toggle al abrir agregar plato
-                    Alert.alert(
-                      'Agregar Plato',
-                      'Selecciona el tipo de menú:',
-                      [
-                        { text: 'Cancelar', style: 'cancel' },
-                        ...(tiposPlatoCatalogo.length > 0
-                          ? tiposPlatoCatalogo.map((t) => ({
-                              text: t.nombre || t.slug,
-                              onPress: () => {
-                                setTipoPlatoFiltro(t.slug);
-                                setTipoServicioModal('mesa');
-                              },
-                            }))
-                          : [
-                              {
-                                text: 'Desayuno',
-                                onPress: () => {
-                                  setTipoPlatoFiltro('platos-desayuno');
-                                  setTipoServicioModal('mesa');
-                                },
-                              },
-                              {
-                                text: 'Carta Normal',
-                                onPress: () => {
-                                  setTipoPlatoFiltro('plato-carta normal');
-                                  setTipoServicioModal('mesa');
-                                },
-                              },
-                            ]),
-                      ]
-                    );
+                    setTipoServicioModal('mesa');
+                    setEligiendoTipoMenu(true);
                   }}
                 >
                   <MaterialCommunityIcons name="plus-circle" size={20} color="#fff" />
                   <Text style={styles.addPlatoButtonText}> Agregar Plato</Text>
                 </TouchableOpacity>
+                {eligiendoTipoMenu && !tipoPlatoFiltro ? (
+                  <SelectorTipoMenu
+                    tipos={tiposPlatoCatalogo}
+                    onSelect={(slug) => {
+                      setTipoPlatoFiltro(slug);
+                      setTipoServicioModal('mesa');
+                      setEligiendoTipoMenu(false);
+                    }}
+                    onCancel={() => setEligiendoTipoMenu(false)}
+                  />
+                ) : null}
               </View>
               
               <View style={styles.editSection}>
@@ -3456,6 +3473,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   setModalEditarVisible(false);
                   setComandaEditando(null);
                   setTipoPlatoFiltro(null);
+                  setEligiendoTipoMenu(false);
                   setSearchPlato('');
                   setCategoriaFiltro(null);
                   setPlatosEditados([]);

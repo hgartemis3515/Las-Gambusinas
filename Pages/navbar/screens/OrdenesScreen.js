@@ -28,11 +28,14 @@ import * as Haptics from "expo-haptics";
 import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
 import { platoRequiereGuarniciones, resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones } from "../../../utils/platoGuarniciones";
+import { partirLineaPorVariante, mismaVariantePlato } from "../../../utils/variantePlato";
+import { calcularPrecioUnitarioConComplementos } from "../../../utils/precioComplementos";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
 import configuracionService from "../../../services/configuracionService";
 import { reservaEsDeMozo, estadoMesaConfirmadoTrasCrearComanda, estadoMesaLocalTrasCrearComanda } from "../../../utils/reservasMozo";
 import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
+import { slugTipoPedido, mismoTipoPedido } from "../../../utils/tipoPedidoLinea";
 import {
   CAT_FAVORITOS,
   loadFavoritosLocal,
@@ -120,16 +123,12 @@ const AnimatedOverlay = ({ mensaje }) => {
   }));
 
   return (
+    <Modal visible transparent animationType="fade" statusBarTranslucent>
     <Animated.View style={[{
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
+      flex: 1,
       backgroundColor: 'rgba(0, 0, 0, 0.85)',
       justifyContent: 'center',
       alignItems: 'center',
-      zIndex: 9999,
     }, fadeStyle]}>
       <View style={{
         backgroundColor: theme.colors?.surface || '#FFFFFF',
@@ -172,6 +171,7 @@ const AnimatedOverlay = ({ mensaje }) => {
         }}>Por favor espera...</Text>
       </View>
     </Animated.View>
+    </Modal>
   );
 };
 
@@ -544,11 +544,11 @@ const OrdenesScreen = ({ route }) => {
   }, []);
 
   // Función para agregar un plato sin complementos (comportamiento original)
-  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null) => {
+  const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null, metaVariante = null) => {
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
     const tipoServicio = tipoServicioOverride || (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa');
     // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
-    const instanceId = `${plato._id}_${Date.now()}`;
+    const instanceId = `${plato._id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     // v2.0: Normalizar complementos seleccionados (asegurar que tengan cantidad)
     // v3.0: preservar precio del extra (snapshot) si vino del Modal
@@ -566,9 +566,12 @@ const OrdenesScreen = ({ route }) => {
       complementosElegidos: complementosNormalizados,
       notaEspecial: notaEspecial,
       tipoServicio,
+      tipoPedido: slugTipoPedido(tipoPlatoFiltro),
       // v3.0: precio unitario con extras (para mostrar subtotal correcto al mozo antes de enviar)
       ...(precioUnitarioV3 != null ? { precioUnitario: Number(precioUnitarioV3) } : {}),
       ...(extraComplementosV3 != null ? { extraComplementos: Number(extraComplementosV3) } : {}),
+      ...(metaVariante?.nombreCocinaPedido ? { nombreCocinaPedido: metaVariante.nombreCocinaPedido } : {}),
+      ...(metaVariante?.variantePlato ? { variantePlato: metaVariante.variantePlato } : {}),
     };
 
     // Verificar si ya existe el mismo plato CON LOS MISMOS complementos Y mismo tipoServicio.
@@ -580,6 +583,8 @@ const OrdenesScreen = ({ route }) => {
       // NUEVO: comparar tipo de servicio
       const pTipo = p.tipoServicio || 'mesa';
       if (pTipo !== tipoServicio) return false;
+      if (!mismoTipoPedido(p.tipoPedido, tipoPlatoFiltro)) return false;
+      if (!mismaVariantePlato(p, metaVariante || {})) return false;
 
       // Si ambos NO tienen complementos, son iguales
       const pComps = p.complementosElegidos || [];
@@ -615,16 +620,28 @@ const OrdenesScreen = ({ route }) => {
     if (platoParaComplementar) {
       const nombre = platoParaComplementar.nombre;
       const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
-      agregarPlatoSinComplementos(
-        platoParaComplementar,
-        complementosSeleccionados,
-        notaEspecial,
-        _precioUnitario,
-        _extraComplementos,
-        n,
-        tipoServicioAlComplementarRef.current
-      );
-      avisarPlatoAgregado(nombre, n);
+      const partes = partirLineaPorVariante(platoParaComplementar, complementosSeleccionados, n);
+      const afectan = platoParaComplementar.complementosAfectanPrecio !== false;
+      let totalUnidades = 0;
+      partes.forEach((parte) => {
+        const calc = calcularPrecioUnitarioConComplementos(
+          platoParaComplementar.precio || 0,
+          parte.complementos,
+          { afectanPrecio: afectan }
+        );
+        agregarPlatoSinComplementos(
+          platoParaComplementar,
+          parte.complementos,
+          notaEspecial,
+          calc.precioUnitario,
+          calc.extraComplementos,
+          parte.cantidad,
+          tipoServicioAlComplementarRef.current,
+          { nombreCocinaPedido: parte.nombreCocinaPedido, variantePlato: parte.variantePlato }
+        );
+        totalUnidades += parte.cantidad;
+      });
+      avisarPlatoAgregado(nombre, totalUnidades || n);
       cerrarModalComplementosYReabrirMenu();
     }
   };
@@ -1019,8 +1036,11 @@ const OrdenesScreen = ({ route }) => {
         platoId: plato.id || null,
         estado: "en_espera",
         tipoServicio: plato.tipoServicio === 'para_llevar' ? 'para_llevar' : 'mesa',
+        tipoPedido: slugTipoPedido(plato.tipoPedido),
         complementosSeleccionados: plato.complementosElegidos || [],
-        notaEspecial: plato.notaEspecial || ""
+        notaEspecial: plato.notaEspecial || "",
+        nombreCocinaPedido: plato.nombreCocinaPedido || "",
+        variantePlato: plato.variantePlato || undefined
       }));
 
       const cantidadesArray = selectedPlatos.map(plato => cantidades[plato.instanceId || plato._id] || 1);
@@ -1518,7 +1538,9 @@ const OrdenesScreen = ({ route }) => {
                 <View key={platoInstanceId} style={styles.platoItem}>
                   <View style={styles.platoInfo}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                      <Text style={styles.platoNombre}>{plato.nombre}</Text>
+                      <Text style={styles.platoNombre}>
+                        {plato.nombre}{plato.nombreCocinaPedido ? ` · ${plato.nombreCocinaPedido}` : ''}
+                      </Text>
                       {esParaLlevar && (
                         <View style={styles.paraLlevarBadge}>
                           <MaterialCommunityIcons name="bag-personal" size={12} color="#fff" />

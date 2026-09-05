@@ -48,12 +48,17 @@ const useSocketMozos = ({
   const lastPingRef = useRef(null);
   const roomsJoinedRef = useRef(new Set()); // Track rooms joined for rejoin on reconnect
   const authFailedRef = useRef(false); // Flag para no reintentar tras error de auth
-  const maxReconnectAttempts = 10;
+  const intentionalDisconnectRef = useRef(false);
+  const tokenRef = useRef(token);
+  const authErrorStreakRef = useRef(0);
+  const maxReconnectAttempts = Infinity;
   const initialDelay = 1000; // 1 segundo inicial
-  const maxDelay = 5000; // 5 segundos máximo (más agresivo)
+  const maxDelay = 8000; // 8 segundos máximo
   const heartbeatInterval = 25000; // 25 segundos (menor que timeout de 30s del servidor)
   const lastReconnectTimeRef = useRef(null);
   const mozoPersonalRoomRef = useRef(null);
+
+  tokenRef.current = token;
 
   const joinMozoPersonalRoom = async (sock) => {
     try {
@@ -97,6 +102,9 @@ const useSocketMozos = ({
       setAuthError(null);
     }
 
+    intentionalDisconnectRef.current = false;
+    authErrorStreakRef.current = 0;
+
     // Obtener URL del servidor desde configuración dinámica (http(s), no ws://)
     const serverUrl = getWebSocketURL();
     
@@ -133,8 +141,22 @@ const useSocketMozos = ({
     });
 
     socketRef.current = socket;
+    intentionalDisconnectRef.current = false;
 
-    // 🔥 Función para iniciar heartbeat
+    const forceReconnect = () => {
+      if (intentionalDisconnectRef.current) return;
+      if (socketRef.current !== socket) return;
+      if (socket.connected) return;
+      try {
+        socket.auth = { token: tokenRef.current };
+        socket.io.reconnection(true);
+        socket.connect();
+      } catch (e) {
+        console.warn('[MOZOS] forceReconnect:', e?.message || e);
+      }
+    };
+
+    // Si el backend se cae más de unos segundos, reconectar sin esperar logout.
     const startHeartbeat = () => {
       // Limpiar heartbeat anterior si existe
       if (heartbeatIntervalRef.current) {
@@ -182,9 +204,9 @@ const useSocketMozos = ({
       setConnectionStatus('conectado');
       setReconnectAttempts(0);
       reconnectAttemptsRef.current = 0;
+      authErrorStreakRef.current = 0;
       lastReconnectTimeRef.current = null;
-      
-      // Iniciar heartbeat
+
       startHeartbeat();
       
       // Rejoin rooms si había alguno
@@ -241,6 +263,11 @@ const useSocketMozos = ({
           reason
         });
       }
+
+      // Backend reiniciado: Socket.io NO reconecta solo con "io server disconnect".
+      if (reason === 'io server disconnect' || reason === 'ping timeout' || reason === 'transport close') {
+        setTimeout(forceReconnect, 400);
+      }
     });
 
     // Eventos de Manager (Socket.io v3+): reconnect_* ya no se escuchan en socket.on
@@ -248,6 +275,7 @@ const useSocketMozos = ({
       reconnectAttemptsRef.current = attemptNumber;
       setReconnectAttempts(attemptNumber);
       setConnectionStatus('reconectando');
+      socket.auth = { token: tokenRef.current };
       
       if (!lastReconnectTimeRef.current) {
         lastReconnectTimeRef.current = Date.now();
@@ -300,15 +328,19 @@ const useSocketMozos = ({
                           errorMsg.includes('permisos');
       
       if (isAuthError) {
-        console.error('❌ [MOZOS] Error de autenticación Socket.io:', errorMsg);
+        authErrorStreakRef.current += 1;
+        console.error('❌ [MOZOS] Error de autenticación Socket.io:', errorMsg, `(${authErrorStreakRef.current})`);
         setAuthError(errorMsg);
         setConnectionStatus('auth_error');
         setConnected(false);
-        authFailedRef.current = true;
-        
-        // Desconectar y no reintentar
-        socket.disconnect();
-        
+
+        if (authErrorStreakRef.current >= 5) {
+          authFailedRef.current = true;
+          socket.disconnect();
+        } else {
+          setTimeout(forceReconnect, 1500 * authErrorStreakRef.current);
+        }
+
         if (onSocketStatus) {
           onSocketStatus({ connected: false, status: 'auth_error', error: errorMsg });
         }
@@ -331,14 +363,12 @@ const useSocketMozos = ({
     });
 
     socket.io.on('reconnect_failed', () => {
-      console.error('❌ [MOZOS] Reconexión fallida después de', maxReconnectAttempts, 'intentos');
-      setConnectionStatus('desconectado');
-      setReconnectAttempts(maxReconnectAttempts);
-      
-      // Notificar cambio de estado
+      console.error('❌ [MOZOS] Reconexión fallida — reintentando');
+      setConnectionStatus('reconectando');
       if (onSocketStatus) {
-        onSocketStatus({ connected: false, status: 'desconectado', failed: true });
+        onSocketStatus({ connected: false, status: 'reconectando', failed: true });
       }
+      setTimeout(forceReconnect, 2000);
     });
 
     // Evento: Mesa actualizada
@@ -562,9 +592,13 @@ const useSocketMozos = ({
 
     // Evento: Estado de socket (heartbeat del servidor)
     socket.on('socket-status', (data) => {
-      if (data.connected !== undefined) {
-        setConnected(data.connected);
-        setConnectionStatus(data.connected ? 'conectado' : 'desconectado');
+      if (data?.connected === true && socket.connected) {
+        setConnected(true);
+        setConnectionStatus((prev) => (
+          prev === 'desconectado' || prev === 'reconectando' || prev === 'auth_error'
+            ? 'conectado'
+            : prev
+        ));
       }
     });
 
@@ -866,9 +900,20 @@ const useSocketMozos = ({
 
     // ========== FIN EVENTO MAPA ==========
 
+    const watchdogId = setInterval(() => {
+      if (intentionalDisconnectRef.current) return;
+      if (authFailedRef.current) return;
+      if (socketRef.current !== socket) return;
+      if (socket.connected) return;
+      console.log('🔄 [MOZOS] Watchdog: sesión activa pero socket offline — reconectando');
+      forceReconnect();
+    }, 8000);
+
     // Recrear el cliente al cambiar JWT, IP o nonce de reconexión
     return () => {
       console.log('🧹 [MOZOS] Cerrando socket anterior (token/URL/reconexión)');
+      intentionalDisconnectRef.current = true;
+      clearInterval(watchdogId);
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;

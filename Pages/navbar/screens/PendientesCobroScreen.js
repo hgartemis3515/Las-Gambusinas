@@ -20,6 +20,7 @@ import { useTheme } from "../../../context/ThemeContext";
 import { themeLight } from "../../../constants/theme";
 import { useSocket } from "../../../context/SocketContext";
 import { formatPendienteCobro } from "../../../helpers/pendienteCobroMozo";
+import { labelEstadoMesaComanda, colorEstadoMesa } from "../../../utils/estadoMesaMozo";
 import {
   acotarComandasAlCicloActual,
   aplicarPedidoSinVaciar,
@@ -199,12 +200,18 @@ const PendientesCobroScreen = () => {
   const renderItem = ({ item }) => {
     const id = String(item._id);
     const busy = abriendoId === id;
+    const estado = labelEstadoMesaComanda(item);
+    const estadoColor = colorEstadoMesa(estado, theme);
     return (
       <View style={styles.row}>
         <Text style={[styles.cell, styles.colMesa]} numberOfLines={1}>{labelMesa(item)}</Text>
         <Text style={[styles.cell, styles.colComanda]} numberOfLines={1}>
           {item.comandaNumber != null ? `#${item.comandaNumber}` : "—"}
         </Text>
+        <View style={[styles.colEstado, styles.estadoWrap]}>
+          <View style={[styles.estadoDot, { backgroundColor: estadoColor }]} />
+          <Text style={[styles.cell, styles.estadoText, { color: estadoColor }]} numberOfLines={2}>{estado}</Text>
+        </View>
         <Text style={[styles.cell, styles.colTotal]} numberOfLines={1}>
           {formatPendienteCobro(item.pendienteCobro)}
         </Text>
@@ -227,26 +234,23 @@ const PendientesCobroScreen = () => {
     <SafeAreaView style={styles.container} edges={[]}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Pendientes</Text>
-        <View style={styles.totalBox}>
-          <Text style={styles.totalText} numberOfLines={1}>
-            {formatPendienteCobro(total)}
-          </Text>
-        </View>
       </View>
 
       <View style={styles.tableHeader}>
         <Text style={[styles.th, styles.colMesa]}>Mesa</Text>
         <Text style={[styles.th, styles.colComanda]}>Comanda</Text>
+        <Text style={[styles.th, styles.colEstado]}>Estado</Text>
         <Text style={[styles.th, styles.colTotal]}>Total</Text>
         <View style={styles.colVer} />
       </View>
 
       {loading && comandas.length === 0 ? (
-        <View style={styles.empty}>
+        <View style={[styles.empty, { flex: 1 }]}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       ) : (
         <FlatList
+          style={{ flex: 1 }}
           data={comandas}
           keyExtractor={(item) => String(item._id)}
           renderItem={renderItem}
@@ -269,6 +273,11 @@ const PendientesCobroScreen = () => {
           contentContainerStyle={comandas.length === 0 ? styles.emptyList : styles.list}
         />
       )}
+
+      <View style={styles.footerTotal}>
+        <Text style={styles.footerLabel}>TOTAL PENDIENTE</Text>
+        <Text style={styles.footerAmount}>{formatPendienteCobro(total)}</Text>
+      </View>
     </SafeAreaView>
   );
 };
@@ -331,10 +340,48 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 15,
     color: theme.colors.text?.primary || theme.colors.text?.white || "#111",
   },
-  colMesa: { flex: 0.9 },
-  colComanda: { flex: 1 },
-  colTotal: { flex: 1.2, fontWeight: "700" },
+  colMesa: { flex: 0.7 },
+  colComanda: { flex: 0.75 },
+  colEstado: { flex: 1.15 },
+  colTotal: { flex: 0.95, fontWeight: "700" },
   colVer: { width: 64 },
+  estadoWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingRight: 4,
+  },
+  estadoDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  estadoText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  footerTotal: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: "#000000",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.border || "#333",
+  },
+  footerLabel: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 12,
+    letterSpacing: 0.6,
+  },
+  footerAmount: {
+    color: "#FF9500",
+    fontWeight: "800",
+    fontSize: 18,
+  },
   verBtn: {
     width: 64,
     height: 34,

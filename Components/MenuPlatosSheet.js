@@ -9,6 +9,7 @@ import {
   FlatList,
   ScrollView,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   StyleSheet,
   useWindowDimensions,
@@ -148,7 +149,7 @@ export default function MenuPlatosSheet({
               </View>
             )}
           </View>
-          <Text style={styles.platoModalPrecio}>S/. {plato.precio.toFixed(2)}</Text>
+          <Text style={styles.platoModalPrecio}>S/. {Number(plato.precio || 0).toFixed(2)}</Text>
         </View>
         {onToggleFavorito ? (
           <TouchableOpacity
@@ -191,11 +192,17 @@ export default function MenuPlatosSheet({
     );
   }, [selectedPlatos, cantidades, onDecrementPlato, onAddPlato, onToggleFavorito, favoritoIds, styles, theme.colors.text.white, tipoServicioModal]);
 
-  if (!visible) return null;
-
   const searchActive = (searchPlato || '').trim().length > 0;
 
   return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      statusBarTranslucent
+      onRequestClose={onClose}
+      presentationStyle={Platform.OS === 'ios' ? 'overFullScreen' : undefined}
+    >
     <View style={styles.overlay} pointerEvents="auto">
       <KeyboardAvoidingView
         style={styles.flex}
@@ -395,12 +402,13 @@ export default function MenuPlatosSheet({
         </View>
       </KeyboardAvoidingView>
     </View>
+    </Modal>
   );
 }
 
 const makeStyles = (theme) => StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
     zIndex: 999,
     elevation: 24,
   },
@@ -414,6 +422,7 @@ const makeStyles = (theme) => StyleSheet.create({
     borderTopLeftRadius: theme.borderRadius.xl,
     borderTopRightRadius: theme.borderRadius.xl,
     padding: theme.spacing.lg,
+    maxHeight: '92%',
     ...theme.shadows.large,
   },
   chrome: {

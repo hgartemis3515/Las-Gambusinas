@@ -3,10 +3,10 @@ import { View, Text, TouchableOpacity, StyleSheet, AppState, Platform } from 're
 import { useSocket } from '../context/SocketContext';
 import { getAlertasActivas, ackAlerta } from '../services/alertaService';
 
-/** Lazy: evita crash si el APK no incluye el módulo nativo expo-av (OTA sin rebuild). */
-function getExpoAudio() {
+/** Lazy: evita crash si el binario nativo aún no incluye expo-audio. */
+function getCreateAudioPlayer() {
   try {
-    return require('expo-av').Audio;
+    return require('expo-audio').createAudioPlayer;
   } catch (_) {
     return null;
   }
@@ -21,7 +21,7 @@ function getExpoAudio() {
  * Comportamiento:
  *  - Escucha `alerta:nueva` y `alerta:cancelada` del socket /mozos.
  *  - Muestra un banner con color = estilo.colorHex.
- *  - Reproduce sonido (expo-av) si estilo.sonidoClave !== 'silencio'.
+ *  - Reproduce sonido (expo-audio) si estilo.sonidoClave !== 'silencio'.
  *  - Auto-oculta tras estilo.duracionMs salvo que estilo.requiereAck.
  *  - Al montarse y al reconectar, recupera alertas activas vía API.
  */
@@ -35,17 +35,16 @@ export default function AlertaOverlayMozos() {
   // Cargar sonidos bajo demanda
   const reproducirSonido = async (clave) => {
     if (!clave || clave === 'silencio') return;
-    const Audio = getExpoAudio();
-    if (!Audio?.Sound) return;
+    const createAudioPlayer = getCreateAudioPlayer();
+    if (!createAudioPlayer) return;
     try {
       // Construir URL del catálogo en el backend
       const base = (apiConfigBase()).replace(/\/api$/, '');
       const url = `${base}/sounds/alertas/${clave}.mp3`;
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: url },
-        { shouldPlay: true, isLooping: clave === 'sirena' }
-      );
-      soundRef.current = sound;
+      const player = createAudioPlayer({ uri: url });
+      player.loop = clave === 'sirena';
+      player.play();
+      soundRef.current = player;
     } catch (_) {
       // fallback: ignorar (no bloquear la alerta)
     }
@@ -54,8 +53,8 @@ export default function AlertaOverlayMozos() {
   const detenerSonido = async () => {
     try {
       if (soundRef.current) {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
+        soundRef.current.pause();
+        if (typeof soundRef.current.remove === 'function') soundRef.current.remove();
         soundRef.current = null;
       }
     } catch (_) { /* noop */ }
