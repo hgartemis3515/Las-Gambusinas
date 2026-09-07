@@ -5516,7 +5516,11 @@ const InicioScreen = () => {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.barraItem, !reservasHabilitadoMozos && { opacity: 0.4 }]}
+              style={[
+                styles.barraItem,
+                { backgroundColor: `${theme.colors.mesaEstado?.reservado || "#9C27B0"}22` },
+                !reservasHabilitadoMozos && { opacity: 0.4 },
+              ]}
               disabled={!reservasHabilitadoMozos}
               onPress={() => {
                 // PLAN_RESERVAS_MOZOS_CAJA_KDS v1.1: lanzar wizard de reserva
@@ -5533,8 +5537,14 @@ const InicioScreen = () => {
               }}
             >
               <View style={styles.barraItemContent}>
-                <MaterialCommunityIcons name="calendar" size={iconSizeSidebar || 16} color={theme.colors.text.primary} />
-                <Text style={styles.barraItemText}>Reservar</Text>
+                <MaterialCommunityIcons
+                  name="calendar"
+                  size={iconSizeSidebar || 16}
+                  color={theme.colors.mesaEstado?.reservado || "#9C27B0"}
+                />
+                <Text style={[styles.barraItemText, { color: theme.colors.mesaEstado?.reservado || "#9C27B0", fontWeight: "700" }]}>
+                  Reservar
+                </Text>
               </View>
             </TouchableOpacity>
 

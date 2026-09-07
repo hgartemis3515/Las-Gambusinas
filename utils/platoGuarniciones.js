@@ -89,9 +89,9 @@ export function resolverPlatoConGrupos(plato, catalogo = []) {
   return plato;
 }
 
-/** Grupo que el mozo no elige: las cantidades de platos.html se aplican solas. MIX no puede ser fijo. */
+/** Grupo que el mozo no elige: las cantidades de platos.html se aplican solas. MIX / variación de nombre no pueden ser fijo. */
 export function grupoSeleccionFija(grupo) {
-  return grupo?.seleccionFija === true && grupo?.esVariantePlato !== true;
+  return grupo?.seleccionFija === true && grupo?.esVariantePlato !== true && grupo?.anexarVarianteAlNombre !== true;
 }
 
 /** True si queda algún grupo que el mozo debe elegir (no fijo). */

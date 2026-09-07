@@ -12,6 +12,7 @@ import {
   notifyPlatoSalioLocal,
 } from '../services/pushNotifications';
 import configuracionService from '../services/configuracionService';
+import { logoutForInvalidToken } from '../utils/authSession';
 
 /**
  * Hook personalizado para manejar conexión Socket.io con namespace /mozos
@@ -328,22 +329,16 @@ const useSocketMozos = ({
                           errorMsg.includes('permisos');
       
       if (isAuthError) {
-        authErrorStreakRef.current += 1;
-        console.error('❌ [MOZOS] Error de autenticación Socket.io:', errorMsg, `(${authErrorStreakRef.current})`);
+        console.error('❌ [MOZOS] Token inválido — cerrando sesión');
         setAuthError(errorMsg);
         setConnectionStatus('auth_error');
         setConnected(false);
-
-        if (authErrorStreakRef.current >= 5) {
-          authFailedRef.current = true;
-          socket.disconnect();
-        } else {
-          setTimeout(forceReconnect, 1500 * authErrorStreakRef.current);
-        }
-
+        authFailedRef.current = true;
+        socket.disconnect();
         if (onSocketStatus) {
           onSocketStatus({ connected: false, status: 'auth_error', error: errorMsg });
         }
+        logoutForInvalidToken();
       } else {
         // websocket error en Expo Go suele ser transitorio; polling reconecta
         const transient = /websocket|transport|xhr poll|timeout/i.test(errorMsg);

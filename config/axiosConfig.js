@@ -110,7 +110,7 @@ axios.interceptors.response.use(
         const loginMozo401 =
           status === 401 &&
           method === "POST" &&
-          /\/admin\/mozos\/auth/i.test(urlStr);
+          /\/(admin\/)?mozos\/auth/i.test(urlStr);
         const platoEstadoNoop =
           status === 400 &&
           method === "PUT" &&
@@ -121,6 +121,12 @@ axios.interceptors.response.use(
           if (__DEV__) console.warn(`[HTTP] PUT plato/estado 400 (ya entregado/pagado o carrera): ${urlStr}`);
         } else {
           console.error(`❌ [HTTP] ${method} ${url} → ${status} ${error.response.statusText || ""}`);
+        }
+        if (status === 401 && !loginMozo401) {
+          try {
+            const { logoutForInvalidToken } = require('../utils/authSession');
+            logoutForInvalidToken();
+          } catch (_) {}
         }
       }
     }

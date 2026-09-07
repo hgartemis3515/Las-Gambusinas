@@ -27,6 +27,7 @@ import {
   rutasComandasSegunEstadoMesa,
 } from "../../../utils/comandaHelpers";
 import { agruparComandasPendientes } from "../../../utils/agruparComandasPendientes";
+import { esFilaComandaSinMesa, COLOR_PARA_LLEVAR } from "../../../utils/sinMesaOrden";
 
 function urlPendienteCobro(mozoId) {
   const q = `pendiente-cobro?mozoId=${encodeURIComponent(mozoId)}`;
@@ -74,6 +75,7 @@ async function fetchComandaPorId(comandaId) {
 }
 
 function labelMesa(item) {
+  if (esFilaComandaSinMesa(item)) return "Comanda para llevar";
   if (item.mesaNombre) return String(item.mesaNombre);
   if (item.mesaNumero != null) return String(item.mesaNumero);
   return "—";
@@ -89,9 +91,15 @@ const PendientesCobroScreen = () => {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [filtroMesa, setFiltroMesa] = useState("todas");
   const [abriendoId, setAbriendoId] = useState(null);
 
-  const filas = useMemo(() => agruparComandasPendientes(comandas), [comandas]);
+  const filas = useMemo(() => {
+    const all = agruparComandasPendientes(comandas);
+    if (filtroMesa === "sin_mesa") return all.filter(esFilaComandaSinMesa);
+    if (filtroMesa === "mesa") return all.filter((f) => !esFilaComandaSinMesa(f));
+    return all;
+  }, [comandas, filtroMesa]);
 
   const cargarRef = useRef(async () => {});
   const debounceRef = useRef(null);
@@ -170,13 +178,16 @@ const PendientesCobroScreen = () => {
     if (!item?._id || abriendoId) return;
     setAbriendoId(String(item.id || item._id));
     try {
-      const mesa = {
-        _id: item.mesaId || undefined,
-        nummesa: item.mesaNumero,
-        estado: item.mesaEstado || "pedido",
-        nombreCombinado: item.mesaNombre || null,
-      };
-      let comandasMesa = await fetchCicloMesa(mesa);
+      const sinMesa = esFilaComandaSinMesa(item);
+      const mesa = sinMesa
+        ? { sinMesa: true, nummesa: "Sin mesa" }
+        : {
+          _id: item.mesaId || undefined,
+          nummesa: item.mesaNumero,
+          estado: item.mesaEstado || "pedido",
+          nombreCombinado: item.mesaNombre || null,
+        };
+      let comandasMesa = sinMesa ? [] : await fetchCicloMesa(mesa);
       if (!comandasMesa.length) {
         const una = await fetchComandaPorId(item._id);
         if (una) {
@@ -207,9 +218,15 @@ const PendientesCobroScreen = () => {
     const estadoColor = colorEstadoMesa(estado, theme);
     const comandaTxt = item.comandaLabel
       || (item.comandaNumber != null ? `#${item.comandaNumber}` : "—");
+    const sinMesa = esFilaComandaSinMesa(item);
     return (
       <View style={styles.row}>
-        <Text style={[styles.cell, styles.colMesa]} numberOfLines={1}>{labelMesa(item)}</Text>
+        <Text
+          style={[styles.cell, styles.colMesa, sinMesa && styles.cellParaLlevar]}
+          numberOfLines={2}
+        >
+          {labelMesa(item)}
+        </Text>
         <Text style={[styles.cell, styles.colComanda]} numberOfLines={1}>
           {comandaTxt}
         </Text>
@@ -239,6 +256,35 @@ const PendientesCobroScreen = () => {
     <SafeAreaView style={styles.container} edges={[]}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Pendientes</Text>
+      </View>
+
+      <View style={styles.filtroRow}>
+        {[
+          { id: "todas", label: "Todas" },
+          { id: "mesa", label: "Mesa" },
+          { id: "sin_mesa", label: "Sin mesa" },
+        ].map((opt) => {
+          const active = filtroMesa === opt.id;
+          return (
+            <TouchableOpacity
+              key={opt.id}
+              style={[
+                styles.filtroChip,
+                active && styles.filtroChipActive,
+                opt.id === "sin_mesa" && active && styles.filtroChipLlevar,
+              ]}
+              onPress={() => setFiltroMesa(opt.id)}
+            >
+              <Text style={[
+                styles.filtroChipText,
+                active && styles.filtroChipTextActive,
+              ]}
+              >
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <View style={styles.tableHeader}>
@@ -307,6 +353,44 @@ const makeStyles = (theme) => StyleSheet.create({
     color: theme.colors.text.white,
     letterSpacing: 0.5,
   },
+  filtroRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.border || "#333",
+  },
+  filtroChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.border || "#333",
+  },
+  filtroChipActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  filtroChipLlevar: {
+    backgroundColor: COLOR_PARA_LLEVAR,
+    borderColor: COLOR_PARA_LLEVAR,
+  },
+  filtroChipText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: theme.colors.text?.secondary || "#888",
+  },
+  filtroChipTextActive: {
+    color: "#FFFFFF",
+  },
+  cellParaLlevar: {
+    color: COLOR_PARA_LLEVAR,
+    fontWeight: "800",
+    fontSize: 12,
+  },
   totalBox: {
     backgroundColor: "#000000",
     paddingHorizontal: 10,
@@ -345,7 +429,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 15,
     color: theme.colors.text?.primary || theme.colors.text?.white || "#111",
   },
-  colMesa: { flex: 0.7 },
+  colMesa: { flex: 1.15 },
   colComanda: { flex: 1.05 },
   colEstado: { flex: 1.15 },
   colTotal: { flex: 0.95, fontWeight: "700" },

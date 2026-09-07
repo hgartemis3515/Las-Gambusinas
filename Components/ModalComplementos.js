@@ -19,7 +19,8 @@ import {
   calcularPrecioUnitarioConComplementos,
 } from "../utils/precioComplementos";
 import { textosGuarnicionesTotales, preseleccionComplementosDePlato, grupoSeleccionFija, preseleccionComplementosFijosDePlato } from "../utils/platoGuarniciones";
-import { grupoEsVariantePlato, gruposVarianteDePlato, grupoVarianteSumaDeshabilitada, platoVarianteSumaDeshabilitada } from "../utils/variantePlato";
+import { grupoEsVariantePlato, grupoAnexaNombre, gruposVarianteDePlato, gruposAnexarNombreDePlato, grupoVarianteSumaDeshabilitada, platoVarianteSumaDeshabilitada } from "../utils/variantePlato";
+import { normalizarNumeroSerie, numeroSerieEsValido, platoRequiereNumeroSerie } from "../utils/numeroSeriePlato";
 
 const findGrupoModal = (grupos, nombre) => {
   const key = String(nombre || "").trim().toLowerCase();
@@ -36,7 +37,7 @@ const findGrupoModal = (grupos, nombre) => {
  * @param {function} onClose - Callback para cerrar el modal sin guardar
  * @param {array} complementosIniciales - Complementos ya seleccionados (para edición)
  */
-const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIniciales = null, notaInicial = "" }) => {
+const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIniciales = null, notaInicial = "", numeroSerieInicial = "" }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const styles = modalComplementosStyles(theme);
@@ -46,6 +47,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const [seleccionesPorGrupo, setSeleccionesPorGrupo] = useState({});
   const [notaEspecial, setNotaEspecial] = useState("");
   const [cantidadClones, setCantidadClones] = useState(1);
+  const [numeroSerie, setNumeroSerie] = useState("");
 
   // Los complementos del plato (array de grupos)
   const complementos = plato?.complementos || [];
@@ -93,7 +95,8 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     setSeleccionesPorGrupo(nuevaSeleccion);
     setNotaEspecial(typeof notaInicial === 'string' ? notaInicial : "");
     setCantidadClones(1);
-  }, [visible, complementosIniciales, notaInicial, platoKey, plato]);
+    setNumeroSerie(normalizarNumeroSerie(numeroSerieInicial));
+  }, [visible, complementosIniciales, notaInicial, numeroSerieInicial, platoKey, plato]);
 
   // Obtener cantidad actual de una opción
   const getCantidadOpcion = useCallback((grupoNombre, opcion) => {
@@ -214,6 +217,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
 
   const nClones = Math.max(1, Math.min(99, Number(cantidadClones) || 1));
   const hayVarianteMix = gruposVarianteDePlato(plato).length > 0;
+  const hayAnexarNombre = gruposAnexarNombreDePlato(plato).length > 0;
   const sumaMixLibre = platoVarianteSumaDeshabilitada(plato);
   const mixSum = useMemo(() => {
     return gruposVarianteDePlato(plato).reduce((s, g) => s + getTotalUnidadesGrupo(g.grupo), 0);
@@ -225,6 +229,8 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     ? (nClones === 1
       ? "Elegí 1 opción de la variante (TÉ, CAFÉ…). Las otras guarniciones van con cada MIX."
       : `Repartí ${nClones} MIX entre TÉ / CAFÉ / etc. Cada uno lleva las demás guarniciones.`)
+    : hayAnexarNombre
+    ? "La opción (ej. pierna) se agrega al nombre en cocina: Pollo leña + Pierna → Pollo leña Pierna."
     : (nClones === 1
       ? "Las cantidades de abajo son por cada plato"
       : `Se agregan ${nClones} platos: cada guarnición se multiplica`);
@@ -375,8 +381,11 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   }, [sumaMixLibre, preciosResumen.unitario, nClones, seleccionesPorGrupo, complementos, afectanPrecio, mixSum, basePlato]);
 
   // Confirmar y agregar el plato con complementos
+  const requiereSerie = platoRequiereNumeroSerie(plato);
+  const serieValida = !requiereSerie || numeroSerieEsValido(numeroSerie);
+
   const handleConfirmar = () => {
-    if (!obligatoriosCompletos || hayErrores) return;
+    if (!obligatoriosCompletos || hayErrores || !serieValida) return;
 
     const fijos = preseleccionComplementosFijosDePlato(plato).map((c) => ({
       ...c,
@@ -416,6 +425,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     onConfirm({
       complementosSeleccionados,
       notaEspecial: notaEspecial.trim(),
+      numeroSerie: requiereSerie ? normalizarNumeroSerie(numeroSerie) : "",
       _precioUnitario: calc.precioUnitario,
       _extraComplementos: calc.extraComplementos,
       _cantidadPlatos: Math.max(1, Math.min(99, sumaMixLibre ? mixSum : nClones)),
@@ -424,6 +434,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     setSeleccionesPorGrupo({});
     setNotaEspecial("");
     setCantidadClones(1);
+    setNumeroSerie("");
   };
 
   // Cerrar sin guardar
@@ -431,11 +442,12 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     setSeleccionesPorGrupo({});
     setNotaEspecial("");
     setCantidadClones(1);
+    setNumeroSerie("");
     onClose();
   };
 
-  // Si no hay plato o no tiene complementos, no mostrar nada
-  if (!plato || complementos.length === 0) return null;
+  // Si no hay plato, o no hay complementos ni número de serie, no mostrar
+  if (!plato || (complementos.length === 0 && !requiereSerie)) return null;
 
   return (
     <Modal
@@ -523,6 +535,22 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             contentContainerStyle={styles.modalScrollContent}
             showsVerticalScrollIndicator={true}
           >
+            {requiereSerie && (
+              <View style={styles.serieContainer}>
+                <Text style={styles.serieLabel}>Número de serie (obligatorio)</Text>
+                <Text style={styles.serieHint}>2 a 4 dígitos. Se muestra en cocina junto al cronómetro y el mozo.</Text>
+                <TextInput
+                  style={[styles.serieInput, !serieValida && numeroSerie.length > 0 && styles.serieInputError]}
+                  placeholder="Ej: 07"
+                  placeholderTextColor={theme.colors.text.light}
+                  value={numeroSerie}
+                  onChangeText={(t) => setNumeroSerie(normalizarNumeroSerie(t))}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  autoFocus={!numeroSerieInicial}
+                />
+              </View>
+            )}
             {/* Grupos de complementos */}
             {complementos.map((complemento, index) => {
               if (grupoSeleccionFija(complemento)) return null;
@@ -530,6 +558,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
               const estado = estadoGrupos[grupoNormalizado.grupo] || {};
               const esModoCantidad = grupoNormalizado.modoSeleccion === 'cantidades';
               const esVarGrupo = grupoEsVariantePlato(complemento);
+              const esAnexarGrupo = grupoAnexaNombre(complemento);
               const maxGrupoEfectivo = esVarGrupo
                 ? (sumaMixLibre ? grupoNormalizado.maxUnidadesGrupo : nClones)
                 : grupoNormalizado.maxUnidadesGrupo;
@@ -538,7 +567,11 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                 <View key={index} style={styles.grupoContainer}>
                   <View style={styles.grupoHeader}>
                     <Text style={styles.grupoTitle}>
-                      {esVarGrupo ? `${grupoNormalizado.grupo} · nombre en cocina` : grupoNormalizado.grupo}
+                      {esVarGrupo
+                        ? `${grupoNormalizado.grupo} · nombre en cocina`
+                        : esAnexarGrupo
+                          ? `${grupoNormalizado.grupo} · se agrega al nombre`
+                          : grupoNormalizado.grupo}
                     </Text>
                     {grupoNormalizado.obligatorio && (
                       <View style={styles.requeridoBadge}>
@@ -727,10 +760,10 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             <TouchableOpacity
               style={[
                 styles.confirmButton,
-                (!obligatoriosCompletos || hayErrores) && styles.confirmButtonDisabled,
+                (!obligatoriosCompletos || hayErrores || !serieValida) && styles.confirmButtonDisabled,
               ]}
               onPress={handleConfirmar}
-              disabled={!obligatoriosCompletos || hayErrores}
+              disabled={!obligatoriosCompletos || hayErrores || !serieValida}
               activeOpacity={0.8}
             >
               <MaterialCommunityIcons
@@ -745,6 +778,18 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
           </View>
 
           {/* Mensaje si faltan obligatorios */}
+          {requiereSerie && !serieValida && (
+            <View style={styles.warningContainer}>
+              <MaterialCommunityIcons
+                name="alert-circle"
+                size={16}
+                color={theme.colors.warning}
+              />
+              <Text style={styles.warningText}>
+                Ingresa el número de serie (2 a 4 dígitos)
+              </Text>
+            </View>
+          )}
           {!obligatoriosCompletos && (
             <View style={styles.warningContainer}>
               <MaterialCommunityIcons
@@ -996,6 +1041,41 @@ const modalComplementosStyles = (theme) =>
       fontWeight: "700",
       color: theme.colors.primary,
       minWidth: 28,
+    },
+    serieContainer: {
+      marginBottom: theme.spacing.md,
+      padding: theme.spacing.md,
+      backgroundColor: theme.colors.background,
+      borderRadius: theme.borderRadius.md,
+      borderWidth: 2,
+      borderColor: theme.colors.primary,
+    },
+    serieLabel: {
+      fontSize: 15,
+      fontWeight: "700",
+      color: theme.colors.text.primary,
+      marginBottom: 4,
+    },
+    serieHint: {
+      fontSize: 12,
+      color: theme.colors.text.secondary,
+      marginBottom: theme.spacing.sm,
+    },
+    serieInput: {
+      backgroundColor: theme.colors.surface,
+      borderWidth: 2,
+      borderColor: theme.colors.primary,
+      borderRadius: theme.borderRadius.md,
+      paddingVertical: 10,
+      paddingHorizontal: theme.spacing.md,
+      fontSize: 22,
+      fontWeight: "800",
+      letterSpacing: 4,
+      color: theme.colors.text.primary,
+      textAlign: "center",
+    },
+    serieInputError: {
+      borderColor: theme.colors.warning || "#f59e0b",
     },
     notaContainer: {
       marginTop: theme.spacing.md,

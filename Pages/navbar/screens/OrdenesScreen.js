@@ -28,7 +28,8 @@ import * as Haptics from "expo-haptics";
 import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
 import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato } from "../../../utils/platoGuarniciones";
-import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato } from "../../../utils/variantePlato";
+import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from "../../../utils/numeroSeriePlato";
+import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato, nombreVisibleConVariante } from "../../../utils/variantePlato";
 import { calcularPrecioUnitarioConComplementos } from "../../../utils/precioComplementos";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
@@ -36,6 +37,7 @@ import configuracionService from "../../../services/configuracionService";
 import { reservaEsDeMozo, estadoMesaConfirmadoTrasCrearComanda, estadoMesaLocalTrasCrearComanda } from "../../../utils/reservasMozo";
 import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 import { slugTipoPedido, mismoTipoPedido } from "../../../utils/tipoPedidoLinea";
+import { esSeleccionSinMesa, SELECCION_SIN_MESA, COLOR_PARA_LLEVAR } from "../../../utils/sinMesaOrden";
 import {
   CAT_FAVORITOS,
   loadFavoritosLocal,
@@ -183,6 +185,18 @@ const persistTipoServicioOrdenes = (tipo) => {
   return v;
 };
 
+const irAComandaDetalleTrasEnvio = (navigation, { comanda, mesa, reserva, estadoMesa }) => {
+  if (esSeleccionSinMesa(mesa) || !mesa?._id) {
+    navigation.navigate("Pendientes");
+    return;
+  }
+  navigation.navigate("ComandaDetalle", {
+    mesa: { ...mesa, estado: estadoMesa || mesa.estado || "pedido" },
+    comandas: comanda?._id ? [comanda] : [],
+    ...(reserva ? { reserva } : {}),
+  });
+};
+
 const OrdenesScreen = ({ route }) => {
   const navigation = useNavigation();
   const themeContext = useTheme();
@@ -191,7 +205,7 @@ const OrdenesScreen = ({ route }) => {
   const styles = OrdenesScreenStyles(theme, orientation);
   
   // Obtener parámetros de navegación (mesa y reserva desde ComandaDetalle)
-  const { mesa: mesaParam, reserva: reservaParam, origen } = route?.params || {};
+  const { mesa: mesaParam, reserva: reservaParam } = route?.params || {};
   
   const [userInfo, setUserInfo] = useState(null);
   const [selectedMesa, setSelectedMesa] = useState(null);
@@ -480,8 +494,20 @@ const OrdenesScreen = ({ route }) => {
     }
   };
 
+  const handleSelectSinMesa = async () => {
+    try {
+      await AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(SELECCION_SIN_MESA));
+      setSelectedMesa(SELECCION_SIN_MESA);
+      setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
+      setSelectedPlatos((prev) => prev.map((p) => ({ ...p, tipoServicio: "para_llevar" })));
+      setModalMesasVisible(false);
+    } catch (error) {
+      console.error("Error seleccionando sin mesa:", error);
+    }
+  };
+
   const handleAddPlato = (plato) => {
-    if (platoRequiereEleccionComplementos(plato)) {
+    if (platoRequiereEleccionComplementos(plato) || platoRequiereNumeroSerie(plato)) {
       tipoServicioAlComplementarRef.current = null;
       setComplementosInicialesModal(null);
       setNotaInicialModal("");
@@ -504,7 +530,7 @@ const OrdenesScreen = ({ route }) => {
 
   const handleAddPlatoFromMenu = (plato) => {
     handleAddPlato(plato);
-    if (!platoRequiereEleccionComplementos(plato)) {
+    if (!platoRequiereEleccionComplementos(plato) && !platoRequiereNumeroSerie(plato)) {
       avisarPlatoAgregado(plato.nombre);
     }
   };
@@ -536,7 +562,7 @@ const OrdenesScreen = ({ route }) => {
 
   const abrirModalGuarniciones = (platoLinea, { iniciales = null, nota = "", tipoServicio = null } = {}) => {
     const resuelto = resolverPlatoConGrupos(platoLinea, platos);
-    if (!resuelto?.complementos?.length) {
+    if (!resuelto?.complementos?.length && !platoRequiereNumeroSerie(resuelto || platoLinea)) {
       Alert.alert(
         "Guarniciones",
         "No se pueden cargar las guarniciones de este combo. Agrégalo otra vez desde el menú."
@@ -546,7 +572,10 @@ const OrdenesScreen = ({ route }) => {
     tipoServicioAlComplementarRef.current = tipoServicio || null;
     setComplementosInicialesModal(Array.isArray(iniciales) ? iniciales : null);
     setNotaInicialModal(nota || "");
-    setPlatoParaComplementar(resuelto);
+    setPlatoParaComplementar({
+      ...resuelto,
+      numeroSerie: platoLinea.numeroSerie || resuelto.numeroSerie || "",
+    });
   };
 
   const cerrarModalPlatos = useCallback(() => {
@@ -559,7 +588,9 @@ const OrdenesScreen = ({ route }) => {
   // Función para agregar un plato sin complementos (comportamiento original)
   const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null, metaVariante = null) => {
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
-    const tipoServicio = tipoServicioOverride || (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa');
+    const tipoServicio = esSeleccionSinMesa(selectedMesa)
+      ? 'para_llevar'
+      : (tipoServicioOverride || (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa'));
     const instanceId = `${plato._id}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
     const complementosNormalizados = complementosSeleccionados.map(comp => ({
@@ -581,6 +612,9 @@ const OrdenesScreen = ({ route }) => {
       ...(extraComplementosV3 != null ? { extraComplementos: Number(extraComplementosV3) } : {}),
       ...(metaVariante?.nombreCocinaPedido ? { nombreCocinaPedido: metaVariante.nombreCocinaPedido } : {}),
       ...(metaVariante?.variantePlato ? { variantePlato: metaVariante.variantePlato } : {}),
+      ...(metaVariante?.numeroSerie || plato.numeroSerie
+        ? { numeroSerie: normalizarNumeroSerie(metaVariante?.numeroSerie || plato.numeroSerie) }
+        : {}),
     };
 
     const coincideLinea = (p) => {
@@ -589,6 +623,9 @@ const OrdenesScreen = ({ route }) => {
       if (pTipo !== tipoServicio) return false;
       if (!mismoTipoPedido(p.tipoPedido, tipoPlatoFiltro)) return false;
       if (!mismaVariantePlato(p, metaVariante || {})) return false;
+      const serieA = normalizarNumeroSerie(p.numeroSerie);
+      const serieB = normalizarNumeroSerie(metaVariante?.numeroSerie || '');
+      if (serieA !== serieB) return false;
       const pComps = p.complementosElegidos || [];
       const newComps = complementosNormalizados || [];
       const pNota = (p.notaEspecial || "").trim();
@@ -623,12 +660,13 @@ const OrdenesScreen = ({ route }) => {
   };
 
   // Función para confirmar complementos desde el modal
-  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
+  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, numeroSerie, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
     if (platoParaComplementar) {
       const nombre = platoParaComplementar.nombre;
       const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
       const partes = partirLineaPorVariante(platoParaComplementar, complementosSeleccionados, n);
       const afectan = platoParaComplementar.complementosAfectanPrecio !== false;
+      const serie = normalizarNumeroSerie(numeroSerie);
       let totalUnidades = 0;
       partes.forEach((parte) => {
         const calc = calcularPrecioUnitarioConComplementos(
@@ -644,7 +682,11 @@ const OrdenesScreen = ({ route }) => {
           calc.extraComplementos,
           parte.cantidad,
           tipoServicioAlComplementarRef.current,
-          { nombreCocinaPedido: parte.nombreCocinaPedido, variantePlato: parte.variantePlato }
+          {
+            nombreCocinaPedido: parte.nombreCocinaPedido,
+            variantePlato: parte.variantePlato,
+            ...(serie ? { numeroSerie: serie } : {}),
+          }
         );
         totalUnidades += parte.cantidad;
       });
@@ -682,6 +724,7 @@ const OrdenesScreen = ({ route }) => {
   };
 
   const handleToggleTipoServicio = (platoInstanceId) => {
+    if (esSeleccionSinMesa(selectedMesa)) return;
     const linea = selectedPlatos.find((p) => (p.instanceId || p._id) === platoInstanceId);
     if (!linea) return;
     const nextTipo = linea.tipoServicio === 'para_llevar' ? 'mesa' : 'para_llevar';
@@ -825,7 +868,9 @@ const OrdenesScreen = ({ route }) => {
         const fechaCreacion = moment(c.fechaCreacion || c.createdAt).tz("America/Lima");
         const minutosDiferencia = ahora.diff(fechaCreacion, 'minutes');
         
-        const coincideMesa = comandaMesaId === mesaId?.toString();
+        const coincideMesa = mesaId
+          ? comandaMesaId === mesaId?.toString()
+          : !c.mesas;
         const coincideMozo = comandaMozoId === mozoId?.toString();
         const esReciente = minutosDiferencia <= 2; // Últimos 2 minutos
         const coincideNumero = comandaNumber ? c.comandaNumber === comandaNumber : true;
@@ -848,6 +893,8 @@ const OrdenesScreen = ({ route }) => {
   };
 
   const handleEnviarComanda = async () => {
+    const esSinMesaOrden = esSeleccionSinMesa(selectedMesa);
+    let mesaActualizada = selectedMesa;
     try {
       setIsSendingComanda(true);
 
@@ -857,8 +904,8 @@ const OrdenesScreen = ({ route }) => {
         return;
       }
 
-      if (!selectedMesa || !selectedMesa._id) {
-        Alert.alert("Error", "Por favor selecciona una mesa");
+      if (!esSinMesaOrden && (!selectedMesa || !selectedMesa._id)) {
+        Alert.alert("Error", "Por favor selecciona una mesa o Sin mesa");
         setIsSendingComanda(false);
         return;
       }
@@ -871,7 +918,7 @@ const OrdenesScreen = ({ route }) => {
 
       // IMPORTANTE: Obtener el estado actualizado de la mesa desde el servidor
       // para evitar problemas cuando se elimina una comanda y la mesa cambia a "libre"
-      let mesaActualizada = selectedMesa;
+      if (!esSinMesaOrden) {
       try {
         const mesasURL = apiConfig.isConfigured 
           ? apiConfig.getEndpoint('/mesas')
@@ -890,8 +937,10 @@ const OrdenesScreen = ({ route }) => {
         console.error("⚠️ Error al obtener estado actualizado de la mesa:", error);
         // Continuar con el estado local si falla la petición
       }
+      }
       
       // Validar estado de la mesa antes de crear la comanda (usando estado actualizado)
+      if (!esSinMesaOrden) {
       const estadoMesa = (mesaActualizada.estado || 'libre').toLowerCase();
       
       // Si la mesa NO está libre, verificar que sea el mismo mozo que creó la comanda
@@ -1037,17 +1086,19 @@ const OrdenesScreen = ({ route }) => {
           }
         }
       }
+      }
 
       const platosData = selectedPlatos.map(plato => ({
         plato: plato._id,
         platoId: plato.id || null,
         estado: "en_espera",
-        tipoServicio: plato.tipoServicio === 'para_llevar' ? 'para_llevar' : 'mesa',
+        tipoServicio: esSinMesaOrden || plato.tipoServicio === 'para_llevar' ? 'para_llevar' : 'mesa',
         tipoPedido: slugTipoPedido(plato.tipoPedido),
         complementosSeleccionados: plato.complementosElegidos || [],
         notaEspecial: plato.notaEspecial || "",
         nombreCocinaPedido: plato.nombreCocinaPedido || "",
-        variantePlato: plato.variantePlato || undefined
+        variantePlato: plato.variantePlato || undefined,
+        ...(plato.numeroSerie ? { numeroSerie: normalizarNumeroSerie(plato.numeroSerie) } : {}),
       }));
 
       const cantidadesArray = selectedPlatos.map(plato => cantidades[plato.instanceId || plato._id] || 1);
@@ -1067,12 +1118,15 @@ const OrdenesScreen = ({ route }) => {
 
       const comandaData = {
         mozos: userInfo._id,
-        mesas: mesaActualizada._id,
+        ...(esSinMesaOrden ? { sinMesa: true } : { mesas: mesaActualizada._id }),
         platos: platosData,
         cantidades: cantidadesArray,
         observaciones: observaciones || "",
         status: "en_espera",
         IsActive: true,
+        ...(selectedPlatos.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))
+          ? { numeroSerie: normalizarNumeroSerie(selectedPlatos.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))) }
+          : {}),
         // Si hay reserva activa, incluirla
         ...(reservaActiva && { origenReserva: reservaActiva._id })
       };
@@ -1169,10 +1223,12 @@ const OrdenesScreen = ({ route }) => {
       console.log(`✅ Comanda #${comandaNumber} creada correctamente`);
       
       // Verificar estado de mesa (pedido, o reservado si es extra sobre reserva)
+      const esEnvioReserva = !!(reservaActiva || comandaData.origenReserva);
+      let estadoLocal = mesaActualizada?.estado || 'pedido';
+      if (!esSinMesaOrden && mesaActualizada?._id) {
       setMensajeCarga("Verificando estado de la mesa...");
       const mesaId = mesaActualizada._id;
       const mesaNum = mesaActualizada.nummesa;
-      const esEnvioReserva = !!(reservaActiva || comandaData.origenReserva);
       
       let mesaVerificada = false;
       let intentos = 0;
@@ -1242,8 +1298,14 @@ const OrdenesScreen = ({ route }) => {
       } catch (error) {
         console.error("⚠️ Error actualizando estado local de mesa:", error);
       }
+      }
       
       setMensajeCarga(`¡Comanda #${comandaNumber} enviada!`);
+
+      const reservaParaNav = reservaActiva || reservaParam || null;
+      const mesaParaNav = mesaActualizada;
+      const comandaParaNav = comandaCreada;
+      const estadoParaNav = estadoLocal;
       
       // Limpiar datos locales
       await AsyncStorage.removeItem("mesaSeleccionada");
@@ -1265,12 +1327,13 @@ const OrdenesScreen = ({ route }) => {
       // 🔥 CRÍTICO: Resetear estado ANTES de navegar
       setIsSendingComanda(false);
       setMostrarOverlayCarga(false);
-      
-      if (origen === 'ComandaDetalle' && navigation.canGoBack()) {
-        navigation.goBack();
-      } else {
-        navigation.navigate("Inicio");
-      }
+
+      irAComandaDetalleTrasEnvio(navigation, {
+        comanda: comandaParaNav,
+        mesa: mesaParaNav,
+        reserva: reservaParaNav,
+        estadoMesa: estadoParaNav,
+      });
     } catch (error) {
       // 🔥 MEJORADO: Verificación exhaustiva antes de mostrar cualquier error
       console.warn("⚠️ Error capturado, verificando si comanda se creó:", error.message);
@@ -1278,7 +1341,7 @@ const OrdenesScreen = ({ route }) => {
       // Última verificación: buscar comanda en backend
       setMensajeCarga("Verificando última vez...");
       const verificacionFinal = await verificarComandaEnBackend(
-        mesaActualizada._id,
+        mesaActualizada?._id,
         userInfo._id
       );
       
@@ -1291,6 +1354,15 @@ const OrdenesScreen = ({ route }) => {
         // Continuar con el flujo de éxito (no mostrar error)
         // Esto ejecutará el código después del try/catch que maneja el éxito
         setMensajeCarga(`¡Comanda #${comandaNumber} enviada!`);
+
+        const reservaParaNav = reservaActiva || reservaParam || null;
+        const mesaParaNav = mesaActualizada;
+        const comandaParaNav = comandaCreada;
+        const estadoParaNav = estadoMesaLocalTrasCrearComanda(
+          mesaActualizada?.estado,
+          !!reservaParaNav,
+          mesaActualizada?.estado
+        );
         
         // Limpiar datos locales
         await AsyncStorage.removeItem("mesaSeleccionada");
@@ -1309,12 +1381,13 @@ const OrdenesScreen = ({ route }) => {
         // 🔥 CRÍTICO: Resetear estado ANTES de navegar
         setIsSendingComanda(false);
         setMostrarOverlayCarga(false);
-        
-      if (origen === 'ComandaDetalle' && navigation.canGoBack()) {
-        navigation.goBack();
-      } else {
-        navigation.navigate("Inicio");
-      }
+
+        irAComandaDetalleTrasEnvio(navigation, {
+          comanda: comandaParaNav,
+          mesa: mesaParaNav,
+          reserva: reservaParaNav,
+          estadoMesa: estadoParaNav,
+        });
         return; // Salir sin mostrar error
       }
       
@@ -1491,12 +1564,20 @@ const OrdenesScreen = ({ route }) => {
           >
             <View style={styles.mesaCardContent}>
               <MaterialCommunityIcons 
-                name={selectedMesa ? "table-check" : "table-plus"} 
+                name={esSeleccionSinMesa(selectedMesa) ? "bag-personal" : (selectedMesa ? "table-check" : "table-plus")} 
                 size={24} 
-                color={selectedMesa ? theme.colors.secondary : theme.colors.text.secondary} 
+                color={esSeleccionSinMesa(selectedMesa) ? COLOR_PARA_LLEVAR : (selectedMesa ? theme.colors.secondary : theme.colors.text.secondary)} 
               />
-              <Text style={[styles.mesaCardText, selectedMesa && styles.mesaCardTextSelected]}>
-                {selectedMesa ? `Mesa ${selectedMesa.nummesa}` : "Seleccionar Mesa"}
+              <Text style={[
+                styles.mesaCardText,
+                selectedMesa && styles.mesaCardTextSelected,
+                esSeleccionSinMesa(selectedMesa) && { color: COLOR_PARA_LLEVAR },
+              ]}>
+                {esSeleccionSinMesa(selectedMesa)
+                  ? "Sin mesa"
+                  : selectedMesa
+                    ? `Mesa ${selectedMesa.nummesa}`
+                    : "Seleccionar Mesa"}
               </Text>
             </View>
             <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.secondary} />
@@ -1549,8 +1630,13 @@ const OrdenesScreen = ({ route }) => {
                   <View style={styles.platoInfo}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                       <Text style={styles.platoNombre}>
-                        {plato.nombre}{plato.nombreCocinaPedido ? ` · ${plato.nombreCocinaPedido}` : ''}
+                        {nombreVisibleConVariante(plato.nombre, plato)}
                       </Text>
+                      {plato.numeroSerie ? (
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: theme.colors.primary }}>
+                          N/S {plato.numeroSerie}
+                        </Text>
+                      ) : null}
                       {esParaLlevar && (
                         <View style={styles.paraLlevarBadge}>
                           <MaterialCommunityIcons name="bag-personal" size={12} color="#fff" />
@@ -1685,6 +1771,9 @@ const OrdenesScreen = ({ route }) => {
               setTipoPlatoFiltro(null);
               setCategoriaFiltro(null);
               setSearchPlato("");
+              if (esSeleccionSinMesa(selectedMesa)) {
+                setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
+              }
               setModalPlatosVisible(true);
             }}
           >
@@ -1719,6 +1808,24 @@ const OrdenesScreen = ({ route }) => {
                 <MaterialCommunityIcons name="close" size={24} color={theme.colors.text.primary} />
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={[
+                styles.sinMesaOption,
+                esSeleccionSinMesa(selectedMesa) && styles.sinMesaOptionSelected,
+              ]}
+              onPress={handleSelectSinMesa}
+              accessibilityLabel="Sin mesa, pedido para llevar"
+            >
+              <MaterialCommunityIcons name="bag-personal" size={22} color="#FFFFFF" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sinMesaOptionTitle}>Sin mesa</Text>
+                <Text style={styles.sinMesaOptionSub}>Solo platos para llevar</Text>
+              </View>
+              {esSeleccionSinMesa(selectedMesa) && (
+                <MaterialCommunityIcons name="check-circle" size={22} color="#FFFFFF" />
+              )}
+            </TouchableOpacity>
             
             {/* Filtro por Área en Modal */}
             <View style={styles.modalAreaFilterContainer}>
@@ -1813,8 +1920,10 @@ const OrdenesScreen = ({ route }) => {
         labelForTipo={labelForTipo}
         tipoServicioModal={tipoServicioModal}
         onTipoServicioChange={(v) => {
+          if (esSeleccionSinMesa(selectedMesa)) return;
           setTipoServicioModal(persistTipoServicioOrdenes(v));
         }}
+        tipoServicioFijo={esSeleccionSinMesa(selectedMesa)}
         searchPlato={searchPlato}
         onSearchChange={handleSearchChangeText}
         onSearchFocus={handleSearchFocus}
@@ -1845,6 +1954,11 @@ const OrdenesScreen = ({ route }) => {
         onClose={cerrarModalComplementosYReabrirMenu}
         complementosIniciales={complementosInicialesModal}
         notaInicial={notaInicialModal}
+        numeroSerieInicial={
+          (platoParaComplementar && platoParaComplementar.numeroSerie)
+          || selectedPlatos.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))
+          || ""
+        }
       />
     </SafeAreaView>
   );
@@ -2218,6 +2332,30 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     marginBottom: theme.spacing.md,
     flexGrow: 0,
     flexShrink: 0,
+  },
+  sinMesaOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: COLOR_PARA_LLEVAR,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: theme.spacing.md,
+  },
+  sinMesaOptionSelected: {
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  sinMesaOptionTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  sinMesaOptionSub: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 12,
+    fontWeight: "600",
   },
   modalTitle: {
     fontSize: 24,

@@ -16,6 +16,7 @@ import { getFallbackApiBase } from "../config/envDefaults";
 import configuracionService from "../services/configuracionService";
 import ModalComplementos from "../Components/ModalComplementos";
 import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, preseleccionComplementosDePlato, cantidadGuarnicionEfectiva } from "../utils/platoGuarniciones";
+import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from "../utils/numeroSeriePlato";
 import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato } from "../utils/variantePlato";
 import { calcularPrecioUnitarioConComplementos } from "../utils/precioComplementos";
 import StepIndicator, { PASOS } from "../Components/reserva/StepIndicator";
@@ -433,13 +434,14 @@ export default function ReservaWizardScreen() {
         tipoServicio, extraComplementosV3: extraComplementosV3 || null,
         nombreCocinaPedido: metaVariante?.nombreCocinaPedido || "",
         variantePlato: metaVariante?.variantePlato || null,
+        ...(metaVariante?.numeroSerie ? { numeroSerie: normalizarNumeroSerie(metaVariante.numeroSerie) } : {}),
       }];
     });
     haptic();
   };
 
   const tocarPlato = (plato) => {
-    if (platoRequiereEleccionComplementos(plato)) {
+    if (platoRequiereEleccionComplementos(plato) || platoRequiereNumeroSerie(plato)) {
       tipoServicioAlComplementarRef.current = tipoServicioModal === "para_llevar" ? "para_llevar" : "mesa";
       setComplementosInicialesModal(null);
       setNotaInicialModal("");
@@ -460,11 +462,12 @@ export default function ReservaWizardScreen() {
     agregarPlato(plato);
   };
 
-  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
+  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, numeroSerie, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
     if (platoParaComplementar) {
       const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
       const partes = partirLineaPorVariante(platoParaComplementar, complementosSeleccionados, n);
       const afectan = platoParaComplementar.complementosAfectanPrecio !== false;
+      const serie = normalizarNumeroSerie(numeroSerie);
       partes.forEach((parte) => {
         const calc = calcularPrecioUnitarioConComplementos(
           platoParaComplementar.precio || 0,
@@ -479,7 +482,11 @@ export default function ReservaWizardScreen() {
           calc.extraComplementos,
           parte.cantidad,
           tipoServicioAlComplementarRef.current,
-          { nombreCocinaPedido: parte.nombreCocinaPedido, variantePlato: parte.variantePlato }
+          {
+            nombreCocinaPedido: parte.nombreCocinaPedido,
+            variantePlato: parte.variantePlato,
+            ...(serie ? { numeroSerie: serie } : {}),
+          }
         );
       });
     }
@@ -551,8 +558,12 @@ export default function ReservaWizardScreen() {
           precioUnitario: p.precioUnitario ?? p.precio,
           nombreCocinaPedido: p.nombreCocinaPedido || "",
           variantePlato: p.variantePlato || undefined,
+          ...(p.numeroSerie ? { numeroSerie: normalizarNumeroSerie(p.numeroSerie) } : {}),
         })),
         notas: notas.trim() || null, cocineroEncargado: encargadoId || null,
+        ...(selPlatos.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))
+          ? { numeroSerie: normalizarNumeroSerie(selPlatos.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))) }
+          : {}),
         pagoAdelantado: {
           activo: true,
           montoPagado: adelantoMonto,
@@ -973,6 +984,11 @@ export default function ReservaWizardScreen() {
         }}
         complementosIniciales={complementosInicialesModal}
         notaInicial={notaInicialModal}
+        numeroSerieInicial={
+          (platoParaComplementar && platoParaComplementar.numeroSerie)
+          || selPlatos.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))
+          || ""
+        }
       />
     </View>
   );

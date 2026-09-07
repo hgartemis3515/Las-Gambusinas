@@ -2,10 +2,7 @@ import 'react-native-gesture-handler';
 import './utils/registerGsapPlugins';
 import React, { useState, useEffect } from 'react';
 import { Platform } from 'react-native';
-import {
-  NavigationContainer,
-  createNavigationContainerRef,
-} from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { ThemeProvider } from './context/ThemeContext';
 import { SocketProvider } from './context/SocketContext';
@@ -28,13 +25,14 @@ import {
   configureNotificationBehavior,
   subscribeToNotificationResponses,
 } from './services/pushNotifications';
+import { navigationRef } from './navigationRef';
 
 if (Platform.OS !== 'web') {
   require('./tasks/backgroundFetchTask');
 }
 
 const Stack = createStackNavigator();
-export const navigationRef = createNavigationContainerRef();
+export { navigationRef };
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);

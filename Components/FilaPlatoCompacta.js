@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cantidadGuarnicionEfectiva } from '../utils/platoGuarniciones';
-import { esSeleccionVariantePlato } from '../utils/variantePlato';
+import { esSeleccionVariantePlato, nombreVisibleConVariante } from '../utils/variantePlato';
 
 /**
  * Componente para renderizar una fila compacta de plato en la tabla
@@ -24,9 +24,7 @@ const FilaPlatoCompacta = ({
   const esSoloAviso = plato.estado === 'recoger' && !plato.anulado;
   const puedeMarcarEntregado = false;
   const nombreBase = plato.plato?.nombre || plato.nombre || 'Plato desconocido';
-  const nombrePlato = plato.nombreCocinaPedido
-    ? `${nombreBase} · ${plato.nombreCocinaPedido}`
-    : nombreBase;
+  const nombrePlato = nombreVisibleConVariante(nombreBase, plato);
   
   // 🔥 NUEVO: Estilos especiales para plato anulado
   const esAnulado = plato.anulado === true;

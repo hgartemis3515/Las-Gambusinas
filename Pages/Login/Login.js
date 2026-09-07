@@ -38,6 +38,14 @@ import { getFallbackApiBase } from "../../config/envDefaults";
 import { registerPushAfterLogin } from "../../services/pushNotifications";
 import { useSocket } from "../../context/SocketContext";
 import PosLogo from "../../Components/PosLogo";
+import {
+  isJwtExpired,
+  clearAuthSession,
+  getLastLoginNombre,
+  saveLastLoginNombre,
+  clearLastLoginNombre,
+  LAST_REMEMBER_ME_KEY,
+} from "../../utils/authSession";
 
 // Componente de partículas flotantes
 const FloatingParticle = ({ delay = 0, screenHeight, screenWidth }) => {
@@ -399,31 +407,42 @@ const Login = () => {
   const [welcomeUserName, setWelcomeUserName] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [isConfigured, setIsConfigured] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [savedUser, setSavedUser] = useState(false);
   /** Mientras comprobamos AsyncStorage: no mostrar el formulario de login */
   const [restoringSession, setRestoringSession] = useState(true);
   const buttonScale = useSharedValue(1);
   const titlePulse = useSharedValue(1);
 
-  // Si ya había sesión guardada, entrar directo sin pedir nombre/DNI de nuevo
+  // Sesión válida → entrar. Token vencido → login con el nombre guardado.
   useEffect(() => {
     let alive = true;
     (async () => {
       let didNavigate = false;
       try {
-        const [userJson, token] = await Promise.all([
+        const [userJson, token, lastNombre, rememberPref] = await Promise.all([
           AsyncStorage.getItem("user"),
           AsyncStorage.getItem("authToken"),
+          getLastLoginNombre(),
+          AsyncStorage.getItem(LAST_REMEMBER_ME_KEY),
         ]);
         if (!alive) return;
-        if (userJson && token) {
+        if (lastNombre) {
+          setNombre(lastNombre);
+          setSavedUser(true);
+        }
+        if (rememberPref === "1") setRememberMe(true);
+        if (userJson && token && !isJwtExpired(token)) {
           const user = JSON.parse(userJson);
           if (user?._id && user?.name) {
             didNavigate = true;
             updateToken(token);
-            // PLAN: Panel es un tab dentro de Navbar (no un screen separado)
             navigation.replace("Navbar", { username: user.name });
             return;
           }
+        }
+        if (token && isJwtExpired(token)) {
+          await clearAuthSession();
         }
       } catch (e) {
         console.warn("No se pudo restaurar sesión:", e);
@@ -494,6 +513,7 @@ const Login = () => {
         {
           username: nombre.trim(),
           password: dni.trim(),
+          rememberMe,
         },
         {
           timeout: 15000,
@@ -521,7 +541,9 @@ const Login = () => {
 
       await AsyncStorage.setItem("user", JSON.stringify(userData));
       await AsyncStorage.setItem("authToken", token);
-      console.log("💾 Usuario y token guardados en AsyncStorage");
+      await saveLastLoginNombre(usuario.name);
+      await AsyncStorage.setItem(LAST_REMEMBER_ME_KEY, rememberMe ? "1" : "0");
+      console.log("💾 Usuario y token guardados en AsyncStorage", rememberMe ? "(7d)" : "(12h)");
       updateToken(token);
 
       registerPushAfterLogin(userData._id).catch(() => {});
@@ -739,6 +761,19 @@ const Login = () => {
                 elevation: 20,
               }}
             >
+              {savedUser ? (
+                <Text
+                  style={{
+                    color: "rgba(255,255,255,0.7)",
+                    fontSize: 13,
+                    marginBottom: 8,
+                    textAlign: "center",
+                  }}
+                >
+                  Hola, {nombre.trim() || "mozo"}. Solo ingresa tu DNI.
+                </Text>
+              ) : null}
+
               <AnimatedInput
                 label="Nombre Mozo"
                 icon="account"
@@ -746,6 +781,7 @@ const Login = () => {
                 value={nombre}
                 onChangeText={(text) => {
                   setNombre(text);
+                  setSavedUser(false);
                   setError(prev => ({ ...prev, nombre: false }));
                 }}
                 error={error.nombre}
@@ -754,6 +790,22 @@ const Login = () => {
                 isLandscape={isLandscape}
                 autoCapitalize="words"
               />
+
+              {savedUser ? (
+                <TouchableOpacity
+                  onPress={async () => {
+                    setNombre("");
+                    setDni("");
+                    setSavedUser(false);
+                    await clearLastLoginNombre();
+                  }}
+                  style={{ alignSelf: "flex-end", marginTop: -8, marginBottom: 8 }}
+                >
+                  <Text style={{ color: "#E8B4B8", fontSize: 13, fontWeight: "600" }}>
+                    Cambiar usuario
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
 
               <AnimatedInput
                 label="DNI"
@@ -771,6 +823,31 @@ const Login = () => {
                 keyboardType="numeric"
                 maxLength={8}
               />
+
+              <TouchableOpacity
+                onPress={() => setRememberMe((v) => !v)}
+                activeOpacity={0.8}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  marginTop: 4,
+                  paddingVertical: 8,
+                }}
+              >
+                <MaterialCommunityIcons
+                  name={rememberMe ? "checkbox-marked" : "checkbox-blank-outline"}
+                  size={24}
+                  color={rememberMe ? colors.primary : "rgba(255,255,255,0.55)"}
+                />
+                <View style={{ marginLeft: 10, flex: 1 }}>
+                  <Text style={{ color: "#FFFFFF", fontSize: 15, fontWeight: "700" }}>
+                    Recordarme
+                  </Text>
+                  <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 12, marginTop: 2 }}>
+                    Mantiene la sesión 1 semana en este dispositivo
+                  </Text>
+                </View>
+              </TouchableOpacity>
 
               {/* Botón INGRESAR */}
               <Animated.View style={buttonAnimatedStyle}>

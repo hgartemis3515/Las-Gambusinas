@@ -72,6 +72,7 @@ export default function MenuPlatosSheet({
   labelForTipo,
   tipoServicioModal,
   onTipoServicioChange,
+  tipoServicioFijo = false,
   searchPlato,
   onSearchChange,
   onSearchFocus,
@@ -275,7 +276,9 @@ export default function MenuPlatosSheet({
                     <View style={[
                       styles.tipoServicioToggle,
                       tipoServicioModal === 'para_llevar' && { borderColor: '#8B5CF6' },
+                      tipoServicioFijo && { opacity: 0.95 },
                     ]}>
+                      {!tipoServicioFijo && (
                       <Text
                         style={[
                           styles.tipoServicioLabel,
@@ -285,9 +288,14 @@ export default function MenuPlatosSheet({
                       >
                         Mesa
                       </Text>
+                      )}
                       <Switch
                         value={tipoServicioModal === 'para_llevar'}
-                        onValueChange={(v) => onTipoServicioChange(v ? 'para_llevar' : 'mesa')}
+                        onValueChange={(v) => {
+                          if (tipoServicioFijo) return;
+                          onTipoServicioChange(v ? 'para_llevar' : 'mesa');
+                        }}
+                        disabled={tipoServicioFijo}
                         trackColor={{ false: '#F59E0B', true: '#8B5CF6' }}
                         thumbColor="#FFFFFF"
                         accessibilityLabel="Tipo de servicio: Mesa o Para llevar"

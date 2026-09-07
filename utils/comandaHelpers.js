@@ -36,7 +36,12 @@ export const estadoVisualPlatoDetalle = (plato) => {
   const ticket = plato?.pagoAdelantado?.estadoTicket;
   if (ticket === 'pendiente_aprobacion') return 'pendiente_pago';
   const estado = String(plato?.estado || '').toLowerCase();
-  if (estado === 'pendiente' && ticket === 'aprobado') return 'pedido';
+  if (estado === 'pendiente' && ticket === 'aprobado') {
+    if (String(plato?.tipoServicio || '').toLowerCase() === 'para_llevar') {
+      return 'pendiente_entregar';
+    }
+    return 'pedido';
+  }
   return plato?.estado;
 };
 
@@ -501,7 +506,7 @@ export const obtenerColoresPorEstado = (estado, isDark = false) => {
  * @returns {Object} Colores adaptados
  */
 export const obtenerColoresEstadoAdaptados = (estado, isDark = false, esEditable = true) => {
-  const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado === 'pendiente_pago' ? 'pendiente_pago' : estado;
+  const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado === 'pendiente_pago' ? 'pendiente_pago' : estado === 'pendiente_entregar' ? 'pendiente_entregar' : estado;
   
   // ============================================
   // MODO CLARO - Colores pastel con texto oscuro
@@ -561,6 +566,15 @@ export const obtenerColoresEstadoAdaptados = (estado, isDark = false, esEditable
         badgeTextColor: '#FFFFFF', // Blanco
         textoEstado: 'PENDIENTE',
         priceColor: '#FF9800', // Naranja
+      },
+      pendiente_entregar: {
+        backgroundColor: '#F3E8FF',
+        textColor: '#6B21A8',
+        borderColor: '#D8B4FE',
+        badgeColor: '#7E22CE',
+        badgeTextColor: '#FFFFFF',
+        textoEstado: 'PEND. A ENTREGAR',
+        priceColor: '#7E22CE',
       },
     };
     
@@ -634,6 +648,15 @@ export const obtenerColoresEstadoAdaptados = (estado, isDark = false, esEditable
       badgeTextColor: '#BF360C', // Naranja muy oscuro
       textoEstado: 'PENDIENTE',
       priceColor: '#FFB74D', // Naranja claro
+    },
+    pendiente_entregar: {
+      backgroundColor: '#6B21A8',
+      textColor: '#FFFFFF',
+      borderColor: '#C084FC',
+      badgeColor: '#E9D5FF',
+      badgeTextColor: '#4A1D96',
+      textoEstado: 'PEND. A ENTREGAR',
+      priceColor: '#E9D5FF',
     },
   };
   

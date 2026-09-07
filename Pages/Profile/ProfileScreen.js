@@ -78,6 +78,31 @@ function splitNameForForm(profile) {
   return { nombres: parts[0], apellidos: parts.slice(1).join(" ") };
 }
 
+const COLOR_PERFIL_PALETA = [
+  "#b45309",
+  "#047857",
+  "#be123c",
+  "#6d28d9",
+  "#0e7490",
+  "#c2410c",
+  "#334155",
+  "#a16207",
+  "#9f1239",
+  "#1e3a8a",
+];
+
+function sanitizarColorPerfilCliente(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const h = raw.startsWith("#") ? raw : `#${raw}`;
+  if (/^#([0-9a-fA-F]{6})$/.test(h)) return h.toLowerCase();
+  if (/^#([0-9a-fA-F]{3})$/.test(h)) {
+    const s = h.slice(1);
+    return `#${s[0]}${s[0]}${s[1]}${s[1]}${s[2]}${s[2]}`.toLowerCase();
+  }
+  return "";
+}
+
 const ProfileScreen = () => {
   const navigation = useNavigation();
   const themeContext = useTheme();
@@ -101,6 +126,7 @@ const ProfileScreen = () => {
   const [fotoPendingDataUrl, setFotoPendingDataUrl] = useState(null);
   /** true si el usuario quitó la foto (guardar envía fotoUrl: '') */
   const [fotoCleared, setFotoCleared] = useState(false);
+  const [colorPerfil, setColorPerfil] = useState("");
 
   const applyProfileToForm = useCallback((p) => {
     const { nombres: n, apellidos: a } = splitNameForForm(p || {});
@@ -116,6 +142,7 @@ const ProfileScreen = () => {
     setContactoEmergenciaTelefono(String(p?.contactoEmergenciaTelefono || "").trim());
     setFotoPendingDataUrl(null);
     setFotoCleared(false);
+    setColorPerfil(sanitizarColorPerfilCliente(p?.colorPerfil));
   }, []);
 
   const loadProfile = useCallback(async () => {
@@ -190,6 +217,7 @@ const ProfileScreen = () => {
     if (Object.prototype.hasOwnProperty.call(updatedMozo, "fotoUrl")) {
       next.fotoUrl = updatedMozo.fotoUrl || "";
     }
+    next.colorPerfil = sanitizarColorPerfilCliente(updatedMozo.colorPerfil);
     await AsyncStorage.setItem("user", JSON.stringify(next));
   };
 
@@ -233,7 +261,9 @@ const ProfileScreen = () => {
       fechaNacimiento: fechaNacimiento.trim() || null,
       contactoEmergenciaNombre: contactoEmergenciaNombre.trim(),
       contactoEmergenciaTelefono: digitsOnly(contactoEmergenciaTelefono),
+      colorPerfil: sanitizarColorPerfilCliente(colorPerfil),
     };
+    const colorPerfilGuardado = body.colorPerfil;
     if (fotoPendingDataUrl) {
       body.fotoUrl = fotoPendingDataUrl;
     } else if (fotoCleared) {
@@ -263,7 +293,7 @@ const ProfileScreen = () => {
       if (!updated) {
         throw new Error("No se pudo leer el perfil actualizado. Vuelve a abrir esta pantalla.");
       }
-      const merged = { ...updated, _fuente: "servidor" };
+      const merged = { ...updated, colorPerfil: colorPerfilGuardado, _fuente: "servidor" };
       setProfile(merged);
       applyProfileToForm(merged);
       await persistSessionUser(merged);
@@ -424,6 +454,60 @@ const ProfileScreen = () => {
                     </View>
                     <Text style={styles.hint}>La foto se guarda en el servidor (como en el panel de usuarios).</Text>
 
+                    <Text style={styles.fieldLabel}>Color de perfil</Text>
+                    {sanitizarColorPerfilCliente(colorPerfil) ? (
+                      <View style={[styles.previewName, { backgroundColor: sanitizarColorPerfilCliente(colorPerfil) }]}>
+                        <Text style={styles.previewNameText}>
+                          {`${nombres} ${apellidos}`.trim() || "Mozo"}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.rowValue}>
+                        {`${nombres} ${apellidos}`.trim() || "Mozo"}
+                      </Text>
+                    )}
+                    <View style={styles.paletteRow}>
+                      <TouchableOpacity
+                        onPress={() => setColorPerfil("")}
+                        style={[
+                          styles.swatch,
+                          styles.swatchNone,
+                          !sanitizarColorPerfilCliente(colorPerfil) ? styles.swatchSelected : null,
+                        ]}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.swatchNoneText}>✕</Text>
+                      </TouchableOpacity>
+                      {COLOR_PERFIL_PALETA.map((c) => {
+                        const selected = sanitizarColorPerfilCliente(colorPerfil) === c;
+                        return (
+                          <TouchableOpacity
+                            key={c}
+                            onPress={() => setColorPerfil(c)}
+                            style={[
+                              styles.swatch,
+                              { backgroundColor: c },
+                              selected ? styles.swatchSelected : null,
+                            ]}
+                            activeOpacity={0.85}
+                          />
+                        );
+                      })}
+                    </View>
+                    <TextInput
+                      style={styles.input}
+                      value={colorPerfil}
+                      onChangeText={setColorPerfil}
+                      onEndEditing={() => setColorPerfil(sanitizarColorPerfilCliente(colorPerfil))}
+                      placeholder="Sin color (opcional)"
+                      placeholderTextColor={theme.colors.text.light}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    <Text style={styles.hint}>
+                      Por defecto tu nombre se ve como siempre, sin recuadro. Si eliges un color, ese fondo aparece solo detrás de tu nombre en cocina. El local puede forzar un solo color en Configuración.
+                    </Text>
+
                     <Text style={styles.fieldLabel}>Nombres</Text>
                     <TextInput
                       style={styles.input}
@@ -539,9 +623,17 @@ const ProfileScreen = () => {
                     </View>
                     <View style={styles.row}>
                       <Text style={styles.rowLabel}>Nombre completo</Text>
-                      <Text style={styles.rowValue}>
-                        {profile.name || `${nombres} ${apellidos}`.trim() || "—"}
-                      </Text>
+                      {sanitizarColorPerfilCliente(profile.colorPerfil) ? (
+                        <View style={[styles.previewName, { backgroundColor: sanitizarColorPerfilCliente(profile.colorPerfil) }]}>
+                          <Text style={styles.previewNameText}>
+                            {profile.name || `${nombres} ${apellidos}`.trim() || "—"}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.rowValue}>
+                          {profile.name || `${nombres} ${apellidos}`.trim() || "—"}
+                        </Text>
+                      )}
                     </View>
                     <View style={styles.row}>
                       <Text style={styles.rowLabel}>Teléfono</Text>
@@ -664,6 +756,46 @@ const buildStyles = (theme) =>
       color: theme.colors.text.secondary,
       marginBottom: 6,
       marginTop: theme.spacing.sm,
+    },
+    paletteRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      marginBottom: 8,
+    },
+    swatch: {
+      width: 32,
+      height: 32,
+      borderRadius: 8,
+      marginRight: 8,
+      marginBottom: 8,
+      borderWidth: 2,
+      borderColor: "transparent",
+    },
+    swatchSelected: {
+      borderColor: theme.colors.primary,
+    },
+    swatchNone: {
+      backgroundColor: theme.colors.surface,
+      borderColor: theme.colors.border,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    swatchNoneText: {
+      fontSize: 14,
+      color: theme.colors.text.secondary,
+      fontWeight: "700",
+    },
+    previewName: {
+      alignSelf: "flex-start",
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 6,
+      marginBottom: 8,
+    },
+    previewNameText: {
+      color: "#ffffff",
+      fontWeight: "700",
+      fontSize: 14,
     },
     input: {
       backgroundColor: theme.colors.surface,

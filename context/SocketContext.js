@@ -4,6 +4,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import useSocketMozos from '../hooks/useSocketMozos';
 import { registerPushAfterLogin } from '../services/pushNotifications';
 import apiConfig from '../config/apiConfig';
+import {
+  subscribeSessionCleared,
+  logoutForInvalidToken,
+  isJwtExpired,
+} from '../utils/authSession';
+import { msUntilJwtExpiry } from '../utils/jwtExpiry';
 
 const SocketContext = createContext(null);
 
@@ -43,7 +49,7 @@ export const SocketProvider = ({ children }) => {
         const token = await AsyncStorage.getItem('authToken');
         const userRaw = await AsyncStorage.getItem('user');
         if (mounted) {
-          if (token) {
+          if (token && !isJwtExpired(token)) {
             console.log('🔐 [MOZOS] Token JWT cargado desde AsyncStorage');
             setAuthToken(token);
             if (userRaw) {
@@ -55,6 +61,9 @@ export const SocketProvider = ({ children }) => {
               } catch (_) {}
             }
           } else {
+            if (token) {
+              logoutForInvalidToken();
+            }
             setAuthToken(null);
           }
           setIsLoadingToken(false);
@@ -67,11 +76,16 @@ export const SocketProvider = ({ children }) => {
 
     loadToken();
 
+    const unsubSession = subscribeSessionCleared(() => {
+      if (mounted) setAuthToken(null);
+    });
+
     // Escuchar cambios en el token (para cuando se hace login/logout)
     const checkTokenInterval = setInterval(loadToken, 5000);
 
     return () => {
       mounted = false;
+      unsubSession();
       clearInterval(checkTokenInterval);
     };
   }, []);
@@ -221,6 +235,10 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
       if (next !== 'active' || !authToken) return;
+      if (isJwtExpired(authToken)) {
+        logoutForInvalidToken();
+        return;
+      }
       if (socket?.connected) return;
       console.log('🔄 [MOZOS] App en primer plano — reconectando socket');
       if (socket) {
@@ -239,7 +257,22 @@ export const SocketProvider = ({ children }) => {
   }, [authToken, socket]);
 
   useEffect(() => {
+    if (!authToken) return;
+    const ms = msUntilJwtExpiry(authToken);
+    if (ms <= 0) {
+      logoutForInvalidToken();
+      return;
+    }
+    const t = setTimeout(() => logoutForInvalidToken(), ms + 400);
+    return () => clearTimeout(t);
+  }, [authToken]);
+
+  useEffect(() => {
     if (!authToken || connected || isLoadingToken || !configReady) return;
+    if (isJwtExpired(authToken)) {
+      logoutForInvalidToken();
+      return;
+    }
     const t = setTimeout(() => {
       console.log('🔄 [MOZOS] Watchdog 15s offline con sesión — recrear socket');
       setReconnectNonce((n) => n + 1);

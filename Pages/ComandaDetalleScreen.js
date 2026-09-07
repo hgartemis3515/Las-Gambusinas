@@ -33,12 +33,14 @@ import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../ap
 import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle } from '../utils/comandaHelpers';
 import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato } from '../utils/platoGuarniciones';
+import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
 import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato } from '../utils/variantePlato';
 import { calcularPrecioUnitarioConComplementos } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
 import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA, platoCobradoViaPPA, puedeLiberarComandaCostoCero } from '../helpers/pagoAdelantadoHelpers';
 import { calcularSubtotalPlatosPagables } from '../utils/pagoParcialHelpers';
+import { esSeleccionSinMesa } from '../utils/sinMesaOrden';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -115,11 +117,11 @@ const obtenerEstilosPorEstado = (estado, opciones = {}) => {
   // Si la mesa está pagada y el plato fue cobrado (tiene tiempos.pagado), forzar vista PAGADO
   // para cualquier estado operativo (pedido/pendiente/en_espera/recoger/salio/entregado).
   if (opciones.mesaPagada && opciones.tieneTiempoPagado &&
-      ['pendiente', 'pedido', 'en_espera', 'recoger', 'salio', 'entregado', 'pagado'].includes(estadoRaw)) {
+      ['pendiente', 'pendiente_entregar', 'pedido', 'en_espera', 'recoger', 'salio', 'entregado', 'pagado'].includes(estadoRaw)) {
     estado = 'pagado';
   }
 
-  const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado === 'pendiente_pago' ? 'pendiente_pago' : estado === 'pendiente_aprobar' ? 'pendiente_aprobar' : estado === 'pendiente' ? 'pendiente_aprobar' : estado;
+  const estadoNormalizado = estado === 'en_espera' ? 'pedido' : estado === 'pendiente_pago' ? 'pendiente_pago' : estado === 'pendiente_aprobar' ? 'pendiente_aprobar' : estado === 'pendiente_entregar' ? 'pendiente_entregar' : estado === 'pendiente' ? 'pendiente_aprobar' : estado;
   
   const estilos = {
     pendiente_aprobar: {
@@ -128,6 +130,13 @@ const obtenerEstilosPorEstado = (estado, opciones = {}) => {
       badgeFondo: '#FF9800',
       badgeTexto: '#FFFFFF',
       textoEstado: 'PENDIENTE'
+    },
+    pendiente_entregar: {
+      fondo: '#F3E8FF',
+      borde: '#7E22CE',
+      badgeFondo: '#7E22CE',
+      badgeTexto: '#FFFFFF',
+      textoEstado: 'PEND. A ENTREGAR'
     },
     pedido: {
       fondo: '#DBEAFE',
@@ -409,6 +418,31 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Importante: NO usar solo /comanda/fecha/hoy — comandas "antiguas" (creadas ayer u otro día)
   // siguen activas y no aparecen en el listado del día, lo que vaciaba el estado tras useFocusEffect.
   const refrescarComandas = useCallback(async () => {
+    const sinMesa = esSeleccionSinMesa(mesa) || (mesaIdRef == null && (mesaNumRef == null || mesaNumRef === 'Sin mesa'));
+    if (sinMesa) {
+      const ids = [...new Set((comandasRef.current || []).map((c) => c._id).filter(Boolean))];
+      if (!ids.length) return comandasRef.current || [];
+      try {
+        setRefreshing(true);
+        const comandaBase = apiConfig.isConfigured
+          ? apiConfig.getEndpoint('/comanda')
+          : COMANDASEARCH_API_GET;
+        const fetched = [];
+        for (const id of ids) {
+          try {
+            const res = await axios.get(`${comandaBase}/${id}`, { timeout: 8000 });
+            if (res.data?._id) fetched.push(res.data);
+          } catch (_) { /* siguiente */ }
+        }
+        if (fetched.length) setComandasState(fetched);
+        return fetched.length ? fetched : (comandasRef.current || []);
+      } catch (error) {
+        if (__DEV__) console.error('Error al refrescar comanda sin mesa:', error?.message);
+        return comandasRef.current || [];
+      } finally {
+        setRefreshing(false);
+      }
+    }
     if (mesaIdRef == null && mesaNumRef == null) return [];
     try {
       setRefreshing(true);
@@ -508,7 +542,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     } finally {
       setRefreshing(false);
     }
-  }, [mesaIdRef, mesaNumRef, filterByCliente, clienteId, mesaEstadoEfectivo, reservaEfectiva?.comandaGenerada, reserva?.comandaGenerada]);
+  }, [mesa, mesaIdRef, mesaNumRef, filterByCliente, clienteId, mesaEstadoEfectivo, reservaEfectiva?.comandaGenerada, reserva?.comandaGenerada]);
 
   // Marcar plato como entregado
   const handleMarcarPlatoEntregado = async (platoObj) => {
@@ -630,14 +664,20 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     setLocalConnectionStatus(connectionStatus || 'desconectado');
   }, [connectionStatus]);
 
+  useEffect(() => {
+    if (esSeleccionSinMesa(mesa)) setTipoServicioModal('para_llevar');
+  }, [mesa]);
+
   // Effect único: join/leave room + listeners. Sin comandas/refrescarComandas en deps para evitar loop
   useEffect(() => {
-    if (!socket || !connected || !mesaId) return;
+    if (!socket || !connected) return;
 
+    if (mesaId) {
     if (joinMesa) {
       joinMesa(mesaId);
     } else {
       socket.emit('join-mesa', mesaId);
+    }
     }
 
     const eventoDeEstaPantalla = (data) => {
@@ -868,8 +908,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     });
 
     return () => {
-      if (leaveMesa) leaveMesa(mesaId);
-      else socket.emit('leave-mesa', mesaId);
+      if (mesaId) {
+        if (leaveMesa) leaveMesa(mesaId);
+        else socket.emit('leave-mesa', mesaId);
+      }
       socket.off('plato-actualizado');
       socket.off('plato-agregado');
       socket.off('plato-entregado');
@@ -1028,12 +1070,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
 
   const handleIncrementarPlatoEditado = (platoLinea, index) => {
-    if (!platoRequiereEleccionComplementos(platoLinea, platos)) {
+    if (!platoRequiereEleccionComplementos(platoLinea, platos) && !platoRequiereNumeroSerie(platoLinea, platos.find((p) => String(p._id) === idCatalogoPlato(platoLinea)))) {
       handleCambiarCantidad(index, 1);
       return;
     }
     const resuelto = resolverPlatoConGrupos(platoLinea, platos);
-    if (!resuelto?.complementos?.length) {
+    if (!resuelto?.complementos?.length && !platoRequiereNumeroSerie(resuelto || platoLinea)) {
       Alert.alert(
         'Guarniciones',
         'No se pueden cargar las guarniciones de este combo. Agrégalo otra vez desde el menú.'
@@ -1043,11 +1085,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     tipoServicioAlComplementarRef.current = platoLinea.tipoServicio || 'mesa';
     setComplementosInicialesModal(guarnicionesElegidas(platoLinea));
     setNotaInicialModal(platoLinea.notaEspecial || '');
-    setPlatoParaComplementar(resuelto);
+    setPlatoParaComplementar({
+      ...resuelto,
+      numeroSerie: platoLinea.numeroSerie || resuelto.numeroSerie || '',
+    });
   };
   
   const handleAgregarPlato = (plato) => {
-    if (platoRequiereEleccionComplementos(plato)) {
+    if (platoRequiereEleccionComplementos(plato) || platoRequiereNumeroSerie(plato)) {
       tipoServicioAlComplementarRef.current = null;
       setComplementosInicialesModal(null);
       setNotaInicialModal('');
@@ -1071,7 +1116,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Función para agregar un plato sin complementos
   const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = '', precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null, metaVariante = null) => {
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
-    const tipoServicio = tipoServicioOverride || (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa');
+    const tipoServicio = esSeleccionSinMesa(mesa)
+      ? 'para_llevar'
+      : (tipoServicioOverride || (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa'));
     // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
     const instanceId = `${plato._id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
@@ -1102,6 +1149,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       ...(extraComplementosV3 != null ? { extraComplementos: Number(extraComplementosV3) } : {}),
       ...(metaVariante?.nombreCocinaPedido ? { nombreCocinaPedido: metaVariante.nombreCocinaPedido } : {}),
       ...(metaVariante?.variantePlato ? { variantePlato: metaVariante.variantePlato } : {}),
+      ...(metaVariante?.numeroSerie || plato.numeroSerie
+        ? { numeroSerie: normalizarNumeroSerie(metaVariante?.numeroSerie || plato.numeroSerie) }
+        : {}),
     };
 
     // Verificar si ya existe el mismo plato CON LOS MISMOS complementos Y mismo tipoServicio.
@@ -1151,11 +1201,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
 
   // Función para confirmar complementos desde el modal
-  const handleConfirmarComplementosEdicion = ({ complementosSeleccionados, notaEspecial, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
+  const handleConfirmarComplementosEdicion = ({ complementosSeleccionados, notaEspecial, numeroSerie, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
     if (platoParaComplementar) {
       const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
       const partes = partirLineaPorVariante(platoParaComplementar, complementosSeleccionados, n);
       const afectan = platoParaComplementar.complementosAfectanPrecio !== false;
+      const serie = normalizarNumeroSerie(numeroSerie);
       partes.forEach((parte) => {
         const calc = calcularPrecioUnitarioConComplementos(
           platoParaComplementar.precio || 0,
@@ -1170,7 +1221,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           calc.extraComplementos,
           parte.cantidad,
           tipoServicioAlComplementarRef.current,
-          { nombreCocinaPedido: parte.nombreCocinaPedido, variantePlato: parte.variantePlato }
+          {
+            nombreCocinaPedido: parte.nombreCocinaPedido,
+            variantePlato: parte.variantePlato,
+            ...(serie ? { numeroSerie: serie } : {}),
+          }
         );
       });
       setPlatoParaComplementar(null);
@@ -1275,7 +1330,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           complementosSeleccionados: p.complementosSeleccionados || [],
           notaEspecial: p.notaEspecial || '',
           nombreCocinaPedido: p.nombreCocinaPedido || '',
-          variantePlato: p.variantePlato || undefined
+          variantePlato: p.variantePlato || undefined,
+          ...(p.numeroSerie ? { numeroSerie: normalizarNumeroSerie(p.numeroSerie) } : {}),
         };
       });
       
@@ -1286,6 +1342,15 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         platos: platosData,
         cantidades: cantidades,
         observaciones: observacionesEditadas || '',
+        ...(platosEditados.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))
+          || comandaEditando?.numeroSerie
+          ? {
+              numeroSerie: normalizarNumeroSerie(
+                platosEditados.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))
+                || comandaEditando?.numeroSerie
+              ),
+            }
+          : {}),
       };
       
       const comandaUpdateURL = apiConfig.isConfigured 
@@ -1476,6 +1541,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         tipoPedido: slugTipoPedido(platoItem.tipoPedido || e.tipoPedido),
         nombreCocinaPedido: platoItem.nombreCocinaPedido || '',
         variantePlato: platoItem.variantePlato || null,
+        numeroSerie: platoItem.numeroSerie || comandas[0]?.numeroSerie || '',
       };
     }).filter(p => p !== null);
     
@@ -3016,7 +3082,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                     </Text>
                     <Switch
                       value={tipoServicioModal === 'para_llevar'}
-                      onValueChange={(v) => setTipoServicioModal(v ? 'para_llevar' : 'mesa')}
+                      onValueChange={(v) => {
+                        if (esSeleccionSinMesa(mesa)) return;
+                        setTipoServicioModal(v ? 'para_llevar' : 'mesa');
+                      }}
+                      disabled={esSeleccionSinMesa(mesa)}
                       trackColor={{ false: '#F59E0B', true: '#8B5CF6' }}
                       thumbColor="#FFFFFF"
                       accessibilityLabel="Tipo de servicio: Mesa o Para llevar"
@@ -3968,6 +4038,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         }}
         complementosIniciales={complementosInicialesModal}
         notaInicial={notaInicialModal}
+        numeroSerieInicial={
+          (platoParaComplementar && platoParaComplementar.numeroSerie)
+          || platosEditados.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))
+          || comandaEditando?.numeroSerie
+          || ''
+        }
       />
     </View>
   );
