@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   TextInput,
   ScrollView,
   Platform,
+  Keyboard,
   KeyboardAvoidingView,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -49,6 +50,9 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const [notaEspecial, setNotaEspecial] = useState("");
   const [cantidadClones, setCantidadClones] = useState(1);
   const [numeroSerie, setNumeroSerie] = useState("");
+  const [kbH, setKbH] = useState(0);
+  const serieInputRef = useRef(null);
+  const initKeyRef = useRef("");
 
   // Los complementos del plato (array de grupos)
   const complementos = plato?.complementos || [];
@@ -71,8 +75,16 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const platoKey = plato?._id || plato?.id || '';
 
   // null = plato nuevo → preselección de platos.html. Array = edición (aunque esté vacío).
+  // Solo hidratar al abrir o cambiar de plato. Si no, un re-render del padre
+  // (numeroSerieInicial / plato nuevo) borra lo que el mozo está escribiendo.
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      initKeyRef.current = "";
+      return;
+    }
+    const initKey = `${platoKey}|${modoEdicion ? "edicion" : "nuevo"}`;
+    if (initKeyRef.current === initKey) return;
+    initKeyRef.current = initKey;
     const fijos = preseleccionComplementosFijosDePlato(plato);
     const nombresFijos = new Set(
       fijos.map((c) => String(c.grupo || "").trim().toLowerCase())
@@ -102,6 +114,23 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       : 1);
     setNumeroSerie(normalizarNumeroSerie(numeroSerieInicial));
   }, [visible, complementosIniciales, notaInicial, numeroSerieInicial, platoKey, modoEdicion, cantidadLinea]);
+
+  useEffect(() => {
+    if (!visible) {
+      setKbH(0);
+      return undefined;
+    }
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const subShow = Keyboard.addListener(showEvt, (e) => {
+      setKbH(e?.endCoordinates?.height ?? 0);
+    });
+    const subHide = Keyboard.addListener(hideEvt, () => setKbH(0));
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, [visible]);
 
   // Obtener cantidad actual de una opción
   const getCantidadOpcion = useCallback((grupoNombre, opcion) => {
@@ -459,6 +488,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       visible={visible}
       transparent={true}
       animationType="slide"
+      statusBarTranslucent
       onRequestClose={handleCancelar}
       presentationStyle={Platform.OS === "ios" ? "overFullScreen" : undefined}
     >
@@ -466,7 +496,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
         style={styles.keyboardWrap}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-      <View style={styles.modalOverlay}>
+      <View style={[styles.modalOverlay, kbH > 0 && Platform.OS === "android" && { paddingBottom: kbH }]}>
         <View style={styles.modalContent}>
           {/* Header con nombre del plato */}
           <View style={styles.modalHeader}>
@@ -490,10 +520,11 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
           </View>
 
           {requiereSerie && (
-            <View style={styles.serieContainer}>
+            <View style={styles.serieContainer} collapsable={false}>
               <Text style={styles.serieLabel}>Número de serie (obligatorio)</Text>
-              <Text style={styles.serieHint}>2 a 4 dígitos. Podés cargarlo antes de las cantidades MIX.</Text>
+              <Text style={styles.serieHint}>Escríbelo primero. Luego elige TÉ / CAFÉ y cantidades MIX.</Text>
               <TextInput
+                ref={serieInputRef}
                 style={[styles.serieInput, !serieValida && numeroSerie.length > 0 && styles.serieInputError]}
                 placeholder="Ej: 07"
                 placeholderTextColor={theme.colors.text.light}
@@ -501,9 +532,12 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                 onChangeText={(t) => setNumeroSerie(normalizarNumeroSerie(t))}
                 keyboardType="number-pad"
                 maxLength={4}
-                editable
+                showSoftInputOnFocus
                 selectTextOnFocus={false}
                 blurOnSubmit={false}
+                autoCorrect={false}
+                autoComplete="off"
+                editable
               />
             </View>
           )}
@@ -561,12 +595,13 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
           )}
 
           <ScrollView
-            style={styles.modalScrollView}
+            style={[styles.modalScrollView, kbH > 0 && styles.modalScrollViewTeclado]}
             contentContainerStyle={styles.modalScrollContent}
             showsVerticalScrollIndicator={true}
-            keyboardShouldPersistTaps="handled"
+            keyboardShouldPersistTaps="always"
             keyboardDismissMode="none"
             nestedScrollEnabled
+            removeClippedSubviews={false}
           >
             {/* Grupos de complementos */}
             {complementos.map((complemento, index) => {
@@ -1076,6 +1111,9 @@ const modalComplementosStyles = (theme) =>
       borderRadius: theme.borderRadius.md,
       borderWidth: 2,
       borderColor: theme.colors.primary,
+    },
+    modalScrollViewTeclado: {
+      maxHeight: 160,
     },
     serieLabel: {
       fontSize: 15,
