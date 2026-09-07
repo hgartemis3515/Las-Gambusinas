@@ -50,6 +50,16 @@ export function obtenerPlatosElegiblesPPA(platos) {
   return platos.filter(esPlatoElegibleParaPPA);
 }
 
+/** Comandas con al menos un plato cobrable por PPA (pedido sin mesa incluido). */
+export function filtrarComandasElegiblesPPA(comandas) {
+  return (comandas || [])
+    .filter((comanda) => obtenerPlatosElegiblesPPA(comanda?.platos || []).length > 0)
+    .map((comanda) => ({
+      ...comanda,
+      platosElegiblesPPA: obtenerPlatosElegiblesPPA(comanda.platos || []),
+    }));
+}
+
 /**
  * Calcula las reglas de habilitación de botones en ComandaDetalleScreen.
  * @param {Array} todosLosPlatos - Todos los platos de la comanda (incluyendo eliminados)

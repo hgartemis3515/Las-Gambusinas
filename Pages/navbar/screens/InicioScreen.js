@@ -43,11 +43,12 @@ import Animated, {
   SlideInRight,
   FadeIn,
   Easing,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MotiPressable } from 'moti';
 import * as Haptics from 'expo-haptics';
-import { slideInRightDelay, springConfig } from "../../../constants/animations";
+import { springConfig } from "../../../constants/animations";
 import { LinearGradient } from 'expo-linear-gradient';
 import { filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../../../utils/comandaHelpers';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
@@ -333,86 +334,30 @@ const MesaAnimada = React.memo(({
     checkScale.value = withSpring(estaSeleccionada ? 1 : 0, springConfig);
   }, [estaSeleccionada]);
   
-  // Animación según estado + transición cuando cambia (sincronización WebSocket)
+  // Animación según estado + flash breve cuando cambia (sin loops en scroll)
   useEffect(() => {
     const estadoLower = estado?.toLowerCase() || "libre";
     const estadoAnterior = prevEstadoRef.current?.toLowerCase() || "";
     const cambioEstado = estadoLower !== estadoAnterior;
-    
-    // Si cambió el estado (evento WebSocket), animar transición
+
     if (cambioEstado && estadoAnterior) {
-      // Flash de transición cuando cambia el estado
       flashOpacity.value = withSequence(
         withTiming(0.5, { duration: 150 }),
         withTiming(1, { duration: 150 })
       );
-      
-      // Haptic feedback cuando cambia estado
       try {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       } catch (e) {
         // Silenciar errores de haptic
       }
-      
-      console.log(`🎨 [ANIMACION] Mesa ${mesa.nummesa} cambió de "${estadoAnterior}" a "${estadoLower}"`);
     }
-    
-    // Actualizar referencia del estado anterior
+
     prevEstadoRef.current = estado;
-    
-    // Resetear animaciones anteriores
-    translateX.value = withTiming(0, { duration: 200 });
-    
-    if (estadoLower === "libre") {
-      // Pulse infinito permanente para mesas libres
-      pulseScale.value = withRepeat(
-        withTiming(1.02, { duration: 1500 }),
-        -1,
-        true
-      );
-    } else if (estadoLower === "pedido") {
-      // Pulse sutil para mesas con pedido (sin movimiento horizontal)
-      pulseScale.value = withRepeat(
-        withSequence(
-          withTiming(1.03, { duration: 1200 }),
-          withTiming(1, { duration: 1200 })
-        ),
-        -1,
-        true
-      );
-      translateX.value = 0; // Sin movimiento horizontal
-    } else if (estadoLower === "preparado") {
-      // Bounce continuo para preparado
-      pulseScale.value = withRepeat(
-        withSequence(
-          withTiming(1.05, { duration: 800 }),
-          withTiming(1, { duration: 800 })
-        ),
-        -1,
-        true
-      );
-      translateX.value = 0; // Sin movimiento horizontal
-    } else if (estadoLower === "pagado") {
-      // Pagado: mantener legible el número / nombre del mozo (evitar “tarjeta vacía”)
-      pulseScale.value = withTiming(1, { duration: 300 });
-      opacity.value = withTiming(1, { duration: 300 });
-    } else if (estadoLower === "entregado") {
-      // Entregado: pulse suave y estable para indicar "listo para cobrar" sin distraer
-      pulseScale.value = withRepeat(
-        withSequence(
-          withTiming(1.03, { duration: 1200 }),
-          withTiming(1, { duration: 1200 })
-        ),
-        -1,
-        true
-      );
-      translateX.value = 0;
-    } else {
-      // Para otros estados, sin animación
-      pulseScale.value = 1;
-      translateX.value = 0;
-      opacity.value = 1;
-    }
+    cancelAnimation(pulseScale);
+    cancelAnimation(translateX);
+    pulseScale.value = 1;
+    translateX.value = 0;
+    opacity.value = 1;
   }, [estado, mesa.nummesa]);
 
   // Función helper para haptic seguro
@@ -445,10 +390,6 @@ const MesaAnimada = React.memo(({
       { translateX: translateX.value },
     ],
     opacity: opacity.value * flashOpacity.value,
-  }));
-
-  const borderAnimatedStyle = useAnimatedStyle(() => ({
-    borderWidth: isSelected ? 4 : 1,
   }));
   
   // Animación del checkbox
@@ -487,7 +428,6 @@ const MesaAnimada = React.memo(({
   return (
     <GestureDetector gesture={tapGesture}>
       <Animated.View
-        entering={slideInRightDelay(index)}
         style={[
           styles.mesaCard,
           {
@@ -495,9 +435,9 @@ const MesaAnimada = React.memo(({
             height: mesaSize,
             backgroundColor: estadoColor,
             borderColor: getBorderColor(),
+            borderWidth: isSelected ? 4 : 1,
           },
           animatedStyle,
-          borderAnimatedStyle,
         ]}
       >
         {/* Checkbox de selección (modo selección) */}

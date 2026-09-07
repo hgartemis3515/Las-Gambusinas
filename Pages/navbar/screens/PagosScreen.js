@@ -29,6 +29,7 @@ import { useSocket } from "../../../context/SocketContext";
 import logger from "../../../utils/logger";
 import configuracionService from "../../../services/configuracionService";
 import { filtrarComandasActivas, filtrarComandasPorIds } from "../../../utils/comandaHelpers";
+import { esSeleccionSinMesa } from "../../../utils/sinMesaOrden";
 import { cantidadGuarnicionEfectiva } from "../../../utils/platoGuarniciones";
 import { mostrarOpcionesComanda } from "../../../services/comandaPrint";
 import {
@@ -72,13 +73,17 @@ function filtrarBouchersPorComandaIds(bouchers, comandaIds) {
 /** Comandas listas para cobrar (misma mesa, no pagada, platos no anulados). */
 function filtrarComandasPagablesParaPago(comandasBackend, mesaIdStr, mesaNummesa) {
   const idMesa = mesaIdStr != null ? String(mesaIdStr) : '';
+  const pedidoSinMesa = !idMesa || mesaNummesa === 'Sin mesa';
   return comandasBackend.filter((c) => {
     const comandaMesaId = c.mesas?._id ?? c.mesas;
-    const coincideMesa =
-      (idMesa && comandaMesaId != null && String(comandaMesaId) === idMesa) ||
-      (mesaNummesa != null &&
-        c.mesas?.nummesa != null &&
-        String(c.mesas.nummesa) === String(mesaNummesa));
+    const coincideMesa = pedidoSinMesa
+      ? (c.sinMesa === true || comandaMesaId == null || comandaMesaId === '')
+      : (
+        (idMesa && comandaMesaId != null && String(comandaMesaId) === idMesa) ||
+        (mesaNummesa != null &&
+          c.mesas?.nummesa != null &&
+          String(c.mesas.nummesa) === String(mesaNummesa))
+      );
     const noEliminada = c.eliminada !== true;
     const noPagada =
       c.status?.toLowerCase() !== 'pagado' && c.status?.toLowerCase() !== 'completado';
@@ -1425,7 +1430,8 @@ const PagosScreen = () => {
       return;
     }
 
-    if (!mesaFinal || !mesaFinal._id) {
+    const esSinMesaPago = esSeleccionSinMesa(mesaFinal) || (esPagoAdelantado && !mesaFinal?._id);
+    if (!esSinMesaPago && (!mesaFinal || !mesaFinal._id)) {
       Alert.alert("Error", "No se pudo obtener la información de la mesa. Por favor, intenta nuevamente.");
       return;
     }
@@ -1526,13 +1532,13 @@ const PagosScreen = () => {
       }
       
       const boucherData = {
-        mesaId: mesaIdFinal,
+        mesaId: mesaIdFinal || undefined,
         mozoId: mozoId,
         clienteId: cliente._id,
         platosSeleccionados: platosPayload,
+        comandasIds: comandasFinales.map((c) => c._id).filter(Boolean).map(String),
         observaciones:
           comandasFinales.map((c) => c.observaciones).filter(Boolean).join("; ") || "",
-        // 🔥 Datos de pago (método, moneda, monto recibido, vuelto)
         metodoPago: pagoDatos.metodoPago,
         moneda: pagoDatos.moneda || 'PEN',
         tipoCambioUsd: pagoDatos.moneda === 'USD' ? (pagoDatos.tipoCambioUsdUsado || tipoCambioUsd) : null,
@@ -1540,9 +1546,8 @@ const PagosScreen = () => {
           montoRecibido: pagoDatos.montoRecibido,
           vuelto: pagoDatos.vuelto,
         }),
-        // 🔥 PAGO ADELANTADO (PPA): flag para diferenciar de pago normal
         ...(esPagoAdelantado && { esPagoAdelantado: true }),
-        // PLAN_RESERVAS_MOZOS_CAJA_KDS v1.1: descontar abono de reserva (seña) del total a cobrar
+        ...((esSeleccionSinMesa(mesaFinal) || !mesaIdFinal) && { sinMesa: true }),
         ...(abonoReserva > 0 && { abonoReserva, reservaOrigenId: reservaOrigenId || null }),
       };
       
@@ -1794,7 +1799,7 @@ const PagosScreen = () => {
         // Mostrar mensaje de PPA registrado, esperando aprobación de cocina
         Alert.alert(
           "Pago Adelantado Registrado",
-          `El pago adelantado para la Mesa ${mesaFinal?.nummesa || '?'} ha sido registrado correctamente.\n\n` +
+          `El pago adelantado ${mesaFinal?.sinMesa ? 'del pedido para llevar' : `para la Mesa ${mesaFinal?.nummesa || '?'}`} ha sido registrado correctamente.\n\n` +
           `Voucher: ${boucherCreado.voucherId || boucherCreado.boucherNumber || 'N/A'}\n` +
           `Total: S/. ${(boucherCreado.total || 0).toFixed(2)}\n\n` +
           `Esperando aprobación de cocina para que los platos entren a preparación.`,

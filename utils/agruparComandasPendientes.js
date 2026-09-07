@@ -30,6 +30,7 @@ function formatGrupoComandasLabel(comandas) {
 
 const PRIORIDAD_ESTADO = {
   pendiente_aprobar: 6,
+  pedido: 5,
   en_espera: 5,
   recoger: 4,
   salio: 4,
@@ -72,6 +73,9 @@ function filaDesdeComandas(comandas, key) {
     platos: comandas.flatMap((c) => c.platos || []),
     mesaEstado: first.mesaEstado,
     createdAt: new Date(Math.max(...comandas.map(tsCreated))).toISOString(),
+    comandaIds: comandas.map((c) => c._id).filter(Boolean),
+    pagadaHoy: comandas.some((c) => c.pagadaHoy === true),
+    seguimientoPpa: comandas.some((c) => c.seguimientoPpa === true),
   };
 }
 

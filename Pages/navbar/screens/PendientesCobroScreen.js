@@ -28,12 +28,23 @@ import {
 } from "../../../utils/comandaHelpers";
 import { agruparComandasPendientes } from "../../../utils/agruparComandasPendientes";
 import { esFilaComandaSinMesa, COLOR_PARA_LLEVAR } from "../../../utils/sinMesaOrden";
+import { comandaEsDeMozo, idEntidad } from "../../../utils/reservasMozo";
+import ModalVerComandaMozo from "../../../Components/ModalVerComandaMozo";
 
-function urlPendienteCobro(mozoId) {
-  const q = `pendiente-cobro?mozoId=${encodeURIComponent(mozoId)}`;
+function urlPendienteCobro(mozoId, { pagadasHoy } = {}) {
+  const q = `pendiente-cobro?mozoId=${encodeURIComponent(mozoId)}${pagadasHoy ? "&pagadasHoy=1" : ""}`;
   return apiConfig.isConfigured
     ? `${apiConfig.getEndpoint("/aprobacion")}/${q}`
     : `${getFallbackApiBase()}/aprobacion/${q}`;
+}
+
+function comandaEsDelMozoLogeado(comanda, mozoId) {
+  if (comandaEsDeMozo(comanda, mozoId)) return true;
+  const yo = idEntidad(mozoId);
+  const list = Array.isArray(comanda?.mozos)
+    ? comanda.mozos
+    : (comanda?.mozos ? [comanda.mozos] : []);
+  return list.some((m) => idEntidad(m) === yo);
 }
 
 function comandaBaseUrl() {
@@ -93,9 +104,18 @@ const PendientesCobroScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [filtroMesa, setFiltroMesa] = useState("todas");
   const [abriendoId, setAbriendoId] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [comandasModal, setComandasModal] = useState([]);
+
+  const filtroMesaRef = useRef(filtroMesa);
+  filtroMesaRef.current = filtroMesa;
+
+  const esPagadas = filtroMesa === "pagadas";
 
   const filas = useMemo(() => {
     const all = agruparComandasPendientes(comandas);
+    if (filtroMesa === "pagadas") return all;
     if (filtroMesa === "sin_mesa") return all.filter(esFilaComandaSinMesa);
     if (filtroMesa === "mesa") return all.filter((f) => !esFilaComandaSinMesa(f));
     return all;
@@ -105,7 +125,7 @@ const PendientesCobroScreen = () => {
   const debounceRef = useRef(null);
   const mozoIdRef = useRef(null);
 
-  const cargarLista = useCallback(async ({ silent } = {}) => {
+  const cargarLista = useCallback(async ({ silent, filtro } = {}) => {
     let id = mozoIdRef.current;
     if (!id) {
       try {
@@ -123,8 +143,9 @@ const PendientesCobroScreen = () => {
       return;
     }
     if (!silent) setLoading(true);
+    const f = filtro ?? filtroMesaRef.current;
     try {
-      const res = await axios.get(urlPendienteCobro(id), { timeout: 8000 });
+      const res = await axios.get(urlPendienteCobro(id, { pagadasHoy: f === "pagadas" }), { timeout: 8000 });
       if (res.data?.success) {
         setComandas(Array.isArray(res.data.comandas) ? res.data.comandas : []);
         setTotal(Number(res.data.total) || 0);
@@ -178,6 +199,25 @@ const PendientesCobroScreen = () => {
     if (!item?._id || abriendoId) return;
     setAbriendoId(String(item.id || item._id));
     try {
+      if ((filtroMesaRef.current === "pagadas" || item.pagadaHoy) && !item.seguimientoPpa) {
+        const ids = (item.comandaIds && item.comandaIds.length)
+          ? item.comandaIds
+          : [item._id];
+        setModalVisible(true);
+        setModalLoading(true);
+        setComandasModal([]);
+        const mozoId = mozoIdRef.current;
+        const docs = (await Promise.all(ids.map((id) => fetchComandaPorId(id))))
+          .filter(Boolean)
+          .filter((c) => !mozoId || comandaEsDelMozoLogeado(c, mozoId));
+        setComandasModal(docs);
+        setModalLoading(false);
+        if (!docs.length) {
+          setModalVisible(false);
+          Alert.alert("Sin comanda", "No se pudo cargar el detalle de esta comanda.");
+        }
+        return;
+      }
       const sinMesa = esFilaComandaSinMesa(item);
       const mesa = sinMesa
         ? { sinMesa: true, nummesa: "Sin mesa" }
@@ -187,7 +227,13 @@ const PendientesCobroScreen = () => {
           estado: item.mesaEstado || "pedido",
           nombreCombinado: item.mesaNombre || null,
         };
-      let comandasMesa = sinMesa ? [] : await fetchCicloMesa(mesa);
+      let comandasMesa = [];
+      if (sinMesa) {
+        const ids = (item.comandaIds && item.comandaIds.length) ? item.comandaIds : [item._id];
+        comandasMesa = (await Promise.all(ids.map((id) => fetchComandaPorId(id)))).filter(Boolean);
+      } else {
+        comandasMesa = await fetchCicloMesa(mesa);
+      }
       if (!comandasMesa.length) {
         const una = await fetchComandaPorId(item._id);
         if (una) {
@@ -214,11 +260,16 @@ const PendientesCobroScreen = () => {
   const renderItem = ({ item }) => {
     const id = String(item.id || item._id);
     const busy = abriendoId === id;
-    const estado = labelEstadoMesaComanda(item);
+    const estado = (esPagadas || (item.pagadaHoy && !item.seguimientoPpa))
+      ? "Pagado"
+      : labelEstadoMesaComanda(item);
     const estadoColor = colorEstadoMesa(estado, theme);
     const comandaTxt = item.comandaLabel
       || (item.comandaNumber != null ? `#${item.comandaNumber}` : "—");
     const sinMesa = esFilaComandaSinMesa(item);
+    const monto = (esPagadas || item.pagadaHoy || item.seguimientoPpa)
+      ? (item.total ?? item.pendienteCobro)
+      : item.pendienteCobro;
     return (
       <View style={styles.row}>
         <Text
@@ -235,7 +286,7 @@ const PendientesCobroScreen = () => {
           <Text style={[styles.cell, styles.estadoText, { color: estadoColor }]} numberOfLines={2}>{estado}</Text>
         </View>
         <Text style={[styles.cell, styles.colTotal]} numberOfLines={1}>
-          {formatPendienteCobro(item.pendienteCobro)}
+          {formatPendienteCobro(monto)}
         </Text>
         <TouchableOpacity
           style={styles.verBtn}
@@ -263,6 +314,7 @@ const PendientesCobroScreen = () => {
           { id: "todas", label: "Todas" },
           { id: "mesa", label: "Mesa" },
           { id: "sin_mesa", label: "Sin mesa" },
+          { id: "pagadas", label: "Pagadas" },
         ].map((opt) => {
           const active = filtroMesa === opt.id;
           return (
@@ -272,8 +324,16 @@ const PendientesCobroScreen = () => {
                 styles.filtroChip,
                 active && styles.filtroChipActive,
                 opt.id === "sin_mesa" && active && styles.filtroChipLlevar,
+                opt.id === "pagadas" && active && styles.filtroChipPagadas,
               ]}
-              onPress={() => setFiltroMesa(opt.id)}
+              onPress={() => {
+                const next = opt.id;
+                const wasPagadas = filtroMesa === "pagadas";
+                const willPagadas = next === "pagadas";
+                filtroMesaRef.current = next;
+                setFiltroMesa(next);
+                if (wasPagadas !== willPagadas) cargarLista({ filtro: next });
+              }}
             >
               <Text style={[
                 styles.filtroChipText,
@@ -318,7 +378,11 @@ const PendientesCobroScreen = () => {
           ListEmptyComponent={(
             <View style={styles.empty}>
               <MaterialCommunityIcons name="cash-check" size={48} color={theme.colors.text?.secondary || "#888"} />
-              <Text style={styles.emptyText}>No hay comandas pendientes de cobro</Text>
+              <Text style={styles.emptyText}>
+                {esPagadas
+                  ? "No hay comandas pagadas hoy"
+                  : "No hay comandas pendientes de cobro"}
+              </Text>
             </View>
           )}
           contentContainerStyle={filas.length === 0 ? styles.emptyList : styles.list}
@@ -326,9 +390,20 @@ const PendientesCobroScreen = () => {
       )}
 
       <View style={styles.footerTotal}>
-        <Text style={styles.footerLabel}>TOTAL PENDIENTE</Text>
+        <Text style={styles.footerLabel}>{esPagadas ? "TOTAL PAGADO HOY" : "TOTAL PENDIENTE"}</Text>
         <Text style={styles.footerAmount}>{formatPendienteCobro(total)}</Text>
       </View>
+
+      <ModalVerComandaMozo
+        visible={modalVisible}
+        comandas={comandasModal}
+        loading={modalLoading}
+        onClose={() => {
+          setModalVisible(false);
+          setComandasModal([]);
+          setModalLoading(false);
+        }}
+      />
     </SafeAreaView>
   );
 };
@@ -355,6 +430,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   filtroRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -377,6 +453,10 @@ const makeStyles = (theme) => StyleSheet.create({
   filtroChipLlevar: {
     backgroundColor: COLOR_PARA_LLEVAR,
     borderColor: COLOR_PARA_LLEVAR,
+  },
+  filtroChipPagadas: {
+    backgroundColor: theme.colors.mesaEstado?.pagado || "#2E7D32",
+    borderColor: theme.colors.mesaEstado?.pagado || "#2E7D32",
   },
   filtroChipText: {
     fontSize: 13,

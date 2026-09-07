@@ -38,9 +38,9 @@ import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato } 
 import { calcularPrecioUnitarioConComplementos } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
-import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA, platoCobradoViaPPA, puedeLiberarComandaCostoCero } from '../helpers/pagoAdelantadoHelpers';
+import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA, platoCobradoViaPPA, puedeLiberarComandaCostoCero, filtrarComandasElegiblesPPA } from '../helpers/pagoAdelantadoHelpers';
 import { calcularSubtotalPlatosPagables } from '../utils/pagoParcialHelpers';
-import { esSeleccionSinMesa } from '../utils/sinMesaOrden';
+import { esSeleccionSinMesa, SELECCION_SIN_MESA } from '../utils/sinMesaOrden';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -2130,13 +2130,15 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         await Promise.all(comandas.map((c) => verificarYActualizarEstadoComanda(c, axios)));
       }
       const mesaId = mesa?._id || mesaIdRef;
+      const sinMesa = esSeleccionSinMesa(mesa) || !mesaId;
 
-      // Intentar primero el endpoint dedicado de PPA, y si falla usar el endpoint de comandas activas
       let comandasPPA = null;
       let mesaData = null;
 
+      if (sinMesa) {
+        comandasPPA = filtrarComandasElegiblesPPA(comandas);
+      } else {
       try {
-        // Intentar con el endpoint dedicado de PPA
         const ppaEndpoint = apiConfig.isConfigured
           ? `${apiConfig.getEndpoint('/comanda')}/comandas-para-pago-adelantado/${mesaId}`
           : `${getFallbackApiBase()}/comanda/comandas-para-pago-adelantado/${mesaId}`;
@@ -2154,7 +2156,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         console.warn('[PPA] Endpoint dedicado no disponible, usando comandas activas como fallback');
       }
 
-      // Fallback: usar comandas activas de la mesa y filtrar en el frontend
       if (!comandasPPA) {
         const activasEndpoint = apiConfig.isConfigured
           ? apiConfig.getEndpoint('/comanda/mesa/' + mesaId + '/activas')
@@ -2163,17 +2164,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         const headers = authToken ? { Authorization: `Bearer ${authToken}` } : {};
         const activasResponse = await axios.get(activasEndpoint, { headers, timeout: 8000 });
         if (activasResponse.data?.comandas?.length > 0) {
-          // Filtrar solo comandas con platos elegibles para PPA
-          comandasPPA = activasResponse.data.comandas.filter(comanda => {
-            const platosComanda = (comanda.platos || []).filter(p => !p.eliminado && !p.anulado);
-            return platosComanda.some(p => {
-              const estado = (p.estado || '').toLowerCase();
-              if (['recoger', 'entregado', 'pagado'].includes(estado)) return false;
-              if (p.pagoAdelantado?.estadoTicket === 'pendiente_aprobacion' || p.pagoAdelantado?.estadoTicket === 'aprobado') return false;
-              return true;
-            });
-          });
+          comandasPPA = filtrarComandasElegiblesPPA(activasResponse.data.comandas);
         }
+      }
       }
 
       if (!comandasPPA || comandasPPA.length === 0) {
@@ -2182,7 +2175,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       }
       // Navegar a PagosScreen con origen PPA
       navigation.navigate('Pagos', {
-        mesa: mesaData || mesa,
+        mesa: mesaData || mesa || SELECCION_SIN_MESA,
         comandasParaPagar: comandasPPA,
         totalPendiente: calcularSubtotalPlatosPagables(comandasPPA, true),
         origen: 'PagoAdelantado',
