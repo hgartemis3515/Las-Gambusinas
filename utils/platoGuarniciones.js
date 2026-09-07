@@ -100,6 +100,18 @@ export function platoRequiereEleccionComplementos(plato, catalogo) {
   return gruposGuarnicion(p).some((g) => !grupoSeleccionFija(g));
 }
 
+/**
+ * Plato editable en la lista de Órdenes: botón para cambiar fijos después de agregar.
+ * `platoEditable === false` lo apaga. Sin flag, los que ya tienen grupos fijos se consideran editables.
+ */
+export function platoEditableEnOrdenes(plato, catalogo) {
+  const p = catalogo ? resolverPlatoConGrupos(plato, catalogo) : plato;
+  if (!p) return false;
+  if (p.platoEditable === false) return false;
+  if (p.platoEditable === true) return gruposGuarnicion(p).length > 0;
+  return gruposGuarnicion(p).some((g) => grupoSeleccionFija(g));
+}
+
 function opcionesAAplicarDeGrupo(grupo) {
   const ops = Array.isArray(grupo?.opciones) ? grupo.opciones : [];
   const named = ops.filter((op) => getNombreOpcion(op));

@@ -38,7 +38,7 @@ const findGrupoModal = (grupos, nombre) => {
  * @param {function} onClose - Callback para cerrar el modal sin guardar
  * @param {array} complementosIniciales - Complementos ya seleccionados (para edición)
  */
-const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIniciales = null, notaInicial = "", numeroSerieInicial = "" }) => {
+const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIniciales = null, notaInicial = "", numeroSerieInicial = "", modoEdicion = false, cantidadLinea = 1 }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const styles = modalComplementosStyles(theme);
@@ -83,21 +83,25 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     const nuevaSeleccion = {};
     fuente.forEach((comp) => {
       const grupoKey = String(comp.grupo || "").trim();
-      if (!grupoKey || nombresFijos.has(grupoKey.toLowerCase())) return;
+      if (!grupoKey) return;
+      if (!modoEdicion && nombresFijos.has(grupoKey.toLowerCase())) return;
       if (!nuevaSeleccion[grupoKey]) nuevaSeleccion[grupoKey] = {};
       nuevaSeleccion[grupoKey][comp.opcion] = comp.cantidad || 1;
     });
     fijos.forEach((comp) => {
       const grupoKey = String(comp.grupo || "").trim();
       if (!grupoKey) return;
+      if (modoEdicion && nuevaSeleccion[grupoKey]) return;
       if (!nuevaSeleccion[grupoKey]) nuevaSeleccion[grupoKey] = {};
       nuevaSeleccion[grupoKey][comp.opcion] = comp.cantidad || 1;
     });
     setSeleccionesPorGrupo(nuevaSeleccion);
     setNotaEspecial(typeof notaInicial === 'string' ? notaInicial : "");
-    setCantidadClones(1);
+    setCantidadClones(modoEdicion
+      ? Math.max(1, Math.min(99, Number(cantidadLinea) || 1))
+      : 1);
     setNumeroSerie(normalizarNumeroSerie(numeroSerieInicial));
-  }, [visible, complementosIniciales, notaInicial, numeroSerieInicial, platoKey]);
+  }, [visible, complementosIniciales, notaInicial, numeroSerieInicial, platoKey, modoEdicion, cantidadLinea]);
 
   // Obtener cantidad actual de una opción
   const getCantidadOpcion = useCallback((grupoNombre, opcion) => {
@@ -240,7 +244,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const estadoGrupos = useMemo(() => {
     const estados = {};
     complementos.forEach(grupoOriginal => {
-      if (grupoSeleccionFija(grupoOriginal)) return;
+      if (!modoEdicion && grupoSeleccionFija(grupoOriginal)) return;
       const grupo = normalizarGrupo(grupoOriginal);
       const totalUnidades = getTotalUnidadesGrupo(grupo.grupo);
       const esVar = grupoEsVariantePlato(grupoOriginal);
@@ -288,7 +292,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       };
     });
     return estados;
-  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo, nClones]);
+  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo, nClones, modoEdicion]);
 
   // Verificar si todos los grupos obligatorios tienen selección
   const obligatoriosCompletos = useMemo(() => {
@@ -395,10 +399,10 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     const nombresFijos = new Set(
       fijos.map((c) => String(c.grupo || "").trim().toLowerCase())
     );
-    const complementosSeleccionados = [...fijos];
+    const complementosSeleccionados = modoEdicion ? [] : [...fijos];
 
     Object.entries(seleccionesPorGrupo).forEach(([grupoNombre, opciones]) => {
-      if (nombresFijos.has(String(grupoNombre || "").trim().toLowerCase())) return;
+      if (!modoEdicion && nombresFijos.has(String(grupoNombre || "").trim().toLowerCase())) return;
       const grupoConfig = findGrupoModal(complementos, grupoNombre);
       Object.entries(opciones).forEach(([opcion, cantidad]) => {
         if (cantidad > 0) {
@@ -504,6 +508,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             </View>
           )}
 
+          {!modoEdicion && (
           <View style={styles.cloneBar}>
             <View style={styles.cloneBarText}>
               <View style={styles.cloneTitleRow}>
@@ -544,6 +549,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             </View>
             )}
           </View>
+          )}
 
           {totalesGuarnicion.length > 0 && (
             <View style={styles.totalesBar}>
@@ -564,7 +570,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
           >
             {/* Grupos de complementos */}
             {complementos.map((complemento, index) => {
-              if (grupoSeleccionFija(complemento)) return null;
+              if (!modoEdicion && grupoSeleccionFija(complemento)) return null;
               const grupoNormalizado = normalizarGrupo(complemento);
               const estado = estadoGrupos[grupoNormalizado.grupo] || {};
               const esModoCantidad = grupoNormalizado.modoSeleccion === 'cantidades';
@@ -582,7 +588,9 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                         ? `${grupoNormalizado.grupo} · nombre en cocina`
                         : esAnexarGrupo
                           ? `${grupoNormalizado.grupo} · se agrega al nombre`
-                          : grupoNormalizado.grupo}
+                          : grupoSeleccionFija(complemento)
+                            ? `${grupoNormalizado.grupo} · fijo`
+                            : grupoNormalizado.grupo}
                     </Text>
                     {grupoNormalizado.obligatorio && (
                       <View style={styles.requeridoBadge}>
@@ -783,7 +791,9 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                 color={theme.colors.text.white}
               />
               <Text style={styles.confirmButtonText}>
-                {factorPedido > 1 ? `Agregar ${factorPedido} a la orden` : "Agregar a la orden"}
+                {modoEdicion
+                  ? "Guardar cambios"
+                  : (factorPedido > 1 ? `Agregar ${factorPedido} a la orden` : "Agregar a la orden")}
               </Text>
             </TouchableOpacity>
           </View>

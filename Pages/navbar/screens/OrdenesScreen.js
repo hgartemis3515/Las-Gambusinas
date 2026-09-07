@@ -27,7 +27,7 @@ import * as Haptics from "expo-haptics";
 // Componente de modal de complementos
 import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
-import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato } from "../../../utils/platoGuarniciones";
+import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato, platoEditableEnOrdenes } from "../../../utils/platoGuarniciones";
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from "../../../utils/numeroSeriePlato";
 import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato, nombreVisibleConVariante } from "../../../utils/variantePlato";
 import { calcularPrecioUnitarioConComplementos } from "../../../utils/precioComplementos";
@@ -238,6 +238,7 @@ const OrdenesScreen = ({ route }) => {
   const [platoParaComplementar, setPlatoParaComplementar] = useState(null); // Cuando no es null, el modal de complementos está abierto
   const [complementosInicialesModal, setComplementosInicialesModal] = useState(null);
   const [notaInicialModal, setNotaInicialModal] = useState("");
+  const [editandoInstanceId, setEditandoInstanceId] = useState(null);
   const tipoServicioAlComplementarRef = useRef(null);
   const selectedPlatosRef = useRef([]);
   const cantidadesRef = useRef({});
@@ -557,6 +558,7 @@ const OrdenesScreen = ({ route }) => {
     setPlatoParaComplementar(null);
     setComplementosInicialesModal(null);
     setNotaInicialModal("");
+    setEditandoInstanceId(null);
     tipoServicioAlComplementarRef.current = null;
   };
 
@@ -659,8 +661,67 @@ const OrdenesScreen = ({ route }) => {
     setCantidades(nextCant);
   };
 
-  // Función para confirmar complementos desde el modal
+  const handleEditarGuarnicionesLinea = (platoLinea) => {
+    const resuelto = resolverPlatoConGrupos(platoLinea, platos);
+    if (!resuelto?.complementos?.length && !platoRequiereNumeroSerie(resuelto || platoLinea)) {
+      Alert.alert(
+        "Guarniciones",
+        "No se pueden cargar las guarniciones de este combo. Agrégalo otra vez desde el menú."
+      );
+      return;
+    }
+    const id = platoLinea.instanceId || platoLinea._id;
+    setEditandoInstanceId(id);
+    abrirModalGuarniciones(platoLinea, {
+      iniciales: platoLinea.complementosElegidos || [],
+      nota: platoLinea.notaEspecial || "",
+      tipoServicio: platoLinea.tipoServicio,
+    });
+  };
+
   const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, numeroSerie, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
+    if (editandoInstanceId) {
+      const linea = selectedPlatosRef.current.find(
+        (p) => (p.instanceId || p._id) === editandoInstanceId
+      );
+      if (linea) {
+        const n = cantidadesRef.current[editandoInstanceId] || linea.cantidad || 1;
+        const partes = partirLineaPorVariante(linea, complementosSeleccionados, n);
+        const parte = partes[0] || { complementos: complementosSeleccionados, cantidad: n };
+        const afectan = linea.complementosAfectanPrecio !== false;
+        const calc = _precioUnitario != null
+          ? { precioUnitario: _precioUnitario, extraComplementos: _extraComplementos }
+          : calcularPrecioUnitarioConComplementos(
+            linea.precio || 0,
+            parte.complementos,
+            { afectanPrecio: afectan }
+          );
+        const comps = (parte.complementos || []).map((comp) => ({
+          grupo: comp.grupo,
+          opcion: comp.opcion,
+          cantidad: comp.cantidad || 1,
+          ...(comp.precio != null ? { precio: Number(comp.precio) || 0 } : {}),
+        }));
+        const serie = normalizarNumeroSerie(numeroSerie || linea.numeroSerie);
+        const nextPlatos = selectedPlatosRef.current.map((p) => {
+          if ((p.instanceId || p._id) !== editandoInstanceId) return p;
+          return {
+            ...p,
+            complementosElegidos: comps,
+            notaEspecial: notaEspecial || "",
+            ...(calc.precioUnitario != null ? { precioUnitario: Number(calc.precioUnitario) } : {}),
+            ...(calc.extraComplementos != null ? { extraComplementos: Number(calc.extraComplementos) } : {}),
+            ...(parte.nombreCocinaPedido ? { nombreCocinaPedido: parte.nombreCocinaPedido } : {}),
+            ...(parte.variantePlato ? { variantePlato: parte.variantePlato } : {}),
+            ...(serie ? { numeroSerie: serie } : {}),
+          };
+        });
+        selectedPlatosRef.current = nextPlatos;
+        setSelectedPlatos(nextPlatos);
+      }
+      cerrarModalComplementosYReabrirMenu();
+      return;
+    }
     if (platoParaComplementar) {
       const nombre = platoParaComplementar.nombre;
       const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
@@ -1625,8 +1686,11 @@ const OrdenesScreen = ({ route }) => {
               const tieneNota = plato.notaEspecial && plato.notaEspecial.trim().length > 0;
               const esParaLlevar = plato.tipoServicio === 'para_llevar';
 
+              const muestraEditarFijos = platoEditableEnOrdenes(plato, platos);
+
               return (
                 <View key={platoInstanceId} style={styles.platoItem}>
+                  <View style={styles.platoItemTop}>
                   <View style={styles.platoInfo}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                       <Text style={styles.platoNombre}>
@@ -1677,6 +1741,25 @@ const OrdenesScreen = ({ route }) => {
                       <Text style={styles.platoPrecio}>S/. {subtotal.toFixed(2)}</Text>
                     </View>
                   </View>
+                  <View style={styles.platoCornerActions}>
+                    {muestraEditarFijos && (
+                      <TouchableOpacity
+                        style={styles.editFijosButton}
+                        onPress={() => handleEditarGuarnicionesLinea(plato)}
+                        accessibilityLabel="Editar guarniciones del plato"
+                      >
+                        <MaterialCommunityIcons name="pencil-outline" size={20} color={theme.colors.primary} />
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      style={styles.removeButton}
+                      onPress={() => handleRemovePlato(platoInstanceId)}
+                      accessibilityLabel="Quitar plato"
+                    >
+                      <MaterialCommunityIcons name="delete-outline" size={20} color={theme.colors.primary} />
+                    </TouchableOpacity>
+                  </View>
+                  </View>
                   <View style={styles.platoActions}>
                     <TouchableOpacity
                       style={[
@@ -1714,12 +1797,6 @@ const OrdenesScreen = ({ route }) => {
                         <MaterialCommunityIcons name="plus-box-multiple" size={20} color={theme.colors.primary} />
                       </TouchableOpacity>
                     )}
-                    <TouchableOpacity
-                      style={styles.removeButton}
-                      onPress={() => handleRemovePlato(platoInstanceId)}
-                    >
-                      <MaterialCommunityIcons name="delete-outline" size={20} color={theme.colors.primary} />
-                    </TouchableOpacity>
                   </View>
                 </View>
               );
@@ -1954,6 +2031,14 @@ const OrdenesScreen = ({ route }) => {
         onClose={cerrarModalComplementosYReabrirMenu}
         complementosIniciales={complementosInicialesModal}
         notaInicial={notaInicialModal}
+        modoEdicion={!!editandoInstanceId}
+        cantidadLinea={
+          editandoInstanceId
+            ? (cantidades[editandoInstanceId]
+              || selectedPlatos.find((p) => (p.instanceId || p._id) === editandoInstanceId)?.cantidad
+              || 1)
+            : 1
+        }
         numeroSerieInicial={
           (platoParaComplementar && platoParaComplementar.numeroSerie)
           || selectedPlatos.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))
@@ -2099,8 +2184,14 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     borderColor: theme.colors.border,
     ...theme.shadows.small,
   },
+  platoItemTop: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
   platoInfo: {
+    flex: 1,
     marginBottom: theme.spacing.sm,
+    paddingRight: theme.spacing.xs,
   },
   platoNombre: {
     fontSize: 16,
@@ -2161,6 +2252,14 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "flex-end",
     gap: theme.spacing.sm,
+  },
+  platoCornerActions: {
+    alignItems: "center",
+    justifyContent: "flex-start",
+    gap: 2,
+  },
+  editFijosButton: {
+    padding: theme.spacing.xs,
   },
   tipoServicioLineaBtn: {
     width: 32,
