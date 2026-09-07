@@ -8,6 +8,7 @@ import {
   TextInput,
   ScrollView,
   Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
@@ -96,7 +97,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     setNotaEspecial(typeof notaInicial === 'string' ? notaInicial : "");
     setCantidadClones(1);
     setNumeroSerie(normalizarNumeroSerie(numeroSerieInicial));
-  }, [visible, complementosIniciales, notaInicial, numeroSerieInicial, platoKey, plato]);
+  }, [visible, complementosIniciales, notaInicial, numeroSerieInicial, platoKey]);
 
   // Obtener cantidad actual de una opción
   const getCantidadOpcion = useCallback((grupoNombre, opcion) => {
@@ -457,6 +458,10 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       onRequestClose={handleCancelar}
       presentationStyle={Platform.OS === "ios" ? "overFullScreen" : undefined}
     >
+      <KeyboardAvoidingView
+        style={styles.keyboardWrap}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           {/* Header con nombre del plato */}
@@ -479,6 +484,25 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
               />
             </TouchableOpacity>
           </View>
+
+          {requiereSerie && (
+            <View style={styles.serieContainer}>
+              <Text style={styles.serieLabel}>Número de serie (obligatorio)</Text>
+              <Text style={styles.serieHint}>2 a 4 dígitos. Podés cargarlo antes de las cantidades MIX.</Text>
+              <TextInput
+                style={[styles.serieInput, !serieValida && numeroSerie.length > 0 && styles.serieInputError]}
+                placeholder="Ej: 07"
+                placeholderTextColor={theme.colors.text.light}
+                value={numeroSerie}
+                onChangeText={(t) => setNumeroSerie(normalizarNumeroSerie(t))}
+                keyboardType="number-pad"
+                maxLength={4}
+                editable
+                selectTextOnFocus={false}
+                blurOnSubmit={false}
+              />
+            </View>
+          )}
 
           <View style={styles.cloneBar}>
             <View style={styles.cloneBarText}>
@@ -534,23 +558,10 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             style={styles.modalScrollView}
             contentContainerStyle={styles.modalScrollContent}
             showsVerticalScrollIndicator={true}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="none"
+            nestedScrollEnabled
           >
-            {requiereSerie && (
-              <View style={styles.serieContainer}>
-                <Text style={styles.serieLabel}>Número de serie (obligatorio)</Text>
-                <Text style={styles.serieHint}>2 a 4 dígitos. Se muestra en cocina junto al cronómetro y el mozo.</Text>
-                <TextInput
-                  style={[styles.serieInput, !serieValida && numeroSerie.length > 0 && styles.serieInputError]}
-                  placeholder="Ej: 07"
-                  placeholderTextColor={theme.colors.text.light}
-                  value={numeroSerie}
-                  onChangeText={(t) => setNumeroSerie(normalizarNumeroSerie(t))}
-                  keyboardType="number-pad"
-                  maxLength={4}
-                  autoFocus={!numeroSerieInicial}
-                />
-              </View>
-            )}
             {/* Grupos de complementos */}
             {complementos.map((complemento, index) => {
               if (grupoSeleccionFija(complemento)) return null;
@@ -804,12 +815,16 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
           )}
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
 
 const modalComplementosStyles = (theme) =>
   StyleSheet.create({
+    keyboardWrap: {
+      flex: 1,
+    },
     modalOverlay: {
       flex: 1,
       backgroundColor: "rgba(0, 0, 0, 0.6)",
@@ -1043,7 +1058,9 @@ const modalComplementosStyles = (theme) =>
       minWidth: 28,
     },
     serieContainer: {
-      marginBottom: theme.spacing.md,
+      marginHorizontal: theme.spacing.lg,
+      marginTop: theme.spacing.md,
+      marginBottom: theme.spacing.sm,
       padding: theme.spacing.md,
       backgroundColor: theme.colors.background,
       borderRadius: theme.borderRadius.md,
