@@ -186,7 +186,9 @@ export function generarHtmlComanda({ datos, plantilla, serverOrigin }) {
       if (!prod || prod.eliminado || prod.anulado) continue;
       html += '<tr>';
       const nombre = escapeHtml(prod.nombre || 'Plato');
-      const marcadorPL = prod.paraLlevar ? ' (P.L.)' : '';
+      const marcadorPL = prod.tipoServicio === 'extra_llevar'
+        ? ' (EXTRA LLEVAR)'
+        : (prod.paraLlevar || prod.tipoServicio === 'para_llevar' ? ' (P.L.)' : '');
       html += `<td style="padding:2px 0;vertical-align:top;">${nombre}${marcadorPL}</td>`;
       html += `<td style="text-align:center;vertical-align:top;">${prod.cantidad || 1}</td>`;
       if (mostrarPrecios) {
@@ -400,13 +402,14 @@ function mapLineaProductoImpresion(p, comanda, index) {
   const precio = resolverPrecioLineaImpresion(p);
   const cantidad = cantidadLineaImpresion(p, comanda, index);
   const subRaw = Number(p?.subtotal);
-  const paraLlevar = esParaLlevarLinea(p);
+  const extraLlevar = p?.tipoServicio === 'extra_llevar';
+  const paraLlevar = !extraLlevar && esParaLlevarLinea(p);
   return {
     nombre: p.plato?.nombre || p.nombre || 'Plato',
     cantidad,
     precio,
     subtotal: Number.isFinite(subRaw) && subRaw > 0 ? subRaw : precio * cantidad,
-    tipoServicio: paraLlevar ? 'para_llevar' : (p.tipoServicio || 'mesa'),
+    tipoServicio: extraLlevar ? 'extra_llevar' : (paraLlevar ? 'para_llevar' : (p.tipoServicio || 'mesa')),
     complementos: (p.complementosSeleccionados || p.complementos || []).map((c) => ({
       grupo: c.grupo,
       opcion: c.opcion,

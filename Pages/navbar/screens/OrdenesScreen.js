@@ -27,9 +27,10 @@ import * as Haptics from "expo-haptics";
 // Componente de modal de complementos
 import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
-import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato, platoEditableEnOrdenes } from "../../../utils/platoGuarniciones";
+import { resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato, platoEditableEnOrdenes } from "../../../utils/platoGuarniciones";
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from "../../../utils/numeroSeriePlato";
 import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato, nombreVisibleConVariante } from "../../../utils/variantePlato";
+import { platoRequiereModalAlSumar, ultimaLineaDelPlato } from "../../../utils/platoBuscador";
 import { calcularPrecioUnitarioConComplementos } from "../../../utils/precioComplementos";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
@@ -186,16 +187,20 @@ const persistTipoServicioOrdenes = (tipo) => {
   return v;
 };
 
-const irAComandaDetalleTrasEnvio = (navigation, { comanda, mesa, reserva, estadoMesa }) => {
+const irAComandaDetalleTrasEnvio = (navigation, { comanda, mesa, reserva, estadoMesa, agruparConMesa }) => {
   if (esSeleccionSinMesa(mesa) || !mesa?._id) {
     navigation.navigate("Pendientes");
     return;
   }
-  navigation.navigate("ComandaDetalle", {
+  const params = {
     mesa: { ...mesa, estado: estadoMesa || mesa.estado || "pedido" },
-    comandas: comanda?._id ? [comanda] : [],
     ...(reserva ? { reserva } : {}),
-  });
+  };
+  // Extra llevar / nueva comanda desde Detalle: no reemplazar la lista con solo la nueva.
+  if (!agruparConMesa && comanda?._id) {
+    params.comandas = [comanda];
+  }
+  navigation.navigate("ComandaDetalle", params);
 };
 
 const OrdenesScreen = ({ route }) => {
@@ -206,8 +211,9 @@ const OrdenesScreen = ({ route }) => {
   const styles = OrdenesScreenStyles(theme, orientation);
   
   // Obtener parámetros de navegación (mesa y reserva desde ComandaDetalle)
-  const { mesa: mesaParam, reserva: reservaParam, modoExtraLlevar: modoExtraParam } = route?.params || {};
+  const { mesa: mesaParam, reserva: reservaParam, modoExtraLlevar: modoExtraParam, origen: origenParam } = route?.params || {};
   const modoExtraLlevar = modoExtraParam === true;
+  const agruparConMesa = origenParam === 'ComandaDetalle' || modoExtraLlevar === true;
   
   const [userInfo, setUserInfo] = useState(null);
   const [selectedMesa, setSelectedMesa] = useState(null);
@@ -241,6 +247,8 @@ const OrdenesScreen = ({ route }) => {
   const [complementosInicialesModal, setComplementosInicialesModal] = useState(null);
   const [notaInicialModal, setNotaInicialModal] = useState("");
   const [editandoInstanceId, setEditandoInstanceId] = useState(null);
+  const [focoComplementos, setFocoComplementos] = useState(null);
+  const [ocultarSumarComplementos, setOcultarSumarComplementos] = useState(false);
   const tipoServicioAlComplementarRef = useRef(null);
   const selectedPlatosRef = useRef([]);
   const cantidadesRef = useRef({});
@@ -526,7 +534,10 @@ const OrdenesScreen = ({ route }) => {
   };
 
   const handleAddPlato = (plato) => {
-    if (platoRequiereEleccionComplementos(plato) || platoRequiereNumeroSerie(plato)) {
+    if (platoRequiereModalAlSumar(plato)) {
+      setFocoComplementos(null);
+      setOcultarSumarComplementos(false);
+      setEditandoInstanceId(null);
       tipoServicioAlComplementarRef.current = null;
       setComplementosInicialesModal(null);
       setNotaInicialModal("");
@@ -549,27 +560,56 @@ const OrdenesScreen = ({ route }) => {
 
   const handleAddPlatoFromMenu = (plato) => {
     handleAddPlato(plato);
-    if (!platoRequiereEleccionComplementos(plato) && !platoRequiereNumeroSerie(plato)) {
+    if (!platoRequiereModalAlSumar(plato)) {
       avisarPlatoAgregado(plato.nombre);
     }
   };
 
+  const tipoServicioMenuActual = () => {
+    if (esSeleccionSinMesa(selectedMesa)) return TIPO_PARA_LLEVAR;
+    if (modoExtraLlevar || tipoServicioModal === TIPO_EXTRA_LLEVAR) return TIPO_EXTRA_LLEVAR;
+    if (tipoServicioModal === TIPO_PARA_LLEVAR) return TIPO_PARA_LLEVAR;
+    return TIPO_MESA;
+  };
+
   const handleDecrementPlatoFromMenu = (plato) => {
-    const instanciasDelPlato = selectedPlatos.filter(p => p._id === plato._id);
-    if (instanciasDelPlato.length > 0) {
-      const ultimaInstancia = instanciasDelPlato[instanciasDelPlato.length - 1];
-      const instanceId = ultimaInstancia.instanceId || ultimaInstancia._id;
-      const currentCant = cantidades[instanceId] || 1;
-      if (currentCant > 1) {
-        const newCant = currentCant - 1;
-        setCantidades({ ...cantidades, [instanceId]: newCant });
-        setSelectedPlatos(selectedPlatos.map((p) =>
-          (p.instanceId || p._id) === instanceId ? { ...p, cantidad: newCant } : p
-        ));
-      } else if (instanciasDelPlato.length === 1) {
-        handleRemovePlato(instanceId);
-      }
+    const ultima = ultimaLineaDelPlato(selectedPlatos, plato, tipoServicioMenuActual(), { exacto: true });
+    if (!ultima) return;
+    const instanceId = ultima.instanceId || ultima._id;
+    const currentCant = cantidades[instanceId] || ultima.cantidad || 1;
+    if (currentCant > 1) {
+      const newCant = currentCant - 1;
+      setCantidades({ ...cantidades, [instanceId]: newCant });
+      setSelectedPlatos(selectedPlatos.map((p) =>
+        (p.instanceId || p._id) === instanceId ? { ...p, cantidad: newCant } : p
+      ));
+    } else {
+      handleRemovePlato(instanceId);
     }
+  };
+
+  const abrirFocoDesdeBuscador = (plato, focoModo) => {
+    const ultima = ultimaLineaDelPlato(selectedPlatos, plato, tipoServicioMenuActual(), { exacto: true });
+    if (!ultima && platoRequiereModalAlSumar(plato)) {
+      handleAddPlato(plato);
+      return;
+    }
+    setFocoComplementos(focoModo);
+    setOcultarSumarComplementos(true);
+    if (ultima) {
+      setEditandoInstanceId(ultima.instanceId || ultima._id);
+      abrirModalGuarniciones(ultima, {
+        iniciales: guarnicionesElegidas(ultima),
+        nota: ultima.notaEspecial || "",
+        tipoServicio: ultima.tipoServicio,
+      });
+      return;
+    }
+    setEditandoInstanceId(null);
+    tipoServicioAlComplementarRef.current = null;
+    setComplementosInicialesModal(null);
+    setNotaInicialModal("");
+    setPlatoParaComplementar(plato);
   };
 
   const cerrarModalComplementosYReabrirMenu = () => {
@@ -577,6 +617,8 @@ const OrdenesScreen = ({ route }) => {
     setComplementosInicialesModal(null);
     setNotaInicialModal("");
     setEditandoInstanceId(null);
+    setFocoComplementos(null);
+    setOcultarSumarComplementos(false);
     tipoServicioAlComplementarRef.current = null;
   };
 
@@ -692,6 +734,8 @@ const OrdenesScreen = ({ route }) => {
       return;
     }
     const id = platoLinea.instanceId || platoLinea._id;
+    setFocoComplementos(null);
+    setOcultarSumarComplementos(false);
     setEditandoInstanceId(id);
     abrirModalGuarniciones(platoLinea, {
       iniciales: platoLinea.complementosElegidos || [],
@@ -831,7 +875,7 @@ const OrdenesScreen = ({ route }) => {
   };
 
   const handleClonarPlato = (platoLinea) => {
-    if (!platoRequiereEleccionComplementos(platoLinea, platos)) {
+    if (!platoRequiereModalAlSumar(platoLinea, platos)) {
       const id = platoLinea.instanceId || platoLinea._id;
       const current = cantidades[id] || 1;
       const newCant = current + 1;
@@ -841,6 +885,9 @@ const OrdenesScreen = ({ route }) => {
       ));
       return;
     }
+    setFocoComplementos(null);
+    setOcultarSumarComplementos(false);
+    setEditandoInstanceId(null);
     abrirModalGuarniciones(platoLinea, {
       iniciales: guarnicionesElegidas(platoLinea),
       nota: platoLinea.notaEspecial || "",
@@ -1390,6 +1437,7 @@ const OrdenesScreen = ({ route }) => {
         mesa: mesaParaNav,
         reserva: reservaParaNav,
         estadoMesa: estadoParaNav,
+        agruparConMesa,
       });
     } catch (error) {
       // 🔥 MEJORADO: Verificación exhaustiva antes de mostrar cualquier error
@@ -1447,6 +1495,7 @@ const OrdenesScreen = ({ route }) => {
           mesa: mesaParaNav,
           reserva: reservaParaNav,
           estadoMesa: estadoParaNav,
+          agruparConMesa,
         });
         return; // Salir sin mostrar error
       }
@@ -1789,11 +1838,11 @@ const OrdenesScreen = ({ route }) => {
                     >
                       <MaterialCommunityIcons name="plus" size={16} color={theme.colors.text.white} />
                     </TouchableOpacity>
-                    {platoRequiereEleccionComplementos(plato, platos) && (
+                    {platoRequiereModalAlSumar(plato, platos) && (
                       <TouchableOpacity
                         style={styles.cloneButton}
                         onPress={() => handleClonarPlato(plato)}
-                        accessibilityLabel="Sumar plato con guarniciones"
+                        accessibilityLabel="Sumar plato MIX"
                       >
                         <MaterialCommunityIcons name="plus-box-multiple" size={20} color={theme.colors.primary} />
                       </TouchableOpacity>
@@ -2015,6 +2064,8 @@ const OrdenesScreen = ({ route }) => {
         cantidades={cantidades}
         onDecrementPlato={handleDecrementPlatoFromMenu}
         onAddPlato={handleAddPlatoFromMenu}
+        onPressG={(p) => abrirFocoDesdeBuscador(p, 'guarniciones')}
+        onPressV={(p) => abrirFocoDesdeBuscador(p, 'anexarNombre')}
         favoritoIds={favoritoIds}
         onToggleFavorito={toggleFavorito}
         listRef={platosListScrollRef}
@@ -2034,6 +2085,8 @@ const OrdenesScreen = ({ route }) => {
         complementosIniciales={complementosInicialesModal}
         notaInicial={notaInicialModal}
         modoEdicion={!!editandoInstanceId}
+        ocultarSumar={ocultarSumarComplementos}
+        focoModo={focoComplementos}
         cantidadLinea={
           editandoInstanceId
             ? (cantidades[editandoInstanceId]

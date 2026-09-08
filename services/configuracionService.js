@@ -153,6 +153,18 @@ export const editarEliminarTomadasPorCocinaHabilitadoMozos = async () => {
     }
 };
 
+/** Minutos de espera salió → entregado. 0 = al instante. Default 15. */
+export const minutosEntregaAutomaticaMozos = async () => {
+    try {
+        const config = await obtenerConfiguracion();
+        const n = Number(config?.mozos?.entregaAutomaticaMinutos);
+        if (!Number.isFinite(n) || n < 0) return 15;
+        return Math.min(180, Math.floor(n));
+    } catch (e) {
+        return 15;
+    }
+};
+
 /**
  * PLAN_RESERVAS_MOZOS_CAJA_KDS v1.1
  * Si true, los mozos verán el botón "Reservar" en la barra de Inicio.
@@ -348,6 +360,7 @@ export default {
     getConfiguracionPorDefecto,
     imprimirComandaHabilitadoMozos,
     editarEliminarTomadasPorCocinaHabilitadoMozos,
+    minutosEntregaAutomaticaMozos,
     permitirCrearReservasMozos,
     entregarPlatoEnteroAbsolutoCocina,
     calcularTotales,

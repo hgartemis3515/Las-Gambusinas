@@ -18,6 +18,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { themeLight } from '../constants/theme';
 import { CAT_FAVORITOS } from '../helpers/platosFavoritosMozo';
+import PlatoBuscadorCard from './PlatoBuscadorCard';
 
 const MIN_LIST = 140;
 
@@ -86,6 +87,8 @@ export default function MenuPlatosSheet({
   cantidades = {},
   onDecrementPlato,
   onAddPlato,
+  onPressG,
+  onPressV,
   favoritoIds = [],
   onToggleFavorito,
   listRef,
@@ -138,61 +141,21 @@ export default function MenuPlatosSheet({
     const esFav = favoritoIds.includes(String(plato._id));
 
     return (
-      <View style={[
-        styles.platoModalItem,
-        (tipoServicioModal === 'para_llevar' || tipoServicioModal === 'extra_llevar') && styles.platoModalItemLlevar,
-      ]}>
-        <View style={styles.platoModalInfo}>
-          <View style={styles.platoModalNombreContainer}>
-            <Text style={styles.platoModalNombre}>{plato.nombre}</Text>
-            {plato.complementos && plato.complementos.length > 0 && (
-              <View style={styles.tieneComplementosBadge}>
-                <MaterialCommunityIcons name="tune-variant" size={12} color={theme.colors.text.white} />
-              </View>
-            )}
-          </View>
-          <Text style={styles.platoModalPrecio}>S/. {Number(plato.precio || 0).toFixed(2)}</Text>
-        </View>
-        {onToggleFavorito ? (
-          <TouchableOpacity
-            style={styles.favoritoToggle}
-            onPress={() => onToggleFavorito(plato)}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            accessibilityRole="button"
-            accessibilityLabel={esFav ? 'Quitar de favoritos' : 'Agregar a favoritos'}
-          >
-            <MaterialCommunityIcons
-              name={esFav ? 'star' : 'star-outline'}
-              size={22}
-              color={esFav ? '#FFC107' : '#9E9E9E'}
-            />
-          </TouchableOpacity>
-        ) : null}
-        <View style={styles.platoModalActions}>
-          <TouchableOpacity style={styles.cantidadButtonSmall} onPress={() => onDecrementPlato(plato)}>
-            <MaterialCommunityIcons name="minus" size={14} color={theme.colors.text.white} />
-          </TouchableOpacity>
-          {cantidadLlevar > 0 ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={styles.cantidadTextSmall}>{cantidadMesa}</Text>
-              <Text style={[styles.cantidadTextSmall, { color: '#8B5CF6', fontWeight: '700', marginLeft: 1 }]}>+{cantidadLlevar}</Text>
-            </View>
-          ) : (
-            <Text style={styles.cantidadTextSmall}>{cantidadTotal || 0}</Text>
-          )}
-          <TouchableOpacity
-            style={styles.cantidadButtonSmall}
-            onPress={() => onAddPlato(plato)}
-          >
-            <MaterialCommunityIcons name="plus" size={14} color={theme.colors.text.white} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.addPlatoButton} onPress={() => onAddPlato(plato)}>
-            <Text style={styles.addPlatoButtonText}>Agregar</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      <PlatoBuscadorCard
+        plato={plato}
+        cantidadTotal={cantidadTotal}
+        cantidadMesa={cantidadMesa}
+        cantidadLlevar={cantidadLlevar}
+        esLlevar={tipoServicioModal === 'para_llevar' || tipoServicioModal === 'extra_llevar'}
+        esFav={esFav}
+        onToggleFavorito={onToggleFavorito}
+        onAdd={onAddPlato}
+        onDecrement={onDecrementPlato}
+        onPressG={onPressG}
+        onPressV={onPressV}
+      />
     );
-  }, [selectedPlatos, cantidades, onDecrementPlato, onAddPlato, onToggleFavorito, favoritoIds, styles, theme.colors.text.white, tipoServicioModal]);
+  }, [selectedPlatos, cantidades, onDecrementPlato, onAddPlato, onPressG, onPressV, onToggleFavorito, favoritoIds, tipoServicioModal]);
 
   const searchActive = (searchPlato || '').trim().length > 0;
 

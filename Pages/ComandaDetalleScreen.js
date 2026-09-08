@@ -32,9 +32,11 @@ import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle } from '../utils/comandaHelpers';
-import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato } from '../utils/platoGuarniciones';
+import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato } from '../utils/platoGuarniciones';
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
 import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato } from '../utils/variantePlato';
+import { platoRequiereModalAlSumar, ultimaLineaDelPlato, cantidadTotalDelPlato } from '../utils/platoBuscador';
+import PlatoBuscadorCard from '../Components/PlatoBuscadorCard';
 import { calcularPrecioUnitarioConComplementos } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
@@ -42,6 +44,7 @@ import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA, platoCobradoVi
 import { calcularSubtotalPlatosPagables } from '../utils/pagoParcialHelpers';
 import { esSeleccionSinMesa, SELECCION_SIN_MESA } from '../utils/sinMesaOrden';
 import { esLlevarColor, normalizarTipoServicioLinea } from '../utils/tipoServicio';
+import { msRestantesEntregaAutomatica, formatearCountdownEntrega } from '../utils/entregaAutomatica';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -220,6 +223,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [configMoneda, setConfigMoneda] = useState(null);
   // Regla cocina: por defecto bloqueo activo (config desmarcada)
   const [permitirEditarEliminarTomadas, setPermitirEditarEliminarTomadas] = useState(false);
+  const [minutosEntregaAuto, setMinutosEntregaAuto] = useState(15);
+  const [tickEntrega, setTickEntrega] = useState(0);
   
   // Estados para modales
   const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
@@ -252,6 +257,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [platoParaComplementar, setPlatoParaComplementar] = useState(null);
   const [complementosInicialesModal, setComplementosInicialesModal] = useState(null);
   const [notaInicialModal, setNotaInicialModal] = useState('');
+  const [editandoInstanceId, setEditandoInstanceId] = useState(null);
+  const [focoComplementos, setFocoComplementos] = useState(null);
+  const [ocultarSumarComplementos, setOcultarSumarComplementos] = useState(false);
   const tipoServicioAlComplementarRef = useRef(null);
   const autoEntregaSalioRef = useRef(new Set());
   const [platosEditados, setPlatosEditados] = useState([]);
@@ -314,12 +322,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   useEffect(() => {
     const loadConfiguracion = async () => {
       try {
-        const [config, permitirTomadas] = await Promise.all([
+        const [config, permitirTomadas, minutosEntrega] = await Promise.all([
           configuracionService.obtenerConfigMoneda(true),
-          configuracionService.editarEliminarTomadasPorCocinaHabilitadoMozos()
+          configuracionService.editarEliminarTomadasPorCocinaHabilitadoMozos(),
+          configuracionService.minutosEntregaAutomaticaMozos()
         ]);
         setConfigMoneda(config);
         setPermitirEditarEliminarTomadas(permitirTomadas);
+        setMinutosEntregaAuto(minutosEntrega);
       } catch (error) {
         console.error('Error cargando configuración de moneda:', error);
       }
@@ -327,8 +337,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     loadConfiguracion();
     return configuracionService.subscribeCambio(async () => {
       try {
-        const config = await configuracionService.obtenerConfigMoneda();
+        const [config, minutosEntrega] = await Promise.all([
+          configuracionService.obtenerConfigMoneda(),
+          configuracionService.minutosEntregaAutomaticaMozos()
+        ]);
         setConfigMoneda(config);
+        setMinutosEntregaAuto(minutosEntrega);
       } catch (e) {
         console.warn('No se pudo refrescar configuración:', e?.message);
       }
@@ -616,7 +630,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     refrescarComandasRef.current = refrescarComandas;
   }, [refrescarComandas]);
 
-  // Platos que ya salieron de cocina quedan entregados sin que el mozo pulse Entregar.
+  // Platos que ya salieron de cocina: entrega automática al instante (0 min)
+  // o cuando se cumple la espera configurada.
+  useEffect(() => {
+    const pendientes = todosLosPlatos.filter((p) =>
+      String(p.estado || '').toLowerCase() === 'salio' && !p.anulado && !p.eliminado
+    );
+    if (pendientes.length === 0) return undefined;
+    const tickId = setInterval(() => setTickEntrega((t) => t + 1), 1000);
+    return () => clearInterval(tickId);
+  }, [todosLosPlatos]);
+
   useEffect(() => {
     const pendientes = todosLosPlatos.filter((p) =>
       String(p.estado || '').toLowerCase() === 'salio' && !p.anulado && !p.eliminado
@@ -626,6 +650,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     (async () => {
       let hizoCambio = false;
       for (const plato of pendientes) {
+        const rest = msRestantesEntregaAutomatica(plato, minutosEntregaAuto);
+        if (rest > 0) continue;
         const key = `${plato.comandaId}-${plato._id || plato.platoId}`;
         if (autoEntregaSalioRef.current.has(key)) continue;
         autoEntregaSalioRef.current.add(key);
@@ -646,7 +672,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       if (!cancelled && hizoCambio) await refrescarComandasRef.current?.();
     })();
     return () => { cancelled = true; };
-  }, [todosLosPlatos]);
+  }, [todosLosPlatos, minutosEntregaAuto, tickEntrega]);
   useEffect(() => {
     reservaIdRef.current = reservaEfectiva?._id || reserva?._id;
   }, [reservaEfectiva?._id, reserva?._id]);
@@ -936,6 +962,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     useCallback(() => {
       refrescarComandas();
       configuracionService.obtenerConfigMoneda(true).then(setConfigMoneda).catch(() => {});
+      configuracionService.minutosEntregaAutomaticaMozos().then(setMinutosEntregaAuto).catch(() => {});
     }, [refrescarComandas])
   );
   
@@ -1044,8 +1071,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const puedePagarNormal = puedePagar && mostrarBotonPagar && !puedeLiberarReserva && !puedeConfirmarEntrega && !puedeLiberarCostoCero;
   const puedeExtraLlevar = puedeNuevaComanda && !esSeleccionSinMesa(mesa) && !!mesa?._id;
   
-  // Entrega al comensal es automática al salir de cocina; el mozo no confirma.
-  const puedeEntregar = false;
+  // Con espera: el mozo puede adelantar la entrega. Al instante (0) no hace falta el botón.
+  const puedeEntregar = minutosEntregaAuto > 0 && todosLosPlatos.some((p) =>
+    String(p.estado || '').toLowerCase() === 'salio' && !p.anulado && !p.eliminado
+  );
   
   // Obtener platos disponibles
   const obtenerPlatos = async () => {
@@ -1072,7 +1101,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
   
   const handleIncrementarPlatoEditado = (platoLinea, index) => {
-    if (!platoRequiereEleccionComplementos(platoLinea, platos) && !platoRequiereNumeroSerie(platoLinea, platos.find((p) => String(p._id) === idCatalogoPlato(platoLinea)))) {
+    if (!platoRequiereModalAlSumar(platoLinea, platos)) {
       handleCambiarCantidad(index, 1);
       return;
     }
@@ -1084,6 +1113,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       );
       return;
     }
+    setFocoComplementos(null);
+    setOcultarSumarComplementos(false);
+    setEditandoInstanceId(null);
     tipoServicioAlComplementarRef.current = platoLinea.tipoServicio || 'mesa';
     setComplementosInicialesModal(guarnicionesElegidas(platoLinea));
     setNotaInicialModal(platoLinea.notaEspecial || '');
@@ -1093,8 +1125,15 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     });
   };
   
+  const tipoServicioMenuEdicion = () => (
+    esSeleccionSinMesa(mesa) ? 'para_llevar' : (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa')
+  );
+
   const handleAgregarPlato = (plato) => {
-    if (platoRequiereEleccionComplementos(plato) || platoRequiereNumeroSerie(plato)) {
+    if (platoRequiereModalAlSumar(plato)) {
+      setFocoComplementos(null);
+      setOcultarSumarComplementos(false);
+      setEditandoInstanceId(null);
       tipoServicioAlComplementarRef.current = null;
       setComplementosInicialesModal(null);
       setNotaInicialModal('');
@@ -1113,6 +1152,50 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       return;
     }
     agregarPlatoSinComplementos(plato);
+  };
+
+  const handleDecrementPlatoFromBuscador = (plato) => {
+    const ultima = ultimaLineaDelPlato(platosEditados, plato, tipoServicioMenuEdicion(), { exacto: true });
+    if (!ultima) return;
+    if ((ultima.cantidad || 1) > 1) {
+      const next = platosEditados.map((p) =>
+        p === ultima ? { ...p, cantidad: (p.cantidad || 1) - 1 } : p
+      );
+      platosEditadosRef.current = next;
+      setPlatosEditados(next);
+      return;
+    }
+    if (platosEditados.length <= 1) return;
+    const next = platosEditados.filter((p) => p !== ultima);
+    platosEditadosRef.current = next;
+    setPlatosEditados(next);
+  };
+
+  const abrirFocoDesdeBuscador = (plato, focoModo) => {
+    const ultima = ultimaLineaDelPlato(platosEditados, plato, tipoServicioMenuEdicion(), { exacto: true });
+    if (!ultima && platoRequiereModalAlSumar(plato)) {
+      handleAgregarPlato(plato);
+      return;
+    }
+    setFocoComplementos(focoModo);
+    setOcultarSumarComplementos(true);
+    if (ultima) {
+      const resuelto = resolverPlatoConGrupos(ultima, platos);
+      setEditandoInstanceId(ultima.instanceId || ultima._id);
+      tipoServicioAlComplementarRef.current = ultima.tipoServicio || 'mesa';
+      setComplementosInicialesModal(guarnicionesElegidas(ultima));
+      setNotaInicialModal(ultima.notaEspecial || '');
+      setPlatoParaComplementar({
+        ...(resuelto || ultima),
+        numeroSerie: ultima.numeroSerie || resuelto?.numeroSerie || '',
+      });
+      return;
+    }
+    setEditandoInstanceId(null);
+    tipoServicioAlComplementarRef.current = null;
+    setComplementosInicialesModal(null);
+    setNotaInicialModal('');
+    setPlatoParaComplementar(plato);
   };
 
   // Función para agregar un plato sin complementos
@@ -1204,6 +1287,54 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
   // Función para confirmar complementos desde el modal
   const handleConfirmarComplementosEdicion = ({ complementosSeleccionados, notaEspecial, numeroSerie, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
+    if (editandoInstanceId) {
+      const linea = platosEditadosRef.current.find(
+        (p) => (p.instanceId || p._id) === editandoInstanceId
+      );
+      if (linea) {
+        const n = linea.cantidad || 1;
+        const partes = partirLineaPorVariante(linea, complementosSeleccionados, n);
+        const parte = partes[0] || { complementos: complementosSeleccionados, cantidad: n };
+        const afectan = linea.complementosAfectanPrecio !== false;
+        const calc = _precioUnitario != null
+          ? { precioUnitario: _precioUnitario, extraComplementos: _extraComplementos }
+          : calcularPrecioUnitarioConComplementos(
+            linea.precio || 0,
+            parte.complementos,
+            { afectanPrecio: afectan }
+          );
+        const comps = (parte.complementos || []).map((comp) => ({
+          grupo: comp.grupo,
+          opcion: comp.opcion,
+          cantidad: comp.cantidad || 1,
+          ...(comp.precio != null ? { precio: Number(comp.precio) || 0 } : {}),
+        }));
+        const serie = normalizarNumeroSerie(numeroSerie || linea.numeroSerie);
+        const next = platosEditadosRef.current.map((p) => {
+          if ((p.instanceId || p._id) !== editandoInstanceId) return p;
+          return {
+            ...p,
+            complementosSeleccionados: comps,
+            notaEspecial: notaEspecial || '',
+            ...(calc.precioUnitario != null ? { precioUnitario: Number(calc.precioUnitario) } : {}),
+            ...(calc.extraComplementos != null ? { extraComplementos: Number(calc.extraComplementos) } : {}),
+            ...(parte.nombreCocinaPedido ? { nombreCocinaPedido: parte.nombreCocinaPedido } : {}),
+            ...(parte.variantePlato ? { variantePlato: parte.variantePlato } : {}),
+            ...(serie ? { numeroSerie: serie } : {}),
+          };
+        });
+        platosEditadosRef.current = next;
+        setPlatosEditados(next);
+      }
+      setPlatoParaComplementar(null);
+      setComplementosInicialesModal(null);
+      setNotaInicialModal('');
+      setEditandoInstanceId(null);
+      setFocoComplementos(null);
+      setOcultarSumarComplementos(false);
+      tipoServicioAlComplementarRef.current = null;
+      return;
+    }
     if (platoParaComplementar) {
       const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
       const partes = partirLineaPorVariante(platoParaComplementar, complementosSeleccionados, n);
@@ -1233,6 +1364,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       setPlatoParaComplementar(null);
       setComplementosInicialesModal(null);
       setNotaInicialModal('');
+      setFocoComplementos(null);
+      setOcultarSumarComplementos(false);
       tipoServicioAlComplementarRef.current = null;
     }
   };
@@ -2424,6 +2557,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         onMarcarEntregado={handleMarcarPlatoEntregado}
         onToggleSeleccion={toggleSeleccionarPlatoEntregar}
         seleccionado={estaSeleccionado}
+        puedeMarcarEntregado={minutosEntregaAuto > 0}
+        countdownEntrega={
+          minutosEntregaAuto > 0 && String(plato.estado || '').toLowerCase() === 'salio'
+            ? formatearCountdownEntrega(msRestantesEntregaAutomatica(plato, minutosEntregaAuto))
+            : null
+        }
       />
     );
   };
@@ -3214,57 +3353,23 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                     </Text>
                   ) : (
                     platosFiltrados.map((plato) => {
-                      const cantidadEnComanda = platosEditados.find(
-                        p => (p.plato === plato._id || p.plato?.toString() === plato._id?.toString())
-                      )?.cantidad || 0;
+                      const cantidadTotal = cantidadTotalDelPlato(platosEditados, plato);
+                      const cantidadMesa = cantidadTotalDelPlato(platosEditados, plato, null, 'mesa');
+                      const cantidadLlevar = cantidadTotalDelPlato(platosEditados, plato, null, 'para_llevar')
+                        + cantidadTotalDelPlato(platosEditados, plato, null, 'extra_llevar');
                       return (
-                        <TouchableOpacity
+                        <PlatoBuscadorCard
                           key={plato._id}
-                          style={[
-                            styles.platoSelectItem,
-                            {
-                              backgroundColor: themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB'),
-                              borderColor: tipoServicioModal === 'para_llevar'
-                                ? '#8B5CF6'
-                                : (themeColors.colors?.border || themeColors.border || '#E5E7EB'),
-                              borderWidth: tipoServicioModal === 'para_llevar' ? 2 : 1,
-                            }
-                          ]}
-                          onPress={() => handleAgregarPlato(plato)}
-                        >
-                          <View style={styles.platoSelectInfo}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Text style={[
-                                styles.platoSelectNombre,
-                                { color: themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937') }
-                              ]}>
-                                {plato.nombre}
-                              </Text>
-                              {plato.complementos && plato.complementos.length > 0 && (
-                                <View style={{
-                                  backgroundColor: '#00D4FF',
-                                  paddingHorizontal: 6,
-                                  paddingVertical: 2,
-                                  borderRadius: 8,
-                                }}>
-                                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '600' }}>
-                                    🍽️
-                                  </Text>
-                                </View>
-                              )}
-                            </View>
-                            <Text style={[styles.platoSelectPrecio, { color: '#059669' }]}>
-                              S/. {plato.precio.toFixed(2)}
-                            </Text>
-                          </View>
-                          {cantidadEnComanda > 0 && (
-                            <View style={[styles.cantidadBadge, { backgroundColor: '#3B82F6' }]}>
-                              <Text style={[styles.cantidadBadgeText, { color: '#FFFFFF' }]}>
-                                x{cantidadEnComanda}
-                              </Text>
-                            </View>
-                          )}
-                        </TouchableOpacity>
+                          plato={plato}
+                          cantidadTotal={cantidadTotal}
+                          cantidadMesa={cantidadMesa}
+                          cantidadLlevar={cantidadLlevar}
+                          esLlevar={tipoServicioModal === 'para_llevar'}
+                          onAdd={handleAgregarPlato}
+                          onDecrement={handleDecrementPlatoFromBuscador}
+                          onPressG={(p) => abrirFocoDesdeBuscador(p, 'guarniciones')}
+                          onPressV={(p) => abrirFocoDesdeBuscador(p, 'anexarNombre')}
+                        />
                       );
                     })
                   )}
@@ -4068,10 +4173,21 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           setPlatoParaComplementar(null);
           setComplementosInicialesModal(null);
           setNotaInicialModal('');
+          setEditandoInstanceId(null);
+          setFocoComplementos(null);
+          setOcultarSumarComplementos(false);
           tipoServicioAlComplementarRef.current = null;
         }}
         complementosIniciales={complementosInicialesModal}
         notaInicial={notaInicialModal}
+        modoEdicion={!!editandoInstanceId}
+        ocultarSumar={ocultarSumarComplementos}
+        focoModo={focoComplementos}
+        cantidadLinea={
+          editandoInstanceId
+            ? (platosEditados.find((p) => (p.instanceId || p._id) === editandoInstanceId)?.cantidad || 1)
+            : 1
+        }
         numeroSerieInicial={
           (platoParaComplementar && platoParaComplementar.numeroSerie)
           || platosEditados.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))

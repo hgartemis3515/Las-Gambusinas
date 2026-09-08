@@ -23,6 +23,7 @@ import {
 import { textosGuarnicionesTotales, preseleccionComplementosDePlato, grupoSeleccionFija, preseleccionComplementosFijosDePlato } from "../utils/platoGuarniciones";
 import { grupoEsVariantePlato, grupoAnexaNombre, gruposVarianteDePlato, gruposAnexarNombreDePlato, grupoVarianteSumaDeshabilitada, platoVarianteSumaDeshabilitada } from "../utils/variantePlato";
 import { normalizarNumeroSerie, numeroSerieEsValido, platoRequiereNumeroSerie } from "../utils/numeroSeriePlato";
+import { grupoVisibleEnFoco } from "../utils/platoBuscador";
 
 const findGrupoModal = (grupos, nombre) => {
   const key = String(nombre || "").trim().toLowerCase();
@@ -39,7 +40,9 @@ const findGrupoModal = (grupos, nombre) => {
  * @param {function} onClose - Callback para cerrar el modal sin guardar
  * @param {array} complementosIniciales - Complementos ya seleccionados (para edición)
  */
-const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIniciales = null, notaInicial = "", numeroSerieInicial = "", modoEdicion = false, cantidadLinea = 1 }) => {
+const claveGrupoNombre = (n) => String(n || "").trim().toLowerCase();
+
+const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIniciales = null, notaInicial = "", numeroSerieInicial = "", modoEdicion = false, cantidadLinea = 1, ocultarSumar = false, focoModo = null }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const styles = modalComplementosStyles(theme);
@@ -82,7 +85,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       initKeyRef.current = "";
       return;
     }
-    const initKey = `${platoKey}|${modoEdicion ? "edicion" : "nuevo"}`;
+    const initKey = `${platoKey}|${modoEdicion ? "edicion" : "nuevo"}|${focoModo || ""}|${ocultarSumar ? 1 : 0}`;
     if (initKeyRef.current === initKey) return;
     initKeyRef.current = initKey;
     const fijos = preseleccionComplementosFijosDePlato(plato);
@@ -109,11 +112,11 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     });
     setSeleccionesPorGrupo(nuevaSeleccion);
     setNotaEspecial(typeof notaInicial === 'string' ? notaInicial : "");
-    setCantidadClones(modoEdicion
+    setCantidadClones((modoEdicion || ocultarSumar)
       ? Math.max(1, Math.min(99, Number(cantidadLinea) || 1))
       : 1);
     setNumeroSerie(normalizarNumeroSerie(numeroSerieInicial));
-  }, [visible, complementosIniciales, notaInicial, numeroSerieInicial, platoKey, modoEdicion, cantidadLinea]);
+  }, [visible, complementosIniciales, notaInicial, numeroSerieInicial, platoKey, modoEdicion, cantidadLinea, ocultarSumar, focoModo]);
 
   useEffect(() => {
     if (!visible) {
@@ -273,6 +276,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const estadoGrupos = useMemo(() => {
     const estados = {};
     complementos.forEach(grupoOriginal => {
+      if (!grupoVisibleEnFoco(grupoOriginal, focoModo)) return;
       if (!modoEdicion && grupoSeleccionFija(grupoOriginal)) return;
       const grupo = normalizarGrupo(grupoOriginal);
       const totalUnidades = getTotalUnidadesGrupo(grupo.grupo);
@@ -321,11 +325,12 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       };
     });
     return estados;
-  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo, nClones, modoEdicion]);
+  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo, nClones, modoEdicion, focoModo]);
 
   // Verificar si todos los grupos obligatorios tienen selección
   const obligatoriosCompletos = useMemo(() => {
     return complementos.every(grupoOriginal => {
+      if (!grupoVisibleEnFoco(grupoOriginal, focoModo)) return true;
       if (grupoSeleccionFija(grupoOriginal)) return true;
       const grupo = normalizarGrupo(grupoOriginal);
       if (!grupo.obligatorio && !grupoEsVariantePlato(grupoOriginal)) return true;
@@ -339,7 +344,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       
       return totalUnidades >= minUnidades;
     });
-  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo, nClones]);
+  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo, nClones, focoModo]);
 
   // Verificar si hay algún error de validación
   const hayErrores = useMemo(() => {
@@ -416,7 +421,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
 
   // Confirmar y agregar el plato con complementos
   const requiereSerie = platoRequiereNumeroSerie(plato);
-  const serieValida = !requiereSerie || numeroSerieEsValido(numeroSerie);
+  const serieValida = !!focoModo || !requiereSerie || numeroSerieEsValido(numeroSerie);
 
   const handleConfirmar = () => {
     if (!obligatoriosCompletos || hayErrores || !serieValida) return;
@@ -426,12 +431,28 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       precio: afectanPrecio ? (Number(c.precio) || 0) : 0,
     }));
     const nombresFijos = new Set(
-      fijos.map((c) => String(c.grupo || "").trim().toLowerCase())
+      fijos.map((c) => claveGrupoNombre(c.grupo))
     );
-    const complementosSeleccionados = modoEdicion ? [] : [...fijos];
+    const visiblesKeys = new Set(
+      complementos
+        .filter((g) => grupoVisibleEnFoco(g, focoModo) && (modoEdicion || !grupoSeleccionFija(g)))
+        .map((g) => claveGrupoNombre(g.grupo))
+    );
+    const fuenteKept = Array.isArray(complementosIniciales)
+      ? complementosIniciales
+      : preseleccionComplementosDePlato(plato);
+    const kept = focoModo
+      ? fuenteKept.filter((c) => !visiblesKeys.has(claveGrupoNombre(c.grupo)))
+      : [];
+    const keptSinFijos = kept.filter((c) => !nombresFijos.has(claveGrupoNombre(c.grupo)));
+
+    const complementosSeleccionados = modoEdicion
+      ? [...kept]
+      : (focoModo ? [...fijos, ...keptSinFijos] : [...fijos]);
 
     Object.entries(seleccionesPorGrupo).forEach(([grupoNombre, opciones]) => {
-      if (!modoEdicion && nombresFijos.has(String(grupoNombre || "").trim().toLowerCase())) return;
+      if (!grupoVisibleEnFoco(findGrupoModal(complementos, grupoNombre), focoModo)) return;
+      if (!modoEdicion && nombresFijos.has(claveGrupoNombre(grupoNombre))) return;
       const grupoConfig = findGrupoModal(complementos, grupoNombre);
       Object.entries(opciones).forEach(([opcion, cantidad]) => {
         if (cantidad > 0) {
@@ -519,7 +540,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             </TouchableOpacity>
           </View>
 
-          {requiereSerie && (
+          {requiereSerie && !focoModo && (
             <View style={styles.serieContainer} collapsable={false}>
               <Text style={styles.serieLabel}>Número de serie (obligatorio)</Text>
               <Text style={styles.serieHint}>Escríbelo primero. Luego elige TÉ / CAFÉ y cantidades MIX.</Text>
@@ -542,7 +563,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             </View>
           )}
 
-          {!modoEdicion && (
+          {!modoEdicion && !ocultarSumar && (
           <View style={styles.cloneBar}>
             <View style={styles.cloneBarText}>
               <View style={styles.cloneTitleRow}>
@@ -605,6 +626,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
           >
             {/* Grupos de complementos */}
             {complementos.map((complemento, index) => {
+              if (!grupoVisibleEnFoco(complemento, focoModo)) return null;
               if (!modoEdicion && grupoSeleccionFija(complemento)) return null;
               const grupoNormalizado = normalizarGrupo(complemento);
               const estado = estadoGrupos[grupoNormalizado.grupo] || {};

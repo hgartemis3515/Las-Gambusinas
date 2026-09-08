@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cantidadGuarnicionEfectiva } from '../utils/platoGuarniciones';
+import { esSeleccionVariantePlato, nombreVisibleConVariante } from '../utils/variantePlato';
 import { esLlevarColor, etiquetaLlevarMozo } from '../utils/tipoServicio';
 
 /**
@@ -15,14 +16,15 @@ const FilaPlatoCompacta = ({
   onMarcarEntregado,
   onToggleSeleccion,
   seleccionado = false,
-  estilos 
+  estilos,
+  puedeMarcarEntregado = false,
+  countdownEntrega = null,
 }) => {
   const subtotal = ((plato.precioUnitario != null ? Number(plato.precioUnitario) : Number(plato.precio || 0)) * plato.cantidad).toFixed(2);
   // SALIO: El mozo solo puede entregar platos que ya salieron de cocina (estado 'salio').
   // 'recoger' pasa a ser solo aviso informativo (sin checkbox).
   const esSalio = plato.estado === 'salio' && !plato.anulado;
   const esSoloAviso = plato.estado === 'recoger' && !plato.anulado;
-  const puedeMarcarEntregado = false;
   const nombreBase = plato.plato?.nombre || plato.nombre || 'Plato desconocido';
   const nombrePlato = nombreVisibleConVariante(nombreBase, plato);
   
@@ -148,10 +150,15 @@ const FilaPlatoCompacta = ({
               size={26} 
               color={seleccionado ? "#10B981" : "#065F46"} 
             />
-            <View style={[styles.badge, { backgroundColor: estilosAplicar.badgeFondo }]}>
-              <Text style={[styles.badgeText, { color: estilosAplicar.badgeTexto }]}>
-                {estilosAplicar.textoEstado}
-              </Text>
+            <View style={styles.salioAccionCol}>
+              <View style={[styles.badge, { backgroundColor: estilosAplicar.badgeFondo }]}>
+                <Text style={[styles.badgeText, { color: estilosAplicar.badgeTexto }]}>
+                  {estilosAplicar.textoEstado}
+                </Text>
+              </View>
+              {countdownEntrega ? (
+                <Text style={styles.countdownEntrega}>⏱ {countdownEntrega}</Text>
+              ) : null}
             </View>
           </TouchableOpacity>
         ) : esSoloAviso ? (
@@ -263,6 +270,16 @@ const styles = StyleSheet.create({
   },
   checkboxButtonResaltanteActivo: {
     backgroundColor: 'rgba(16, 185, 129, 0.28)', // más saturado al seleccionar
+  },
+  salioAccionCol: {
+    alignItems: 'flex-end',
+    gap: 2,
+  },
+  countdownEntrega: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#065F46',
+    fontVariant: ['tabular-nums'],
   },
   avisoContainer: {
     flexDirection: 'row',

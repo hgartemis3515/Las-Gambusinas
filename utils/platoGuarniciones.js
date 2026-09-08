@@ -1,8 +1,9 @@
 import { getNombreOpcion } from './precioComplementos';
 
 /**
- * Combos / guarniciones: un plato con grupos de complementos no puede
- * incrementarse a ciegas; cada unidad debe pasar por ModalComplementos.
+ * Grupos de complementos del plato.
+ * En el buscador de mozos, SUMAR (- # +) aplica preselección (marcados / fijos).
+ * El modal al sumar solo es obligatorio para MIX o número de serie.
  */
 
 export function gruposGuarnicion(plato) {

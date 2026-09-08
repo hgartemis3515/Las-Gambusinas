@@ -1,0 +1,74 @@
+import { gruposGuarnicion, grupoSeleccionFija, resolverPlatoConGrupos } from './platoGuarniciones';
+import { grupoEsVariantePlato, grupoAnexaNombre, gruposVarianteDePlato, gruposAnexarNombreDePlato } from './variantePlato';
+import { platoRequiereNumeroSerie } from './numeroSeriePlato';
+
+export function tipoServicioLinea(t) {
+  if (t === 'para_llevar' || t === 'extra_llevar') return t;
+  return 'mesa';
+}
+
+/** Id de catálogo: en líneas de comanda `plato` es el plato; `_id` puede ser el subdocumento. */
+export function idCatalogoBuscador(lineaOPlato) {
+  if (!lineaOPlato) return '';
+  const nested = lineaOPlato.plato;
+  if (nested && typeof nested === 'object') {
+    const id = nested._id || nested.id;
+    if (id) return String(id);
+  }
+  if (nested && typeof nested !== 'object') return String(nested);
+  if (lineaOPlato.platoId) return String(lineaOPlato.platoId);
+  return String(lineaOPlato._id || lineaOPlato.id || '');
+}
+
+export function grupoEsGuarnicionMozo(grupo) {
+  return !grupoEsVariantePlato(grupo) && !grupoAnexaNombre(grupo);
+}
+
+/** Guarnición que el mozo elige (no MIX, no variación de nombre, no fijo). */
+export function platoMuestraBotonG(plato) {
+  return gruposGuarnicion(plato).some((g) => grupoEsGuarnicionMozo(g) && !grupoSeleccionFija(g));
+}
+
+export function platoMuestraBotonV(plato) {
+  return gruposAnexarNombreDePlato(plato).length > 0;
+}
+
+/** MIX o número de serie: el + del buscador sigue abriendo el modal. */
+export function platoRequiereModalAlSumar(plato, catalogo) {
+  const p = catalogo ? resolverPlatoConGrupos(plato, catalogo) : plato;
+  if (!p) return false;
+  if (gruposVarianteDePlato(p).length > 0) return true;
+  return platoRequiereNumeroSerie(p);
+}
+
+export function grupoVisibleEnFoco(grupo, focoModo) {
+  if (!focoModo) return true;
+  if (!grupo) return false;
+  if (focoModo === 'guarniciones') return grupoEsGuarnicionMozo(grupo);
+  if (focoModo === 'anexarNombre') return grupoAnexaNombre(grupo);
+  return true;
+}
+
+export function lineasDelPlatoEnCarrito(lineas, catalogoPlato, tipoServicio, opts = {}) {
+  const cat = idCatalogoBuscador(catalogoPlato);
+  if (!cat) return [];
+  const sameCat = (lineas || []).filter((p) => idCatalogoBuscador(p) === cat);
+  if (tipoServicio == null) return sameCat;
+  const wanted = tipoServicioLinea(tipoServicio);
+  const sameTipo = sameCat.filter((p) => tipoServicioLinea(p.tipoServicio) === wanted);
+  if (opts.exacto) return sameTipo;
+  return sameTipo.length ? sameTipo : sameCat;
+}
+
+export function ultimaLineaDelPlato(lineas, catalogoPlato, tipoServicio, opts = {}) {
+  const list = lineasDelPlatoEnCarrito(lineas, catalogoPlato, tipoServicio, opts);
+  return list.length ? list[list.length - 1] : null;
+}
+
+export function cantidadTotalDelPlato(lineas, catalogoPlato, cantidadesMap, tipoServicio) {
+  return lineasDelPlatoEnCarrito(lineas, catalogoPlato, tipoServicio, { exacto: tipoServicio != null }).reduce((sum, p) => {
+    const id = p.instanceId || p._id;
+    const fromMap = cantidadesMap && id != null ? cantidadesMap[id] : null;
+    return sum + Math.max(1, Number(fromMap != null ? fromMap : p.cantidad) || 1);
+  }, 0);
+}
