@@ -90,7 +90,7 @@ export default function ReservaWizardScreen() {
   const [cocineros, setCocineros] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [cfg, setCfg] = useState({ minutosAntesCocina: 20, horizonteReservaDias: 7, horaApertura: "11:00", horaCierre: "22:00" });
+  const [cfg, setCfg] = useState({ minutosAntesCocina: 15, horizonteReservaDias: 7, horaApertura: "11:00", horaCierre: "22:00" });
   const [mesaId, setMesaId] = useState(null);
   const [mesaPre, setMesaPre] = useState(null);
   const [mesaPreNoDisponible, setMesaPreNoDisponible] = useState(false);
@@ -352,7 +352,7 @@ export default function ReservaWizardScreen() {
   const fechaCocina = useMemo(() => {
     const m = moment.tz(fechaReserva, TZ);
     if (!m.isValid()) return null;
-    const off = Number(cfg.minutosAntesCocina) || 20;
+    const off = Number(cfg.minutosAntesCocina) || 15;
     const c = m.clone().subtract(off, "minutes");
     const a = moment.tz(TZ);
     return c.isSameOrBefore(a) ? a : c;
@@ -361,7 +361,7 @@ export default function ReservaWizardScreen() {
   const inmediato = useMemo(() => {
     const m = moment.tz(fechaReserva, TZ);
     if (!m.isValid()) return false;
-    return m.clone().subtract(Number(cfg.minutosAntesCocina) || 20, "minutes").isSameOrBefore(moment.tz(TZ));
+    return m.clone().subtract(Number(cfg.minutosAntesCocina) || 15, "minutes").isSameOrBefore(moment.tz(TZ));
   }, [fechaReserva, cfg.minutosAntesCocina]);
 
   const total = useMemo(() => selPlatos.reduce((a, p) => a + (Number(p.precioUnitario ?? p.precio) || 0) * (parseInt(p.cantidad) || 1), 0), [selPlatos]);
@@ -722,7 +722,7 @@ export default function ReservaWizardScreen() {
                 <HoraPicker fechaReserva={fechaReserva} onChange={setFechaReserva} cfg={cfg} s={s} />
                 <View style={s.resumenCocina}>
                   <View style={s.resumenRow}><MaterialCommunityIcons name="clock-outline" size={16} color={cPrimary} /><Text style={s.resumenLine}>Atención: {moment.tz(fechaReserva, TZ).format("DD/MM HH:mm")}</Text></View>
-                  <View style={s.resumenRow}><MaterialCommunityIcons name="fire" size={16} color={cWarn} /><Text style={s.resumenLine}>Cocina: {fechaCocina ? fechaCocina.format("DD/MM HH:mm") : "—"} ({(Number(cfg.minutosAntesCocina) || 20)} min antes)</Text></View>
+                  <View style={s.resumenRow}><MaterialCommunityIcons name="fire" size={16} color={cWarn} /><Text style={s.resumenLine}>Cocina: {fechaCocina ? fechaCocina.format("DD/MM HH:mm") : "—"} ({(Number(cfg.minutosAntesCocina) || 15)} min antes)</Text></View>
                   {inmediato && <Text style={s.warn}>Si cocina aprueba, se activará de inmediato.</Text>}
                 </View>
                 <Text style={s.label}>Encargado de cocina (opcional)</Text>

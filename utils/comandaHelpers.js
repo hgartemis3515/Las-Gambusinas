@@ -30,7 +30,7 @@ export const normalizarEstadoPlatoAccion = (estado) => {
 
 /**
  * Estado visual en ComandaDetalle: el ticket PPA manda sobre plato.estado.
- * Tras aprobar, platos de reserva siguen `pendiente` hasta T−20; no pintar "PENDIENTE" de aprobación.
+ * Tras aprobar, platos de reserva siguen `pendiente` hasta T−15; no pintar "PENDIENTE" de aprobación.
  */
 export const estadoVisualPlatoDetalle = (plato) => {
   const ticket = plato?.pagoAdelantado?.estadoTicket;
