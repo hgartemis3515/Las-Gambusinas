@@ -5393,14 +5393,14 @@ const InicioScreen = () => {
                 if (mesaSeleccionada) {
                   try {
                     await AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesaSeleccionada));
-                    navigation.navigate("Ordenes");
+                    navigation.navigate("Ordenes", { modoExtraLlevar: false });
                   } catch (error) {
                     console.error("Error guardando mesa seleccionada:", error);
-                    navigation.navigate("Ordenes");
+                    navigation.navigate("Ordenes", { modoExtraLlevar: false });
                   }
                 } else {
                   // Si no hay mesa seleccionada, navegar normalmente
-                  navigation.navigate("Ordenes");
+                  navigation.navigate("Ordenes", { modoExtraLlevar: false });
                 }
               }}
             >
@@ -6595,7 +6595,7 @@ const InicioScreen = () => {
                   setModalOpcionesMesaVisible(false);
                   // Guardar la mesa seleccionada para crear nueva comanda
                   await AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesaOpciones));
-                  navigation.navigate("Ordenes");
+                  navigation.navigate("Ordenes", { modoExtraLlevar: false });
                 }}
               >
                 <MaterialCommunityIcons name="plus-circle" size={24} color={theme.colors.text.white} />

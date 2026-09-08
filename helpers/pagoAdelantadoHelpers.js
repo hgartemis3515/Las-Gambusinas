@@ -22,16 +22,18 @@ export function clasificarComandaPorTipoServicio(platosActivos) {
 /**
  * Determina si un plato es elegible para Pago Adelantado (PPA).
  * Reglas:
- * - ✅ tipoServicio 'para_llevar' o 'mesa' en pedido / en_espera / recoger / salio
+ * - ✅ tipoServicio 'para_llevar' en estado 'pedido' sin TPA aprobado
+ * - ✅ tipoServicio 'mesa' en estado 'pedido' o 'en_espera' (cobro anticipado opcional)
  * - ❌ Ya incluido en TPA pendiente_aprobacion o aprobado
- * - ❌ Estados entregado, pagado (caja normal)
+ * - ❌ Estados recoger, entregado, pagado
  * - ❌ Eliminado o anulado
  */
 export function esPlatoElegibleParaPPA(plato) {
   if (!plato) return false;
   if (plato.eliminado || plato.anulado) return false;
+  if (plato.tipoServicio === 'extra_llevar') return false;
   const estado = (plato.estado || '').toLowerCase();
-  if (['entregado', 'pagado'].includes(estado)) return false;
+  if (['recoger', 'entregado', 'pagado'].includes(estado)) return false;
   // Ya en TPA pendiente o aprobado
   if (plato.pagoAdelantado) {
     if (plato.pagoAdelantado.cobrado === true) return false;
@@ -88,9 +90,9 @@ export function puedeLiberarMesaTrasPPA(todosLosPlatos) {
   if (!activos.every(platoCerradoParaLiberar)) return false;
   const composicion = clasificarComandaPorTipoServicio(activos);
   if (composicion === 'solo_para_llevar') return true;
-  // Mixta o mesa: liberar sin caja solo si TODOS los platos activos ya están cobrados por PPA.
-  // Si solo se cobró para llevar, el resto se paga con el botón Pagar.
-  return activos.every(platoCobradoViaPPA);
+  if (activos.every(platoCobradoViaPPA)) return true;
+  // Visita 100% cobrada por PPA aunque algún subdoc haya perdido el flag
+  return activos.some(platoCobradoViaPPA) && activos.every(platoCerradoParaLiberar);
 }
 
 function precioLineaPlato(plato) {
@@ -137,8 +139,8 @@ export function getReglasBotonesComandaDetalle(todosLosPlatos) {
   const platosElegibles = obtenerPlatosElegiblesPPA(platosActivos);
 
   // Pagar: solo si composición NO es solo_para_llevar Y todos están entregados/pagados
-  const todosEntregadosOPagados = platosActivos.length > 0
-    && platosActivos.every(p => {
+  const todosEntregadosOPagados = todosLosPlatos.length > 0
+    && todosLosPlatos.every(p => {
       const e = (p.estado || '').toLowerCase();
       return e === 'entregado' || e === 'pagado';
     });

@@ -20,11 +20,7 @@ export function resolverPrecioLineaPlato(platoItem) {
 
 /** Cantidad de una línea de plato. */
 export function resolverCantidadLineaPlato(platoItem, comanda, index) {
-  const arr = Number(comanda?.cantidades?.[index]);
-  if (Number.isFinite(arr) && arr > 0) return Math.floor(arr);
-  const p = Number(platoItem?.cantidad);
-  if (Number.isFinite(p) && p > 0) return Math.floor(p);
-  return 1;
+  return comanda?.cantidades?.[index] || platoItem?.cantidad || 1;
 }
 
 /** Subtotal de una línea (precio × cantidad). */
@@ -98,8 +94,8 @@ export function listarPlatosEnPantallaPago(comandas, esPagoAdelantado = false) {
         // OK, platos pendientes de aprobación (esperando cocina) siempre se muestran
       } else if (estado === 'pedido') {
         // OK, platos en pedido (cocina aprobó, entraron al KDS) se muestran para reimprimir comanda
-      } else if (esPagoAdelantado && (estado === 'en_espera' || estado === 'recoger' || estado === 'salio')) {
-        // OK, en modo PPA se muestran platos aún en cocina
+      } else if (esPagoAdelantado && (estado === 'en_espera')) {
+        // OK, en modo PPA se muestran platos en espera
       } else if (tienePPA) {
         // ADAPTACIÓN PPA EN PARTES: mostrar siempre (incluso en modo Pagar normal)
         // los platos ya cobrados vía PPA, para que aparezcan con check y el mozo sepa
@@ -167,10 +163,9 @@ export function buildPlatosSeleccionadosPayload(selectedKeys, pagables, cantidad
       if (!Number.isFinite(qty) || qty < 1) qty = 1;
       if (qty > max) qty = max;
       return {
-        comandaId: p.comandaId?.toString?.() || String(p.comandaId),
+        comandaId: p.comandaId,
         platoIndex: p.platoIndex,
         platoSubdocId: p.platoSubdocId,
-        platoLineaId: p.platoSubdocId,
         cantidad: qty,
       };
     });
@@ -321,53 +316,4 @@ export function toggleSeleccionarTodos(selectedKeys, pagables) {
   const allSelected = allKeys.length > 0 && allKeys.every((k) => selectedKeys.includes(k));
   if (allSelected) return [];
   return allKeys;
-}
-
-/** Mensaje de error HTTP (el backend envía `error` o `message`; RN a menudo no trae statusText). */
-export function mensajeErrorHttp(data, status, statusText, fallback) {
-  const d = data && typeof data === 'object' ? data : {};
-  const msg = d.message || d.error;
-  if (msg && String(msg).trim() && String(msg) !== 'undefined') return String(msg);
-  const st = statusText && String(statusText) !== 'undefined' ? String(statusText) : '';
-  if (status && st) return `Error ${status}: ${st}`;
-  if (status) return `Error ${status}`;
-  return fallback || 'Error en la solicitud';
-}
-
-export function esLineaParaLlevarPago(item) {
-  return item?.tipoServicio === 'para_llevar'
-    || item?.platoItem?.tipoServicio === 'para_llevar'
-    || item?.platoItem?.paraLlevar === true
-    || item?.paraLlevar === true;
-}
-
-export function agruparPlatosPantallaPago(items) {
-  const llevar = [];
-  const mesa = [];
-  (items || []).forEach((it) => {
-    if (esLineaParaLlevarPago(it)) llevar.push(it);
-    else mesa.push(it);
-  });
-  return { llevar, mesa, esMixto: llevar.length > 0 && mesa.length > 0 };
-}
-
-export function filasListaPantallaPago(items, { agruparMixto = false } = {}) {
-  const lista = items || [];
-  if (!agruparMixto) {
-    return lista.map((item) => ({ type: 'item', key: item.key, item }));
-  }
-  const { llevar, mesa, esMixto } = agruparPlatosPantallaPago(lista);
-  if (!esMixto) {
-    return lista.map((item) => ({ type: 'item', key: item.key, item }));
-  }
-  const filas = [];
-  if (llevar.length) {
-    filas.push({ type: 'header', key: 'hdr-llevar', title: 'Para llevar' });
-    llevar.forEach((item) => filas.push({ type: 'item', key: item.key, item }));
-  }
-  if (mesa.length) {
-    filas.push({ type: 'header', key: 'hdr-mesa', title: 'Mesa' });
-    mesa.forEach((item) => filas.push({ type: 'item', key: item.key, item }));
-  }
-  return filas;
 }

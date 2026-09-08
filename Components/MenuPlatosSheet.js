@@ -73,6 +73,7 @@ export default function MenuPlatosSheet({
   tipoServicioModal,
   onTipoServicioChange,
   tipoServicioFijo = false,
+  modoExtraLlevar = false,
   searchPlato,
   onSearchChange,
   onSearchFocus,
@@ -131,7 +132,7 @@ export default function MenuPlatosSheet({
       .filter((p) => p._id === plato._id)
       .reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
     const instanciasMesa = selectedPlatos.filter((p) => p._id === plato._id && (p.tipoServicio || 'mesa') === 'mesa');
-    const instanciasLlevar = selectedPlatos.filter((p) => p._id === plato._id && p.tipoServicio === 'para_llevar');
+    const instanciasLlevar = selectedPlatos.filter((p) => p._id === plato._id && (p.tipoServicio === 'para_llevar' || p.tipoServicio === 'extra_llevar'));
     const cantidadMesa = instanciasMesa.reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
     const cantidadLlevar = instanciasLlevar.reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
     const esFav = favoritoIds.includes(String(plato._id));
@@ -139,7 +140,7 @@ export default function MenuPlatosSheet({
     return (
       <View style={[
         styles.platoModalItem,
-        tipoServicioModal === 'para_llevar' && styles.platoModalItemLlevar,
+        (tipoServicioModal === 'para_llevar' || tipoServicioModal === 'extra_llevar') && styles.platoModalItemLlevar,
       ]}>
         <View style={styles.platoModalInfo}>
           <View style={styles.platoModalNombreContainer}>
@@ -275,9 +276,21 @@ export default function MenuPlatosSheet({
                     </TouchableOpacity>
                     <View style={[
                       styles.tipoServicioToggle,
-                      tipoServicioModal === 'para_llevar' && { borderColor: '#8B5CF6' },
+                      (tipoServicioModal === 'para_llevar' || tipoServicioModal === 'extra_llevar') && { borderColor: '#8B5CF6' },
                       tipoServicioFijo && { opacity: 0.95 },
                     ]}>
+                      {modoExtraLlevar ? (
+                        <Text
+                          style={[
+                            styles.tipoServicioLabel,
+                            styles.tipoServicioLabelActive,
+                            { color: '#8B5CF6' },
+                          ]}
+                        >
+                          EXTRA LLEVAR
+                        </Text>
+                      ) : (
+                        <>
                       {!tipoServicioFijo && (
                       <Text
                         style={[
@@ -299,7 +312,7 @@ export default function MenuPlatosSheet({
                         trackColor={{ false: '#F59E0B', true: '#8B5CF6' }}
                         thumbColor="#FFFFFF"
                         accessibilityLabel="Tipo de servicio: Mesa o Para llevar"
-                        accessibilityHint="Cambia el destino de los platos que agregues a continuación"
+                        accessibilityHint="Cambia el destino de todos los platos de la orden"
                       />
                       <Text
                         style={[
@@ -310,6 +323,8 @@ export default function MenuPlatosSheet({
                       >
                         Para llevar
                       </Text>
+                        </>
+                      )}
                     </View>
                   </View>
 

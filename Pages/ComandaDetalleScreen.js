@@ -41,6 +41,7 @@ import configuracionService from '../services/configuracionService';
 import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA, platoCobradoViaPPA, puedeLiberarComandaCostoCero, filtrarComandasElegiblesPPA } from '../helpers/pagoAdelantadoHelpers';
 import { calcularSubtotalPlatosPagables } from '../utils/pagoParcialHelpers';
 import { esSeleccionSinMesa, SELECCION_SIN_MESA } from '../utils/sinMesaOrden';
+import { esLlevarColor, normalizarTipoServicioLinea } from '../utils/tipoServicio';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -268,7 +269,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [aplicandoDescuento, setAplicandoDescuento] = useState(false);
   const [reservaEfectiva, setReservaEfectiva] = useState(reserva || null);
   const [liberandoMesa, setLiberandoMesa] = useState(false);
-
+  
   // Cargar usuario
   useEffect(() => {
     const loadUser = async () => {
@@ -308,7 +309,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     cargarReserva();
     return () => { cancelled = true; };
   }, [comandas, mesaIdRef, reserva?._id, userInfo?._id]);
-
+  
   // Cargar configuración de moneda
   useEffect(() => {
     const loadConfiguracion = async () => {
@@ -465,8 +466,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 aplicarPedidoSinVaciar(res.data.comandas, pedidoIdCiclo)
               );
               break;
-            }
-          } catch (e) {
+          }
+        } catch (e) {
             if (__DEV__) console.warn(`[ComandaDetalle] /mesa/${ruta}:`, e?.message);
           }
         }
@@ -481,7 +482,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           try {
             const resC = await axios.get(`${comandaBase}/${cid}`, { timeout: 8000 });
             if (resC.data?._id) comandasMesa = [resC.data];
-          } catch (e) {
+            } catch (e) {
             if (__DEV__) console.warn('[ComandaDetalle] comanda de reserva:', e?.message);
           }
         }
@@ -804,7 +805,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       if (!eventoDeEstaPantalla(data) && !esNuestraReserva) return;
       if (esPagoForzadoEvento(data)) setCobroForzadoLocal(true);
       aplicarPayloadComanda(data);
-      refrescarComandasRef.current?.();
+        refrescarComandasRef.current?.();
     };
     socket.on('ticket-ppa-aprobado', refrescarSiReservaOTicket);
     socket.on('ticket-ppa-creado', refrescarSiReservaOTicket);
@@ -909,8 +910,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
     return () => {
       if (mesaId) {
-        if (leaveMesa) leaveMesa(mesaId);
-        else socket.emit('leave-mesa', mesaId);
+      if (leaveMesa) leaveMesa(mesaId);
+      else socket.emit('leave-mesa', mesaId);
       }
       socket.off('plato-actualizado');
       socket.off('plato-agregado');
@@ -1002,14 +1003,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     const e = (p.estado || '').toLowerCase();
     return e === 'pedido' || e === 'en_espera' || e === 'recoger';
   });
-  const platosActivosDetalle = todosLosPlatos.filter((p) => !p.eliminado && !p.anulado);
-  const puedePagar = platosActivosDetalle.length > 0 && platosActivosDetalle.every((p) => {
-    const e = (p.estado || '').toLowerCase();
-    return e === 'entregado' || e === 'pagado';
-  });
+  const puedePagar = todosLosPlatos.length > 0 && todosLosPlatos.every(p => p.estado === 'entregado' || p.estado === 'pagado');
   
   // 🔥 PAGO ADELANTADO (PPA): Reglas de habilitación de botones
   const reglasPPA = getReglasBotonesComandaDetalle(todosLosPlatos);
+  const platosActivosDetalle = todosLosPlatos.filter((p) => !p.eliminado && !p.anulado);
   const cobroAdelantadoVigente = platosActivosDetalle.length > 0
     && platosActivosDetalle.every(platoCobradoViaPPA);
   const abonoReservaMonto = Number(reservaEfectiva?.pagoAdelantado?.montoPagado) || 0;
@@ -1044,6 +1042,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const mostrarBotonPagar = !cobroHecho && !comandaYaPagada && reglasPPA.composicion !== 'solo_para_llevar' && !reglasPPA.esCostoCero;
   const mostrarBotonPagoAdelantado = reglasPPA.mostrarPagoAdelantado && !cobroHecho && !comandaYaPagada;
   const puedePagarNormal = puedePagar && mostrarBotonPagar && !puedeLiberarReserva && !puedeConfirmarEntrega && !puedeLiberarCostoCero;
+  const puedeExtraLlevar = puedeNuevaComanda && !esSeleccionSinMesa(mesa) && !!mesa?._id;
   
   // Entrega al comensal es automática al salir de cocina; el mozo no confirma.
   const puedeEntregar = false;
@@ -1071,7 +1070,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     nuevosPlatos[index].cantidad = nuevaCantidad;
     setPlatosEditados(nuevosPlatos);
   };
-
+  
   const handleIncrementarPlatoEditado = (platoLinea, index) => {
     if (!platoRequiereEleccionComplementos(platoLinea, platos) && !platoRequiereNumeroSerie(platoLinea, platos.find((p) => String(p._id) === idCatalogoPlato(platoLinea)))) {
       handleCambiarCantidad(index, 1);
@@ -1328,7 +1327,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           plato: p.plato,
           platoId: platoCompleto?.id || p.platoId || null,
           estado: p.estado || 'pedido',
-          tipoServicio: p.tipoServicio === 'para_llevar' ? 'para_llevar' : 'mesa',
+          tipoServicio: normalizarTipoServicioLinea(p.tipoServicio),
           tipoPedido: slugTipoPedido(p.tipoPedido),
           complementosSeleccionados: p.complementosSeleccionados || [],
           notaEspecial: p.notaEspecial || '',
@@ -1974,7 +1973,25 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     navigation.navigate('Ordenes', {
       mesa: mesa,
       origen: 'ComandaDetalle',
-      reserva: reservaEfectiva || reserva || null
+      reserva: reservaEfectiva || reserva || null,
+      modoExtraLlevar: false,
+    });
+  };
+
+  const handleExtraLlevar = () => {
+    if (!puedeNuevaComanda || esSeleccionSinMesa(mesa) || !mesa?._id) {
+      Alert.alert('Error', 'No se puede agregar extra llevar en esta mesa.');
+      return;
+    }
+    AsyncStorage.setItem('mesaSeleccionada', JSON.stringify(mesa));
+    if (reservaEfectiva) {
+      AsyncStorage.setItem('reservaActiva', JSON.stringify(reservaEfectiva));
+    }
+    navigation.navigate('Ordenes', {
+      mesa: mesa,
+      origen: 'ComandaDetalle',
+      reserva: reservaEfectiva || reserva || null,
+      modoExtraLlevar: true,
     });
   };
   
@@ -2169,7 +2186,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         if (activasResponse.data?.comandas?.length > 0) {
           comandasPPA = filtrarComandasElegiblesPPA(activasResponse.data.comandas);
         }
-      }
+        }
       }
 
       if (!comandasPPA || comandasPPA.length === 0) {
@@ -2439,22 +2456,22 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-              <MaterialCommunityIcons name="calendar-clock" size={16} color={themeColors.colors?.reservado || '#7C3AED'} />
+            <MaterialCommunityIcons name="calendar-clock" size={16} color={themeColors.colors?.reservado || '#7C3AED'} />
               <Text style={{ fontSize: 13, fontWeight: '700', color: themeColors.colors?.reservado || '#7C3AED' }}>
                 Reserva
-              </Text>
-            </View>
+            </Text>
+          </View>
             {(abonoReservaMonto > 0 || saldoReserva > 0) && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 {abonoReservaMonto > 0 && (
-                  <Text style={{ fontSize: 11, color: themeColors.colors?.text?.secondary || '#6B7280' }}>
+            <Text style={{ fontSize: 11, color: themeColors.colors?.text?.secondary || '#6B7280' }}>
                     Adelanto: <Text style={{ fontWeight: '700', color: themeColors.colors?.reservado || '#7C3AED' }}>
                       S/. {abonoReservaMonto.toFixed(2)}
-                    </Text>
-                  </Text>
+              </Text>
+            </Text>
                 )}
-                <Text style={{ fontSize: 11, color: themeColors.colors?.text?.secondary || '#6B7280' }}>
-                  Saldo: <Text style={{ fontWeight: '700' }}>
+            <Text style={{ fontSize: 11, color: themeColors.colors?.text?.secondary || '#6B7280' }}>
+              Saldo: <Text style={{ fontWeight: '700' }}>
                     S/. {saldoReserva.toFixed(2)}
                   </Text>
                 </Text>
@@ -2570,49 +2587,49 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           }
         ]}>
           <ScrollView style={styles.optionsScrollView}>
+            {puedeEditar && (
             <TouchableOpacity
               style={[
                 styles.actionButton, 
-                { backgroundColor: '#3B82F6' }, // Azul intenso en ambos modos
-                !puedeEditar && styles.actionButtonDisabled
+                { backgroundColor: '#3B82F6' },
               ]}
               onPress={handleEditarComanda}
-              disabled={!puedeEditar}
             >
               <MaterialCommunityIcons name="pencil" size={20} color="#fff" />
               <Text style={styles.actionButtonText}>Editar Comanda</Text>
             </TouchableOpacity>
+            )}
             
+            {puedeEliminarPlatos && (
             <TouchableOpacity
               style={[
                 styles.actionButton, 
-                { backgroundColor: '#EF4444' }, // Rojo intenso en ambos modos
-                !puedeEliminarPlatos && styles.actionButtonDisabled
+                { backgroundColor: '#EF4444' },
               ]}
               onPress={handleEliminarPlatos}
-              disabled={!puedeEliminarPlatos}
             >
               <MaterialCommunityIcons name="delete" size={20} color="#fff" />
               <Text style={styles.actionButtonText}>Eliminar Platos</Text>
             </TouchableOpacity>
+            )}
             
+            {puedeEliminarComanda && (
             <TouchableOpacity
               style={[
                 styles.actionButton, 
-                { backgroundColor: '#EF4444' }, // Rojo intenso en ambos modos
-                !puedeEliminarComanda && styles.actionButtonDisabled
+                { backgroundColor: '#EF4444' },
               ]}
               onPress={handleEliminarComanda}
-              disabled={!puedeEliminarComanda}
             >
               <MaterialCommunityIcons name="delete-forever" size={20} color="#fff" />
               <Text style={styles.actionButtonText}>Eliminar Comanda</Text>
             </TouchableOpacity>
+            )}
             
             <TouchableOpacity
               style={[
                 styles.actionButton, 
-                { backgroundColor: '#10B981' }, // Verde intenso en ambos modos
+                { backgroundColor: '#10B981' },
                 !puedeNuevaComanda && styles.actionButtonDisabled
               ]}
               onPress={handleNuevaComanda}
@@ -2621,6 +2638,19 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               <MaterialCommunityIcons name="plus-circle" size={20} color="#fff" />
               <Text style={styles.actionButtonText}>Nueva Comanda</Text>
             </TouchableOpacity>
+
+            {puedeExtraLlevar && (
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                { backgroundColor: '#8B5CF6' },
+              ]}
+              onPress={handleExtraLlevar}
+            >
+              <MaterialCommunityIcons name="bag-personal-plus" size={20} color="#fff" />
+              <Text style={styles.actionButtonText}>Extra Llevar</Text>
+            </TouchableOpacity>
+            )}
             
             {mostrarBotonPagar && (
             <TouchableOpacity
@@ -2827,9 +2857,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                         ]}>
                           {plato.plato.nombre}
                         </Text>
-                        {plato.tipoServicio === 'para_llevar' && (
+                        {esLlevarColor(plato.tipoServicio) && (
                           <View style={styles.paraLlevarBadge}>
-                            <Text style={styles.paraLlevarBadgeText}>🥡 Para llevar</Text>
+                            <Text style={styles.paraLlevarBadgeText}>
+                              {plato.tipoServicio === 'extra_llevar' ? 'Extra llevar' : '🥡 Para llevar'}
+                            </Text>
                           </View>
                         )}
                         <View style={[
@@ -3012,7 +3044,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       >
         <View style={[styles.modalOverlay, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.85)' : 'rgba(0, 0, 0, 0.5)', ...(keyboardInset > 0 ? { paddingBottom: keyboardInset } : null) }]}>
           <View style={[
-            styles.modalContentEditar,
+            styles.modalContentEditar, 
             { 
               backgroundColor: isDark ? '#000000' : (themeColors.colors?.surface || themeColors.colors?.card || themeColors.card || '#FFFFFF'), // Negro puro en modo oscuro
               shadowColor: '#000',
@@ -3304,9 +3336,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                             ]}>
                               {plato.nombre}
                             </Text>
-                            {plato.tipoServicio === 'para_llevar' && (
+                            {esLlevarColor(plato.tipoServicio) && (
                               <View style={styles.paraLlevarBadge}>
-                                <Text style={styles.paraLlevarBadgeText}>🥡 Para llevar</Text>
+                                <Text style={styles.paraLlevarBadgeText}>
+                                  {plato.tipoServicio === 'extra_llevar' ? 'Extra llevar' : '🥡 Para llevar'}
+                                </Text>
                               </View>
                             )}
                             {/* Mostrar complementos si existen */}
@@ -3441,9 +3475,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                             ]}>
                               {plato.nombre}
                             </Text>
-                            {plato.tipoServicio === 'para_llevar' && (
+                            {esLlevarColor(plato.tipoServicio) && (
                               <View style={styles.paraLlevarBadge}>
-                                <Text style={styles.paraLlevarBadgeText}>🥡 Para llevar</Text>
+                                <Text style={styles.paraLlevarBadgeText}>
+                                  {plato.tipoServicio === 'extra_llevar' ? 'Extra llevar' : '🥡 Para llevar'}
+                                </Text>
                               </View>
                             )}
                             <View style={[styles.badgeEstado, { backgroundColor: coloresEstado.badgeColor }]}>
@@ -3476,7 +3512,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                     setTipoPlatoFiltro(null);
                     setSearchPlato('');
                     setCategoriaFiltro(null);
-                    setTipoServicioModal('mesa');
+                                setTipoServicioModal('mesa');
                     setEligiendoTipoMenu(true);
                   }}
                 >
@@ -3685,9 +3721,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                             ]}>
                               {plato.plato?.nombre || 'Plato desconocido'}
                             </Text>
-                            {plato.tipoServicio === 'para_llevar' && (
+                            {esLlevarColor(plato.tipoServicio) && (
                               <View style={styles.paraLlevarBadge}>
-                                <Text style={styles.paraLlevarBadgeText}>🥡 Para llevar</Text>
+                                <Text style={styles.paraLlevarBadgeText}>
+                                  {plato.tipoServicio === 'extra_llevar' ? 'Extra llevar' : '🥡 Para llevar'}
+                                </Text>
                               </View>
                             )}
                             <View style={[

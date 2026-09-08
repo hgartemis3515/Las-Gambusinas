@@ -38,6 +38,7 @@ import { reservaEsDeMozo, estadoMesaConfirmadoTrasCrearComanda, estadoMesaLocalT
 import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 import { slugTipoPedido, mismoTipoPedido } from "../../../utils/tipoPedidoLinea";
 import { esSeleccionSinMesa, SELECCION_SIN_MESA, COLOR_PARA_LLEVAR } from "../../../utils/sinMesaOrden";
+import { esLlevarColor, etiquetaLlevarMozo, TIPO_EXTRA_LLEVAR, TIPO_PARA_LLEVAR, TIPO_MESA } from "../../../utils/tipoServicio";
 import {
   CAT_FAVORITOS,
   loadFavoritosLocal,
@@ -205,7 +206,8 @@ const OrdenesScreen = ({ route }) => {
   const styles = OrdenesScreenStyles(theme, orientation);
   
   // Obtener parámetros de navegación (mesa y reserva desde ComandaDetalle)
-  const { mesa: mesaParam, reserva: reservaParam } = route?.params || {};
+  const { mesa: mesaParam, reserva: reservaParam, modoExtraLlevar: modoExtraParam } = route?.params || {};
+  const modoExtraLlevar = modoExtraParam === true;
   
   const [userInfo, setUserInfo] = useState(null);
   const [selectedMesa, setSelectedMesa] = useState(null);
@@ -345,6 +347,22 @@ const OrdenesScreen = ({ route }) => {
       AsyncStorage.setItem("reservaActiva", JSON.stringify(reservaParam));
     }
   }, [mesaParam, reservaParam]);
+
+  useEffect(() => {
+    if (modoExtraLlevar) {
+      setTipoServicioModal(TIPO_EXTRA_LLEVAR);
+      setSelectedPlatos((prev) => prev.map((p) => ({ ...p, tipoServicio: TIPO_EXTRA_LLEVAR })));
+      return;
+    }
+    setSelectedPlatos((prev) => {
+      if (!prev.some((p) => p.tipoServicio === TIPO_EXTRA_LLEVAR)) return prev;
+      return prev.map((p) => ({
+        ...p,
+        tipoServicio: p.tipoServicio === TIPO_EXTRA_LLEVAR ? TIPO_MESA : p.tipoServicio,
+      }));
+    });
+    setTipoServicioModal((prev) => (prev === TIPO_EXTRA_LLEVAR ? TIPO_MESA : prev));
+  }, [modoExtraLlevar]);
 
   // Recargar mesa y usuario cuando se enfoca la pantalla (por si viene desde InicioScreen con mesa seleccionada)
   useFocusEffect(
@@ -591,8 +609,11 @@ const OrdenesScreen = ({ route }) => {
   const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null, metaVariante = null) => {
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
     const tipoServicio = esSeleccionSinMesa(selectedMesa)
-      ? 'para_llevar'
-      : (tipoServicioOverride || (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa'));
+      ? TIPO_PARA_LLEVAR
+      : (tipoServicioOverride
+        || (modoExtraLlevar || tipoServicioModal === TIPO_EXTRA_LLEVAR
+          ? TIPO_EXTRA_LLEVAR
+          : (tipoServicioModal === TIPO_PARA_LLEVAR ? TIPO_PARA_LLEVAR : TIPO_MESA)));
     const instanceId = `${plato._id}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
     const complementosNormalizados = complementosSeleccionados.map(comp => ({
@@ -784,51 +805,17 @@ const OrdenesScreen = ({ route }) => {
     );
   };
 
-  const handleToggleTipoServicio = (platoInstanceId) => {
-    if (esSeleccionSinMesa(selectedMesa)) return;
-    const linea = selectedPlatos.find((p) => (p.instanceId || p._id) === platoInstanceId);
-    if (!linea) return;
-    const nextTipo = linea.tipoServicio === 'para_llevar' ? 'mesa' : 'para_llevar';
+  const aplicarTipoServicioCarrito = (tipo) => {
+    const next = tipo === TIPO_PARA_LLEVAR ? TIPO_PARA_LLEVAR : TIPO_MESA;
+    persistTipoServicioOrdenes(next);
+    setTipoServicioModal(next);
+    setSelectedPlatos((prev) => prev.map((p) => ({ ...p, tipoServicio: next })));
+  };
 
-    const mismaLineaSinTipo = (a, b) => {
-      if (a._id !== b._id) return false;
-      if ((a.notaEspecial || '').trim() !== (b.notaEspecial || '').trim()) return false;
-      const aComps = a.complementosElegidos || [];
-      const bComps = b.complementosElegidos || [];
-      if (aComps.length === 0 && bComps.length === 0) return true;
-      if (aComps.length !== bComps.length) return false;
-      return mismasGuarniciones(aComps, bComps);
-    };
-
-    const gemela = selectedPlatos.find((p) => {
-      if ((p.instanceId || p._id) === platoInstanceId) return false;
-      if ((p.tipoServicio || 'mesa') !== nextTipo) return false;
-      return mismaLineaSinTipo(p, linea);
-    });
-
-    if (gemela) {
-      const gemelaId = gemela.instanceId || gemela._id;
-      const cantLinea = cantidades[platoInstanceId] || linea.cantidad || 1;
-      const cantGemela = cantidades[gemelaId] || gemela.cantidad || 1;
-      const newCant = cantGemela + cantLinea;
-      setCantidades((prev) => {
-        const next = { ...prev, [gemelaId]: newCant };
-        delete next[platoInstanceId];
-        return next;
-      });
-      setSelectedPlatos((prev) =>
-        prev
-          .filter((p) => (p.instanceId || p._id) !== platoInstanceId)
-          .map((p) => ((p.instanceId || p._id) === gemelaId ? { ...p, cantidad: newCant } : p))
-      );
-      return;
-    }
-
-    setSelectedPlatos((prev) =>
-      prev.map((p) =>
-        (p.instanceId || p._id) === platoInstanceId ? { ...p, tipoServicio: nextTipo } : p
-      )
-    );
+  const handleToggleTipoServicio = () => {
+    if (esSeleccionSinMesa(selectedMesa) || modoExtraLlevar) return;
+    const nextTipo = tipoServicioModal === TIPO_PARA_LLEVAR ? TIPO_MESA : TIPO_PARA_LLEVAR;
+    aplicarTipoServicioCarrito(nextTipo);
   };
 
   const handleUpdateCantidad = (platoInstanceId, delta) => {
@@ -1149,11 +1136,17 @@ const OrdenesScreen = ({ route }) => {
       }
       }
 
+      const tipoServicioEnvio = esSinMesaOrden
+        ? TIPO_PARA_LLEVAR
+        : (modoExtraLlevar || tipoServicioModal === TIPO_EXTRA_LLEVAR)
+          ? TIPO_EXTRA_LLEVAR
+          : (tipoServicioModal === TIPO_PARA_LLEVAR ? TIPO_PARA_LLEVAR : TIPO_MESA);
+
       const platosData = selectedPlatos.map(plato => ({
         plato: plato._id,
         platoId: plato.id || null,
         estado: "en_espera",
-        tipoServicio: esSinMesaOrden || plato.tipoServicio === 'para_llevar' ? 'para_llevar' : 'mesa',
+        tipoServicio: tipoServicioEnvio,
         tipoPedido: slugTipoPedido(plato.tipoPedido),
         complementosSeleccionados: plato.complementosElegidos || [],
         notaEspecial: plato.notaEspecial || "",
@@ -1389,6 +1382,9 @@ const OrdenesScreen = ({ route }) => {
       setIsSendingComanda(false);
       setMostrarOverlayCarga(false);
 
+      if (modoExtraLlevar) {
+        navigation.setParams({ modoExtraLlevar: false });
+      }
       irAComandaDetalleTrasEnvio(navigation, {
         comanda: comandaParaNav,
         mesa: mesaParaNav,
@@ -1443,7 +1439,10 @@ const OrdenesScreen = ({ route }) => {
         setIsSendingComanda(false);
         setMostrarOverlayCarga(false);
 
-        irAComandaDetalleTrasEnvio(navigation, {
+        if (modoExtraLlevar) {
+        navigation.setParams({ modoExtraLlevar: false });
+      }
+      irAComandaDetalleTrasEnvio(navigation, {
           comanda: comandaParaNav,
           mesa: mesaParaNav,
           reserva: reservaParaNav,
@@ -1684,7 +1683,7 @@ const OrdenesScreen = ({ route }) => {
               );
               const tieneComplementos = guarnicionesVisibles.length > 0;
               const tieneNota = plato.notaEspecial && plato.notaEspecial.trim().length > 0;
-              const esParaLlevar = plato.tipoServicio === 'para_llevar';
+              const esLlevar = esLlevarColor(plato.tipoServicio);
 
               const muestraEditarFijos = platoEditableEnOrdenes(plato, platos);
 
@@ -1701,10 +1700,10 @@ const OrdenesScreen = ({ route }) => {
                           N/S {plato.numeroSerie}
                         </Text>
                       ) : null}
-                      {esParaLlevar && (
+                      {esLlevar && (
                         <View style={styles.paraLlevarBadge}>
                           <MaterialCommunityIcons name="bag-personal" size={12} color="#fff" />
-                          <Text style={styles.paraLlevarBadgeText}>Para llevar</Text>
+                          <Text style={styles.paraLlevarBadgeText}>{etiquetaLlevarMozo(plato.tipoServicio)}</Text>
                         </View>
                       )}
                     </View>
@@ -1761,20 +1760,22 @@ const OrdenesScreen = ({ route }) => {
                   </View>
                   </View>
                   <View style={styles.platoActions}>
+                    {!modoExtraLlevar && !esSeleccionSinMesa(selectedMesa) && (
                     <TouchableOpacity
                       style={[
                         styles.tipoServicioLineaBtn,
-                        esParaLlevar ? styles.tipoServicioLineaBtnLlevar : styles.tipoServicioLineaBtnMesa,
+                        esLlevar ? styles.tipoServicioLineaBtnLlevar : styles.tipoServicioLineaBtnMesa,
                       ]}
-                      onPress={() => handleToggleTipoServicio(platoInstanceId)}
-                      accessibilityLabel={esParaLlevar ? 'Para llevar. Tocar para cambiar a mesa' : 'Mesa. Tocar para cambiar a para llevar'}
+                      onPress={handleToggleTipoServicio}
+                      accessibilityLabel={esLlevar ? 'Para llevar. Tocar para cambiar todos a mesa' : 'Mesa. Tocar para cambiar todos a para llevar'}
                     >
                       <MaterialCommunityIcons
-                        name={esParaLlevar ? 'bag-personal' : 'table-chair'}
+                        name={esLlevar ? 'bag-personal' : 'table-chair'}
                         size={16}
                         color="#FFFFFF"
                       />
                     </TouchableOpacity>
+                    )}
                     <TouchableOpacity
                       style={styles.cantidadButton}
                       onPress={() => handleUpdateCantidad(platoInstanceId, -1)}
@@ -1997,10 +1998,11 @@ const OrdenesScreen = ({ route }) => {
         labelForTipo={labelForTipo}
         tipoServicioModal={tipoServicioModal}
         onTipoServicioChange={(v) => {
-          if (esSeleccionSinMesa(selectedMesa)) return;
-          setTipoServicioModal(persistTipoServicioOrdenes(v));
+          if (esSeleccionSinMesa(selectedMesa) || modoExtraLlevar) return;
+          aplicarTipoServicioCarrito(v);
         }}
-        tipoServicioFijo={esSeleccionSinMesa(selectedMesa)}
+        tipoServicioFijo={esSeleccionSinMesa(selectedMesa) || modoExtraLlevar}
+        modoExtraLlevar={modoExtraLlevar}
         searchPlato={searchPlato}
         onSearchChange={handleSearchChangeText}
         onSearchFocus={handleSearchFocus}

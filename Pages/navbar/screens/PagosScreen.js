@@ -30,6 +30,7 @@ import logger from "../../../utils/logger";
 import configuracionService from "../../../services/configuracionService";
 import { filtrarComandasActivas, filtrarComandasPorIds } from "../../../utils/comandaHelpers";
 import { esSeleccionSinMesa } from "../../../utils/sinMesaOrden";
+import { esLlevarColor, etiquetaLlevarMozo } from "../../../utils/tipoServicio";
 import { cantidadGuarnicionEfectiva } from "../../../utils/platoGuarniciones";
 import { mostrarOpcionesComanda } from "../../../services/comandaPrint";
 import {
@@ -45,9 +46,6 @@ import {
   parcheDescuentoComanda,
   fuenteTraeCamposDescuento,
   toggleSeleccionarTodos,
-  mensajeErrorHttp,
-  agruparPlatosPantallaPago,
-  filasListaPantallaPago,
 } from "../../../utils/pagoParcialHelpers";
 // Animaciones Premium 60fps
 import Animated, {
@@ -1052,16 +1050,6 @@ const PagosScreen = () => {
     [platosEnPantalla]
   );
 
-  const pagoMixtoMesaYLlevar = useMemo(
-    () => agruparPlatosPantallaPago(platosEnPantalla).esMixto,
-    [platosEnPantalla]
-  );
-
-  const filasPantallaPago = useMemo(
-    () => filasListaPantallaPago(platosEnPantalla, { agruparMixto: esPagoAdelantado }),
-    [platosEnPantalla, esPagoAdelantado]
-  );
-
   // ✅ FIX BUG: decidir la fuente de platos a renderizar en la sección "Platos".
   // - Mientras hay pendiente tras pago (ciclo de pagos parciales en curso):
   //   usar SIEMPRE `platosEnPantalla` (de comandas) para mostrar pendientes
@@ -1584,11 +1572,7 @@ const PagosScreen = () => {
         
         // Verificar si hay error en la respuesta
         if (boucherResponse.status >= 400) {
-          const errorMsg = mensajeErrorHttp(
-            boucherResponse.data,
-            boucherResponse.status,
-            boucherResponse.statusText
-          );
+          const errorMsg = boucherResponse.data?.message || `Error ${boucherResponse.status}: ${boucherResponse.statusText}`;
           throw new Error(errorMsg);
         }
         
@@ -1619,7 +1603,7 @@ const PagosScreen = () => {
           // Error del backend (4xx, 5xx)
           const status = postError.response.status;
           const errorData = postError.response.data || {};
-          const errorMsg = mensajeErrorHttp(errorData, status, postError.response?.statusText, postError.message);
+          const errorMsg = errorData.message || postError.message;
           
           // 🔥 Manejo especial de error 422/400 con comandas inválidas
           if (status === 422 || (status === 400 && (errorMsg?.includes('no son válidas') || errorMsg?.includes('no válida')))) {
@@ -1663,7 +1647,7 @@ const PagosScreen = () => {
                   });
                   
                   if (retryResponse.status >= 400) {
-                    throw new Error(mensajeErrorHttp(retryResponse.data, retryResponse.status, retryResponse.statusText));
+                    throw new Error(retryResponse.data?.message || `Error ${retryResponse.status}`);
                   }
                   
                   const parsedRetry = parseBoucherResponse(retryResponse.data);
@@ -1706,7 +1690,7 @@ const PagosScreen = () => {
                 });
                 
                 if (retryResponse.status >= 400) {
-                  throw new Error(mensajeErrorHttp(retryResponse.data, retryResponse.status, retryResponse.statusText));
+                  throw new Error(retryResponse.data?.message || `Error ${retryResponse.status}`);
                 }
                 
                 const parsedRetry2 = parseBoucherResponse(retryResponse.data);
@@ -1989,12 +1973,7 @@ const PagosScreen = () => {
       setMensajeCarga("Procesando pago...");
       
       // ✅ Mostrar mensaje de error específico
-      const errorMessage = mensajeErrorHttp(
-        error.response?.data,
-        error.response?.status,
-        error.response?.statusText,
-        error.message || "No se pudo procesar el pago. Por favor, intenta nuevamente."
-      );
+      const errorMessage = error.message || error.response?.data?.message || "No se pudo procesar el pago. Por favor, intenta nuevamente.";
       Alert.alert("❌ Error al Procesar Pago", errorMessage);
     } finally {
       // ✅ GARANTIZAR que el loading siempre se resetee (doble seguridad)
@@ -2345,11 +2324,6 @@ const PagosScreen = () => {
               </TouchableOpacity>
             )}
           </View>
-          {esPagoAdelantado && pagoMixtoMesaYLlevar && (
-            <Text style={{ fontSize: 12, color: theme.colors?.text?.secondary, marginBottom: 8 }}>
-              Comanda combinada: desmarca los platos de mesa si solo cobras para llevar.
-            </Text>
-          )}
           {!usarPlatosDeBoucher && totalRestante != null && totalRestante > 0 && (
             <Text style={{ fontSize: 13, color: theme.colors?.text?.secondary, marginBottom: 8 }}>
               Restante por cobrar: {configMoneda?.simboloMoneda || 'S/.'}{' '}
@@ -2370,10 +2344,10 @@ const PagosScreen = () => {
                   <View style={styles.platoInfo}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.platoNombre}>{platoItem.nombre || "Plato"}</Text>
-                      {platoItem.tipoServicio === 'para_llevar' && (
+                      {esLlevarColor(platoItem.tipoServicio) && (
                         <View style={styles.paraLlevarBadge}>
                           <MaterialCommunityIcons name="bag-personal" size={11} color="#FFFFFF" />
-                          <Text style={styles.paraLlevarBadgeText}>Para llevar</Text>
+                          <Text style={styles.paraLlevarBadgeText}>{etiquetaLlevarMozo(platoItem.tipoServicio)}</Text>
                         </View>
                       )}
                       {platoItem.complementosSeleccionados && platoItem.complementosSeleccionados.length > 0 && (
@@ -2400,30 +2374,11 @@ const PagosScreen = () => {
                 </View>
               );
             })
-          ) : filasPantallaPago.length > 0 ? (
-            filasPantallaPago.map((fila) => {
-              if (fila.type === 'header') {
-                return (
-                  <View
-                    key={fila.key}
-                    style={{
-                      marginTop: 10,
-                      marginBottom: 6,
-                      paddingBottom: 4,
-                      borderBottomWidth: 1,
-                      borderBottomColor: theme.colors?.border || '#E5E7EB',
-                    }}
-                  >
-                    <Text style={{ fontWeight: '700', fontSize: 13, color: theme.colors?.text?.primary }}>
-                      {fila.title}
-                    </Text>
-                  </View>
-                );
-              }
-              const item = fila.item;
+          ) : platosEnPantalla.length > 0 ? (
+            platosEnPantalla.map((item) => {
               const seleccionado = platosSeleccionadosPago.includes(item.key);
               const yaPagado = item.yaPagado === true;
-              const contenidoFila = (
+              const fila = (
                 <>
                   <MaterialCommunityIcons
                     name={
@@ -2455,10 +2410,10 @@ const PagosScreen = () => {
                           {item.nombre}
                           {yaPagado ? '  · Pagado' : ''}
                         </Text>
-                        {item.tipoServicio === 'para_llevar' && (
+                        {esLlevarColor(item.tipoServicio) && (
                           <View style={styles.paraLlevarBadge}>
                             <MaterialCommunityIcons name="bag-personal" size={11} color="#FFFFFF" />
-                            <Text style={styles.paraLlevarBadgeText}>Para llevar</Text>
+                            <Text style={styles.paraLlevarBadgeText}>{etiquetaLlevarMozo(item.tipoServicio)}</Text>
                           </View>
                         )}
                         {item.comandaNumber != null && (
@@ -2511,7 +2466,7 @@ const PagosScreen = () => {
                       { opacity: 0.85, backgroundColor: '#16a34a14' },
                     ]}
                   >
-                    {contenidoFila}
+                    {fila}
                   </View>
                 );
               }
@@ -2540,14 +2495,14 @@ const PagosScreen = () => {
                   }}
                   activeOpacity={0.7}
                 >
-                  {contenidoFila}
+                  {fila}
                 </TouchableOpacity>
               );
             })
           ) : (
             <View style={{ padding: 20, alignItems: 'center' }}>
               <Text style={{ color: theme.colors?.text?.secondary || '#6B7280' }}>
-                No hay platos {esPagoAdelantado ? 'para pago adelantado' : 'entregados pendientes de pago'}
+                No hay platos entregados pendientes de pago
               </Text>
             </View>
           )}

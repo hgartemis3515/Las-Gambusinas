@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cantidadGuarnicionEfectiva } from '../utils/platoGuarniciones';
-import { esSeleccionVariantePlato, nombreVisibleConVariante } from '../utils/variantePlato';
+import { esLlevarColor, etiquetaLlevarMozo } from '../utils/tipoServicio';
 
 /**
  * Componente para renderizar una fila compacta de plato en la tabla
@@ -71,10 +71,10 @@ const FilaPlatoCompacta = ({
           {nombrePlato}
         </Text>
         {/* NUEVO: Badge Para llevar debajo del nombre */}
-        {plato.tipoServicio === 'para_llevar' && (
+        {esLlevarColor(plato.tipoServicio) && (
           <View style={styles.paraLlevarBadge}>
             <MaterialCommunityIcons name="bag-personal" size={11} color="#FFFFFF" />
-            <Text style={styles.paraLlevarBadgeText}>Para llevar</Text>
+            <Text style={styles.paraLlevarBadgeText}>{etiquetaLlevarMozo(plato.tipoServicio)}</Text>
           </View>
         )}
         {/* Complementos seleccionados */}

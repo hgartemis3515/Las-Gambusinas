@@ -18,7 +18,6 @@ import ModalComplementos from "../Components/ModalComplementos";
 import { platoRequiereEleccionComplementos, resolverPlatoConGrupos, guarnicionesElegidas, preseleccionComplementosDePlato, cantidadGuarnicionEfectiva } from "../utils/platoGuarniciones";
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from "../utils/numeroSeriePlato";
 import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato } from "../utils/variantePlato";
-import { slugTipoPedido } from "../utils/tipoPedidoLinea";
 import { calcularPrecioUnitarioConComplementos } from "../utils/precioComplementos";
 import StepIndicator, { PASOS } from "../Components/reserva/StepIndicator";
 import HoraPicker from "../Components/reserva/HoraPicker";
@@ -435,7 +434,6 @@ export default function ReservaWizardScreen() {
         tipoServicio, extraComplementosV3: extraComplementosV3 || null,
         nombreCocinaPedido: metaVariante?.nombreCocinaPedido || "",
         variantePlato: metaVariante?.variantePlato || null,
-        tipoPedido: slugTipoPedido(plato.tipoPedido || plato.tipo || (Array.isArray(plato.tipos) ? plato.tipos[0] : null)),
         ...(metaVariante?.numeroSerie ? { numeroSerie: normalizarNumeroSerie(metaVariante.numeroSerie) } : {}),
       }];
     });
@@ -560,7 +558,6 @@ export default function ReservaWizardScreen() {
           precioUnitario: p.precioUnitario ?? p.precio,
           nombreCocinaPedido: p.nombreCocinaPedido || "",
           variantePlato: p.variantePlato || undefined,
-          tipoPedido: p.tipoPedido || p.tipo || (Array.isArray(p.tipos) ? p.tipos[0] : undefined),
           ...(p.numeroSerie ? { numeroSerie: normalizarNumeroSerie(p.numeroSerie) } : {}),
         })),
         notas: notas.trim() || null, cocineroEncargado: encargadoId || null,
