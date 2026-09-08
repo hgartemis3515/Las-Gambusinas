@@ -36,6 +36,7 @@ import { calcularPrecioUnitarioConComplementos } from "../../../utils/precioComp
 import useTiposPlato from "../../../hooks/useTiposPlato";
 import configuracionService from "../../../services/configuracionService";
 import { reservaEsDeMozo, estadoMesaConfirmadoTrasCrearComanda, estadoMesaLocalTrasCrearComanda } from "../../../utils/reservasMozo";
+import { colorEstadoMesa, etiquetaEstadoMesa } from "../../../utils/estadoMesaMozo";
 import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 import { slugTipoPedido, mismoTipoPedido } from "../../../utils/tipoPedidoLinea";
 import { esSeleccionSinMesa, SELECCION_SIN_MESA, COLOR_PARA_LLEVAR } from "../../../utils/sinMesaOrden";
@@ -1325,7 +1326,11 @@ const OrdenesScreen = ({ route }) => {
       
       // Verificar estado de mesa (pedido, o reservado si es extra sobre reserva)
       const esEnvioReserva = !!(reservaActiva || comandaData.origenReserva);
-      let estadoLocal = mesaActualizada?.estado || 'pedido';
+      let estadoLocal = estadoMesaLocalTrasCrearComanda(
+        mesaActualizada?.estado,
+        esEnvioReserva,
+        mesaActualizada?.estado
+      );
       if (!esSinMesaOrden && mesaActualizada?._id) {
       setMensajeCarga("Verificando estado de la mesa...");
       const mesaId = mesaActualizada._id;
@@ -1374,7 +1379,7 @@ const OrdenesScreen = ({ route }) => {
         // Continuar de todas formas, el backend debería haber actualizado la mesa
       }
       
-      const estadoLocal = estadoMesaLocalTrasCrearComanda(
+      estadoLocal = estadoMesaLocalTrasCrearComanda(
         estadoMesaServidor,
         esEnvioReserva,
         mesaActualizada.estado
@@ -1404,7 +1409,9 @@ const OrdenesScreen = ({ route }) => {
       setMensajeCarga(`¡Comanda #${comandaNumber} enviada!`);
 
       const reservaParaNav = reservaActiva || reservaParam || null;
-      const mesaParaNav = mesaActualizada;
+      const mesaParaNav = mesaActualizada
+        ? { ...mesaActualizada, estado: estadoLocal }
+        : mesaActualizada;
       const comandaParaNav = comandaCreada;
       const estadoParaNav = estadoLocal;
       
@@ -1461,13 +1468,15 @@ const OrdenesScreen = ({ route }) => {
         setMensajeCarga(`¡Comanda #${comandaNumber} enviada!`);
 
         const reservaParaNav = reservaActiva || reservaParam || null;
-        const mesaParaNav = mesaActualizada;
-        const comandaParaNav = comandaCreada;
         const estadoParaNav = estadoMesaLocalTrasCrearComanda(
           mesaActualizada?.estado,
           !!reservaParaNav,
           mesaActualizada?.estado
         );
+        const mesaParaNav = mesaActualizada
+          ? { ...mesaActualizada, estado: estadoParaNav }
+          : mesaActualizada;
+        const comandaParaNav = comandaCreada;
         
         // Limpiar datos locales
         await AsyncStorage.removeItem("mesaSeleccionada");
@@ -1627,31 +1636,9 @@ const OrdenesScreen = ({ route }) => {
     return "🍽️";
   };
 
-  // Función para obtener el color según el estado de la mesa
-  const getEstadoColor = (estado) => {
-    const estadoLower = estado?.toLowerCase() || "libre";
-    switch (estadoLower) {
-      case "libre":
-        return theme.colors.mesaEstado.libre;
-      case "esperando":
-        return theme.colors.mesaEstado.esperando;
-      case "pedido":
-        return theme.colors.mesaEstado.pedido;
-      case "preparado":
-        return theme.colors.mesaEstado.preparado;
-      case "pagando":
-        return theme.colors.mesaEstado.pagando;
-      case "reservado":
-        return theme.colors.mesaEstado.reservado;
-      default:
-        return theme.colors.mesaEstado.libre;
-    }
-  };
+  const getEstadoColor = (estado) => colorEstadoMesa(estado, theme);
 
-  // Obtener el estado de la mesa (si no tiene estado, asumir "Libre")
-  const getMesaEstado = (mesa) => {
-    return mesa.estado || "Libre";
-  };
+  const getMesaEstado = (mesa) => etiquetaEstadoMesa(mesa?.estado || "libre");
 
   return (
     <SafeAreaView style={styles.container} edges={[]}>

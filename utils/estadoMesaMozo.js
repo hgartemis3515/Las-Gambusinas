@@ -46,19 +46,62 @@ export function labelEstadoMesaComanda(item) {
 }
 
 export function colorEstadoMesa(estado, theme) {
-  const e = String(estado || '').toLowerCase();
+  const e = String(estado || '').toLowerCase().trim();
   const pal = theme?.colors?.mesaEstado || {};
   switch (e) {
-    case 'libre': return pal.libre || '#9E9E9E';
-    case 'pedido': return pal.pedido || '#2196F3';
-    case 'preparado': return pal.preparado || '#FFC107';
-    case 'entregado': return pal.entregado || '#00C851';
-    case 'pagado': return pal.pagado || '#2E7D32';
-    case 'pagando': return pal.pagando || '#00C851';
+    case 'libre':
+      return pal.libre || '#9E9E9E';
+    case 'esperando':
+      return pal.esperando || '#FFC107';
+    case 'pedido':
+    case 'en_espera':
+      return pal.pedido || '#2196F3';
+    case 'preparado':
+    case 'recoger':
+    case 'salio':
+      return pal.preparado || '#FFC107';
+    case 'entregado':
+      return pal.entregado || '#00C851';
+    case 'pagando':
+      return pal.pagando || '#00C851';
+    case 'pendiente_aprobar':
     case 'pendiente de aprobación':
-    case 'espera...': return pal.pendiente_aprobar || '#FF9800';
-    case 'reportado': return pal.reportado || '#F44336';
-    case 'reservado': return pal.reservado || '#9C27B0';
-    default: return pal.pedido || '#2196F3';
+    case 'espera...':
+    case 'espera':
+      return pal.pendiente_aprobar || '#FF9800';
+    case 'pagado':
+      return pal.pagado || '#2E7D32';
+    case 'pendiente_pago':
+    case 'pendiente de pago':
+      return pal.pendiente_pago || '#FF9800';
+    case 'reportado':
+      return pal.reportado || '#F44336';
+    case 'reservado':
+      return pal.reservado || '#9C27B0';
+    default:
+      return pal.libre || '#9E9E9E';
   }
+}
+
+export function etiquetaEstadoMesa(estado) {
+  const e = String(estado || 'libre').toLowerCase().trim();
+  if (e === 'espera...' || e === 'espera') return 'Espera...';
+  if (e === 'pendiente_aprobar' || e === 'pendiente de aprobación') return 'Pendiente de aprobación';
+  if (e === 'pendiente_pago' || e === 'pendiente de pago') return 'Pendiente de pago';
+  if (e === 'recoger' || e === 'salio') return 'Preparado';
+  if (e === 'en_espera') return 'Pedido';
+  const map = {
+    libre: 'Libre',
+    esperando: 'Esperando',
+    pedido: 'Pedido',
+    preparado: 'Preparado',
+    entregado: 'Entregado',
+    pagando: 'Pagando',
+    pagado: 'Pagado',
+    reportado: 'Reportado',
+    reservado: 'Reservado',
+  };
+  if (map[e]) return map[e];
+  if (!e) return 'Libre';
+  return e.charAt(0).toUpperCase() + e.slice(1).replace(/_/g, ' ');
 }

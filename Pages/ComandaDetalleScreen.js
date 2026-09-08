@@ -1058,13 +1058,15 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const puedeLiberarTrasPagoForzado = cobroHecho && todosEntregadosKds;
   const puedeLiberarMesaPagada = (comandaYaPagada || puedeLiberarTrasPagoForzado) && todosEntregadosKds && !!mesa?._id;
   const mostrarLiberar = !!(mesa?._id && (puedeLiberarReserva || (puedeConfirmarEntrega && todosEntregadosKds) || puedeLiberarMesaPagada || puedeLiberarCostoCero));
+  const mesaEnServicio = [
+    'pedido', 'preparado', 'recoger', 'entregado', 'reservado',
+    'esperando', 'pendiente_aprobar', 'pendiente_pago', 'pagando', 'en_espera',
+  ].includes(mesaEstadoEfectivo);
+  const tieneComandaActiva = comandas.length > 0 && !comandaYaPagada;
   const puedeNuevaComanda = esReservaFlow
-    || mesaEstadoEfectivo === 'pedido'
-    || mesaEstadoEfectivo === 'preparado'
-    || mesaEstadoEfectivo === 'recoger'
-    || mesaEstadoEfectivo === 'entregado'
-    || mesaEstadoEfectivo === 'reservado'
+    || mesaEnServicio
     || (mesaEstadoEfectivo === 'pagado' && cocinaPendienteDetalle)
+    || tieneComandaActiva
     || mostrarLiberar;
   const mostrarBotonPagar = !cobroHecho && !comandaYaPagada && reglasPPA.composicion !== 'solo_para_llevar' && !reglasPPA.esCostoCero;
   const mostrarBotonPagoAdelantado = reglasPPA.mostrarPagoAdelantado && !cobroHecho && !comandaYaPagada;
@@ -2096,7 +2098,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }
     
     // Guardar contexto y navegar a OrdenesScreen
-    AsyncStorage.setItem('mesaSeleccionada', JSON.stringify(mesa));
+    const estadoParaOrden = (mesaEstadoEfectivo && mesaEstadoEfectivo !== 'libre')
+      ? mesaEstadoEfectivo
+      : (tieneComandaActiva ? 'pedido' : (mesa?.estado || 'pedido'));
+    const mesaParaOrden = {
+      ...mesa,
+      estado: estadoParaOrden,
+    };
+    AsyncStorage.setItem('mesaSeleccionada', JSON.stringify(mesaParaOrden));
     
     // Si hay reserva, guardarla también para asociar a la comanda
     if (reservaEfectiva) {
@@ -2104,7 +2113,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }
     
     navigation.navigate('Ordenes', {
-      mesa: mesa,
+      mesa: mesaParaOrden,
       origen: 'ComandaDetalle',
       reserva: reservaEfectiva || reserva || null,
       modoExtraLlevar: false,
