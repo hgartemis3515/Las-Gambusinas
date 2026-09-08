@@ -1002,11 +1002,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     const e = (p.estado || '').toLowerCase();
     return e === 'pedido' || e === 'en_espera' || e === 'recoger';
   });
-  const puedePagar = todosLosPlatos.length > 0 && todosLosPlatos.every(p => p.estado === 'entregado' || p.estado === 'pagado');
+  const platosActivosDetalle = todosLosPlatos.filter((p) => !p.eliminado && !p.anulado);
+  const puedePagar = platosActivosDetalle.length > 0 && platosActivosDetalle.every((p) => {
+    const e = (p.estado || '').toLowerCase();
+    return e === 'entregado' || e === 'pagado';
+  });
   
   // 🔥 PAGO ADELANTADO (PPA): Reglas de habilitación de botones
   const reglasPPA = getReglasBotonesComandaDetalle(todosLosPlatos);
-  const platosActivosDetalle = todosLosPlatos.filter((p) => !p.eliminado && !p.anulado);
   const cobroAdelantadoVigente = platosActivosDetalle.length > 0
     && platosActivosDetalle.every(platoCobradoViaPPA);
   const abonoReservaMonto = Number(reservaEfectiva?.pagoAdelantado?.montoPagado) || 0;
