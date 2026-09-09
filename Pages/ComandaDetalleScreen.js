@@ -262,6 +262,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [ocultarSumarComplementos, setOcultarSumarComplementos] = useState(false);
   const tipoServicioAlComplementarRef = useRef(null);
   const autoEntregaSalioRef = useRef(new Set());
+  const inicioCountdownFallbackRef = useRef({});
   const [platosEditados, setPlatosEditados] = useState([]);
   const platosEditadosRef = useRef([]);
   platosEditadosRef.current = platosEditados;
@@ -389,6 +390,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           nombreCocinaPedido: platoItem.nombreCocinaPedido || '',
           variantePlato: platoItem.variantePlato || null,
           procesandoPor: platoItem.procesandoPor || null,
+          tiempos: platoItem.tiempos || {},
           // PPA: preservar info de pago adelantado para mostrar estado "PENDIENTE" (naranja)
           pagoAdelantado: platoItem.pagoAdelantado || null
         };
@@ -632,14 +634,26 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
   // Platos que ya salieron de cocina: entrega automática al instante (0 min)
   // o cuando se cumple la espera configurada.
+  const hayPlatosSalio = todosLosPlatos.some((p) =>
+    String(p.estado || '').toLowerCase() === 'salio' && !p.anulado && !p.eliminado
+  );
+
+  const msRestantesPlatoEntrega = (plato) => {
+    const t = plato?.tiempos?.salio || plato?.tiempos?.recoger;
+    if (t) return msRestantesEntregaAutomatica(plato, minutosEntregaAuto);
+    const key = `${plato?.comandaId}-${plato?._id || plato?.platoId}`;
+    if (!inicioCountdownFallbackRef.current[key]) {
+      inicioCountdownFallbackRef.current[key] = Date.now();
+    }
+    const start = inicioCountdownFallbackRef.current[key];
+    return Math.max(0, start + (Number(minutosEntregaAuto) || 0) * 60 * 1000 - Date.now());
+  };
+
   useEffect(() => {
-    const pendientes = todosLosPlatos.filter((p) =>
-      String(p.estado || '').toLowerCase() === 'salio' && !p.anulado && !p.eliminado
-    );
-    if (pendientes.length === 0) return undefined;
+    if (!hayPlatosSalio) return undefined;
     const tickId = setInterval(() => setTickEntrega((t) => t + 1), 1000);
     return () => clearInterval(tickId);
-  }, [todosLosPlatos]);
+  }, [hayPlatosSalio]);
 
   useEffect(() => {
     const pendientes = todosLosPlatos.filter((p) =>
@@ -650,7 +664,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     (async () => {
       let hizoCambio = false;
       for (const plato of pendientes) {
-        const rest = msRestantesEntregaAutomatica(plato, minutosEntregaAuto);
+        const rest = msRestantesPlatoEntrega(plato);
         if (rest > 0) continue;
         const key = `${plato.comandaId}-${plato._id || plato.platoId}`;
         if (autoEntregaSalioRef.current.has(key)) continue;
@@ -2569,7 +2583,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         puedeMarcarEntregado={minutosEntregaAuto > 0}
         countdownEntrega={
           minutosEntregaAuto > 0 && String(plato.estado || '').toLowerCase() === 'salio'
-            ? formatearCountdownEntrega(msRestantesEntregaAutomatica(plato, minutosEntregaAuto))
+            ? formatearCountdownEntrega(msRestantesPlatoEntrega(plato))
             : null
         }
       />
@@ -2672,9 +2686,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 }
                 style={styles.platosList}
                 contentContainerStyle={styles.platosListContent}
+                extraData={`${tickEntrega}-${platosSeleccionadosEntregar.length}`}
                 getItemLayout={(data, index) => ({
-                  length: 60,
-                  offset: 60 * index,
+                  length: 68,
+                  offset: 68 * index,
                   index,
                 })}
               />
@@ -2784,7 +2799,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               disabled={!puedeNuevaComanda}
             >
               <MaterialCommunityIcons name="plus-circle" size={20} color="#fff" />
-              <Text style={styles.actionButtonText}>Nueva Comanda</Text>
+              <Text style={styles.actionButtonText}>Añadir Comanda</Text>
             </TouchableOpacity>
 
             {puedeExtraLlevar && (

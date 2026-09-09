@@ -317,3 +317,83 @@ export function toggleSeleccionarTodos(selectedKeys, pagables) {
   if (allSelected) return [];
   return allKeys;
 }
+
+/**
+ * Preview del total a cobrar de una selección (IGV + descuento), igual que PagosScreen.
+ */
+export function totalPreviewSeleccion(selectedKeys, items, cantidadesPago, comandas, configMoneda) {
+  const sub = calcularSubtotalSeleccion(selectedKeys, items, cantidadesPago);
+  const desc = prorratearDescuentoSeleccion(comandas, selectedKeys, items, cantidadesPago);
+  return calcularTotalesPreview(sub, configMoneda, desc);
+}
+
+/**
+ * Reparte un monto en soles entre unidades enteras de plato (sin exceder).
+ * Usa knapsack 0/1 sobre el total visible de cada unidad (IGV), p.ej. 60 y 40 de un total 100.
+ */
+export function asignarPagoPorMonto(platosPagables, montoObjetivo, {
+  items = platosPagables,
+  comandas = [],
+  configMoneda = null,
+} = {}) {
+  const target = Math.round((Number(montoObjetivo) || 0) * 100) / 100;
+  if (!(target > 0) || !Array.isArray(platosPagables) || platosPagables.length === 0) {
+    return { keys: [], cantidades: {}, cobrado: 0 };
+  }
+
+  const units = [];
+  for (const p of platosPagables) {
+    if (p?.yaPagado || !p?.key) continue;
+    const max = Math.max(1, Number(p.cantidad) || 1);
+    const unitTotal = calcularTotalesPreview(Number(p.precio) || 0, configMoneda, 0).total;
+    const cents = Math.round(unitTotal * 100);
+    if (!(cents > 0)) continue;
+    for (let i = 0; i < max; i++) {
+      units.push({ key: p.key, cents });
+    }
+  }
+
+  if (units.length === 0) {
+    return { keys: [], cantidades: {}, cobrado: 0 };
+  }
+
+  const targetCents = Math.round(target * 100);
+  const dp = new Array(targetCents + 1).fill(false);
+  const take = new Array(targetCents + 1).fill(-1);
+  const prev = new Array(targetCents + 1).fill(-1);
+  dp[0] = true;
+
+  for (let i = 0; i < units.length; i++) {
+    const w = units[i].cents;
+    if (w > targetCents) continue;
+    for (let c = targetCents; c >= w; c--) {
+      if (dp[c - w] && !dp[c]) {
+        dp[c] = true;
+        take[c] = i;
+        prev[c] = c - w;
+      }
+    }
+  }
+
+  let best = 0;
+  for (let c = targetCents; c >= 0; c--) {
+    if (dp[c]) {
+      best = c;
+      break;
+    }
+  }
+
+  const cantidades = {};
+  const keysSet = new Set();
+  for (let c = best; c > 0 && take[c] >= 0; c = prev[c]) {
+    const u = units[take[c]];
+    keysSet.add(u.key);
+    cantidades[u.key] = (cantidades[u.key] || 0) + 1;
+  }
+
+  const keys = platosPagables.filter((p) => keysSet.has(p.key)).map((p) => p.key);
+  const cobrado = keys.length
+    ? totalPreviewSeleccion(keys, items, cantidades, comandas, configMoneda).total
+    : 0;
+  return { keys, cantidades, cobrado };
+}

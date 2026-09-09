@@ -93,6 +93,7 @@ export default function MenuPlatosSheet({
   onToggleFavorito,
   listRef,
   onListScroll,
+  numeroMesa = null,
 }) {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
@@ -180,6 +181,13 @@ export default function MenuPlatosSheet({
             <View onLayout={onChromeLayout} style={styles.chrome}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Menú</Text>
+                {numeroMesa ? (
+                  <Text style={styles.mesaNumeroHeader} numberOfLines={1}>
+                    {numeroMesa}
+                  </Text>
+                ) : (
+                  <View style={{ flex: 1 }} />
+                )}
                 <TouchableOpacity
                   onPress={onClose}
                   style={styles.closeButton}
@@ -433,6 +441,14 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     color: theme.colors.text.primary,
+  },
+  mesaNumeroHeader: {
+    flex: 1,
+    textAlign: 'right',
+    marginRight: 12,
+    fontSize: 18,
+    fontWeight: '800',
+    color: theme.colors.primary,
   },
   searchInputWrapper: {
     position: 'relative',

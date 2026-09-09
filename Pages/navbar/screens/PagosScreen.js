@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -46,7 +47,11 @@ import {
   parcheDescuentoComanda,
   fuenteTraeCamposDescuento,
   toggleSeleccionarTodos,
+  asignarPagoPorMonto,
+  totalPreviewSeleccion,
 } from "../../../utils/pagoParcialHelpers";
+import { parseMonto } from "../../../utils/pagoMetodoHelpers";
+import { useOmitirConfirmacionPago } from "../../../context/OmitirConfirmacionPagoContext";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -326,6 +331,7 @@ const PagosScreen = () => {
   const styles = PagosScreenStyles(theme);
   const { width } = useWindowDimensions();
   const escala = width < 390 ? 0.9 : 1;
+  const { omitirConfirmacionPago } = useOmitirConfirmacionPago();
   
   // ✅ NUEVO FLUJO: Usar SOLO route.params - Backend = FUENTE ÚNICA DE VERDAD
   // IMPORTANTE: Leer route.params directamente en cada render para Tab Navigator
@@ -355,6 +361,8 @@ const PagosScreen = () => {
   /** Claves de platos seleccionados para pago parcial (ver pagoParcialHelpers). */
   const [platosSeleccionadosPago, setPlatosSeleccionadosPago] = useState([]);
   const [cantidadesPago, setCantidadesPago] = useState({});
+  const [montoPagoStr, setMontoPagoStr] = useState('');
+  const montoEditandoRef = useRef(false);
   const [totalRestante, setTotalRestante] = useState(null);
   const [totalAcumuladoPagado, setTotalAcumuladoPagado] = useState(0);
   const [hayPendienteTrasPago, setHayPendienteTrasPago] = useState(false);
@@ -1078,6 +1086,76 @@ const PagosScreen = () => {
     const desc = prorratearDescuentoSeleccion(comandasFuente, platosSeleccionadosPago, platosEnPantalla, cantidadesPago);
     return calcularTotalesPreview(sub, configMoneda, desc);
   }, [comandas, route.params, platosSeleccionadosPago, platosEnPantalla, cantidadesPago, configMoneda]);
+
+  const comandasFuentePago = comandas.length > 0 ? comandas : (route.params?.comandasParaPagar || []);
+
+  const totalesMaxPago = useMemo(() => {
+    const keys = platosPagables.map((p) => p.key);
+    const cants = Object.fromEntries(platosPagables.map((p) => [p.key, p.cantidad]));
+    return totalPreviewSeleccion(keys, platosEnPantalla, cants, comandasFuentePago, configMoneda);
+  }, [platosPagables, platosEnPantalla, comandasFuentePago, configMoneda]);
+
+  useEffect(() => {
+    if (montoEditandoRef.current) return;
+    const decs = configMoneda?.decimales ?? 2;
+    if (platosSeleccionadosPago.length === 0) {
+      setMontoPagoStr('');
+      return;
+    }
+    const t = Number(totalesPagoActual?.total) || 0;
+    setMontoPagoStr(t.toFixed(decs));
+  }, [totalesPagoActual?.total, platosSeleccionadosPago.length, configMoneda?.decimales]);
+
+  const aplicarMontoPago = useCallback((raw) => {
+    const parsed = parseMonto(raw);
+    const maxTotal = Number(totalesMaxPago?.total) || 0;
+    if (!(parsed > 0) || platosPagables.length === 0) {
+      const decs = configMoneda?.decimales ?? 2;
+      const t = Number(totalesPagoActual?.total) || 0;
+      setMontoPagoStr(platosSeleccionadosPago.length > 0 ? t.toFixed(decs) : '');
+      return;
+    }
+    const target = maxTotal > 0 ? Math.min(parsed, maxTotal) : parsed;
+    const result = asignarPagoPorMonto(platosPagables, target, {
+      items: platosEnPantalla,
+      comandas: comandasFuentePago,
+      configMoneda,
+    });
+    if (result.keys.length === 0) {
+      Alert.alert(
+        'Monto muy bajo',
+        'Ningún plato cabe en ese monto. Prueba un monto mayor o ajusta las unidades.'
+      );
+      const decs = configMoneda?.decimales ?? 2;
+      setMontoPagoStr((Number(totalesPagoActual?.total) || 0).toFixed(decs));
+      return;
+    }
+    setPlatosSeleccionadosPago(result.keys);
+    setCantidadesPago(result.cantidades);
+  }, [
+    totalesMaxPago?.total,
+    platosPagables,
+    platosEnPantalla,
+    comandasFuentePago,
+    configMoneda,
+    totalesPagoActual?.total,
+    platosSeleccionadosPago.length,
+  ]);
+
+  const ajustarCantidadPlato = (item, delta) => {
+    const max = Math.max(1, Number(item.cantidad) || 1);
+    const selected = platosSeleccionadosPago.includes(item.key);
+    const current = selected ? (Number(cantidadesPago[item.key] ?? max) || max) : max;
+    if (selected && delta < 0 && current <= 1) return;
+    if (selected && delta > 0 && current >= max) return;
+    let next = selected ? current + delta : (delta < 0 ? max + delta : max);
+    next = Math.max(1, Math.min(max, next));
+    Haptics.selectionAsync();
+    if (!selected) {
+      setPlatosSeleccionadosPago((prev) => (prev.includes(item.key) ? prev : [...prev, item.key]));
+    }
+    setCantidadesPago((prev) => ({ ...prev, [item.key]: next }));
+  };
 
   const descuentoEnPantalla = useMemo(() => {
     const lineasInfo = infoDescuentos.descuentos || [];
@@ -1996,6 +2074,12 @@ const PagosScreen = () => {
     // ✅ Guardar datos de pago seleccionados
     setDatosPagoSeleccionado(datosPago);
 
+    if (omitirConfirmacionPago) {
+      setClienteSeleccionado(cliente);
+      procesarPagoConCliente(cliente, datosPago, true);
+      return;
+    }
+
     // ✅ Calcular total y etiqueta para el Alert usando la moneda elegida en el modal
     const simbolo = datosPago?.moneda === 'USD' ? '$' : (configMoneda?.simboloMoneda || 'S/.');
     const decimales = configMoneda?.decimales ?? 2;
@@ -2161,7 +2245,11 @@ const PagosScreen = () => {
         </View>
       )}
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
         {mostrarVouchersParciales && (
           <View style={styles.parcialesCard}>
             <View style={styles.parcialesHeader}>
@@ -2378,83 +2466,56 @@ const PagosScreen = () => {
             platosEnPantalla.map((item) => {
               const seleccionado = platosSeleccionadosPago.includes(item.key);
               const yaPagado = item.yaPagado === true;
-              const fila = (
-                <>
-                  <MaterialCommunityIcons
-                    name={
-                      yaPagado
-                        ? 'checkbox-marked-circle'
-                        : seleccionado
-                          ? 'checkbox-marked'
-                          : 'checkbox-blank-outline'
-                    }
-                    size={22}
-                    color={
-                      yaPagado
-                        ? '#16a34a'
-                        : seleccionado
-                          ? colors.primary
-                          : theme.colors?.text?.secondary
-                    }
-                    style={{ marginRight: 8 }}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.platoInfo}>
-                      <View style={{ flex: 1 }}>
-                        <Text
-                          style={[
-                            styles.platoNombre,
-                            yaPagado && { color: theme.colors?.text?.secondary },
-                          ]}
-                        >
-                          {item.nombre}
-                          {yaPagado ? '  · Pagado' : ''}
-                        </Text>
-                        {esLlevarColor(item.tipoServicio) && (
-                          <View style={styles.paraLlevarBadge}>
-                            <MaterialCommunityIcons name="bag-personal" size={11} color="#FFFFFF" />
-                            <Text style={styles.paraLlevarBadgeText}>{etiquetaLlevarMozo(item.tipoServicio)}</Text>
-                          </View>
-                        )}
-                        {item.comandaNumber != null && (
-                          <Text style={{ fontSize: 11, color: theme.colors?.text?.secondary }}>
-                            Comanda #{item.comandaNumber}
-                          </Text>
-                        )}
-                        {item.complementosSeleccionados?.length > 0 && (
-                          <View style={{ marginTop: 2 }}>
-                            {item.complementosSeleccionados.map((comp, ci) => (
-                              <Text
-                                key={ci}
-                                style={{
-                                  fontSize: 11,
-                                  color: theme.colors?.text?.secondary || '#6B7280',
-                                  fontStyle: 'italic',
-                                }}
-                              >
-                                · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion} x
-                                {cantidadGuarnicionEfectiva(comp, item)}
-                              </Text>
-                            ))}
-                          </View>
-                        )}
-                      </View>
-                      <Text style={styles.platoCantidad}>
-                        x{seleccionado ? (cantidadesPago[item.key] ?? item.cantidad) : item.cantidad}
-                        {seleccionado && (cantidadesPago[item.key] ?? item.cantidad) < item.cantidad
-                          ? `/${item.cantidad}`
-                          : ''}
-                      </Text>
+              const maxQty = Math.max(1, Number(item.cantidad) || 1);
+              const qtySel = Number(cantidadesPago[item.key] ?? maxQty) || maxQty;
+              const nombreYExtras = (
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text
+                    style={[
+                      styles.platoNombre,
+                      { flex: 0 },
+                      yaPagado && { color: theme.colors?.text?.secondary },
+                    ]}
+                  >
+                    {item.nombre}
+                    {yaPagado ? '  · Pagado' : ''}
+                  </Text>
+                  {esLlevarColor(item.tipoServicio) && (
+                    <View style={styles.paraLlevarBadge}>
+                      <MaterialCommunityIcons name="bag-personal" size={11} color="#FFFFFF" />
+                      <Text style={styles.paraLlevarBadgeText}>{etiquetaLlevarMozo(item.tipoServicio)}</Text>
                     </View>
-                    <Text style={styles.platoSubtotal}>
-                      {configMoneda?.simboloMoneda || 'S/.'}{' '}
-                      {((seleccionado
-                        ? (Number(item.precio) || 0) * (Number(cantidadesPago[item.key] ?? item.cantidad) || 0)
-                        : item.subtotal
-                      )).toFixed(configMoneda?.decimales ?? 2)}
+                  )}
+                  {item.comandaNumber != null && (
+                    <Text style={{ fontSize: 11, color: theme.colors?.text?.secondary }}>
+                      Comanda #{item.comandaNumber}
                     </Text>
-                  </View>
-                </>
+                  )}
+                  {item.complementosSeleccionados?.length > 0 && (
+                    <View style={{ marginTop: 2 }}>
+                      {item.complementosSeleccionados.map((comp, ci) => (
+                        <Text
+                          key={ci}
+                          style={{
+                            fontSize: 11,
+                            color: theme.colors?.text?.secondary || '#6B7280',
+                            fontStyle: 'italic',
+                          }}
+                        >
+                          · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion} x
+                          {cantidadGuarnicionEfectiva(comp, item)}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+                  <Text style={styles.platoSubtotal}>
+                    {configMoneda?.simboloMoneda || 'S/.'}{' '}
+                    {((seleccionado
+                      ? (Number(item.precio) || 0) * qtySel
+                      : item.subtotal
+                    )).toFixed(configMoneda?.decimales ?? 2)}
+                  </Text>
+                </View>
               );
 
               if (yaPagado) {
@@ -2466,37 +2527,90 @@ const PagosScreen = () => {
                       { opacity: 0.85, backgroundColor: '#16a34a14' },
                     ]}
                   >
-                    {fila}
+                    <MaterialCommunityIcons
+                      name="checkbox-marked-circle"
+                      size={22}
+                      color="#16a34a"
+                      style={{ marginRight: 8 }}
+                    />
+                    {nombreYExtras}
+                    <Text style={styles.platoCantidad}>x{item.cantidad}</Text>
                   </View>
                 );
               }
 
               return (
-                <TouchableOpacity
+                <View
                   key={item.key}
                   style={[
                     styles.platoItem,
                     seleccionado && { backgroundColor: (theme.colors?.primary || colors.primary) + '12' },
                   ]}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    const yaSel = platosSeleccionadosPago.includes(item.key);
-                    setPlatosSeleccionadosPago((prev) =>
-                      yaSel ? prev.filter((k) => k !== item.key) : [...prev, item.key]
-                    );
-                    setCantidadesPago((prev) => {
-                      if (yaSel) {
-                        const next = { ...prev };
-                        delete next[item.key];
-                        return next;
-                      }
-                      return { ...prev, [item.key]: item.cantidad };
-                    });
-                  }}
-                  activeOpacity={0.7}
                 >
-                  {fila}
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      const yaSel = platosSeleccionadosPago.includes(item.key);
+                      setPlatosSeleccionadosPago((prev) =>
+                        yaSel ? prev.filter((k) => k !== item.key) : [...prev, item.key]
+                      );
+                      setCantidadesPago((prev) => {
+                        if (yaSel) {
+                          const next = { ...prev };
+                          delete next[item.key];
+                          return next;
+                        }
+                        return { ...prev, [item.key]: item.cantidad };
+                      });
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialCommunityIcons
+                      name={seleccionado ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                      size={22}
+                      color={seleccionado ? colors.primary : theme.colors?.text?.secondary}
+                      style={{ marginRight: 8 }}
+                    />
+                    {nombreYExtras}
+                  </TouchableOpacity>
+                  <View style={styles.qtyStepper}>
+                    <TouchableOpacity
+                      onPress={() => ajustarCantidadPlato(item, -1)}
+                      disabled={seleccionado && qtySel <= 1}
+                      style={[
+                        styles.qtyBtn,
+                        {
+                          backgroundColor:
+                            seleccionado && qtySel <= 1
+                              ? theme.colors?.border
+                              : (theme.colors?.primary || colors.primary),
+                        },
+                      ]}
+                    >
+                      <MaterialCommunityIcons name="minus" size={16} color="#fff" />
+                    </TouchableOpacity>
+                    <Text style={[styles.qtyNum, { color: theme.colors?.text?.primary }]}>
+                      {seleccionado ? qtySel : maxQty}
+                      {seleccionado && qtySel < maxQty ? `/${maxQty}` : ''}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => ajustarCantidadPlato(item, 1)}
+                      disabled={seleccionado && qtySel >= maxQty}
+                      style={[
+                        styles.qtyBtn,
+                        {
+                          backgroundColor:
+                            seleccionado && qtySel >= maxQty
+                              ? theme.colors?.border
+                              : (theme.colors?.primary || colors.primary),
+                        },
+                      ]}
+                    >
+                      <MaterialCommunityIcons name="plus" size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
               );
             })
           ) : (
@@ -2508,62 +2622,48 @@ const PagosScreen = () => {
           )}
         </View>
 
-        {!usarPlatosDeBoucher && platosSeleccionadosPago.length > 0 && (
+        {!usarPlatosDeBoucher && platosPagables.length > 0 && (
           <View style={styles.platosCard}>
-            <Text style={styles.sectionTitle}>Cantidad a cobrar</Text>
+            <Text style={styles.sectionTitle}>Pago por cantidad (S/.)</Text>
             <Text style={{ fontSize: 12, color: theme.colors?.text?.secondary, marginBottom: 10 }}>
-              Ajusta unidades por plato. Si cobras menos que el total pendiente, es un pago parcial.
+              Si una parte paga 60 y otra 40 de un total de 100, ingresa el monto de esta parte. Se reparte en unidades de plato sin pasarse.
             </Text>
-            {platosEnPantalla
-              .filter((item) => platosSeleccionadosPago.includes(item.key) && !item.yaPagado)
-              .map((item) => {
-                const max = Number(item.cantidad) || 1;
-                const qty = Number(cantidadesPago[item.key] ?? max) || 1;
-                return (
-                  <View key={`qty-${item.key}`} style={styles.platoItem}>
-                    <View style={{ flex: 1, paddingRight: 8 }}>
-                      <Text style={styles.platoNombre} numberOfLines={1}>{item.nombre}</Text>
-                      <Text style={{ fontSize: 11, color: theme.colors?.text?.secondary }}>
-                        Máx. {max} · {configMoneda?.simboloMoneda || 'S/.'}{' '}
-                        {((Number(item.precio) || 0) * qty).toFixed(configMoneda?.decimales ?? 2)}
-                      </Text>
-                    </View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <TouchableOpacity
-                        onPress={() => {
-                          if (qty <= 1) return;
-                          Haptics.selectionAsync();
-                          setCantidadesPago((prev) => ({ ...prev, [item.key]: qty - 1 }));
-                        }}
-                        disabled={qty <= 1}
-                        style={{
-                          width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
-                          backgroundColor: qty <= 1 ? theme.colors?.border : (theme.colors?.primary || colors.primary),
-                        }}
-                      >
-                        <MaterialCommunityIcons name="minus" size={18} color="#fff" />
-                      </TouchableOpacity>
-                      <Text style={{ minWidth: 28, textAlign: 'center', fontWeight: '700', color: theme.colors?.text?.primary }}>
-                        {qty}
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          if (qty >= max) return;
-                          Haptics.selectionAsync();
-                          setCantidadesPago((prev) => ({ ...prev, [item.key]: qty + 1 }));
-                        }}
-                        disabled={qty >= max}
-                        style={{
-                          width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
-                          backgroundColor: qty >= max ? theme.colors?.border : (theme.colors?.primary || colors.primary),
-                        }}
-                      >
-                        <MaterialCommunityIcons name="plus" size={18} color="#fff" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                );
-              })}
+            <View style={styles.montoPagoRow}>
+              <Text style={styles.montoPagoSimbolo}>
+                {configMoneda?.simboloMoneda || 'S/.'}
+              </Text>
+              <TextInput
+                style={[styles.montoPagoInput, { color: theme.colors?.text?.primary }]}
+                value={montoPagoStr}
+                onChangeText={setMontoPagoStr}
+                onFocus={() => { montoEditandoRef.current = true; }}
+                onEndEditing={() => {
+                  montoEditandoRef.current = false;
+                  aplicarMontoPago(montoPagoStr);
+                }}
+                onBlur={() => {
+                  montoEditandoRef.current = false;
+                  aplicarMontoPago(montoPagoStr);
+                }}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor={theme.colors?.text?.secondary || '#9CA3AF'}
+                returnKeyType="done"
+                underlineColorAndroid="transparent"
+              />
+            </View>
+            {(() => {
+              const decs = configMoneda?.decimales ?? 2;
+              const cobrado = Number(totalesPagoActual?.total) || 0;
+              const maxT = Number(totalesMaxPago?.total) || 0;
+              const pendiente = Math.max(0, Math.round((maxT - cobrado) * 100) / 100);
+              if (!(pendiente > 0.005) || platosSeleccionadosPago.length === 0) return null;
+              return (
+                <Text style={{ fontSize: 13, color: theme.colors?.text?.secondary, marginTop: 8 }}>
+                  Se cobrará {configMoneda?.simboloMoneda || 'S/.'} {cobrado.toFixed(decs)}. Quedará pendiente {configMoneda?.simboloMoneda || 'S/.'} {pendiente.toFixed(decs)}.
+                </Text>
+              );
+            })()}
           </View>
         )}
 
@@ -2814,6 +2914,7 @@ const PagosScreen = () => {
         tipoCambioUsd={tipoCambioUsd}
         permitirUsd={permitirUsd}
         decimales={decimalesMoneda}
+        omitirConfirmacionPago={omitirConfirmacionPago}
       />
 
       {/* Modal de Propinas */}
@@ -2881,13 +2982,7 @@ const PagosScreen = () => {
           setClienteSeleccionado(null);
           setBoucherData(null);
           setModalPagoExitosoVisible(false);
-          navigation.navigate("Inicio", {
-            refresh: true,
-            mesaId: mesa?._id?.toString?.() || mesa?._id,
-            mostrarMensajePago: true,
-            mesaPagada: buildMesaPagadaNavPayload(mesa),
-            boucher: boucherData || boucherFromParams,
-          });
+          navigation.navigate("Pendientes");
         }}
       />
 
@@ -3123,6 +3218,47 @@ const PagosScreenStyles = (theme) => StyleSheet.create({
   platoCantidad: {
     fontSize: 12,
     color: theme.colors.text.secondary,
+  },
+  qtyStepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginLeft: 6,
+    flexShrink: 0,
+  },
+  qtyBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  qtyNum: {
+    minWidth: 36,
+    textAlign: "center",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  montoPagoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    backgroundColor: theme.colors.background,
+  },
+  montoPagoSimbolo: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: theme.colors.primary,
+    marginRight: 8,
+  },
+  montoPagoInput: {
+    flex: 1,
+    fontSize: 22,
+    fontWeight: "700",
+    paddingVertical: 10,
   },
   platoSubtotal: {
     fontSize: 14,

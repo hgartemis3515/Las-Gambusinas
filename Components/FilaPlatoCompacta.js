@@ -276,10 +276,11 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   countdownEntrega: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#065F46',
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#047857',
     fontVariant: ['tabular-nums'],
+    letterSpacing: 0.4,
   },
   avisoContainer: {
     flexDirection: 'row',

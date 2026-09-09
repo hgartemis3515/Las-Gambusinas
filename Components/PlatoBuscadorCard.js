@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { useBotonCantidadPlato } from '../context/BotonCantidadPlatoContext';
 import { themeLight } from '../constants/theme';
 import { platoMuestraBotonG, platoMuestraBotonV } from '../utils/platoBuscador';
 
@@ -24,6 +25,7 @@ export default function PlatoBuscadorCard({
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const styles = makeStyles(theme);
+  const { estilo: estiloQty, iconSize: iconSizeQty } = useBotonCantidadPlato();
   const muestraG = platoMuestraBotonG(plato);
   const muestraV = platoMuestraBotonV(plato);
 
@@ -73,11 +75,11 @@ export default function PlatoBuscadorCard({
         </View>
         <View style={styles.qtyRow}>
           <TouchableOpacity
-            style={styles.qtyBtn}
+            style={[styles.qtyBtn, estiloQty]}
             onPress={() => onDecrement?.(plato)}
             accessibilityLabel="Quitar un plato"
           >
-            <MaterialCommunityIcons name="minus" size={20} color={theme.colors.text.white} />
+            <MaterialCommunityIcons name="minus" size={iconSizeQty} color={theme.colors.text.white} />
           </TouchableOpacity>
           {cantidadLlevar > 0 ? (
             <View style={styles.qtySplit}>
@@ -88,11 +90,11 @@ export default function PlatoBuscadorCard({
             <Text style={styles.qtyText}>{cantidadTotal || 0}</Text>
           )}
           <TouchableOpacity
-            style={styles.qtyBtn}
+            style={[styles.qtyBtn, estiloQty]}
             onPress={() => onAdd?.(plato)}
             accessibilityLabel="Sumar un plato"
           >
-            <MaterialCommunityIcons name="plus" size={20} color={theme.colors.text.white} />
+            <MaterialCommunityIcons name="plus" size={iconSizeQty} color={theme.colors.text.white} />
           </TouchableOpacity>
         </View>
       </View>

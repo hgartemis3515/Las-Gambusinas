@@ -18,6 +18,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API, COMANDASEARCH_API_GET, apiConfig } from "../../../apiConfig";
 import { getFallbackApiBase } from "../../../config/envDefaults";
 import { useTheme } from "../../../context/ThemeContext";
+import { useBotonCantidadPlato } from "../../../context/BotonCantidadPlatoContext";
 import { themeLight } from "../../../constants/theme";
 import { useOrientation } from "../../../hooks/useOrientation";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -208,11 +209,12 @@ const OrdenesScreen = ({ route }) => {
   const navigation = useNavigation();
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
+  const { estilo: estiloQty, iconSize: iconSizeQty } = useBotonCantidadPlato();
   const orientation = useOrientation();
   const styles = OrdenesScreenStyles(theme, orientation);
   
   // Obtener parámetros de navegación (mesa y reserva desde ComandaDetalle)
-  const { mesa: mesaParam, reserva: reservaParam, modoExtraLlevar: modoExtraParam, origen: origenParam } = route?.params || {};
+  const { mesa: mesaParam, reserva: reservaParam, modoExtraLlevar: modoExtraParam, origen: origenParam, abrirMenu: abrirMenuParam } = route?.params || {};
   const modoExtraLlevar = modoExtraParam === true;
   const agruparConMesa = origenParam === 'ComandaDetalle' || modoExtraLlevar === true;
   
@@ -356,6 +358,20 @@ const OrdenesScreen = ({ route }) => {
       AsyncStorage.setItem("reservaActiva", JSON.stringify(reservaParam));
     }
   }, [mesaParam, reservaParam]);
+
+  useEffect(() => {
+    if (!abrirMenuParam) return;
+    if (mesaParam) setSelectedMesa(mesaParam);
+    loadPlatosData();
+    setTipoPlatoFiltro(null);
+    setCategoriaFiltro(null);
+    setSearchPlato("");
+    if (esSeleccionSinMesa(mesaParam)) {
+      setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
+    }
+    setModalPlatosVisible(true);
+    navigation.setParams({ abrirMenu: undefined });
+  }, [abrirMenuParam, mesaParam, navigation]);
 
   useEffect(() => {
     if (modoExtraLlevar) {
@@ -1813,17 +1829,17 @@ const OrdenesScreen = ({ route }) => {
                     </TouchableOpacity>
                     )}
                     <TouchableOpacity
-                      style={styles.cantidadButton}
+                      style={[styles.cantidadButton, estiloQty]}
                       onPress={() => handleUpdateCantidad(platoInstanceId, -1)}
                     >
-                      <MaterialCommunityIcons name="minus" size={16} color={theme.colors.text.white} />
+                      <MaterialCommunityIcons name="minus" size={iconSizeQty} color={theme.colors.text.white} />
                     </TouchableOpacity>
                     <Text style={styles.cantidadText}>{cantidad}</Text>
                     <TouchableOpacity
-                      style={styles.cantidadButton}
+                      style={[styles.cantidadButton, estiloQty]}
                       onPress={() => handleUpdateCantidad(platoInstanceId, 1)}
                     >
-                      <MaterialCommunityIcons name="plus" size={16} color={theme.colors.text.white} />
+                      <MaterialCommunityIcons name="plus" size={iconSizeQty} color={theme.colors.text.white} />
                     </TouchableOpacity>
                     {platoRequiereModalAlSumar(plato, platos) && (
                       <TouchableOpacity
@@ -2056,6 +2072,11 @@ const OrdenesScreen = ({ route }) => {
         favoritoIds={favoritoIds}
         onToggleFavorito={toggleFavorito}
         listRef={platosListScrollRef}
+        numeroMesa={
+          esSeleccionSinMesa(selectedMesa)
+            ? 'Sin mesa'
+            : (selectedMesa?.nummesa != null ? `Mesa ${selectedMesa.nummesa}` : null)
+        }
       />
 
       {/* Overlay de Carga Animado */}

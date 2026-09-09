@@ -4,9 +4,32 @@
  */
 
 export const METODOS_PAGO = [
-  { value: 'efectivo', label: 'Efectivo' },
-  { value: 'digital', label: 'YAPE/PLIN' },
-  { value: 'tarjeta', label: 'CRÉDITO/DÉBITO' },
+  {
+    value: 'efectivo',
+    label: 'Efectivo',
+    icon: 'cash-multiple',
+    color: '#15803D',
+    bg: '#DCFCE7',
+    bgActivo: '#BBF7D0',
+    border: '#16A34A',
+  },
+  {
+    value: 'digital',
+    label: 'YAPE/PLIN',
+    color: '#6D28D9',
+    bg: '#F3E8FF',
+    bgActivo: '#E9D5FF',
+    border: '#7C3AED',
+  },
+  {
+    value: 'tarjeta',
+    label: 'CRÉDITO/DÉBITO',
+    icon: 'credit-card',
+    color: '#0369A1',
+    bg: '#E0F2FE',
+    bgActivo: '#BAE6FD',
+    border: '#0EA5E9',
+  },
 ];
 
 export const METODO_PAGO_LABELS = {

@@ -13,7 +13,18 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useOnlineBadge, DEFAULT_ONLINE_BADGE_OPACITY } from '../context/OnlineBadgeContext';
 import { useAvisoPlatoAgregado } from '../context/AvisoPlatoAgregadoContext';
+import { useOmitirConfirmacionPago } from '../context/OmitirConfirmacionPagoContext';
+import { useBotonCantidadPlato } from '../context/BotonCantidadPlatoContext';
+import { useAbrirMenuNuevaOrden } from '../context/AbrirMenuNuevaOrdenContext';
 import { themeLight } from '../constants/theme';
+import {
+  BOTON_CANTIDAD_SIZE_MIN,
+  BOTON_CANTIDAD_SIZE_MAX,
+  BOTON_CANTIDAD_SIZE_PRESETS,
+  BOTON_CANTIDAD_COLOR_PRESETS,
+  BOTON_CANTIDAD_SIZE_DEFAULT,
+  BOTON_CANTIDAD_COLOR_DEFAULT,
+} from '../utils/botonCantidadPlato';
 
 const PRESETS = [
   { label: 'Baja', value: 0.25 },
@@ -22,16 +33,19 @@ const PRESETS = [
   { label: 'Opaca', value: 1 },
 ];
 
-function OpacitySlider({ value, onChange, trackColor, fillColor, thumbColor }) {
+function ValueSlider({ value, onChange, min, max, trackColor, fillColor, thumbColor }) {
   const widthRef = useRef(1);
+  const span = max - min || 1;
 
   const applyX = useCallback(
     (locationX) => {
       const t = Math.max(0, Math.min(1, locationX / widthRef.current));
-      onChange(0.1 + t * 0.9);
+      onChange(min + t * span);
     },
-    [onChange]
+    [onChange, min, span]
   );
+
+  const pct = ((value - min) / span) * 100;
 
   return (
     <View
@@ -49,7 +63,7 @@ function OpacitySlider({ value, onChange, trackColor, fillColor, thumbColor }) {
           styles.fill,
           {
             backgroundColor: fillColor,
-            width: `${((value - 0.1) / 0.9) * 100}%`,
+            width: `${pct}%`,
           },
         ]}
       />
@@ -59,7 +73,7 @@ function OpacitySlider({ value, onChange, trackColor, fillColor, thumbColor }) {
           styles.thumb,
           {
             backgroundColor: thumbColor,
-            left: `${((value - 0.1) / 0.9) * 100}%`,
+            left: `${pct}%`,
           },
         ]}
       />
@@ -72,6 +86,17 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
   const theme = themeContext?.theme || themeLight;
   const { opacity, setOpacity } = useOnlineBadge();
   const { mostrarAviso, setMostrarAviso } = useAvisoPlatoAgregado();
+  const { omitirConfirmacionPago, setOmitirConfirmacionPago } = useOmitirConfirmacionPago();
+  const { abrirMenuNuevaOrden, setAbrirMenuNuevaOrden } = useAbrirMenuNuevaOrden();
+  const {
+    size: qtySize,
+    color: qtyColor,
+    setSize: setQtySize,
+    setColor: setQtyColor,
+    reset: resetQty,
+    estilo: estiloQty,
+    iconSize: iconSizeQty,
+  } = useBotonCantidadPlato();
   const pct = Math.round(opacity * 100);
 
   return (
@@ -116,6 +141,159 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
           <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
 
           <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Confirmación de pago
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            Tras Continuar en Información de pago sale «Confirmar Pago» (NO / SÍ). Actívalo para cobrar al tocar Continuar, sin ese paso extra.
+          </Text>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+                Omitir Confirmación Pago
+              </Text>
+              <Text style={[styles.switchHint, { color: theme.colors.text.secondary }]}>
+                {omitirConfirmacionPago
+                  ? 'Continuar cobra de inmediato'
+                  : 'Se pide confirmar con NO / SÍ'}
+              </Text>
+            </View>
+            <Switch
+              value={omitirConfirmacionPago}
+              onValueChange={setOmitirConfirmacionPago}
+              trackColor={{ false: theme.colors.border, true: theme.colors.primary + '88' }}
+              thumbColor={omitirConfirmacionPago ? theme.colors.primary : theme.colors.text.light}
+              accessibilityLabel="Omitir confirmación de pago"
+            />
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Nueva orden
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            Con una mesa marcada en Inicio, Nueva orden selecciona esa mesa en Órdenes y abre el menú para elegir el tipo (desayuno, carta…).
+          </Text>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+                Abrir menú al crear orden
+              </Text>
+              <Text style={[styles.switchHint, { color: theme.colors.text.secondary }]}>
+                {abrirMenuNuevaOrden
+                  ? 'Nueva orden abre el menú de tipos'
+                  : 'Solo va a Órdenes con la mesa'}
+              </Text>
+            </View>
+            <Switch
+              value={abrirMenuNuevaOrden}
+              onValueChange={setAbrirMenuNuevaOrden}
+              trackColor={{ false: theme.colors.border, true: theme.colors.primary + '88' }}
+              thumbColor={abrirMenuNuevaOrden ? theme.colors.primary : theme.colors.text.light}
+              accessibilityLabel="Abrir menú al crear una nueva orden"
+            />
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Botones − y +
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            Tamaño y color de restar/sumar en Órdenes y en el buscador de platos.
+          </Text>
+          <View style={styles.previewQtyWrap} pointerEvents="none">
+            <View style={[styles.previewQtyBtn, estiloQty]}>
+              <MaterialCommunityIcons name="minus" size={iconSizeQty} color="#FFFFFF" />
+            </View>
+            <Text style={[styles.previewQtyNum, { color: theme.colors.text.primary }]}>2</Text>
+            <View style={[styles.previewQtyBtn, estiloQty]}>
+              <MaterialCommunityIcons name="plus" size={iconSizeQty} color="#FFFFFF" />
+            </View>
+          </View>
+          <View style={styles.rowLabel}>
+            <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+              Tamaño
+            </Text>
+            <Text style={[styles.pct, { color: theme.colors.primary }]}>{qtySize} px</Text>
+          </View>
+          <ValueSlider
+            value={qtySize}
+            onChange={setQtySize}
+            min={BOTON_CANTIDAD_SIZE_MIN}
+            max={BOTON_CANTIDAD_SIZE_MAX}
+            trackColor={theme.colors.border}
+            fillColor={qtyColor}
+            thumbColor={qtyColor}
+          />
+          <View style={styles.presets}>
+            {BOTON_CANTIDAD_SIZE_PRESETS.map((p) => {
+              const active = qtySize === p.value;
+              return (
+                <TouchableOpacity
+                  key={p.label}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: active ? qtyColor + '22' : theme.colors.background,
+                      borderColor: active ? qtyColor : theme.colors.border,
+                    },
+                  ]}
+                  onPress={() => setQtySize(p.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: active ? qtyColor : theme.colors.text.secondary },
+                    ]}
+                  >
+                    {p.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={[styles.label, { color: theme.colors.text.primary, marginTop: 16, marginBottom: 10 }]}>
+            Color
+          </Text>
+          <View style={styles.colorRow}>
+            {BOTON_CANTIDAD_COLOR_PRESETS.map((p) => {
+              const active = qtyColor.toUpperCase() === p.value.toUpperCase();
+              return (
+                <TouchableOpacity
+                  key={p.value}
+                  style={[
+                    styles.colorSwatch,
+                    { backgroundColor: p.value },
+                    active && styles.colorSwatchActive,
+                  ]}
+                  onPress={() => setQtyColor(p.value)}
+                  accessibilityLabel={p.label}
+                  activeOpacity={0.8}
+                >
+                  {active ? (
+                    <MaterialCommunityIcons name="check" size={16} color="#FFFFFF" />
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {(qtySize !== BOTON_CANTIDAD_SIZE_DEFAULT ||
+            qtyColor.toUpperCase() !== BOTON_CANTIDAD_COLOR_DEFAULT) && (
+            <TouchableOpacity
+              style={[styles.reset, { borderColor: theme.colors.border }]}
+              onPress={resetQty}
+            >
+              <Text style={[styles.resetText, { color: theme.colors.text.secondary }]}>
+                Restaurar tamaño y color por defecto
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
             Icono ONLINE
           </Text>
           <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
@@ -135,9 +313,11 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
             </Text>
             <Text style={[styles.pct, { color: theme.colors.primary }]}>{pct}%</Text>
           </View>
-          <OpacitySlider
+          <ValueSlider
             value={opacity}
             onChange={setOpacity}
+            min={0.1}
+            max={1}
             trackColor={theme.colors.border}
             fillColor={theme.colors.primary}
             thumbColor={theme.colors.primary}
@@ -321,5 +501,44 @@ const styles = StyleSheet.create({
   },
   resetText: {
     fontSize: 13,
+  },
+  previewQtyWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 16,
+    minHeight: 56,
+  },
+  previewQtyBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewQtyNum: {
+    fontSize: 18,
+    fontWeight: '700',
+    minWidth: 28,
+    textAlign: 'center',
+  },
+  colorRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  colorSwatch: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  colorSwatchActive: {
+    borderWidth: 3,
+    borderColor: '#111827',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
   },
 });

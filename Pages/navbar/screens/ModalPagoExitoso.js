@@ -7,7 +7,7 @@
  *              Botón X superior derecho para cerrar y seguir cobrando (pagos parciales)
  */
 
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -50,6 +50,11 @@ const ModalPagoExitoso = ({
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const { width, height } = useWindowDimensions();
+  const [cuentaRegresiva, setCuentaRegresiva] = useState(null);
+  const [pausarRedirect, setPausarRedirect] = useState(false);
+  const onIrAlInicioRef = useRef(onIrAlInicio);
+  onIrAlInicioRef.current = onIrAlInicio;
+  const autoRedirect = visible && !pausarRedirect && !(esPagoParcial && !cobroCompleto);
   
   // Detectar orientación
   const isLandscape = width > height;
@@ -65,6 +70,28 @@ const ModalPagoExitoso = ({
   const buttonAnim0 = useSharedValue(0);
   const buttonAnim1 = useSharedValue(0);
   const buttonAnim2 = useSharedValue(0);
+
+  useEffect(() => {
+    if (!autoRedirect) {
+      setCuentaRegresiva(null);
+      return undefined;
+    }
+    let n = 5;
+    setCuentaRegresiva(5);
+    const id = setInterval(() => {
+      n -= 1;
+      setCuentaRegresiva(n);
+      if (n <= 0) {
+        clearInterval(id);
+        onIrAlInicioRef.current?.();
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [autoRedirect]);
+
+  useEffect(() => {
+    if (visible) setPausarRedirect(false);
+  }, [visible]);
 
   useEffect(() => {
     if (visible) {
@@ -137,6 +164,7 @@ const ModalPagoExitoso = ({
 
   const handleImprimirComanda = async () => {
     if (!onImprimir) return;
+    setPausarRedirect(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await onImprimir();
@@ -146,21 +174,25 @@ const ModalPagoExitoso = ({
   };
 
   const handlePropina = () => {
+    setPausarRedirect(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onRegistrarPropina?.();
   };
 
   const handleIrAlInicio = () => {
+    setPausarRedirect(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onIrAlInicio?.();
   };
 
   const handleCerrar = () => {
+    setPausarRedirect(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose?.();
   };
 
   const handleSeguirCobrando = () => {
+    setPausarRedirect(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onSeguirCobrando?.();
   };
@@ -331,6 +363,11 @@ const ModalPagoExitoso = ({
                   <Text style={[styles.opcionLabel, { color: opcion.color }]}>
                     {opcion.label}
                   </Text>
+                  {opcion.id === "inicio" && cuentaRegresiva != null && (
+                    <View style={styles.countdownBadge}>
+                      <Text style={styles.countdownText}>{cuentaRegresiva}</Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               </Animated.View>
             ))}
@@ -458,6 +495,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     flex: 1,
+  },
+  countdownBadge: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#6B7280",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  countdownText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });
 

@@ -8,6 +8,9 @@ import { ThemeProvider } from './context/ThemeContext';
 import { SocketProvider } from './context/SocketContext';
 import { OnlineBadgeProvider } from './context/OnlineBadgeContext';
 import { AvisoPlatoAgregadoProvider } from './context/AvisoPlatoAgregadoContext';
+import { OmitirConfirmacionPagoProvider } from './context/OmitirConfirmacionPagoContext';
+import { BotonCantidadPlatoProvider } from './context/BotonCantidadPlatoContext';
+import { AbrirMenuNuevaOrdenProvider } from './context/AbrirMenuNuevaOrdenContext';
 import SplashScreen from './Pages/Splash/SplashScreen';
 import Login from './Pages/Login/Login';
 import Navbar from './Pages/navbar/navbar';
@@ -68,6 +71,9 @@ export default function App() {
         <ThemeProvider>
           <OnlineBadgeProvider>
           <AvisoPlatoAgregadoProvider>
+          <OmitirConfirmacionPagoProvider>
+          <BotonCantidadPlatoProvider>
+          <AbrirMenuNuevaOrdenProvider>
           <SocketProvider>
             <>
               <AlertaOverlayMozos />
@@ -129,6 +135,9 @@ export default function App() {
             </NavigationContainer>
             </>
           </SocketProvider>
+          </AbrirMenuNuevaOrdenProvider>
+          </BotonCantidadPlatoProvider>
+          </OmitirConfirmacionPagoProvider>
           </AvisoPlatoAgregadoProvider>
           </OnlineBadgeProvider>
         </ThemeProvider>

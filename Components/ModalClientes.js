@@ -46,6 +46,7 @@ const ModalClientes = ({
   tipoCambioUsd = null,
   permitirUsd = false,
   decimales = 2,
+  omitirConfirmacionPago = false,
 }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || {};
@@ -498,18 +499,40 @@ const ModalClientes = ({
                           key={m.value}
                           style={[
                             styles.metodoOpcion,
-                            activo && styles.metodoOpcionActiva,
+                            {
+                              backgroundColor: activo ? (m.bgActivo || m.bg) : m.bg,
+                              borderColor: m.border,
+                            },
                           ]}
                           onPress={() => handleSeleccionarMetodo(m.value)}
                           disabled={loading}
                           activeOpacity={0.8}
                         >
-                          <View style={[styles.radioExterno, activo && styles.radioExternoActivo]}>
-                            {activo && <View style={styles.radioInterno} />}
-                          </View>
-                          <Text style={[styles.metodoTexto, activo && styles.metodoTextoActivo]}>
+                          {m.value === 'digital' ? (
+                            <View style={styles.metodoIconosYapePlin}>
+                              <View style={[styles.marcaPagoBadge, styles.marcaYape]}>
+                                <Text style={styles.marcaPagoLetra}>Y</Text>
+                              </View>
+                              <View style={[styles.marcaPagoBadge, styles.marcaPlin]}>
+                                <Text style={styles.marcaPagoLetra}>P</Text>
+                              </View>
+                            </View>
+                          ) : (
+                            <MaterialCommunityIcons
+                              name={m.icon}
+                              size={22}
+                              color={m.color}
+                              style={styles.metodoIcono}
+                            />
+                          )}
+                          <Text style={[styles.metodoTexto, { color: m.color, flex: 1 }, activo && styles.metodoTextoActivo]}>
                             {m.label}
                           </Text>
+                          {activo ? (
+                            <MaterialCommunityIcons name="check-circle" size={20} color={m.color} />
+                          ) : (
+                            <View style={[styles.radioExterno, { borderColor: m.border }]} />
+                          )}
                         </TouchableOpacity>
                       );
                     })}
@@ -561,10 +584,13 @@ const ModalClientes = ({
                 <TouchableOpacity
                   style={styles.checkboxContainer}
                   onPress={() => {
-                    setEsInvitado(true);
-                    setDni("");
-                    setNombre("");
-                    setTelefono("");
+                    const next = !esInvitado;
+                    setEsInvitado(next);
+                    if (next) {
+                      setDni("");
+                      setNombre("");
+                      setTelefono("");
+                    }
                   }}
                 >
                   <View style={[styles.checkbox, esInvitado && styles.checkboxChecked]}>
@@ -577,7 +603,8 @@ const ModalClientes = ({
                   </Text>
                 </TouchableOpacity>
 
-                {/* Formulario opcional de cliente */}
+                {/* Formulario opcional de cliente: se oculta si continúa como cliente */}
+                {!esInvitado && (
                 <View style={styles.formContainer}>
                   <Text style={styles.formTitle}>Registrar datos del cliente:</Text>
 
@@ -662,6 +689,7 @@ const ModalClientes = ({
                     />
                   </View>
                 </View>
+                )}
               </View>
             </ScrollView>
 
@@ -710,7 +738,7 @@ const ModalClientes = ({
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 * escala }}>
                       <MaterialCommunityIcons name="check-circle" size={24 * escala} color="#FFFFFF" />
                       <Text style={{ color: '#FFFFFF', fontSize: 16 * escala, fontWeight: '700', includeFontPadding: false, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 2 }} numberOfLines={1}>
-                        Continuar
+                        {omitirConfirmacionPago ? 'Confirmar' : 'Continuar'}
                       </Text>
                     </View>
                   )}
@@ -891,6 +919,33 @@ const modalStyles = (theme) => StyleSheet.create({
   metodoOpcionActiva: {
     borderColor: theme.colors?.primary || "#667eea",
     backgroundColor: "#F0F4FF",
+  },
+  metodoIcono: {
+    marginRight: 12,
+  },
+  metodoIconosYapePlin: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginRight: 12,
+    gap: 6,
+  },
+  marcaPagoBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  marcaYape: {
+    backgroundColor: "#6B21A8",
+  },
+  marcaPlin: {
+    backgroundColor: "#0D9488",
+  },
+  marcaPagoLetra: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
   },
   radioExterno: {
     width: 20,

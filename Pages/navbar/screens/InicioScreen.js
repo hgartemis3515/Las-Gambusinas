@@ -23,6 +23,7 @@ import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, DISHES_API, ARE
 import { getFallbackApiBase } from "../../../config/envDefaults";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
+import { useAbrirMenuNuevaOrden } from "../../../context/AbrirMenuNuevaOrdenContext";
 import { themeLight } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
 import logger from "../../../utils/logger";
@@ -498,6 +499,7 @@ const InicioScreen = () => {
   const route = useRoute();
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
+  const { abrirMenuNuevaOrden } = useAbrirMenuNuevaOrden();
   const { width, height } = useWindowDimensions();
   const [mesas, setMesas] = useState([]);
   // PLAN_PLANTILLA_COMANDAS: imprimir comanda deshabilitado por defecto.
@@ -2565,7 +2567,7 @@ const InicioScreen = () => {
           }] : []),
           {
             text: "🔄 Liberar",
-            onPress: () => handleLiberarMesa(mesa)
+            onPress: () => ejecutarLiberarMesa(mesa)
           },
           {
             text: "Cancelar",
@@ -3486,6 +3488,53 @@ const InicioScreen = () => {
     return "🍽️";
   };
 
+  const ejecutarLiberarMesa = async (mesa) => {
+    try {
+      if (!mesa || !mesa._id) {
+        Alert.alert("Error", "No se pudo obtener la información de la mesa");
+        return;
+      }
+
+      let mesaId = mesa._id;
+      if (mesaId && typeof mesaId === 'object') {
+        mesaId = mesaId.toString();
+      }
+
+      const mesaUpdateURL = apiConfig.isConfigured
+        ? `${apiConfig.getEndpoint('/mesas')}/${mesaId}/estado`
+        : `${MESAS_API_UPDATE}/${mesaId}/estado`;
+      await axios.put(
+        mesaUpdateURL,
+        { estado: "libre" },
+        { timeout: 5000 }
+      );
+
+      try {
+        await AsyncStorage.multiRemove(["ultimoBoucher", "mesaPagada"]);
+      } catch (e) { /* ignorar */ }
+
+      setComandas(prev => prev.filter(c => {
+        const cmid = c.mesas?._id ?? c.mesas;
+        return !cmid || String(cmid) !== String(mesaId);
+      }));
+
+      Alert.alert("✅", `Mesa ${mesa.nummesa} liberada exitosamente.\n\nLa mesa está ahora disponible para otros mozos.`);
+      obtenerComandasHoy();
+      obtenerMesas();
+    } catch (error) {
+      console.error("❌ Error liberando mesa:", error);
+      await logger.error(error, {
+        action: 'liberar_mesa',
+        mesaId: mesa?._id,
+        mesaNum: mesa?.nummesa,
+        timestamp: moment().tz("America/Lima").format("YYYY-MM-DD HH:mm:ss"),
+      });
+
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message;
+      Alert.alert("Error", `No se pudo liberar la mesa.\n\n${errorMsg}`);
+    }
+  };
+
   const handleLiberarMesa = async (mesa) => {
     Alert.alert(
       "🔄 Liberar Mesa",
@@ -3497,62 +3546,7 @@ const InicioScreen = () => {
         },
         {
           text: "Liberar",
-          onPress: async () => {
-            try {
-              if (!mesa || !mesa._id) {
-                Alert.alert("Error", "No se pudo obtener la información de la mesa");
-                return;
-              }
-
-              // Extraer el ID de la mesa de forma segura
-              let mesaId = mesa._id;
-              if (mesaId && typeof mesaId === 'object') {
-                mesaId = mesaId.toString();
-              }
-
-              console.log("🔄 Liberando mesa:", mesaId);
-              
-              // Actualizar mesa a "libre"
-              const mesaUpdateURL = apiConfig.isConfigured 
-                ? `${apiConfig.getEndpoint('/mesas')}/${mesaId}/estado`
-                : `${MESAS_API_UPDATE}/${mesaId}/estado`;
-              await axios.put(
-                mesaUpdateURL,
-                { estado: "libre" },
-                { timeout: 5000 }
-              );
-              
-              console.log("✅ Mesa liberada:", mesa.nummesa);
-              try {
-                await AsyncStorage.multiRemove(["ultimoBoucher", "mesaPagada"]);
-              } catch (e) { /* ignorar */ }
-
-              // PLAN_PLANTILLA_COMANDAS: purgar del state local las comandas de esta mesa.
-              // El backend las marca IsActive=false + status='pagado' al liberar,
-              // pero el state de React puede seguir mostrándolas hasta el próximo fetch.
-              // Esto previene el "fantasma" de mesa Libre con comandas activas en mapa.
-              setComandas(prev => prev.filter(c => {
-                const cmid = c.mesas?._id ?? c.mesas;
-                return !cmid || String(cmid) !== String(mesaId);
-              }));
-
-              Alert.alert("✅", `Mesa ${mesa.nummesa} liberada exitosamente.\n\nLa mesa está ahora disponible para otros mozos.`);
-              // Actualizar datos
-              obtenerComandasHoy();
-              obtenerMesas();
-            } catch (error) {
-              console.error("❌ Error liberando mesa:", error);
-              await logger.error(error, {
-                action: 'liberar_mesa',
-                mesaId: mesa?._id,
-                mesaNum: mesa?.nummesa,
-                timestamp: moment().tz("America/Lima").format("YYYY-MM-DD HH:mm:ss"),
-              });
-              
-              const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message;
-              Alert.alert("Error", `No se pudo liberar la mesa.\n\n${errorMsg}`);
-            }
-          }
+          onPress: () => ejecutarLiberarMesa(mesa)
         }
       ]
     );
@@ -5389,19 +5383,18 @@ const InicioScreen = () => {
             <TouchableOpacity
               style={styles.barraItem}
               onPress={async () => {
-                // Si hay una mesa seleccionada, guardarla y navegar
-                if (mesaSeleccionada) {
-                  try {
+                try {
+                  if (mesaSeleccionada) {
                     await AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesaSeleccionada));
-                    navigation.navigate("Ordenes", { modoExtraLlevar: false });
-                  } catch (error) {
-                    console.error("Error guardando mesa seleccionada:", error);
-                    navigation.navigate("Ordenes", { modoExtraLlevar: false });
                   }
-                } else {
-                  // Si no hay mesa seleccionada, navegar normalmente
-                  navigation.navigate("Ordenes", { modoExtraLlevar: false });
+                } catch (error) {
+                  console.error("Error guardando mesa seleccionada:", error);
                 }
+                navigation.navigate("Ordenes", {
+                  modoExtraLlevar: false,
+                  ...(mesaSeleccionada ? { mesa: mesaSeleccionada } : {}),
+                  ...(mesaSeleccionada && abrirMenuNuevaOrden ? { abrirMenu: true } : {}),
+                });
               }}
             >
               <View style={styles.barraItemContent}>
