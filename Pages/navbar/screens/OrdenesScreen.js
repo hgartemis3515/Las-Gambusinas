@@ -20,6 +20,11 @@ import { getFallbackApiBase } from "../../../config/envDefaults";
 import { useTheme } from "../../../context/ThemeContext";
 import { useBotonCantidadPlato } from "../../../context/BotonCantidadPlatoContext";
 import { useBotonesMenuOrden } from "../../../context/BotonesMenuOrdenContext";
+import { useDensidadOrdenes } from "../../../context/DensidadOrdenesContext";
+import { useOrdenesAcciones } from "../../../context/OrdenesAccionesContext";
+import { lerpDensidad, COMPACTO_DEFAULT } from "../../../utils/densidadOrdenes";
+import { slugTipoPorHoraActual } from "../../../utils/horaTipoMenu";
+import { clampAccionesEscala, ACCIONES_ESCALA_DEFAULT } from "../../../utils/ordenesAccionesPrefs";
 import { themeLight } from "../../../constants/theme";
 import { useOrientation } from "../../../hooks/useOrientation";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -29,10 +34,11 @@ import * as Haptics from "expo-haptics";
 // Componente de modal de complementos
 import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
+import BotonEnviarOrden from "../../../Components/BotonEnviarOrden";
 import { resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato, platoEditableEnOrdenes, expandirLineaComplementos } from "../../../utils/platoGuarniciones";
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from "../../../utils/numeroSeriePlato";
 import { mismaVariantePlato, esSeleccionVariantePlato, nombreVisibleConVariante } from "../../../utils/variantePlato";
-import { platoRequiereModalAlSumar, ultimaLineaDelPlato, platoCoincideBusqueda, ordenarPlatosPorCodigoBusqueda, expandirFilasBuscadorPlatos } from "../../../utils/platoBuscador";
+import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, platoCoincideBusqueda, ordenarPlatosPorCodigoBusqueda, expandirFilasBuscadorPlatos } from "../../../utils/platoBuscador";
 import { calcularPrecioUnitarioConComplementos } from "../../../utils/precioComplementos";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
@@ -212,8 +218,16 @@ const OrdenesScreen = ({ route }) => {
   const theme = themeContext?.theme || themeLight;
   const { estilo: estiloQty, iconSize: iconSizeQty } = useBotonCantidadPlato();
   const { cambiarVisible, estiloCambiar } = useBotonesMenuOrden();
+  const { compacto } = useDensidadOrdenes();
+  const {
+    agregarColor,
+    enviarColor: colorEnviarOrden,
+    ubicacion: ubicacionAcciones,
+    accionesEscala,
+  } = useOrdenesAcciones();
   const orientation = useOrientation();
-  const styles = OrdenesScreenStyles(theme, orientation);
+  const styles = OrdenesScreenStyles(theme, orientation, compacto, accionesEscala);
+  const accionIconSize = Math.max(16, Math.round(24 * (clampAccionesEscala(accionesEscala) / 100)));
   
   // Obtener parámetros de navegación (mesa y reserva desde ComandaDetalle)
   const { mesa: mesaParam, reserva: reservaParam, modoExtraLlevar: modoExtraParam, origen: origenParam, abrirMenu: abrirMenuParam } = route?.params || {};
@@ -231,6 +245,7 @@ const OrdenesScreen = ({ route }) => {
   const [observaciones, setObservaciones] = useState("");
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
+  const [categoriasInfo, setCategoriasInfo] = useState([]);
   const [favoritoIds, setFavoritoIds] = useState([]);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   // Catálogo dinámico de tipos de plato desde el backend
@@ -366,7 +381,7 @@ const OrdenesScreen = ({ route }) => {
     if (!abrirMenuParam) return;
     if (mesaParam) setSelectedMesa(mesaParam);
     loadPlatosData();
-    setTipoPlatoFiltro(null);
+    setTipoPlatoFiltro(slugTipoPorHoraActual(tiposPlatoCatalogo) || null);
     setCategoriaFiltro(null);
     setSearchPlato("");
     if (esSeleccionSinMesa(mesaParam)) {
@@ -374,7 +389,7 @@ const OrdenesScreen = ({ route }) => {
     }
     setModalPlatosVisible(true);
     navigation.setParams({ abrirMenu: undefined });
-  }, [abrirMenuParam, mesaParam, navigation]);
+  }, [abrirMenuParam, mesaParam, navigation, tiposPlatoCatalogo]);
 
   useEffect(() => {
     if (modoExtraLlevar) {
@@ -470,6 +485,27 @@ const OrdenesScreen = ({ route }) => {
         : DISHES_API;
       const response = await axios.get(platosURL, { timeout: 5000 });
       setPlatos(response.data);
+      try {
+        const primary = apiConfig.isConfigured
+          ? apiConfig.getEndpoint('/platos/categorias?ligero=1')
+          : `${getFallbackApiBase()}/platos/categorias?ligero=1`;
+        const catRes = await axios.get(primary, { timeout: 5000 });
+        if (Array.isArray(catRes.data)) {
+          setCategoriasInfo(catRes.data);
+        } else {
+          setCategoriasInfo([]);
+        }
+      } catch (e) {
+        try {
+          const fallback = apiConfig.isConfigured
+            ? apiConfig.getEndpoint('/categorias-plato?ligero=1')
+            : `${getFallbackApiBase()}/categorias-plato?ligero=1`;
+          const catRes = await axios.get(fallback, { timeout: 5000 });
+          setCategoriasInfo(Array.isArray(catRes.data) ? catRes.data : []);
+        } catch (_) {
+          setCategoriasInfo([]);
+        }
+      }
     } catch (error) {
       console.error("Error cargando platos:", error);
       Alert.alert("Error", "No se pudieron cargar los platos");
@@ -535,7 +571,6 @@ const OrdenesScreen = ({ route }) => {
       await AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesaData));
       setSelectedMesa(mesaData);
       setModalMesasVisible(false);
-      Alert.alert("✅", `Mesa ${mesa.nummesa} seleccionada`);
     } catch (error) {
       console.error("Error seleccionando mesa:", error);
     }
@@ -566,6 +601,17 @@ const OrdenesScreen = ({ route }) => {
       setPlatoParaComplementar(plato);
       return;
     }
+    if (platoRequiereModalOp(plato)) {
+      setFocoComplementos("anexarNombre");
+      setOcultarSumarComplementos(true);
+      setEditandoInstanceId(null);
+      tipoServicioAlComplementarRef.current = null;
+      setComplementosInicialesModal(null);
+      setNotaInicialModal("");
+      setCantidadInicialModal(n);
+      setPlatoParaComplementar(plato);
+      return;
+    }
     if (plato?.complementos?.length > 0) {
       const comps = preseleccionComplementosDePlato(plato);
       const afectan = plato.complementosAfectanPrecio !== false;
@@ -582,7 +628,7 @@ const OrdenesScreen = ({ route }) => {
 
   const handleAddPlatoFromMenu = (plato, cantidadPlatos = 1) => {
     handleAddPlato(plato, cantidadPlatos);
-    if (!platoRequiereModalAlSumar(plato)) {
+    if (!platoRequiereModalAlSumar(plato) && !platoRequiereModalOp(plato)) {
       avisarPlatoAgregado(plato.nombreMostrado || plato.nombre, Math.max(1, Number(cantidadPlatos) || 1));
     }
   };
@@ -612,7 +658,7 @@ const OrdenesScreen = ({ route }) => {
 
   const abrirFocoDesdeBuscador = (plato, focoModo) => {
     const ultima = ultimaLineaDelPlato(selectedPlatos, plato, tipoServicioMenuActual(), { exacto: true });
-    if (!ultima && platoRequiereModalAlSumar(plato)) {
+    if (!ultima && (platoRequiereModalAlSumar(plato) || platoRequiereModalOp(plato))) {
       handleAddPlato(plato);
       return;
     }
@@ -773,7 +819,16 @@ const OrdenesScreen = ({ route }) => {
         (p) => (p.instanceId || p._id) === editandoInstanceId
       );
       if (linea) {
-        const n = cantidadesRef.current[editandoInstanceId] || linea.cantidad || 1;
+        const n = Math.max(
+          1,
+          Math.min(
+            99,
+            Number(_cantidadPlatos)
+              || cantidadesRef.current[editandoInstanceId]
+              || linea.cantidad
+              || 1
+          )
+        );
         const partes = expandirLineaComplementos(linea, complementosSeleccionados, n);
         const parte0 = partes[0] || { complementos: complementosSeleccionados, cantidad: n };
         const afectan = linea.complementosAfectanPrecio !== false;
@@ -1036,8 +1091,10 @@ const OrdenesScreen = ({ route }) => {
   const handleEnviarComanda = async () => {
     const esSinMesaOrden = esSeleccionSinMesa(selectedMesa);
     let mesaActualizada = selectedMesa;
+    const platosEnvio = selectedPlatosRef.current;
+    const cantidadesEnvio = cantidadesRef.current;
     try {
-      setIsSendingComanda(true);
+  setIsSendingComanda(true);
 
       if (!userInfo || !userInfo._id) {
         Alert.alert("Error", "No hay usuario logueado");
@@ -1051,7 +1108,7 @@ const OrdenesScreen = ({ route }) => {
         return;
       }
 
-      if (selectedPlatos.length === 0) {
+      if (platosEnvio.length === 0) {
         Alert.alert("Error", "Agrega al menos un plato");
         setIsSendingComanda(false);
         return;
@@ -1235,7 +1292,7 @@ const OrdenesScreen = ({ route }) => {
           ? TIPO_EXTRA_LLEVAR
           : (tipoServicioModal === TIPO_PARA_LLEVAR ? TIPO_PARA_LLEVAR : TIPO_MESA);
 
-      const platosData = selectedPlatos.map(plato => ({
+      const platosData = platosEnvio.map(plato => ({
         plato: plato._id,
         platoId: plato.id || null,
         estado: "en_espera",
@@ -1248,7 +1305,7 @@ const OrdenesScreen = ({ route }) => {
         ...(plato.numeroSerie ? { numeroSerie: normalizarNumeroSerie(plato.numeroSerie) } : {}),
       }));
 
-      const cantidadesArray = selectedPlatos.map(plato => cantidades[plato.instanceId || plato._id] || 1);
+      const cantidadesArray = platosEnvio.map(plato => cantidadesEnvio[plato.instanceId || plato._id] || 1);
 
       // Verificar y loggear el userInfo antes de crear la comanda
       console.log("👤 UserInfo antes de crear comanda:", {
@@ -1271,8 +1328,8 @@ const OrdenesScreen = ({ route }) => {
         observaciones: observaciones || "",
         status: "en_espera",
         IsActive: true,
-        ...(selectedPlatos.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))
-          ? { numeroSerie: normalizarNumeroSerie(selectedPlatos.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))) }
+        ...(platosEnvio.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))
+          ? { numeroSerie: normalizarNumeroSerie(platosEnvio.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))) }
           : {}),
         // Si hay reserva activa, incluirla
         ...(reservaActiva && { origenReserva: reservaActiva._id })
@@ -1717,6 +1774,41 @@ const OrdenesScreen = ({ route }) => {
 
   const getMesaEstado = (mesa) => etiquetaEstadoMesa(mesa?.estado || "libre");
 
+  const abrirMenuPlatos = () => {
+    loadPlatosData();
+    const autoSlug = slugTipoPorHoraActual(tiposPlatoCatalogo);
+    setTipoPlatoFiltro(autoSlug || null);
+    setCategoriaFiltro(null);
+    setSearchPlato("");
+    if (esSeleccionSinMesa(selectedMesa)) {
+      setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
+    }
+    setModalPlatosVisible(true);
+  };
+
+  const botonesAccionOrden = (
+    <View style={styles.buttonsContainer}>
+      <TouchableOpacity
+        style={[styles.addButton, { backgroundColor: agregarColor }]}
+        onPress={abrirMenuPlatos}
+      >
+        <MaterialCommunityIcons name="plus-circle" size={accionIconSize} color={theme.colors.text.white} />
+        <Text style={styles.addButtonText}>Agregar Plato</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.sendButton, { backgroundColor: colorEnviarOrden }, isSendingComanda && styles.sendButtonDisabled]}
+        onPress={handleEnviarComanda}
+        disabled={isSendingComanda}
+      >
+        <MaterialCommunityIcons name="send" size={accionIconSize} color={theme.colors.text.white} />
+        <Text style={styles.sendButtonText}>
+          {isSendingComanda ? "Enviando..." : "Enviar Orden"}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+  const accionesArriba = ubicacionAcciones !== 'abajo';
+
   return (
     <SafeAreaView style={styles.container} edges={[]}>
       <ScrollView style={styles.scrollView} contentContainerStyle={orientation.isLandscape ? styles.scrollViewContentLandscape : null}>
@@ -1757,6 +1849,8 @@ const OrdenesScreen = ({ route }) => {
           </TouchableOpacity>
         </View>
 
+        {accionesArriba ? botonesAccionOrden : null}
+
         {/* Platos Seleccionados */}
         <View style={[styles.section, orientation.isLandscape && styles.sectionLandscape]}>
           <View style={styles.sectionHeader}>
@@ -1769,14 +1863,17 @@ const OrdenesScreen = ({ route }) => {
               </View>
             </View>
             {selectedPlatos.length > 0 && (
-              <TouchableOpacity
-                onPress={handleClearAllPlatos}
-                style={styles.clearAllButton}
-                accessibilityLabel="Borrar todos los platos"
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <MaterialCommunityIcons name="close" size={22} color={theme.colors.primary} />
-              </TouchableOpacity>
+              <View style={styles.sectionHeaderActions}>
+                <BotonEnviarOrden onPress={handleEnviarComanda} disabled={isSendingComanda} />
+                <TouchableOpacity
+                  onPress={handleClearAllPlatos}
+                  style={styles.clearAllButton}
+                  accessibilityLabel="Borrar todos los platos"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <MaterialCommunityIcons name="close" size={22} color={theme.colors.primary} />
+                </TouchableOpacity>
+              </View>
             )}
           </View>
           {selectedPlatos.length === 0 ? (
@@ -1962,35 +2059,7 @@ const OrdenesScreen = ({ route }) => {
           </>
         )}
 
-        {/* Botones */}
-        <View style={styles.buttonsContainer}>
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => {
-              loadPlatosData();
-              setTipoPlatoFiltro(null);
-              setCategoriaFiltro(null);
-              setSearchPlato("");
-              if (esSeleccionSinMesa(selectedMesa)) {
-                setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
-              }
-              setModalPlatosVisible(true);
-            }}
-          >
-            <MaterialCommunityIcons name="plus-circle" size={24} color={theme.colors.text.white} />
-            <Text style={styles.addButtonText}>Agregar Plato</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.sendButton, isSendingComanda && styles.sendButtonDisabled]}
-            onPress={handleEnviarComanda}
-            disabled={isSendingComanda}
-          >
-            <MaterialCommunityIcons name="send" size={24} color={theme.colors.text.white} />
-            <Text style={styles.sendButtonText}>
-              {isSendingComanda ? "Enviando..." : "Enviar Orden"}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        {accionesArriba ? null : botonesAccionOrden}
       </ScrollView>
 
       {/* Modal Mesas */}
@@ -2130,6 +2199,7 @@ const OrdenesScreen = ({ route }) => {
         onSearchFocus={handleSearchFocus}
         onClearSearch={handleClearSearch}
         categorias={categorias}
+        categoriasInfo={categoriasInfo}
         categoriaFiltro={categoriaFiltro}
         onSelectCategoria={handleCategorySelect}
         platosFiltrados={platosFiltrados}
@@ -2186,7 +2256,27 @@ const OrdenesScreen = ({ route }) => {
   );
 };
 
-const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
+const OrdenesScreenStyles = (theme, orientation, compacto = COMPACTO_DEFAULT, accionesEscala = ACCIONES_ESCALA_DEFAULT) => {
+  const sectionPad = orientation.isLandscape
+    ? theme.spacing.md
+    : lerpDensidad(theme.spacing.lg, 8, compacto);
+  const headerMb = lerpDensidad(theme.spacing.md, 4, compacto);
+  const buttonsPad = lerpDensidad(theme.spacing.lg, 8, compacto);
+  const buttonsPadTop = lerpDensidad(theme.spacing.md, 2, compacto);
+  const buttonsGap = lerpDensidad(theme.spacing.md, 6, compacto);
+  const totalPad = orientation.isLandscape
+    ? theme.spacing.md
+    : lerpDensidad(theme.spacing.lg, 10, compacto);
+  const totalMv = orientation.isLandscape ? 0 : lerpDensidad(theme.spacing.md, 4, compacto);
+  const platoPad = lerpDensidad(theme.spacing.md, 8, compacto);
+  const platoMb = lerpDensidad(theme.spacing.sm, 4, compacto);
+  const obsMinH = lerpDensidad(80, 48, compacto);
+  const btnPad = lerpDensidad(theme.spacing.md, 8, compacto);
+  const tAcc = clampAccionesEscala(accionesEscala) / 100;
+  const addPad = Math.round(btnPad * tAcc);
+  const addFont = Math.max(12, Math.round(16 * tAcc));
+
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
@@ -2216,7 +2306,7 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     letterSpacing: 0.5,
   },
   section: {
-    padding: orientation.isLandscape ? theme.spacing.md : theme.spacing.lg,
+    padding: sectionPad,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
@@ -2234,7 +2324,7 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: theme.spacing.md,
+    marginBottom: headerMb,
   },
   sectionHeaderLeft: {
     flexDirection: "row",
@@ -2242,6 +2332,11 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     gap: theme.spacing.sm,
     flex: 1,
     marginRight: theme.spacing.sm,
+  },
+  sectionHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   clearAllButton: {
     width: 32,
@@ -2314,9 +2409,9 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
   },
   platoItem: {
     backgroundColor: theme.colors.surface,
-    padding: theme.spacing.md,
+    padding: platoPad,
     borderRadius: theme.borderRadius.md,
-    marginBottom: theme.spacing.sm,
+    marginBottom: platoMb,
     borderWidth: 1,
     borderColor: theme.colors.border,
     ...theme.shadows.small,
@@ -2463,19 +2558,20 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     borderColor: theme.colors.border,
     borderRadius: theme.borderRadius.md,
     padding: theme.spacing.md,
-    minHeight: 80,
+    minHeight: obsMinH,
     textAlignVertical: "top",
     fontSize: 14,
     color: theme.colors.text.primary,
   },
   totalSection: {
     backgroundColor: theme.colors.primary,
-    padding: orientation.isLandscape ? theme.spacing.md : theme.spacing.lg,
+    padding: totalPad,
     flexDirection: "column",
     justifyContent: "center",
     alignItems: "stretch",
     marginHorizontal: orientation.isLandscape ? 0 : theme.spacing.lg,
-    marginVertical: orientation.isLandscape ? 0 : theme.spacing.md,
+    marginTop: totalMv,
+    marginBottom: 0,
     borderRadius: theme.borderRadius.lg,
     ...theme.shadows.medium,
   },
@@ -2515,8 +2611,10 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
   },
   buttonsContainer: {
     flexDirection: "row",
-    padding: theme.spacing.lg,
-    gap: theme.spacing.md,
+    paddingHorizontal: buttonsPad,
+    paddingTop: buttonsPadTop,
+    paddingBottom: buttonsPad,
+    gap: buttonsGap,
   },
   addButton: {
     flex: 1,
@@ -2524,7 +2622,8 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: theme.colors.accent,
-    padding: theme.spacing.md,
+    padding: addPad,
+    minHeight: Math.max(40, Math.round(48 * tAcc)),
     borderRadius: theme.borderRadius.md,
     gap: theme.spacing.sm,
     ...theme.shadows.medium,
@@ -2532,7 +2631,7 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
   addButtonText: {
     color: theme.colors.text.white,
     fontWeight: "700",
-    fontSize: 16,
+    fontSize: addFont,
   },
   sendButton: {
     flex: 1,
@@ -2540,7 +2639,8 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: theme.colors.primary,
-    padding: theme.spacing.md,
+    padding: addPad,
+    minHeight: Math.max(40, Math.round(48 * tAcc)),
     borderRadius: theme.borderRadius.md,
     gap: theme.spacing.sm,
     ...theme.shadows.medium,
@@ -2551,7 +2651,7 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
   sendButtonText: {
     color: theme.colors.text.white,
     fontWeight: "700",
-    fontSize: 16,
+    fontSize: addFont,
   },
   modalBackground: {
     flex: 1,
@@ -2887,6 +2987,7 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     textAlign: "center",
   },
 });
+};
 
 export default OrdenesScreen;
 

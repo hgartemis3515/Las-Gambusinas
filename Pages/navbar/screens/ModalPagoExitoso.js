@@ -19,6 +19,7 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "../../../context/ThemeContext";
+import { useOcultarPropina } from "../../../context/OcultarPropinaContext";
 import { themeLight } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
 import Animated, {
@@ -49,6 +50,7 @@ const ModalPagoExitoso = ({
 }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
+  const { ocultarPropina } = useOcultarPropina();
   const { width, height } = useWindowDimensions();
   const [cuentaRegresiva, setCuentaRegresiva] = useState(null);
   const [pausarRedirect, setPausarRedirect] = useState(false);
@@ -174,6 +176,7 @@ const ModalPagoExitoso = ({
   };
 
   const handlePropina = () => {
+    if (ocultarPropina) return;
     setPausarRedirect(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onRegistrarPropina?.();
@@ -229,7 +232,7 @@ const ModalPagoExitoso = ({
       label: "Propina",
       color: colors.success || "#22C55E",
       onPress: handlePropina,
-      visible: true,
+      visible: !ocultarPropina,
       style: buttonStyle0,
     },
     {

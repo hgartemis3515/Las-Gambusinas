@@ -18,7 +18,7 @@ import ModalComplementos from "../Components/ModalComplementos";
 import { resolverPlatoConGrupos, guarnicionesElegidas, preseleccionComplementosDePlato, cantidadGuarnicionEfectiva, expandirLineaComplementos } from "../utils/platoGuarniciones";
 import { numeroSerieEsValido, normalizarNumeroSerie } from "../utils/numeroSeriePlato";
 import { mismaVariantePlato, esSeleccionVariantePlato } from "../utils/variantePlato";
-import { platoRequiereModalAlSumar, ultimaLineaDelPlato, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos } from "../utils/platoBuscador";
+import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos } from "../utils/platoBuscador";
 import PlatoBuscadorCard from "../Components/PlatoBuscadorCard";
 import { calcularPrecioUnitarioConComplementos } from "../utils/precioComplementos";
 import StepIndicator, { PASOS } from "../Components/reserva/StepIndicator";
@@ -459,6 +459,17 @@ export default function ReservaWizardScreen() {
       setPlatoParaComplementar(plato);
       return;
     }
+    if (platoRequiereModalOp(plato)) {
+      setFocoComplementos("anexarNombre");
+      setOcultarSumarComplementos(true);
+      setEditandoInstanceId(null);
+      tipoServicioAlComplementarRef.current = tipoServicioModal === "para_llevar" ? "para_llevar" : "mesa";
+      setComplementosInicialesModal(null);
+      setNotaInicialModal("");
+      setCantidadInicialModal(n);
+      setPlatoParaComplementar(plato);
+      return;
+    }
     if (plato?.complementos?.length > 0) {
       const comps = preseleccionComplementosDePlato(plato);
       const afectan = plato.complementosAfectanPrecio !== false;
@@ -485,7 +496,7 @@ export default function ReservaWizardScreen() {
 
   const abrirFocoDesdeBuscador = (plato, focoModo) => {
     const ultima = ultimaLineaDelPlato(selPlatos, plato, tipoServicioModal, { exacto: true });
-    if (!ultima && platoRequiereModalAlSumar(plato)) {
+    if (!ultima && (platoRequiereModalAlSumar(plato) || platoRequiereModalOp(plato))) {
       tocarPlato(plato);
       return;
     }

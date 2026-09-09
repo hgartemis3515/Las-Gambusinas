@@ -14,10 +14,13 @@ import { useTheme } from '../context/ThemeContext';
 import { useOnlineBadge, DEFAULT_ONLINE_BADGE_OPACITY } from '../context/OnlineBadgeContext';
 import { useAvisoPlatoAgregado } from '../context/AvisoPlatoAgregadoContext';
 import { useOmitirConfirmacionPago } from '../context/OmitirConfirmacionPagoContext';
+import { useOcultarPropina } from '../context/OcultarPropinaContext';
 import { useBotonCantidadPlato } from '../context/BotonCantidadPlatoContext';
 import { useBotonEnviarOrden } from '../context/BotonEnviarOrdenContext';
 import { useBotonesMenuOrden } from '../context/BotonesMenuOrdenContext';
 import { useAbrirMenuNuevaOrden } from '../context/AbrirMenuNuevaOrdenContext';
+import { useDensidadOrdenes } from '../context/DensidadOrdenesContext';
+import { useOrdenesAcciones } from '../context/OrdenesAccionesContext';
 import { themeLight } from '../constants/theme';
 import {
   BOTON_CANTIDAD_SIZE_MIN,
@@ -39,6 +42,32 @@ import {
   BOTON_ENVIAR_COLOR_DEFAULT,
   BOTON_ENVIAR_VISIBLE_DEFAULT,
 } from '../utils/botonEnviarOrden';
+import {
+  GAP_CATEGORIAS_MIN,
+  GAP_CATEGORIAS_MAX,
+  GAP_CATEGORIAS_DEFAULT,
+  COMPACTO_MIN,
+  COMPACTO_MAX,
+  COMPACTO_DEFAULT,
+  CHIP_CATEGORIA_ESCALA_MIN,
+  CHIP_CATEGORIA_ESCALA_MAX,
+  CHIP_CATEGORIA_ESCALA_DEFAULT,
+  CHIP_CATEGORIA_ESCALA_PRESETS,
+} from '../utils/densidadOrdenes';
+import {
+  AGREGAR_PLATO_COLOR_DEFAULT,
+  ENVIAR_ORDEN_COLOR_DEFAULT,
+  UBICACION_ACCIONES_ARRIBA,
+  UBICACION_ACCIONES_ABAJO,
+  CATEGORIA_ETIQUETA_NOMBRE,
+  CATEGORIA_ETIQUETA_CODIGO,
+  MOSTRAR_BUSCAR_CATEGORIAS_DEFAULT,
+  ACCION_ORDEN_COLOR_PRESETS,
+  ACCIONES_ESCALA_MIN,
+  ACCIONES_ESCALA_MAX,
+  ACCIONES_ESCALA_DEFAULT,
+  ACCIONES_ESCALA_PRESETS,
+} from '../utils/ordenesAccionesPrefs';
 import {
   BOTON_CERRAR_COLOR_DEFAULT,
   BOTON_SUMAR_COLOR_DEFAULT,
@@ -136,6 +165,7 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
   const { opacity, setOpacity } = useOnlineBadge();
   const { mostrarAviso, setMostrarAviso } = useAvisoPlatoAgregado();
   const { omitirConfirmacionPago, setOmitirConfirmacionPago } = useOmitirConfirmacionPago();
+  const { ocultarPropina, setOcultarPropina } = useOcultarPropina();
   const { abrirMenuNuevaOrden, setAbrirMenuNuevaOrden } = useAbrirMenuNuevaOrden();
   const {
     size: qtySize,
@@ -171,6 +201,29 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
     reset: resetMenuOrden,
     estiloCambiar,
   } = useBotonesMenuOrden();
+  const {
+    gapCategorias,
+    compacto,
+    chipCategoriaEscala,
+    setGapCategorias,
+    setCompacto,
+    setChipCategoriaEscala,
+    reset: resetDensidad,
+  } = useDensidadOrdenes();
+  const {
+    agregarColor,
+    enviarColor: colorBarraEnviar,
+    ubicacion,
+    categoriaEtiqueta,
+    mostrarBuscarCategorias,
+    accionesEscala,
+    setAgregarColor,
+    setEnviarColor: setColorBarraEnviar,
+    setUbicacion,
+    setCategoriaEtiqueta,
+    setMostrarBuscarCategorias,
+    setAccionesEscala,
+  } = useOrdenesAcciones();
   const pct = Math.round(opacity * 100);
 
   return (
@@ -237,6 +290,32 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
               trackColor={{ false: theme.colors.border, true: theme.colors.primary + '88' }}
               thumbColor={omitirConfirmacionPago ? theme.colors.primary : theme.colors.text.light}
               accessibilityLabel="Omitir confirmación de pago"
+            />
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Propinas
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            En Pagos oculta el botón Registrar Propina y la opción Propina del modal de pago exitoso.
+          </Text>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+                Ocultar Registrar propina
+              </Text>
+              <Text style={[styles.switchHint, { color: theme.colors.text.secondary }]}>
+                {ocultarPropina ? 'Propina oculta en Pagos' : 'Se muestra Propina'}
+              </Text>
+            </View>
+            <Switch
+              value={ocultarPropina}
+              onValueChange={setOcultarPropina}
+              trackColor={{ false: theme.colors.border, true: theme.colors.primary + '88' }}
+              thumbColor={ocultarPropina ? theme.colors.primary : theme.colors.text.light}
+              accessibilityLabel="Ocultar Registrar propina"
             />
           </View>
 
@@ -528,14 +607,14 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
           <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
 
           <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
-            Botón Sumar
+            Botón +
           </Text>
           <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
             A la izquierda de E. Limpia el buscador del menú. Por defecto verde.
           </Text>
           <View style={styles.previewQtyWrap} pointerEvents="none">
             <View style={[styles.previewQtyBtn, estiloBotonSumarBusqueda(enviarSize, sumarColor)]}>
-              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: Math.max(11, iconSizeEnviar - 6) }}>Sumar</Text>
+              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: Math.max(22, iconSizeEnviar + 2), lineHeight: Math.max(24, iconSizeEnviar + 4) }}>+</Text>
             </View>
           </View>
           <Text style={[styles.label, { color: theme.colors.text.primary, marginBottom: 10 }]}>
@@ -587,6 +666,268 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
             >
               <Text style={[styles.resetText, { color: theme.colors.text.secondary }]}>
                 Restaurar X, Sumar y Cambiar por defecto
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Agregar plato y Enviar orden
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            Botones grandes de Órdenes. Por defecto van arriba de Platos seleccionados.
+          </Text>
+          <Text style={[styles.label, { color: theme.colors.text.primary, marginBottom: 10 }]}>
+            Ubicación
+          </Text>
+          <View style={styles.presets}>
+            {[
+              { label: 'Arriba', value: UBICACION_ACCIONES_ARRIBA },
+              { label: 'Abajo', value: UBICACION_ACCIONES_ABAJO },
+            ].map((p) => {
+              const active = ubicacion === p.value;
+              return (
+                <TouchableOpacity
+                  key={p.value}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: active ? theme.colors.primary + '22' : theme.colors.background,
+                      borderColor: active ? theme.colors.primary : theme.colors.border,
+                    },
+                  ]}
+                  onPress={() => setUbicacion(p.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.chipText, { color: active ? theme.colors.primary : theme.colors.text.secondary }]}>
+                    {p.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <View style={styles.rowLabel}>
+            <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+              Tamaño
+            </Text>
+            <Text style={[styles.pct, { color: theme.colors.primary }]}>{accionesEscala}%</Text>
+          </View>
+          <ValueSlider
+            value={accionesEscala}
+            onChange={setAccionesEscala}
+            min={ACCIONES_ESCALA_MIN}
+            max={ACCIONES_ESCALA_MAX}
+            trackColor={theme.colors.border}
+            fillColor={theme.colors.primary}
+            thumbColor={theme.colors.primary}
+          />
+          <View style={styles.presets}>
+            {ACCIONES_ESCALA_PRESETS.map((p) => {
+              const active = accionesEscala === p.value;
+              return (
+                <TouchableOpacity
+                  key={p.value}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: active ? theme.colors.primary + '22' : theme.colors.background,
+                      borderColor: active ? theme.colors.primary : theme.colors.border,
+                    },
+                  ]}
+                  onPress={() => setAccionesEscala(p.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.chipText, { color: active ? theme.colors.primary : theme.colors.text.secondary }]}>
+                    {p.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <View style={[styles.previewQtyWrap, { marginTop: 12, minHeight: Math.round(36 * accionesEscala / 100) }]} pointerEvents="none">
+            <View style={[
+              styles.previewAccionBtn,
+              {
+                backgroundColor: agregarColor,
+                height: Math.round(36 * accionesEscala / 100),
+                minWidth: Math.round(88 * accionesEscala / 100),
+                paddingHorizontal: Math.round(12 * accionesEscala / 100),
+              },
+            ]}>
+              <Text style={[styles.previewAccionTxt, { fontSize: Math.max(10, Math.round(12 * accionesEscala / 100)) }]}>Agregar</Text>
+            </View>
+            <View style={[
+              styles.previewAccionBtn,
+              {
+                backgroundColor: colorBarraEnviar,
+                height: Math.round(36 * accionesEscala / 100),
+                minWidth: Math.round(88 * accionesEscala / 100),
+                paddingHorizontal: Math.round(12 * accionesEscala / 100),
+              },
+            ]}>
+              <Text style={[styles.previewAccionTxt, { fontSize: Math.max(10, Math.round(12 * accionesEscala / 100)) }]}>Enviar</Text>
+            </View>
+          </View>
+          <Text style={[styles.label, { color: theme.colors.text.primary, marginTop: 12, marginBottom: 10 }]}>
+            Color Agregar plato
+          </Text>
+          <ColorSwatches value={agregarColor} onChange={setAgregarColor} presets={ACCION_ORDEN_COLOR_PRESETS} />
+          <Text style={[styles.label, { color: theme.colors.text.primary, marginTop: 12, marginBottom: 10 }]}>
+            Color Enviar orden
+          </Text>
+          <ColorSwatches value={colorBarraEnviar} onChange={setColorBarraEnviar} presets={ACCION_ORDEN_COLOR_PRESETS} />
+          {(agregarColor.toUpperCase() !== AGREGAR_PLATO_COLOR_DEFAULT.toUpperCase()
+            || colorBarraEnviar.toUpperCase() !== ENVIAR_ORDEN_COLOR_DEFAULT.toUpperCase()
+            || ubicacion !== UBICACION_ACCIONES_ARRIBA
+            || accionesEscala !== ACCIONES_ESCALA_DEFAULT) && (
+            <TouchableOpacity
+              style={[styles.reset, { borderColor: theme.colors.border }]}
+              onPress={() => {
+                setAgregarColor(AGREGAR_PLATO_COLOR_DEFAULT);
+                setColorBarraEnviar(ENVIAR_ORDEN_COLOR_DEFAULT);
+                setUbicacion(UBICACION_ACCIONES_ARRIBA);
+                setAccionesEscala(ACCIONES_ESCALA_DEFAULT);
+              }}
+            >
+              <Text style={[styles.resetText, { color: theme.colors.text.secondary }]}>
+                Restaurar botones Agregar y Enviar
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Órdenes: espacio y categorías
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            En el buscador, a la derecha de Favoritos: nombre o código de Gestionar categorías, y el tamaño de esos cuadros.
+          </Text>
+          <Text style={[styles.label, { color: theme.colors.text.primary, marginBottom: 10 }]}>
+            Cuadros de categoría
+          </Text>
+          <View style={styles.presets}>
+            {[
+              { label: 'Por nombre', value: CATEGORIA_ETIQUETA_NOMBRE },
+              { label: 'Por código', value: CATEGORIA_ETIQUETA_CODIGO },
+            ].map((p) => {
+              const active = categoriaEtiqueta === p.value;
+              return (
+                <TouchableOpacity
+                  key={p.value}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: active ? theme.colors.primary + '22' : theme.colors.background,
+                      borderColor: active ? theme.colors.primary : theme.colors.border,
+                    },
+                  ]}
+                  onPress={() => setCategoriaEtiqueta(p.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.chipText, { color: active ? theme.colors.primary : theme.colors.text.secondary }]}>
+                    {p.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+                Buscar categorías
+              </Text>
+              <Text style={[styles.switchHint, { color: theme.colors.text.secondary }]}>
+                {mostrarBuscarCategorias ? 'Cuadro de búsqueda visible en el filtro' : 'Oculto (por defecto)'}
+              </Text>
+            </View>
+            <Switch
+              value={mostrarBuscarCategorias}
+              onValueChange={setMostrarBuscarCategorias}
+              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+          <View style={styles.rowLabel}>
+            <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+              Tamaño de los cuadros
+            </Text>
+            <Text style={[styles.pct, { color: theme.colors.primary }]}>{chipCategoriaEscala}%</Text>
+          </View>
+          <ValueSlider
+            value={chipCategoriaEscala}
+            onChange={setChipCategoriaEscala}
+            min={CHIP_CATEGORIA_ESCALA_MIN}
+            max={CHIP_CATEGORIA_ESCALA_MAX}
+            trackColor={theme.colors.border}
+            fillColor={theme.colors.primary}
+            thumbColor={theme.colors.primary}
+          />
+          <View style={styles.presets}>
+            {CHIP_CATEGORIA_ESCALA_PRESETS.map((p) => {
+              const active = chipCategoriaEscala === p.value;
+              return (
+                <TouchableOpacity
+                  key={p.value}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: active ? theme.colors.primary + '22' : theme.colors.background,
+                      borderColor: active ? theme.colors.primary : theme.colors.border,
+                    },
+                  ]}
+                  onPress={() => setChipCategoriaEscala(p.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.chipText, { color: active ? theme.colors.primary : theme.colors.text.secondary }]}>
+                    {p.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <View style={[styles.rowLabel, { marginTop: 14 }]}>
+            <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+              Espacio entre categorías
+            </Text>
+            <Text style={[styles.pct, { color: theme.colors.primary }]}>{gapCategorias} px</Text>
+          </View>
+          <ValueSlider
+            value={gapCategorias}
+            onChange={setGapCategorias}
+            min={GAP_CATEGORIAS_MIN}
+            max={GAP_CATEGORIAS_MAX}
+            trackColor={theme.colors.border}
+            fillColor={theme.colors.primary}
+            thumbColor={theme.colors.primary}
+          />
+          <View style={styles.rowLabel}>
+            <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+              Pantalla más junta
+            </Text>
+            <Text style={[styles.pct, { color: theme.colors.primary }]}>{compacto}%</Text>
+          </View>
+          <ValueSlider
+            value={compacto}
+            onChange={setCompacto}
+            min={COMPACTO_MIN}
+            max={COMPACTO_MAX}
+            trackColor={theme.colors.border}
+            fillColor={theme.colors.primary}
+            thumbColor={theme.colors.primary}
+          />
+          {(gapCategorias !== GAP_CATEGORIAS_DEFAULT || compacto !== COMPACTO_DEFAULT || categoriaEtiqueta !== CATEGORIA_ETIQUETA_NOMBRE || chipCategoriaEscala !== CHIP_CATEGORIA_ESCALA_DEFAULT || mostrarBuscarCategorias !== MOSTRAR_BUSCAR_CATEGORIAS_DEFAULT) && (
+            <TouchableOpacity
+              style={[styles.reset, { borderColor: theme.colors.border }]}
+              onPress={() => {
+                resetDensidad();
+                setCategoriaEtiqueta(CATEGORIA_ETIQUETA_NOMBRE);
+                setMostrarBuscarCategorias(MOSTRAR_BUSCAR_CATEGORIAS_DEFAULT);
+              }}
+            >
+              <Text style={[styles.resetText, { color: theme.colors.text.secondary }]}>
+                Restaurar espacios y categorías por defecto
               </Text>
             </TouchableOpacity>
           )}
@@ -826,6 +1167,19 @@ const styles = StyleSheet.create({
   previewQtyBtn: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  previewAccionBtn: {
+    minWidth: 88,
+    height: 36,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewAccionTxt: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 12,
   },
   previewQtyNum: {
     fontSize: 18,

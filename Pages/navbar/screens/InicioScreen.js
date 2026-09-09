@@ -55,6 +55,9 @@ import { filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegun
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
+import { slugTipoPorHoraActual } from "../../../utils/horaTipoMenu";
+import { useDensidadOrdenes } from "../../../context/DensidadOrdenesContext";
+import { estiloChipCategoria } from "../../../utils/densidadOrdenes";
 import MesaMapView from '../../../Components/MesaMapView';
 import SelectorTipoMenu from "../../../Components/SelectorTipoMenu";
 
@@ -499,6 +502,8 @@ const InicioScreen = () => {
   const route = useRoute();
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
+  const { chipCategoriaEscala } = useDensidadOrdenes();
+  const chipEstilo = estiloChipCategoria(chipCategoriaEscala);
   const { abrirMenuNuevaOrden } = useAbrirMenuNuevaOrden();
   const { width, height } = useWindowDimensions();
   const [mesas, setMesas] = useState([]);
@@ -5921,10 +5926,11 @@ const InicioScreen = () => {
                   style={styles.addPlatoButton}
                   onPress={async () => {
                     await obtenerPlatos();
-                    setTipoPlatoFiltro(null);
+                    const autoSlug = slugTipoPorHoraActual(tiposPlatoCatalogo);
+                    setTipoPlatoFiltro(autoSlug || null);
                     setSearchPlato("");
                     setCategoriaFiltro(null);
-                    setEligiendoTipoMenu(true);
+                    setEligiendoTipoMenu(!autoSlug);
                   }}
                 >
                   <MaterialCommunityIcons name="plus-circle" size={20} color={theme.colors.text.white} />
@@ -5957,20 +5963,46 @@ const InicioScreen = () => {
                       showsHorizontalScrollIndicator={false}
                     >
                       <TouchableOpacity
-                        style={[styles.categoriaChip, !categoriaFiltro && styles.categoriaChipActive]}
+                        style={[
+                          styles.categoriaChip,
+                          {
+                            paddingHorizontal: chipEstilo.paddingHorizontal,
+                            paddingVertical: chipEstilo.paddingVertical,
+                            borderRadius: chipEstilo.borderRadius,
+                            minHeight: chipEstilo.minHeight,
+                          },
+                          !categoriaFiltro && styles.categoriaChipActive,
+                        ]}
                         onPress={() => setCategoriaFiltro(null)}
                       >
-                        <Text style={[styles.categoriaChipText, !categoriaFiltro && styles.categoriaChipTextActive]}>
+                        <Text style={[
+                          styles.categoriaChipText,
+                          { fontSize: chipEstilo.fontSize },
+                          !categoriaFiltro && styles.categoriaChipTextActive,
+                        ]}>
                           Todos
                         </Text>
                       </TouchableOpacity>
                       {categorias.map((cat) => (
                         <TouchableOpacity
                           key={cat}
-                          style={[styles.categoriaChip, categoriaFiltro === cat && styles.categoriaChipActive]}
+                          style={[
+                            styles.categoriaChip,
+                            {
+                              paddingHorizontal: chipEstilo.paddingHorizontal,
+                              paddingVertical: chipEstilo.paddingVertical,
+                              borderRadius: chipEstilo.borderRadius,
+                              minHeight: chipEstilo.minHeight,
+                            },
+                            categoriaFiltro === cat && styles.categoriaChipActive,
+                          ]}
                           onPress={() => setCategoriaFiltro(cat)}
                         >
-                          <Text style={[styles.categoriaChipText, categoriaFiltro === cat && styles.categoriaChipTextActive]}>
+                          <Text style={[
+                            styles.categoriaChipText,
+                            { fontSize: chipEstilo.fontSize },
+                            categoriaFiltro === cat && styles.categoriaChipTextActive,
+                          ]}>
                             {getCategoriaIcon(cat)} {cat.split("(")[0].trim()}
                           </Text>
                         </TouchableOpacity>

@@ -52,6 +52,7 @@ import {
 } from "../../../utils/pagoParcialHelpers";
 import { parseMonto } from "../../../utils/pagoMetodoHelpers";
 import { useOmitirConfirmacionPago } from "../../../context/OmitirConfirmacionPagoContext";
+import { useOcultarPropina } from "../../../context/OcultarPropinaContext";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -332,6 +333,7 @@ const PagosScreen = () => {
   const { width } = useWindowDimensions();
   const escala = width < 390 ? 0.9 : 1;
   const { omitirConfirmacionPago } = useOmitirConfirmacionPago();
+  const { ocultarPropina } = useOcultarPropina();
   
   // ✅ NUEVO FLUJO: Usar SOLO route.params - Backend = FUENTE ÚNICA DE VERDAD
   // IMPORTANTE: Leer route.params directamente en cada render para Tab Navigator
@@ -2881,7 +2883,7 @@ const PagosScreen = () => {
         )}
 
         {/* Botón Registrar Propina: cuando hay boucher y la mesa está pagada o todos los platos están pagados */}
-        {(boucherData || boucherFromParams) && (mesa?.estado?.toLowerCase() === 'pagado' || platosPagables.length === 0) && (
+        {(boucherData || boucherFromParams) && (mesa?.estado?.toLowerCase() === 'pagado' || platosPagables.length === 0) && !ocultarPropina && (
           <TouchableOpacity
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -2919,7 +2921,7 @@ const PagosScreen = () => {
 
       {/* Modal de Propinas */}
       <ModalRegistrarPropina
-        visible={modalPropinaVisible}
+        visible={modalPropinaVisible && !ocultarPropina}
         onClose={() => setModalPropinaVisible(false)}
         boucherData={boucherData || boucherFromParams}
         mesaData={mesa}
@@ -2973,6 +2975,7 @@ const PagosScreen = () => {
         clienteData={clientePagoExitoso}
         onImprimir={imprimirComandaHabilitado ? () => generarComanda(boucherData || boucherFromParams) : null}
         onRegistrarPropina={() => {
+          if (ocultarPropina) return;
           setModalPagoExitosoVisible(false);
           setModalPropinaVisible(true);
         }}

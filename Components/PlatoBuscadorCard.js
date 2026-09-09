@@ -4,11 +4,12 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useBotonCantidadPlato } from '../context/BotonCantidadPlatoContext';
 import { themeLight } from '../constants/theme';
-import { platoMuestraBotonG, platoMuestraBotonV } from '../utils/platoBuscador';
+import { platoMuestraBotonG, platoMuestraBotonV, codigoMozoVisible } from '../utils/platoBuscador';
+import { resumenMarcasGuarnicion } from '../utils/platoGuarniciones';
 import { ESTILO_CANTIDAD_AGREGAR } from '../utils/botonCantidadPlato';
 
 /**
- * Cuadro de plato en buscadores de mozos: SUMAR es - # +, G guarniciones, V variación de nombre.
+ * Cuadro de plato en buscadores de mozos: SUMAR es - # +, G guarniciones, OP opciones de nombre.
  */
 export default function PlatoBuscadorCard({
   plato,
@@ -47,14 +48,16 @@ export default function PlatoBuscadorCard({
   const precioMostrar = precioUnit * nPrecio;
   const agregarHecho = modoAgregar && (nQty > 0 || agregarFlash);
   const nombreVisible = plato?.nombreMostrado || plato?.nombre;
+  const codigoMozo = codigoMozoVisible(plato);
+  const marcasGuar = resumenMarcasGuarnicion(plato);
 
   return (
     <View style={[styles.card, esLlevar && styles.cardLlevar]}>
-      <View style={styles.topRow}>
+      <View style={[styles.topRow, marcasGuar ? styles.topRowConMarcas : null]}>
         <View style={styles.nombreWrap}>
           <Text style={styles.nombre} numberOfLines={2}>{nombreVisible}</Text>
-          {plato?.codigo ? (
-            <Text style={styles.codigo}>{String(plato.codigo).toUpperCase()}</Text>
+          {codigoMozo ? (
+            <Text style={styles.codigo}>{codigoMozo}</Text>
           ) : null}
         </View>
         <View style={styles.precioRow}>
@@ -62,6 +65,9 @@ export default function PlatoBuscadorCard({
           {nQty > 0 ? <Text style={styles.precioMult}>{nQty}x</Text> : null}
         </View>
       </View>
+      {marcasGuar ? (
+        <Text style={styles.marcas} numberOfLines={2}>{marcasGuar}</Text>
+      ) : null}
       <View style={styles.bottomRow}>
         <View style={styles.gvRow}>
           {onToggleFavorito ? (
@@ -94,9 +100,9 @@ export default function PlatoBuscadorCard({
               style={styles.btnV}
               onPress={() => onPressV?.(plato)}
               accessibilityRole="button"
-              accessibilityLabel="Variación por nombre"
+              accessibilityLabel="OP, opciones de nombre"
             >
-              <Text style={styles.gvLetter}>V</Text>
+              <Text style={styles.gvLetterOp}>OP</Text>
             </TouchableOpacity>
           ) : null}
         </View>
@@ -189,6 +195,15 @@ const makeStyles = (theme) => StyleSheet.create({
     gap: 8,
     marginBottom: 8,
   },
+  topRowConMarcas: {
+    marginBottom: 2,
+  },
+  marcas: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: theme.colors.text.secondary,
+    marginBottom: 8,
+  },
   nombreWrap: {
     flex: 1,
     flexDirection: 'row',
@@ -253,7 +268,7 @@ const makeStyles = (theme) => StyleSheet.create({
     justifyContent: 'center',
   },
   btnV: {
-    width: 40,
+    width: 44,
     height: 40,
     borderRadius: 10,
     backgroundColor: '#7C3AED',
@@ -265,6 +280,12 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     lineHeight: 22,
+  },
+  gvLetterOp: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   qtyRow: {
     flexDirection: 'row',

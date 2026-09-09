@@ -26,7 +26,7 @@
     "@react-navigation/stack": "^6.4.1",
     "axios": "^1.13.6",
     "babel-preset-expo": "~57.0.0",
-    "expo": "~57.0.20",
+    "expo": "~57.0.21",
     "expo-asset": "~57.0.16",
     "expo-audio": "~57.0.4",
     "expo-background-fetch": "~57.0.16",
@@ -71,6 +71,17 @@
   "devDependencies": {
     "@babel/core": "^7.24.0",
     "react-native-svg-transformer": "^1.5.3"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "0.9.12",
+    "browserslist": "4.28.9",
+    "baseline-browser-mapping": "2.11.21",
+    "js-yaml": "4.3.2",
+    "shell-quote": "1.9.0",
+    "socket.io-parser": "4.2.7",
+    "svgo": "3.3.5",
+    "decode-uri-component": "0.5.0",
+    "uuid": "11.1.1"
   },
   "private": true
 }

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   Platform,
   StyleSheet,
   useWindowDimensions,
+  Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -23,7 +24,12 @@ import BotonEnviarOrden from './BotonEnviarOrden';
 import BotonSumarBusqueda from './BotonSumarBusqueda';
 import { useBotonEnviarOrden } from '../context/BotonEnviarOrdenContext';
 import { useBotonesMenuOrden } from '../context/BotonesMenuOrdenContext';
+import { useDensidadOrdenes } from '../context/DensidadOrdenesContext';
+import { useOrdenesAcciones } from '../context/OrdenesAccionesContext';
 import { estiloBotonCerrarMenu } from '../utils/botonesMenuOrden';
+import { CATEGORIA_ETIQUETA_CODIGO, CATEGORIA_ETIQUETA_NOMBRE } from '../utils/ordenesAccionesPrefs';
+import { estiloChipCategoria } from '../utils/densidadOrdenes';
+import { urlMediaServidor } from '../utils/mediaUrl';
 
 const MIN_LIST = 140;
 
@@ -64,6 +70,83 @@ function categoriaIcon(categoria) {
   return '🍽️';
 }
 
+function CategoriaFiltroCard({ width, uri, codigo, label, selected, onPress, theme, placeholderIcon }) {
+  const [fail, setFail] = useState(false);
+  useEffect(() => { setFail(false); }, [uri]);
+  const showImg = Boolean(uri) && !fail;
+  const code = String(codigo || '').trim();
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={{
+        width,
+        borderRadius: 12,
+        borderWidth: selected ? 2 : 1,
+        borderColor: selected ? theme.colors.primary : theme.colors.border,
+        backgroundColor: theme.colors.background,
+        overflow: 'hidden',
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={code ? `${code} ${label}` : label}
+    >
+      <View
+        style={{
+          width: '100%',
+          height: Math.round(width * 0.72),
+          backgroundColor: theme.colors.border,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {showImg ? (
+          <Image
+            source={{ uri }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="cover"
+            onError={() => setFail(true)}
+          />
+        ) : (
+          <MaterialCommunityIcons
+            name={placeholderIcon || 'silverware-fork-knife'}
+            size={28}
+            color={theme.colors.text.light}
+          />
+        )}
+        {code ? (
+          <View
+            style={{
+              position: 'absolute',
+              left: 6,
+              top: 6,
+              backgroundColor: 'rgba(0,0,0,0.75)',
+              paddingHorizontal: 7,
+              paddingVertical: 3,
+              borderRadius: 6,
+            }}
+          >
+            <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 15 }}>
+              {code}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+      <Text
+        numberOfLines={2}
+        style={{
+          paddingHorizontal: 6,
+          paddingVertical: 6,
+          fontSize: 12,
+          fontWeight: '700',
+          textAlign: 'center',
+          color: selected ? theme.colors.primary : theme.colors.text.primary,
+        }}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 /**
  * Overlay in-tree del menú de platos (no usa Modal nativo).
  * Altura de lista = overlayH - chromeH (mín. 140), medida con onLayout.
@@ -85,6 +168,7 @@ export default function MenuPlatosSheet({
   onSearchFocus,
   onClearSearch,
   categorias = [],
+  categoriasInfo = [],
   categoriaFiltro,
   onSelectCategoria,
   platosFiltrados = [],
@@ -107,9 +191,38 @@ export default function MenuPlatosSheet({
   const styles = makeStyles(theme);
   const { size: sizeEnviar } = useBotonEnviarOrden();
   const { cerrarColor } = useBotonesMenuOrden();
+  const { gapCategorias, chipCategoriaEscala } = useDensidadOrdenes();
+  const { categoriaEtiqueta, setCategoriaEtiqueta, mostrarBuscarCategorias } = useOrdenesAcciones();
+  const chipEstilo = estiloChipCategoria(chipCategoriaEscala);
   const estiloCerrar = estiloBotonCerrarMenu(sizeEnviar, cerrarColor);
   const { width: winW } = useWindowDimensions();
   const [gridW, setGridW] = useState(0);
+  const [filtroCatOpen, setFiltroCatOpen] = useState(false);
+  const [filtroCatQ, setFiltroCatQ] = useState('');
+
+  const catsFiltro = useMemo(() => {
+    const byName = new Map((categoriasInfo || []).map((c) => [c.nombre, c]));
+    return (categorias || []).map((nombre) => ({
+      nombre,
+      codigoMozo: (byName.get(nombre)?.codigoMozo || '').toUpperCase(),
+      imagenUrl: byName.get(nombre)?.imagenUrl || '',
+    }));
+  }, [categorias, categoriasInfo]);
+
+  const catsFiltroVisibles = useMemo(() => {
+    const q = String(filtroCatQ || '').trim().toLowerCase();
+    if (!q) return catsFiltro;
+    const qU = q.toUpperCase();
+    return catsFiltro.filter(
+      (c) => c.nombre.toLowerCase().includes(q) || (c.codigoMozo || '').includes(qU)
+    );
+  }, [catsFiltro, filtroCatQ]);
+
+  const filtroCardW = Math.max(88, Math.floor((Math.min(winW, 560) - 48) / 3));
+
+  useEffect(() => {
+    if (!tipoPlatoFiltro) setFiltroCatOpen(false);
+  }, [tipoPlatoFiltro]);
 
   const [overlayH, setOverlayH] = useState(0);
   const [chromeH, setChromeH] = useState(0);
@@ -313,6 +426,8 @@ export default function MenuPlatosSheet({
                     </View>
                   </View>
 
+                  {!filtroCatOpen ? (
+                  <>
                   <View style={styles.searchInputWrapper}>
                     <TextInput
                       style={styles.searchInput}
@@ -329,24 +444,60 @@ export default function MenuPlatosSheet({
                         style={styles.searchClearButton}
                         onPress={onClearSearch}
                         accessibilityLabel="Limpiar búsqueda"
-                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                        hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
                       >
                         <MaterialCommunityIcons name="close-circle" size={22} color={theme.colors.text.light} />
                       </TouchableOpacity>
                     )}
+                    <TouchableOpacity
+                      style={styles.searchFilterBtn}
+                      onPress={() => {
+                        setFiltroCatQ('');
+                        setFiltroCatOpen(true);
+                      }}
+                      accessibilityLabel="Categorías en cuadros"
+                    >
+                      <MaterialCommunityIcons name="filter-variant" size={22} color={theme.colors.text.white} />
+                    </TouchableOpacity>
                   </View>
 
-                  <ScrollView horizontal style={styles.categoriasContainer} showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                  <ScrollView
+                    horizontal
+                    style={styles.categoriasContainer}
+                    contentContainerStyle={[styles.categoriasContent, { gap: gapCategorias }]}
+                    showsHorizontalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                  >
                     <TouchableOpacity
-                      style={[styles.categoriaChip, (!categoriaFiltro || searchActive) && styles.categoriaChipActive]}
+                      style={[
+                        styles.categoriaChip,
+                        {
+                          paddingHorizontal: chipEstilo.paddingHorizontal,
+                          paddingVertical: chipEstilo.paddingVertical,
+                          borderRadius: chipEstilo.borderRadius,
+                          minHeight: chipEstilo.minHeight,
+                        },
+                        (!categoriaFiltro || searchActive) && styles.categoriaChipActive,
+                      ]}
                       onPress={() => onSelectCategoria(null)}
                     >
-                      <Text style={[styles.categoriaChipText, (!categoriaFiltro || searchActive) && styles.categoriaChipTextActive]}>Todos</Text>
+                      <Text style={[
+                        styles.categoriaChipText,
+                        { fontSize: chipEstilo.fontSize },
+                        (!categoriaFiltro || searchActive) && styles.categoriaChipTextActive,
+                      ]}>Todos</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[
                         styles.categoriaChip,
                         styles.categoriaChipFavorito,
+                        {
+                          paddingHorizontal: chipEstilo.paddingHorizontal,
+                          paddingVertical: chipEstilo.paddingVertical,
+                          borderRadius: chipEstilo.borderRadius,
+                          minHeight: chipEstilo.minHeight,
+                          gap: chipEstilo.gap,
+                        },
                         categoriaFiltro === CAT_FAVORITOS && !searchActive && styles.categoriaChipFavoritoActive,
                       ]}
                       onPress={() => onSelectCategoria(CAT_FAVORITOS)}
@@ -355,35 +506,173 @@ export default function MenuPlatosSheet({
                     >
                       <MaterialCommunityIcons
                         name={categoriaFiltro === CAT_FAVORITOS && !searchActive ? 'star' : 'star-outline'}
-                        size={16}
+                        size={chipEstilo.iconSize}
                         color={categoriaFiltro === CAT_FAVORITOS && !searchActive ? '#1A1A1A' : '#FFC107'}
                       />
                       <Text
                         style={[
                           styles.categoriaChipText,
+                          { fontSize: chipEstilo.fontSize },
                           categoriaFiltro === CAT_FAVORITOS && !searchActive && styles.categoriaChipFavoritoTextActive,
                         ]}
                       >
                         Favoritos
                       </Text>
                     </TouchableOpacity>
-                    {categorias.map((cat) => (
+                    {categorias.map((cat) => {
+                      const infoCat = catsFiltro.find((c) => c.nombre === cat);
+                      const codigoCat = (infoCat?.codigoMozo || '').trim();
+                      const uriCat = urlMediaServidor(infoCat?.imagenUrl);
+                      const nombreCat = cat.split('(')[0].trim();
+                      const etiqueta = categoriaEtiqueta === CATEGORIA_ETIQUETA_CODIGO
+                        ? (codigoCat ? '' : nombreCat)
+                        : `${uriCat || codigoCat ? '' : categoriaIcon(cat) + ' '}${nombreCat}`.trim();
+                      const thumb = Math.max(18, (chipEstilo.minHeight || 28) - 8);
+                      return (
                       <TouchableOpacity
                         key={cat}
-                        style={[styles.categoriaChip, categoriaFiltro === cat && !searchActive && styles.categoriaChipActive]}
+                        style={[
+                          styles.categoriaChip,
+                          {
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 4,
+                            paddingHorizontal: chipEstilo.paddingHorizontal,
+                            paddingVertical: chipEstilo.paddingVertical,
+                            borderRadius: chipEstilo.borderRadius,
+                            minHeight: chipEstilo.minHeight,
+                          },
+                          categoriaFiltro === cat && !searchActive && styles.categoriaChipActive,
+                        ]}
                         onPress={() => onSelectCategoria(cat)}
                       >
-                        <Text style={[styles.categoriaChipText, categoriaFiltro === cat && !searchActive && styles.categoriaChipTextActive]}>
-                          {categoriaIcon(cat)} {cat.split('(')[0].trim()}
+                        {codigoCat ? (
+                          <Text
+                            style={[
+                              styles.categoriaChipText,
+                              { fontSize: chipEstilo.fontSize, fontWeight: '800' },
+                              categoriaFiltro === cat && !searchActive && styles.categoriaChipTextActive,
+                            ]}
+                          >
+                            {codigoCat}
+                          </Text>
+                        ) : null}
+                        {uriCat ? (
+                          <Image
+                            source={{ uri: uriCat }}
+                            style={{ width: thumb, height: thumb, borderRadius: 6 }}
+                            resizeMode="cover"
+                          />
+                        ) : null}
+                        {etiqueta ? (
+                        <Text style={[
+                          styles.categoriaChipText,
+                          { fontSize: chipEstilo.fontSize },
+                          categoriaFiltro === cat && !searchActive && styles.categoriaChipTextActive,
+                        ]}>
+                          {etiqueta}
                         </Text>
+                        ) : null}
                       </TouchableOpacity>
-                    ))}
+                      );
+                    })}
                   </ScrollView>
+                  </>
+                  ) : null}
                 </>
               )}
             </View>
 
             {tipoPlatoFiltro ? (
+              filtroCatOpen ? (
+                <View style={[styles.filtroPanel, { height: listH, backgroundColor: theme.colors.surface }]}>
+                  <View style={styles.filtroHeader}>
+                    <Text style={[styles.filtroTitle, { color: theme.colors.text.primary }]}>Categorías</Text>
+                    <View style={styles.filtroToggleRow}>
+                      {[
+                        { label: 'Nombre', value: CATEGORIA_ETIQUETA_NOMBRE },
+                        { label: 'Código', value: CATEGORIA_ETIQUETA_CODIGO },
+                      ].map((p) => {
+                        const active = categoriaEtiqueta === p.value;
+                        return (
+                          <TouchableOpacity
+                            key={p.value}
+                            onPress={() => setCategoriaEtiqueta(p.value)}
+                            style={[
+                              styles.filtroToggleChip,
+                              {
+                                borderColor: active ? theme.colors.primary : theme.colors.border,
+                                backgroundColor: active ? theme.colors.primary + '22' : theme.colors.background,
+                              },
+                            ]}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: active }}
+                            accessibilityLabel={`Mostrar ${p.label.toLowerCase()} de categoría`}
+                          >
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: active ? theme.colors.primary : theme.colors.text.secondary }}>
+                              {p.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setFiltroCatOpen(false)}
+                      style={styles.filtroCloseBtn}
+                      accessibilityLabel="Cerrar categorías"
+                    >
+                      <Text style={styles.filtroCloseTxt}>X</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {mostrarBuscarCategorias ? (
+                    <TextInput
+                      style={[styles.filtroSearch, { color: theme.colors.text.primary, borderColor: theme.colors.border, backgroundColor: theme.colors.background }]}
+                      placeholder="Buscar categoría..."
+                      placeholderTextColor={theme.colors.text.light}
+                      value={filtroCatQ}
+                      onChangeText={setFiltroCatQ}
+                      autoCorrect={false}
+                    />
+                  ) : null}
+                  <ScrollView keyboardShouldPersistTaps="handled" style={styles.filtroList}>
+                    <View style={styles.filtroGrid}>
+                      {!filtroCatQ.trim() ? (
+                        <CategoriaFiltroCard
+                          width={filtroCardW}
+                          uri=""
+                          codigo=""
+                          label="Favoritos"
+                          selected={categoriaFiltro === CAT_FAVORITOS}
+                          onPress={() => {
+                            onSelectCategoria(CAT_FAVORITOS);
+                            setFiltroCatOpen(false);
+                          }}
+                          theme={theme}
+                          placeholderIcon="star"
+                        />
+                      ) : null}
+                      {catsFiltroVisibles.map((c) => (
+                        <CategoriaFiltroCard
+                          key={c.nombre}
+                          width={filtroCardW}
+                          uri={urlMediaServidor(c.imagenUrl)}
+                          codigo={c.codigoMozo}
+                          label={String(c.nombre || '').split('(')[0].trim()}
+                          selected={categoriaFiltro === c.nombre && !searchActive}
+                          onPress={() => {
+                            onSelectCategoria(c.nombre);
+                            setFiltroCatOpen(false);
+                          }}
+                          theme={theme}
+                        />
+                      ))}
+                    </View>
+                    {catsFiltroVisibles.length === 0 ? (
+                      <Text style={[styles.emptyPlatosText, { padding: 16 }]}>Sin coincidencias</Text>
+                    ) : null}
+                  </ScrollView>
+                </View>
+              ) : (
               <FlatList
                 ref={listRef}
                 data={platosFiltrados}
@@ -405,6 +694,7 @@ export default function MenuPlatosSheet({
                   </View>
                 }
               />
+              )
             ) : null}
           </View>
         </View>
@@ -468,12 +758,12 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   searchInputWrapper: {
     position: 'relative',
-    marginBottom: theme.spacing.md,
+    marginBottom: 8,
   },
   searchInput: {
     backgroundColor: theme.colors.background,
     padding: theme.spacing.md,
-    paddingRight: 44,
+    paddingRight: 84,
     borderRadius: theme.borderRadius.md,
     borderWidth: 2,
     borderColor: theme.colors.border,
@@ -482,24 +772,40 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   searchClearButton: {
     position: 'absolute',
-    right: theme.spacing.sm,
+    right: 42,
     top: 0,
     bottom: 0,
     justifyContent: 'center',
   },
+  searchFilterBtn: {
+    position: 'absolute',
+    right: 2,
+    top: 2,
+    bottom: 2,
+    width: 38,
+    borderRadius: 10,
+    backgroundColor: theme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   categoriasContainer: {
-    marginBottom: theme.spacing.md,
+    marginBottom: 6,
     flexGrow: 0,
     flexShrink: 0,
-    minHeight: 40,
+    minHeight: 32,
+  },
+  categoriasContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 4,
   },
   categoriaChip: {
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 14,
     backgroundColor: theme.colors.background,
-    marginRight: theme.spacing.sm,
-    borderWidth: 2,
+    marginRight: 0,
+    borderWidth: 1,
     borderColor: theme.colors.border,
   },
   categoriaChipActive: {
@@ -515,8 +821,8 @@ const makeStyles = (theme) => StyleSheet.create({
     color: theme.colors.text.white,
   },
   categoriaChipFavorito: {
-    minWidth: 40,
-    paddingHorizontal: 10,
+    minWidth: 36,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -691,5 +997,66 @@ const makeStyles = (theme) => StyleSheet.create({
     color: theme.colors.text.light,
     fontStyle: 'italic',
     textAlign: 'center',
+  },
+  filtroPanel: {
+    borderRadius: 12,
+    paddingHorizontal: 4,
+    paddingTop: 4,
+    overflow: 'hidden',
+    flexDirection: 'column',
+  },
+  filtroHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 8,
+    flexWrap: 'wrap',
+  },
+  filtroTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  filtroToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flex: 1,
+    justifyContent: 'center',
+  },
+  filtroToggleChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  filtroCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: '#C41E3A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filtroCloseTxt: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 16,
+  },
+  filtroSearch: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    marginBottom: 8,
+  },
+  filtroList: {
+    flex: 1,
+  },
+  filtroGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingBottom: 8,
   },
 });

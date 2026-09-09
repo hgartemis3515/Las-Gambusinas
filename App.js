@@ -9,10 +9,13 @@ import { SocketProvider } from './context/SocketContext';
 import { OnlineBadgeProvider } from './context/OnlineBadgeContext';
 import { AvisoPlatoAgregadoProvider } from './context/AvisoPlatoAgregadoContext';
 import { OmitirConfirmacionPagoProvider } from './context/OmitirConfirmacionPagoContext';
+import { OcultarPropinaProvider } from './context/OcultarPropinaContext';
 import { BotonCantidadPlatoProvider } from './context/BotonCantidadPlatoContext';
 import { BotonEnviarOrdenProvider } from './context/BotonEnviarOrdenContext';
 import { BotonesMenuOrdenProvider } from './context/BotonesMenuOrdenContext';
 import { AbrirMenuNuevaOrdenProvider } from './context/AbrirMenuNuevaOrdenContext';
+import { DensidadOrdenesProvider } from './context/DensidadOrdenesContext';
+import { OrdenesAccionesProvider } from './context/OrdenesAccionesContext';
 import SplashScreen from './Pages/Splash/SplashScreen';
 import Login from './Pages/Login/Login';
 import Navbar from './Pages/navbar/navbar';
@@ -74,10 +77,13 @@ export default function App() {
           <OnlineBadgeProvider>
           <AvisoPlatoAgregadoProvider>
           <OmitirConfirmacionPagoProvider>
+          <OcultarPropinaProvider>
           <BotonCantidadPlatoProvider>
           <BotonEnviarOrdenProvider>
           <BotonesMenuOrdenProvider>
           <AbrirMenuNuevaOrdenProvider>
+          <DensidadOrdenesProvider>
+          <OrdenesAccionesProvider>
           <SocketProvider>
             <>
               <AlertaOverlayMozos />
@@ -139,10 +145,13 @@ export default function App() {
             </NavigationContainer>
             </>
           </SocketProvider>
+          </OrdenesAccionesProvider>
+          </DensidadOrdenesProvider>
           </AbrirMenuNuevaOrdenProvider>
           </BotonesMenuOrdenProvider>
           </BotonEnviarOrdenProvider>
           </BotonCantidadPlatoProvider>
+          </OcultarPropinaProvider>
           </OmitirConfirmacionPagoProvider>
           </AvisoPlatoAgregadoProvider>
           </OnlineBadgeProvider>

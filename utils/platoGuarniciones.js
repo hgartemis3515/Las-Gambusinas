@@ -5,6 +5,7 @@ import {
   grupoAnexaNombre,
   gruposVarianteDePlato,
   platoVarianteSumaDeshabilitada,
+  platoOpCantidades,
 } from './variantePlato';
 
 /**
@@ -74,6 +75,20 @@ export function textosGuarnicionesTotales(comps, nPlatos) {
       return total > 1 ? `${opcion} ×${total}` : opcion;
     })
     .filter(Boolean);
+}
+
+/** Marcas de guarnición del catálogo (para distinguir variantes del mismo plato). */
+export function resumenMarcasGuarnicion(plato) {
+  try {
+    const comps = [];
+    for (const grupo of gruposGuarnicion(plato)) {
+      if (grupoEsVariantePlato(grupo) || grupoAnexaNombre(grupo)) continue;
+      comps.push(...snapshotOpcionesGrupo(grupo, opcionesAAplicarDeGrupo(grupo)));
+    }
+    return textosGuarnicionesTotales(comps, 1).join(' · ');
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -197,6 +212,7 @@ export function usaCantidadesTotalesGuarnicion(plato, nPlatos) {
   if (n <= 1) return false;
   if (platoVarianteSumaDeshabilitada(plato)) return false;
   if (gruposVarianteDePlato(plato).length > 0) return false;
+  if (platoOpCantidades(plato)) return false;
   return true;
 }
 

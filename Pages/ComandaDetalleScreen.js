@@ -21,12 +21,15 @@ import ModalComplementos from '../Components/ModalComplementos';
 import SelectorTipoMenu from '../Components/SelectorTipoMenu';
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from '../hooks/useTiposPlato';
+import { slugTipoPorHoraActual } from '../utils/horaTipoMenu';
 import { slugTipoPedido, mismoTipoPedido } from '../utils/tipoPedidoLinea';
 import useKeyboardInset from '../hooks/useKeyboardInset';
 import KeyboardAwareResults from '../Components/KeyboardAwareResults';
 
 // Contextos y configuración
 import { useTheme } from '../context/ThemeContext';
+import { useDensidadOrdenes } from '../context/DensidadOrdenesContext';
+import { estiloChipCategoria } from '../utils/densidadOrdenes';
 import { useSocket } from '../context/SocketContext';
 import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
@@ -35,7 +38,7 @@ import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparado
 import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato, expandirLineaComplementos } from '../utils/platoGuarniciones';
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
 import { mismaVariantePlato, esSeleccionVariantePlato } from '../utils/variantePlato';
-import { platoRequiereModalAlSumar, ultimaLineaDelPlato, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos } from '../utils/platoBuscador';
+import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos } from '../utils/platoBuscador';
 import PlatoBuscadorCard from '../Components/PlatoBuscadorCard';
 import { calcularPrecioUnitarioConComplementos } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
@@ -200,6 +203,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const { theme, isDarkMode } = useTheme();
   const isDark = isDarkMode; // Alias para compatibilidad
   const themeColors = theme || themeLight;
+  const { chipCategoriaEscala } = useDensidadOrdenes();
+  const chipEstilo = estiloChipCategoria(chipCategoriaEscala);
   const { inset: keyboardInset, listMaxHeight: platosListMaxHeight } = useKeyboardInset({ mode: 'modal', chrome: 220 });
   const { socket, connected, connectionStatus, reconnectAttempts, joinMesa, leaveMesa } = useSocket();
   
@@ -1159,6 +1164,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       setPlatoParaComplementar(plato);
       return;
     }
+    if (platoRequiereModalOp(plato)) {
+      setFocoComplementos('anexarNombre');
+      setOcultarSumarComplementos(true);
+      setEditandoInstanceId(null);
+      tipoServicioAlComplementarRef.current = null;
+      setComplementosInicialesModal(null);
+      setNotaInicialModal('');
+      setCantidadInicialModal(n);
+      setPlatoParaComplementar(plato);
+      return;
+    }
     if (plato?.complementos?.length > 0) {
       const comps = preseleccionComplementosDePlato(plato);
       const afectan = plato.complementosAfectanPrecio !== false;
@@ -1192,7 +1208,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
   const abrirFocoDesdeBuscador = (plato, focoModo) => {
     const ultima = ultimaLineaDelPlato(platosEditados, plato, tipoServicioMenuEdicion(), { exacto: true });
-    if (!ultima && platoRequiereModalAlSumar(plato)) {
+    if (!ultima && (platoRequiereModalAlSumar(plato) || platoRequiereModalOp(plato))) {
       handleAgregarPlato(plato);
       return;
     }
@@ -3325,6 +3341,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                               ? '#3B82F6'
                               : (themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB')),
                             borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                            paddingHorizontal: chipEstilo.paddingHorizontal,
+                            paddingVertical: chipEstilo.paddingVertical,
+                            borderRadius: chipEstilo.borderRadius,
+                            minHeight: chipEstilo.minHeight,
                           },
                           !categoriaFiltro && styles.categoriaChipActive
                         ]}
@@ -3333,6 +3353,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                         <Text style={[
                           styles.categoriaChipText,
                           {
+                            fontSize: chipEstilo.fontSize,
                             color: !categoriaFiltro
                               ? '#FFFFFF'
                               : (themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937'))
@@ -3351,6 +3372,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                                 ? '#3B82F6'
                                 : (themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB')),
                               borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
+                              paddingHorizontal: chipEstilo.paddingHorizontal,
+                              paddingVertical: chipEstilo.paddingVertical,
+                              borderRadius: chipEstilo.borderRadius,
+                              minHeight: chipEstilo.minHeight,
                             },
                             categoriaFiltro === cat && styles.categoriaChipActive
                           ]}
@@ -3359,6 +3384,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                           <Text style={[
                             styles.categoriaChipText,
                             {
+                              fontSize: chipEstilo.fontSize,
                               color: categoriaFiltro === cat
                                 ? '#FFFFFF'
                                 : (themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937'))
@@ -3641,11 +3667,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   style={styles.addPlatoButton}
                   onPress={async () => {
                     await obtenerPlatos();
-                    setTipoPlatoFiltro(null);
+                    const autoSlug = slugTipoPorHoraActual(tiposPlatoCatalogo);
+                    setTipoPlatoFiltro(autoSlug || null);
                     setSearchPlato('');
                     setCategoriaFiltro(null);
-                                setTipoServicioModal('mesa');
-                    setEligiendoTipoMenu(true);
+                    setTipoServicioModal('mesa');
+                    setEligiendoTipoMenu(!autoSlug);
                   }}
                 >
                   <MaterialCommunityIcons name="plus-circle" size={20} color="#fff" />

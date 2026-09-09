@@ -1,4 +1,4 @@
-import { gruposGuarnicion, grupoSeleccionFija, resolverPlatoConGrupos } from './platoGuarniciones';
+import { gruposGuarnicion, grupoSeleccionFija, resolverPlatoConGrupos, resumenMarcasGuarnicion } from './platoGuarniciones';
 import { grupoEsVariantePlato, grupoAnexaNombre, gruposVarianteDePlato, gruposAnexarNombreDePlato } from './variantePlato';
 import { platoRequiereNumeroSerie } from './numeroSeriePlato';
 
@@ -24,6 +24,13 @@ export function grupoEsGuarnicionMozo(grupo) {
   return !grupoEsVariantePlato(grupo) && !grupoAnexaNombre(grupo);
 }
 
+/** Código que ve el mozo: codigoMozo si hay; si no, el de cocina. */
+export function codigoMozoVisible(plato) {
+  const m = String(plato?.codigoMozo || '').trim().toUpperCase();
+  if (m) return m;
+  return String(plato?.codigo || '').trim().toUpperCase();
+}
+
 /** Guarnición que el mozo elige (no MIX, no variación de nombre, no fijo). */
 export function platoMuestraBotonG(plato) {
   return gruposGuarnicion(plato).some((g) => grupoEsGuarnicionMozo(g) && !grupoSeleccionFija(g));
@@ -45,9 +52,13 @@ export function platoCoincideBusqueda(plato, termino) {
     ...(Array.isArray(plato?.nombresSincronizados) ? plato.nombresSincronizados : []),
   ];
   if (nombres.some((n) => String(n || '').toLowerCase().includes(qLower))) return true;
-  const codigo = String(plato?.codigo || '').trim().toUpperCase();
-  if (!codigo) return false;
-  return codigo === qUpper || codigo.includes(qUpper);
+  const marcas = resumenMarcasGuarnicion(plato);
+  if (marcas && marcas.toLowerCase().includes(qLower)) return true;
+  const codigoMozo = codigoMozoVisible(plato);
+  if (codigoMozo && (codigoMozo === qUpper || codigoMozo.includes(qUpper))) return true;
+  const codigoCocina = String(plato?.codigo || '').trim().toUpperCase();
+  if (codigoCocina && (codigoCocina === qUpper || codigoCocina.includes(qUpper))) return true;
+  return false;
 }
 
 /** Una fila por nombre sincronizado: mismo plato, distinto rótulo en el buscador. */
@@ -77,21 +88,32 @@ export function ordenarPlatosPorCodigoBusqueda(platos, termino) {
   const qU = String(termino || '').trim().toUpperCase();
   if (!qU || !Array.isArray(platos)) return platos;
   const score = (p) => {
-    const c = String(p?.codigo || '').trim().toUpperCase();
-    if (c === qU) return 3;
-    if (c.startsWith(qU)) return 2;
-    if (c.includes(qU)) return 1;
+    const cm = codigoMozoVisible(p);
+    const ck = String(p?.codigo || '').trim().toUpperCase();
+    if (cm === qU) return 6;
+    if (ck === qU) return 5;
+    if (cm.startsWith(qU)) return 4;
+    if (ck.startsWith(qU)) return 3;
+    if (cm.includes(qU)) return 2;
+    if (ck.includes(qU)) return 1;
     return 0;
   };
   return [...platos].sort((a, b) => score(b) - score(a));
 }
 
-/** MIX o número de serie: el + del buscador sigue abriendo el modal. */
+/** MIX o número de serie: el + del buscador sigue abriendo el modal. OP va en modal aparte. */
 export function platoRequiereModalAlSumar(plato, catalogo) {
   const p = catalogo ? resolverPlatoConGrupos(plato, catalogo) : plato;
   if (!p) return false;
   if (gruposVarianteDePlato(p).length > 0) return true;
   return platoRequiereNumeroSerie(p);
+}
+
+/** Variación OP: modal aparte; la cantidad de sabores sigue a la cantidad elegida. */
+export function platoRequiereModalOp(plato, catalogo) {
+  const p = catalogo ? resolverPlatoConGrupos(plato, catalogo) : plato;
+  if (!p) return false;
+  return gruposAnexarNombreDePlato(p).length > 0;
 }
 
 export function grupoVisibleEnFoco(grupo, focoModo) {

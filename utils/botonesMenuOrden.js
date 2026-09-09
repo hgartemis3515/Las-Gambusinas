@@ -49,9 +49,8 @@ export function estiloBotonCerrarMenu(size, color) {
 export function estiloBotonSumarBusqueda(size, color) {
   const s = Math.max(32, Math.min(56, Number(size) || 48));
   return {
-    minWidth: s,
+    width: s,
     height: s,
-    paddingHorizontal: 10,
     borderRadius: 10,
     backgroundColor: parseHexOr(color, BOTON_SUMAR_COLOR_DEFAULT),
     alignItems: 'center',

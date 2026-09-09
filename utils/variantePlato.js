@@ -41,6 +41,15 @@ export function gruposAnexarNombreDePlato(plato) {
   return (plato?.complementos || []).filter(grupoAnexaNombre);
 }
 
+/** OP con cantidades: Cerdo x2 + Pollo x1 = 3 pachamancas (no se reparte la cantidad del plato). */
+export function grupoOpCantidades(grupo) {
+  return grupoAnexaNombre(grupo) && grupo?.modoSeleccion === 'cantidades';
+}
+
+export function platoOpCantidades(plato) {
+  return gruposAnexarNombreDePlato(plato).some(grupoOpCantidades);
+}
+
 function gruposNombreCocinaDePlato(plato) {
   return (plato?.complementos || []).filter(grupoDefineNombreCocina);
 }
@@ -124,7 +133,7 @@ export function partirLineaPorVariante(plato, complementosSeleccionados, cantida
   if (vars.length === 1) {
     const grupo = resolver(vars[0]);
     const q = Math.max(1, Number(vars[0].cantidad) || 1);
-    const cant = grupoAnexaNombre(grupo) ? n : Math.max(n, q);
+    const cant = grupoOpCantidades(grupo) ? q : Math.max(n, q);
     return [una(vars[0], cant)];
   }
   return vars.map((v) => una(v, Math.max(1, Number(v.cantidad) || 1)));
