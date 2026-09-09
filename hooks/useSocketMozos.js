@@ -12,7 +12,7 @@ import {
   notifyPlatoSalioLocal,
 } from '../services/pushNotifications';
 import configuracionService from '../services/configuracionService';
-import { logoutForInvalidToken } from '../utils/authSession';
+import { logoutForInvalidToken, isSocketTokenAuthFailure } from '../utils/authSession';
 
 /**
  * Hook personalizado para manejar conexión Socket.io con namespace /mozos
@@ -324,9 +324,7 @@ const useSocketMozos = ({
       const errorMsg = error.message || '';
       
       // Detectar errores de autenticación
-      const isAuthError = errorMsg.includes('Autenticación') || 
-                          errorMsg.includes('Token') || 
-                          errorMsg.includes('permisos');
+      const isAuthError = isSocketTokenAuthFailure(errorMsg);
       
       if (isAuthError) {
         console.error('❌ [MOZOS] Token inválido — cerrando sesión');

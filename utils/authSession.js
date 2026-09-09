@@ -54,6 +54,14 @@ export async function clearLastLoginNombre() {
   await AsyncStorage.removeItem(LAST_LOGIN_NOMBRE_KEY);
 }
 
+/** Solo token inválido/vencido. "No tiene permisos" no es sesión expirada. */
+export function isSocketTokenAuthFailure(errorMsg) {
+  const m = String(errorMsg || '');
+  if (!m) return false;
+  if (/no tiene permisos/i.test(m) && !/token/i.test(m)) return false;
+  return /token inválido|token expirado|autenticación requerida/i.test(m);
+}
+
 /** Token inválido/vencido: limpia sesión y vuelve al login (deja el nombre guardado). */
 export async function logoutForInvalidToken() {
   if (logoutInFlight) return;
