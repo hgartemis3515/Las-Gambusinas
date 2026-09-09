@@ -32,7 +32,12 @@ export default function PlatoBuscadorCard({
   return (
     <View style={[styles.card, esLlevar && styles.cardLlevar]}>
       <View style={styles.topRow}>
-        <Text style={styles.nombre} numberOfLines={2}>{plato?.nombre}</Text>
+        <View style={{ flex: 1, paddingRight: 8 }}>
+          <Text style={styles.nombre} numberOfLines={2}>{plato?.nombre}</Text>
+          {plato?.codigo ? (
+            <Text style={styles.codigo}>{String(plato.codigo).toUpperCase()}</Text>
+          ) : null}
+        </View>
         <Text style={styles.precio}>S/. {Number(plato?.precio || 0).toFixed(2)}</Text>
       </View>
       {onToggleFavorito ? (
@@ -123,10 +128,18 @@ const makeStyles = (theme) => StyleSheet.create({
     marginBottom: 8,
   },
   nombre: {
-    flex: 1,
+    flex: undefined,
     fontSize: 16,
     fontWeight: '600',
     color: theme.colors.text.primary,
+  },
+  codigo: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    color: theme.colors.primary,
+    fontVariant: ['tabular-nums'],
   },
   precio: {
     fontSize: 16,

@@ -33,6 +33,33 @@ export function platoMuestraBotonV(plato) {
   return gruposAnexarNombreDePlato(plato).length > 0;
 }
 
+/** Coincide nombre o código (1, A, L1…) en el buscador de platos. */
+export function platoCoincideBusqueda(plato, termino) {
+  const q = String(termino || '').trim();
+  if (!q) return true;
+  const qLower = q.toLowerCase();
+  const qUpper = q.toUpperCase();
+  const nombre = String(plato?.nombre || '').toLowerCase();
+  if (nombre.includes(qLower)) return true;
+  const codigo = String(plato?.codigo || '').trim().toUpperCase();
+  if (!codigo) return false;
+  return codigo === qUpper || codigo.includes(qUpper);
+}
+
+/** Prioriza coincidencia exacta / prefijo de código. */
+export function ordenarPlatosPorCodigoBusqueda(platos, termino) {
+  const qU = String(termino || '').trim().toUpperCase();
+  if (!qU || !Array.isArray(platos)) return platos;
+  const score = (p) => {
+    const c = String(p?.codigo || '').trim().toUpperCase();
+    if (c === qU) return 3;
+    if (c.startsWith(qU)) return 2;
+    if (c.includes(qU)) return 1;
+    return 0;
+  };
+  return [...platos].sort((a, b) => score(b) - score(a));
+}
+
 /** MIX o número de serie: el + del buscador sigue abriendo el modal. */
 export function platoRequiereModalAlSumar(plato, catalogo) {
   const p = catalogo ? resolverPlatoConGrupos(plato, catalogo) : plato;

@@ -31,7 +31,7 @@ import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
 import { resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato, platoEditableEnOrdenes } from "../../../utils/platoGuarniciones";
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from "../../../utils/numeroSeriePlato";
 import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato, nombreVisibleConVariante } from "../../../utils/variantePlato";
-import { platoRequiereModalAlSumar, ultimaLineaDelPlato } from "../../../utils/platoBuscador";
+import { platoRequiereModalAlSumar, ultimaLineaDelPlato, platoCoincideBusqueda, ordenarPlatosPorCodigoBusqueda } from "../../../utils/platoBuscador";
 import { calcularPrecioUnitarioConComplementos } from "../../../utils/precioComplementos";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
@@ -1617,9 +1617,8 @@ const OrdenesScreen = ({ route }) => {
     const base = platosPorTipoDisponibles;
     const search = (searchPlatoDebounced || "").trim();
     if (search.length > 0) {
-      return base.filter((p) =>
-        (p.nombre || "").toLowerCase().includes(search.toLowerCase())
-      );
+      const matched = base.filter((p) => platoCoincideBusqueda(p, search));
+      return ordenarPlatosPorCodigoBusqueda(matched, search);
     }
     if (!categoriaFiltro) return base;
     if (categoriaFiltro === CAT_FAVORITOS) {

@@ -18,7 +18,7 @@ import ModalComplementos from "../Components/ModalComplementos";
 import { resolverPlatoConGrupos, guarnicionesElegidas, preseleccionComplementosDePlato, cantidadGuarnicionEfectiva } from "../utils/platoGuarniciones";
 import { numeroSerieEsValido, normalizarNumeroSerie } from "../utils/numeroSeriePlato";
 import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato } from "../utils/variantePlato";
-import { platoRequiereModalAlSumar, ultimaLineaDelPlato, cantidadTotalDelPlato } from "../utils/platoBuscador";
+import { platoRequiereModalAlSumar, ultimaLineaDelPlato, cantidadTotalDelPlato, platoCoincideBusqueda } from "../utils/platoBuscador";
 import PlatoBuscadorCard from "../Components/PlatoBuscadorCard";
 import { calcularPrecioUnitarioConComplementos } from "../utils/precioComplementos";
 import StepIndicator, { PASOS } from "../Components/reserva/StepIndicator";
@@ -384,7 +384,7 @@ export default function ReservaWizardScreen() {
   const platosFiltrados = useMemo(() => {
     const search = (searchDebounced || "").toLowerCase();
     let list = platos;
-    if (search.length > 0) list = list.filter((p) => (p.nombre || "").toLowerCase().includes(search));
+    if (search.length > 0) list = list.filter((p) => platoCoincideBusqueda(p, search));
     else if (categoriaFiltro) list = list.filter((p) => (p.categoria || p.tipo) === categoriaFiltro);
     return list;
   }, [platos, searchDebounced, categoriaFiltro]);

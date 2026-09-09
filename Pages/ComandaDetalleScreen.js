@@ -35,7 +35,7 @@ import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparado
 import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato } from '../utils/platoGuarniciones';
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
 import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato } from '../utils/variantePlato';
-import { platoRequiereModalAlSumar, ultimaLineaDelPlato, cantidadTotalDelPlato } from '../utils/platoBuscador';
+import { platoRequiereModalAlSumar, ultimaLineaDelPlato, cantidadTotalDelPlato, platoCoincideBusqueda } from '../utils/platoBuscador';
 import PlatoBuscadorCard from '../Components/PlatoBuscadorCard';
 import { calcularPrecioUnitarioConComplementos } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
@@ -1416,7 +1416,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     const disponible = (p.stock == null || p.stock === undefined || Number(p.stock) > 0);
     if (!disponible) return false;
     // Filtrar por búsqueda
-    if (searchPlato && !p.nombre.toLowerCase().includes(searchPlato.toLowerCase())) return false;
+    if (searchPlato && !platoCoincideBusqueda(p, searchPlato)) return false;
     // Filtrar por categoría
     if (categoriaFiltro && p.categoria !== categoriaFiltro) return false;
     return true;
