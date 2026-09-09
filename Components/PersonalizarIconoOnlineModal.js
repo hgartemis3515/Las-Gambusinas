@@ -274,7 +274,7 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
             Botones − y +
           </Text>
           <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
-            Estilo 1: restar/sumar sobre lo que ya está en la orden. Estilo 2 (por defecto): elegís cuántos con −/+ (siempre desde 1) y tocás Agregar; el precio y el 2x se actualizan con lo ya pedido.
+            Estilo 1: restar/sumar sobre lo que ya está en la orden. Estilo 2 (por defecto): elegís cuántos con −/+ (siempre desde 1) y tocás Agregar. El − también quita platos ya agregados; el precio y el 2x se actualizan con lo ya pedido.
           </Text>
           <View style={styles.estiloRow}>
             <TouchableOpacity
@@ -549,7 +549,7 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
             Botón Cambiar
           </Text>
           <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
-            En la lista de platos de Órdenes, pegado a la izquierda de Mesa/Llevar. Abre el tipo de carta y el buscador de ese plato. Por defecto rojo.
+            En la lista de platos de Órdenes, pegado a la izquierda de Mesa/Llevar. Quita ese plato y abre el tipo de carta para agregar otro. Por defecto rojo.
           </Text>
           <View style={styles.switchRow}>
             <View style={{ flex: 1, paddingRight: 12 }}>

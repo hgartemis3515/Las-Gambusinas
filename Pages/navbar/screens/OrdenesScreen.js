@@ -1670,6 +1670,15 @@ const OrdenesScreen = ({ route }) => {
     setSearchPlatoDebounced("");
   }, []);
   const handleCambiarPlato = useCallback((platoLinea) => {
+    const instanceId = platoLinea?.instanceId || platoLinea?._id;
+    if (instanceId) {
+      setSelectedPlatos((prev) => prev.filter((p) => (p.instanceId || p._id) !== instanceId));
+      setCantidades((prev) => {
+        const next = { ...prev };
+        delete next[instanceId];
+        return next;
+      });
+    }
     loadPlatosData();
     const catalogo = platos.find((p) => String(p._id) === String(platoLinea?._id));
     const slugLinea = slugTipoPedido(platoLinea?.tipoPedido);
@@ -1681,9 +1690,8 @@ const OrdenesScreen = ({ route }) => {
       || null;
     setTipoPlatoFiltro(slug);
     setCategoriaFiltro(null);
-    const q = String(platoLinea?.nombre || catalogo?.nombre || platoLinea?.codigo || "").trim();
-    setSearchPlato(q);
-    setSearchPlatoDebounced(q);
+    setSearchPlato("");
+    setSearchPlatoDebounced("");
     if (esSeleccionSinMesa(selectedMesa)) {
       setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
     }

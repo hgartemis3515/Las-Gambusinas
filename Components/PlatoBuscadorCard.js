@@ -105,8 +105,14 @@ export default function PlatoBuscadorCard({
             <>
               <TouchableOpacity
                 style={[styles.qtyBtn, estiloQty]}
-                onPress={() => setQtyAdd((n) => Math.max(1, n - 1))}
-                accessibilityLabel="Quitar uno a agregar"
+                onPress={() => {
+                  if (qtyAdd > 1) {
+                    setQtyAdd((n) => Math.max(1, n - 1));
+                    return;
+                  }
+                  if (nQty > 0) onDecrement?.(plato);
+                }}
+                accessibilityLabel="Quitar un plato"
               >
                 <MaterialCommunityIcons name="minus" size={iconSizeQty} color={theme.colors.text.white} />
               </TouchableOpacity>
