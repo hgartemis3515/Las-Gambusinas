@@ -11,6 +11,7 @@ import { AvisoPlatoAgregadoProvider } from './context/AvisoPlatoAgregadoContext'
 import { OmitirConfirmacionPagoProvider } from './context/OmitirConfirmacionPagoContext';
 import { BotonCantidadPlatoProvider } from './context/BotonCantidadPlatoContext';
 import { BotonEnviarOrdenProvider } from './context/BotonEnviarOrdenContext';
+import { BotonesMenuOrdenProvider } from './context/BotonesMenuOrdenContext';
 import { AbrirMenuNuevaOrdenProvider } from './context/AbrirMenuNuevaOrdenContext';
 import SplashScreen from './Pages/Splash/SplashScreen';
 import Login from './Pages/Login/Login';
@@ -75,6 +76,7 @@ export default function App() {
           <OmitirConfirmacionPagoProvider>
           <BotonCantidadPlatoProvider>
           <BotonEnviarOrdenProvider>
+          <BotonesMenuOrdenProvider>
           <AbrirMenuNuevaOrdenProvider>
           <SocketProvider>
             <>
@@ -138,6 +140,7 @@ export default function App() {
             </>
           </SocketProvider>
           </AbrirMenuNuevaOrdenProvider>
+          </BotonesMenuOrdenProvider>
           </BotonEnviarOrdenProvider>
           </BotonCantidadPlatoProvider>
           </OmitirConfirmacionPagoProvider>

@@ -19,6 +19,7 @@ import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_AP
 import { getFallbackApiBase } from "../../../config/envDefaults";
 import { useTheme } from "../../../context/ThemeContext";
 import { useBotonCantidadPlato } from "../../../context/BotonCantidadPlatoContext";
+import { useBotonesMenuOrden } from "../../../context/BotonesMenuOrdenContext";
 import { themeLight } from "../../../constants/theme";
 import { useOrientation } from "../../../hooks/useOrientation";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -210,6 +211,7 @@ const OrdenesScreen = ({ route }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const { estilo: estiloQty, iconSize: iconSizeQty } = useBotonCantidadPlato();
+  const { cambiarVisible, estiloCambiar } = useBotonesMenuOrden();
   const orientation = useOrientation();
   const styles = OrdenesScreenStyles(theme, orientation);
   
@@ -1663,6 +1665,30 @@ const OrdenesScreen = ({ route }) => {
     setSearchPlato(text);
     if ((text || "").trim().length > 0) setCategoriaFiltro(null);
   }, []);
+  const handleClearSearch = useCallback(() => {
+    setSearchPlato("");
+    setSearchPlatoDebounced("");
+  }, []);
+  const handleCambiarPlato = useCallback((platoLinea) => {
+    loadPlatosData();
+    const catalogo = platos.find((p) => String(p._id) === String(platoLinea?._id));
+    const slugLinea = slugTipoPedido(platoLinea?.tipoPedido);
+    const slugCatalogo = (tiposPlatoCatalogo || []).find((t) => catalogo && platoEsDeTipo(catalogo, t.slug))?.slug;
+    const slug = slugLinea
+      || slugCatalogo
+      || slugTipoPedido(catalogo?.tipo)
+      || slugTipoPedido(catalogo?.tipos?.[0])
+      || null;
+    setTipoPlatoFiltro(slug);
+    setCategoriaFiltro(null);
+    const q = String(platoLinea?.nombre || catalogo?.nombre || platoLinea?.codigo || "").trim();
+    setSearchPlato(q);
+    setSearchPlatoDebounced(q);
+    if (esSeleccionSinMesa(selectedMesa)) {
+      setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
+    }
+    setModalPlatosVisible(true);
+  }, [platos, tiposPlatoCatalogo, selectedMesa]);
   // Al elegir categoría: si hay búsqueda activa, limpiar texto y aplicar categoría
   const handleCategorySelect = useCallback((cat) => {
     if ((searchPlato || "").trim().length > 0) {
@@ -1839,6 +1865,15 @@ const OrdenesScreen = ({ route }) => {
                   </View>
                   </View>
                   <View style={styles.platoActions}>
+                    {cambiarVisible ? (
+                      <TouchableOpacity
+                        style={estiloCambiar}
+                        onPress={() => handleCambiarPlato(plato)}
+                        accessibilityLabel="Cambiar, abrir este plato en el menú"
+                      >
+                        <Text style={styles.cambiarPlatoBtnText}>Cambiar</Text>
+                      </TouchableOpacity>
+                    ) : null}
                     {!modoExtraLlevar && !esSeleccionSinMesa(selectedMesa) && (
                     <TouchableOpacity
                       style={[
@@ -2085,7 +2120,7 @@ const OrdenesScreen = ({ route }) => {
         searchPlato={searchPlato}
         onSearchChange={handleSearchChangeText}
         onSearchFocus={handleSearchFocus}
-        onClearSearch={() => setSearchPlato("")}
+        onClearSearch={handleClearSearch}
         categorias={categorias}
         categoriaFiltro={categoriaFiltro}
         onSelectCategoria={handleCategorySelect}
@@ -2346,6 +2381,11 @@ const OrdenesScreenStyles = (theme, orientation) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "flex-end",
     gap: theme.spacing.sm,
+  },
+  cambiarPlatoBtnText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "800",
   },
   platoCornerActions: {
     alignItems: "center",

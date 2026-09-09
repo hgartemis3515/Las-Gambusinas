@@ -3,7 +3,7 @@ export const BOTON_ENVIAR_ORDEN_STORAGE_KEY = '@lasgambusinas_boton_enviar_orden
 export const BOTON_ENVIAR_SIZE_DEFAULT = 48;
 export const BOTON_ENVIAR_SIZE_MIN = 32;
 export const BOTON_ENVIAR_SIZE_MAX = 56;
-export const BOTON_ENVIAR_COLOR_DEFAULT = '#4FC3F7';
+export const BOTON_ENVIAR_COLOR_DEFAULT = '#C41E3A';
 export const BOTON_ENVIAR_VISIBLE_DEFAULT = true;
 
 export const BOTON_ENVIAR_SIZE_PRESETS = [
@@ -13,11 +13,11 @@ export const BOTON_ENVIAR_SIZE_PRESETS = [
 ];
 
 export const BOTON_ENVIAR_COLOR_PRESETS = [
-  { label: 'Celeste', value: '#4FC3F7' },
+  { label: 'Rojo', value: '#C41E3A' },
   { label: 'Azul', value: '#2196F3' },
   { label: 'Verde', value: '#00C851' },
+  { label: 'Celeste', value: '#4FC3F7' },
   { label: 'Naranja', value: '#FF9800' },
-  { label: 'Rojo', value: '#C41E3A' },
   { label: 'Morado', value: '#7C3AED' },
 ];
 

@@ -20,6 +20,10 @@ import { themeLight } from '../constants/theme';
 import { CAT_FAVORITOS } from '../helpers/platosFavoritosMozo';
 import PlatoBuscadorCard from './PlatoBuscadorCard';
 import BotonEnviarOrden from './BotonEnviarOrden';
+import BotonSumarBusqueda from './BotonSumarBusqueda';
+import { useBotonEnviarOrden } from '../context/BotonEnviarOrdenContext';
+import { useBotonesMenuOrden } from '../context/BotonesMenuOrdenContext';
+import { estiloBotonCerrarMenu } from '../utils/botonesMenuOrden';
 
 const MIN_LIST = 140;
 
@@ -101,6 +105,9 @@ export default function MenuPlatosSheet({
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const styles = makeStyles(theme);
+  const { size: sizeEnviar } = useBotonEnviarOrden();
+  const { cerrarColor } = useBotonesMenuOrden();
+  const estiloCerrar = estiloBotonCerrarMenu(sizeEnviar, cerrarColor);
   const { width: winW } = useWindowDimensions();
   const [gridW, setGridW] = useState(0);
 
@@ -192,14 +199,15 @@ export default function MenuPlatosSheet({
                   ) : null}
                 </View>
                 <View style={styles.headerActions}>
+                  <BotonSumarBusqueda onPress={onClearSearch} />
                   <BotonEnviarOrden onPress={onEnviarOrden} disabled={enviandoOrden} />
                   <TouchableOpacity
                     onPress={onClose}
-                    style={styles.closeButton}
+                    style={estiloCerrar}
                     accessibilityLabel="Cerrar menú"
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <MaterialCommunityIcons name="close" size={32} color="#FFFFFF" />
+                    <MaterialCommunityIcons name="close" size={Math.round(sizeEnviar * 0.62)} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -447,14 +455,6 @@ const makeStyles = (theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  closeButton: {
-    backgroundColor: '#DC2626',
-    width: 48,
-    height: 48,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   modalTitle: {
     fontSize: 24,

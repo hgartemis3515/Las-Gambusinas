@@ -16,6 +16,7 @@ import { useAvisoPlatoAgregado } from '../context/AvisoPlatoAgregadoContext';
 import { useOmitirConfirmacionPago } from '../context/OmitirConfirmacionPagoContext';
 import { useBotonCantidadPlato } from '../context/BotonCantidadPlatoContext';
 import { useBotonEnviarOrden } from '../context/BotonEnviarOrdenContext';
+import { useBotonesMenuOrden } from '../context/BotonesMenuOrdenContext';
 import { useAbrirMenuNuevaOrden } from '../context/AbrirMenuNuevaOrdenContext';
 import { themeLight } from '../constants/theme';
 import {
@@ -38,6 +39,14 @@ import {
   BOTON_ENVIAR_COLOR_DEFAULT,
   BOTON_ENVIAR_VISIBLE_DEFAULT,
 } from '../utils/botonEnviarOrden';
+import {
+  BOTON_CERRAR_COLOR_DEFAULT,
+  BOTON_SUMAR_COLOR_DEFAULT,
+  BOTON_CAMBIAR_COLOR_DEFAULT,
+  BOTON_CAMBIAR_VISIBLE_DEFAULT,
+  estiloBotonCerrarMenu,
+  estiloBotonSumarBusqueda,
+} from '../utils/botonesMenuOrden';
 
 const PRESETS = [
   { label: 'Baja', value: 0.25 },
@@ -94,6 +103,33 @@ function ValueSlider({ value, onChange, min, max, trackColor, fillColor, thumbCo
   );
 }
 
+function ColorSwatches({ value, onChange, presets }) {
+  return (
+    <View style={styles.colorRow}>
+      {presets.map((p) => {
+        const active = String(value || '').toUpperCase() === p.value.toUpperCase();
+        return (
+          <TouchableOpacity
+            key={p.value}
+            style={[
+              styles.colorSwatch,
+              { backgroundColor: p.value },
+              active && styles.colorSwatchActive,
+            ]}
+            onPress={() => onChange(p.value)}
+            accessibilityLabel={p.label}
+            activeOpacity={0.8}
+          >
+            {active ? (
+              <MaterialCommunityIcons name="check" size={16} color="#FFFFFF" />
+            ) : null}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
@@ -123,6 +159,18 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
     estilo: estiloEnviar,
     iconSize: iconSizeEnviar,
   } = useBotonEnviarOrden();
+  const {
+    cerrarColor,
+    sumarColor,
+    cambiarColor,
+    cambiarVisible,
+    setCerrarColor,
+    setSumarColor,
+    setCambiarColor,
+    setCambiarVisible,
+    reset: resetMenuOrden,
+    estiloCambiar,
+  } = useBotonesMenuOrden();
   const pct = Math.round(opacity * 100);
 
   return (
@@ -354,7 +402,7 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
             Botón E (enviar orden)
           </Text>
           <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
-            En el menú y en guarniciones, a la izquierda de la X. Hace lo mismo que Enviar Orden.
+            En el menú, a la izquierda de la X. Por defecto rojo. Hace lo mismo que Enviar Orden.
           </Text>
           <View style={styles.switchRow}>
             <View style={{ flex: 1, paddingRight: 12 }}>
@@ -455,6 +503,90 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
             >
               <Text style={[styles.resetText, { color: theme.colors.text.secondary }]}>
                 Restaurar botón E por defecto
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Botón X (cerrar menú)
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            A la derecha de E. Por defecto azul. El tamaño sigue al botón E.
+          </Text>
+          <View style={styles.previewQtyWrap} pointerEvents="none">
+            <View style={[styles.previewQtyBtn, estiloBotonCerrarMenu(enviarSize, cerrarColor)]}>
+              <MaterialCommunityIcons name="close" size={iconSizeEnviar} color="#FFFFFF" />
+            </View>
+          </View>
+          <Text style={[styles.label, { color: theme.colors.text.primary, marginBottom: 10 }]}>
+            Color
+          </Text>
+          <ColorSwatches value={cerrarColor} onChange={setCerrarColor} presets={BOTON_ENVIAR_COLOR_PRESETS} />
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Botón Sumar
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            A la izquierda de E. Limpia el buscador del menú. Por defecto verde.
+          </Text>
+          <View style={styles.previewQtyWrap} pointerEvents="none">
+            <View style={[styles.previewQtyBtn, estiloBotonSumarBusqueda(enviarSize, sumarColor)]}>
+              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: Math.max(11, iconSizeEnviar - 6) }}>Sumar</Text>
+            </View>
+          </View>
+          <Text style={[styles.label, { color: theme.colors.text.primary, marginBottom: 10 }]}>
+            Color
+          </Text>
+          <ColorSwatches value={sumarColor} onChange={setSumarColor} presets={BOTON_ENVIAR_COLOR_PRESETS} />
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Botón Cambiar
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            En la lista de platos de Órdenes, pegado a la izquierda de Mesa/Llevar. Abre el tipo de carta y el buscador de ese plato. Por defecto rojo.
+          </Text>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+                Mostrar botón Cambiar
+              </Text>
+              <Text style={[styles.switchHint, { color: theme.colors.text.secondary }]}>
+                {cambiarVisible ? 'Visible a la izquierda de Mesa/Llevar' : 'Oculto'}
+              </Text>
+            </View>
+            <Switch
+              value={cambiarVisible}
+              onValueChange={setCambiarVisible}
+              trackColor={{ false: theme.colors.border, true: theme.colors.primary + '88' }}
+              thumbColor={cambiarVisible ? theme.colors.primary : theme.colors.text.light}
+              accessibilityLabel="Mostrar botón Cambiar"
+            />
+          </View>
+          <View style={styles.previewQtyWrap} pointerEvents="none">
+            <View style={[styles.previewQtyBtn, estiloCambiar]}>
+              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 11 }}>Cambiar</Text>
+            </View>
+          </View>
+          <Text style={[styles.label, { color: theme.colors.text.primary, marginBottom: 10 }]}>
+            Color
+          </Text>
+          <ColorSwatches value={cambiarColor} onChange={setCambiarColor} presets={BOTON_ENVIAR_COLOR_PRESETS} />
+          {(cerrarColor.toUpperCase() !== BOTON_CERRAR_COLOR_DEFAULT
+            || sumarColor.toUpperCase() !== BOTON_SUMAR_COLOR_DEFAULT
+            || cambiarColor.toUpperCase() !== BOTON_CAMBIAR_COLOR_DEFAULT
+            || cambiarVisible !== BOTON_CAMBIAR_VISIBLE_DEFAULT) && (
+            <TouchableOpacity
+              style={[styles.reset, { borderColor: theme.colors.border }]}
+              onPress={resetMenuOrden}
+            >
+              <Text style={[styles.resetText, { color: theme.colors.text.secondary }]}>
+                Restaurar X, Sumar y Cambiar por defecto
               </Text>
             </TouchableOpacity>
           )}
