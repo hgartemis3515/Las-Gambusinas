@@ -15,10 +15,10 @@ import { apiConfig } from "../apiConfig";
 import { getFallbackApiBase } from "../config/envDefaults";
 import configuracionService from "../services/configuracionService";
 import ModalComplementos from "../Components/ModalComplementos";
-import { resolverPlatoConGrupos, guarnicionesElegidas, preseleccionComplementosDePlato, cantidadGuarnicionEfectiva } from "../utils/platoGuarniciones";
+import { resolverPlatoConGrupos, guarnicionesElegidas, preseleccionComplementosDePlato, cantidadGuarnicionEfectiva, expandirLineaComplementos } from "../utils/platoGuarniciones";
 import { numeroSerieEsValido, normalizarNumeroSerie } from "../utils/numeroSeriePlato";
-import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato } from "../utils/variantePlato";
-import { platoRequiereModalAlSumar, ultimaLineaDelPlato, cantidadTotalDelPlato, platoCoincideBusqueda } from "../utils/platoBuscador";
+import { mismaVariantePlato, esSeleccionVariantePlato } from "../utils/variantePlato";
+import { platoRequiereModalAlSumar, ultimaLineaDelPlato, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos } from "../utils/platoBuscador";
 import PlatoBuscadorCard from "../Components/PlatoBuscadorCard";
 import { calcularPrecioUnitarioConComplementos } from "../utils/precioComplementos";
 import StepIndicator, { PASOS } from "../Components/reserva/StepIndicator";
@@ -117,6 +117,7 @@ export default function ReservaWizardScreen() {
   const [editandoInstanceId, setEditandoInstanceId] = useState(null);
   const [focoComplementos, setFocoComplementos] = useState(null);
   const [ocultarSumarComplementos, setOcultarSumarComplementos] = useState(false);
+  const [cantidadInicialModal, setCantidadInicialModal] = useState(1);
   const [errorBanner, setErrorBanner] = useState(null);
   const [exito, setExito] = useState(null);
   const [aprobado, setAprobado] = useState(false);
@@ -383,7 +384,7 @@ export default function ReservaWizardScreen() {
 
   const platosFiltrados = useMemo(() => {
     const search = (searchDebounced || "").toLowerCase();
-    let list = platos;
+    let list = expandirFilasBuscadorPlatos(platos);
     if (search.length > 0) list = list.filter((p) => platoCoincideBusqueda(p, search));
     else if (categoriaFiltro) list = list.filter((p) => (p.categoria || p.tipo) === categoriaFiltro);
     return list;
@@ -445,7 +446,8 @@ export default function ReservaWizardScreen() {
     haptic();
   };
 
-  const tocarPlato = (plato) => {
+  const tocarPlato = (plato, cantidadPlatos = 1) => {
+    const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
     if (platoRequiereModalAlSumar(plato)) {
       setFocoComplementos(null);
       setOcultarSumarComplementos(false);
@@ -453,6 +455,7 @@ export default function ReservaWizardScreen() {
       tipoServicioAlComplementarRef.current = tipoServicioModal === "para_llevar" ? "para_llevar" : "mesa";
       setComplementosInicialesModal(null);
       setNotaInicialModal("");
+      setCantidadInicialModal(n);
       setPlatoParaComplementar(plato);
       return;
     }
@@ -464,10 +467,10 @@ export default function ReservaWizardScreen() {
         comps,
         { afectanPrecio: afectan }
       );
-      agregarPlato(plato, comps, "", calc.precioUnitario, calc.extraComplementos, 1);
+      agregarPlato(plato, comps, "", calc.precioUnitario, calc.extraComplementos, n);
       return;
     }
-    agregarPlato(plato);
+    agregarPlato(plato, [], "", null, null, n);
   };
 
   const decrementarPlatoFromBuscador = (plato) => {
@@ -512,7 +515,7 @@ export default function ReservaWizardScreen() {
       const n = selPlatos.find((p) => p.instanceId === editandoInstanceId)?.cantidad || 1;
       setSelPlatos((c) => c.map((p) => {
         if (p.instanceId !== editandoInstanceId) return p;
-        const partes = partirLineaPorVariante(p, complementosSeleccionados, n);
+        const partes = expandirLineaComplementos(p, complementosSeleccionados, n);
         const parte = partes[0] || { complementos: complementosSeleccionados, cantidad: n };
         const afectan = p.complementosAfectanPrecio !== false;
         const calc = _precioUnitario != null
@@ -541,7 +544,7 @@ export default function ReservaWizardScreen() {
     }
     if (platoParaComplementar) {
       const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
-      const partes = partirLineaPorVariante(platoParaComplementar, complementosSeleccionados, n);
+      const partes = expandirLineaComplementos(platoParaComplementar, complementosSeleccionados, n);
       const afectan = platoParaComplementar.complementosAfectanPrecio !== false;
       const serie = normalizarNumeroSerie(numeroSerie);
       partes.forEach((parte) => {
@@ -871,7 +874,7 @@ export default function ReservaWizardScreen() {
                   const cantidadLlevar = cantidadTotalDelPlato(selPlatos, item, null, "para_llevar");
                   return (
                     <PlatoBuscadorCard
-                      key={item._id}
+                      key={item._filaBuscadorKey || item._id}
                       plato={item}
                       cantidadTotal={cantidadTotal}
                       cantidadMesa={cantidadMesa}
@@ -1053,6 +1056,7 @@ export default function ReservaWizardScreen() {
           setEditandoInstanceId(null);
           setFocoComplementos(null);
           setOcultarSumarComplementos(false);
+          setCantidadInicialModal(1);
         }}
         complementosIniciales={complementosInicialesModal}
         notaInicial={notaInicialModal}
@@ -1062,7 +1066,7 @@ export default function ReservaWizardScreen() {
         cantidadLinea={
           editandoInstanceId
             ? (selPlatos.find((p) => p.instanceId === editandoInstanceId)?.cantidad || 1)
-            : 1
+            : cantidadInicialModal
         }
         numeroSerieInicial={
           (platoParaComplementar && platoParaComplementar.numeroSerie)

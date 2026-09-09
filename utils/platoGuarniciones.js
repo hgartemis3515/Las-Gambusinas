@@ -1,4 +1,11 @@
 import { getNombreOpcion } from './precioComplementos';
+import {
+  partirLineaPorVariante,
+  grupoEsVariantePlato,
+  grupoAnexaNombre,
+  gruposVarianteDePlato,
+  platoVarianteSumaDeshabilitada,
+} from './variantePlato';
 
 /**
  * Grupos de complementos del plato.
@@ -178,4 +185,93 @@ export function preseleccionComplementosFijosDePlato(plato) {
     out.push(...snapshotOpcionesGrupo(grupo, opcionesAAplicarDeGrupo(grupo)));
   }
   return out;
+}
+
+function claveGrupoNombre(v) {
+  return String(v || '').trim().toLowerCase();
+}
+
+/** Con 2+ platos (sin MIX), el modal edita el total de guarniciones, no “por plato”. */
+export function usaCantidadesTotalesGuarnicion(plato, nPlatos) {
+  const n = Math.max(1, Number(nPlatos) || 1);
+  if (n <= 1) return false;
+  if (platoVarianteSumaDeshabilitada(plato)) return false;
+  if (gruposVarianteDePlato(plato).length > 0) return false;
+  return true;
+}
+
+/**
+ * El modal manda totales (2 papas para 2 leñas). Si el mix no es uniforme
+ * (1 papa + 1 frejol), se parte en líneas de 1 plato.
+ */
+export function partirLineaPorGuarniciones(plato, complementosSeleccionados, cantidadPlatos) {
+  const n = Math.max(1, Number(cantidadPlatos) || 1);
+  const comps = (Array.isArray(complementosSeleccionados) ? complementosSeleccionados : [])
+    .filter((c) => c && !c.eliminado);
+  if (!usaCantidadesTotalesGuarnicion(plato, n)) {
+    return [{ complementos: comps, cantidad: n }];
+  }
+
+  const skip = new Set(
+    (plato?.complementos || [])
+      .filter((g) => grupoEsVariantePlato(g) || grupoAnexaNombre(g))
+      .map((g) => claveGrupoNombre(g.grupo))
+  );
+  const extras = comps.filter((c) => skip.has(claveGrupoNombre(c.grupo)));
+  const garnishes = comps.filter((c) => !skip.has(claveGrupoNombre(c.grupo)));
+  if (!garnishes.length) {
+    return [{ complementos: comps, cantidad: n }];
+  }
+
+  const uniform = garnishes.every((c) => {
+    const q = Math.max(0, Number(c.cantidad) || 0);
+    return q === 0 || q % n === 0;
+  });
+  if (uniform) {
+    const perUnit = garnishes
+      .map((c) => ({
+        ...c,
+        cantidad: Math.max(0, Math.round((Number(c.cantidad) || 0) / n)),
+      }))
+      .filter((c) => (Number(c.cantidad) || 0) > 0);
+    return [{ complementos: [...perUnit, ...extras], cantidad: n }];
+  }
+
+  const plates = Array.from({ length: n }, () => extras.map((e) => ({ ...e })));
+  garnishes.forEach((c) => {
+    const q = Math.max(0, Math.floor(Number(c.cantidad) || 0));
+    for (let i = 0; i < q; i += 1) {
+      const list = plates[i % n];
+      const existing = list.find(
+        (x) => claveGrupoNombre(x.grupo) === claveGrupoNombre(c.grupo)
+          && String(x.opcion || '').trim().toLowerCase() === String(c.opcion || '').trim().toLowerCase()
+      );
+      if (existing) existing.cantidad = (Number(existing.cantidad) || 1) + 1;
+      else list.push({ ...c, cantidad: 1 });
+    }
+  });
+
+  const merged = [];
+  plates.forEach((compsPlate) => {
+    const last = merged[merged.length - 1];
+    if (last && mismasGuarniciones(last.complementos, compsPlate)) {
+      last.cantidad += 1;
+    } else {
+      merged.push({ complementos: compsPlate, cantidad: 1 });
+    }
+  });
+  return merged.length ? merged : [{ complementos: comps, cantidad: n }];
+}
+
+export function expandirLineaComplementos(plato, complementosSeleccionados, cantidadPlatos) {
+  const n = Math.max(1, Number(cantidadPlatos) || 1);
+  const gParts = partirLineaPorGuarniciones(plato, complementosSeleccionados, n);
+  const out = [];
+  gParts.forEach((g) => {
+    const vars = partirLineaPorVariante(plato, g.complementos, g.cantidad);
+    vars.forEach((v) => out.push(v));
+  });
+  return out.length
+    ? out
+    : [{ complementos: complementosSeleccionados || [], cantidad: n, nombreCocinaPedido: '', variantePlato: null }];
 }

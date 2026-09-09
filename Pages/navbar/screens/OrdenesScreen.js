@@ -28,10 +28,10 @@ import * as Haptics from "expo-haptics";
 // Componente de modal de complementos
 import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
-import { resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato, platoEditableEnOrdenes } from "../../../utils/platoGuarniciones";
+import { resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato, platoEditableEnOrdenes, expandirLineaComplementos } from "../../../utils/platoGuarniciones";
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from "../../../utils/numeroSeriePlato";
-import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato, nombreVisibleConVariante } from "../../../utils/variantePlato";
-import { platoRequiereModalAlSumar, ultimaLineaDelPlato, platoCoincideBusqueda, ordenarPlatosPorCodigoBusqueda } from "../../../utils/platoBuscador";
+import { mismaVariantePlato, esSeleccionVariantePlato, nombreVisibleConVariante } from "../../../utils/variantePlato";
+import { platoRequiereModalAlSumar, ultimaLineaDelPlato, platoCoincideBusqueda, ordenarPlatosPorCodigoBusqueda, expandirFilasBuscadorPlatos } from "../../../utils/platoBuscador";
 import { calcularPrecioUnitarioConComplementos } from "../../../utils/precioComplementos";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
@@ -252,6 +252,7 @@ const OrdenesScreen = ({ route }) => {
   const [editandoInstanceId, setEditandoInstanceId] = useState(null);
   const [focoComplementos, setFocoComplementos] = useState(null);
   const [ocultarSumarComplementos, setOcultarSumarComplementos] = useState(false);
+  const [cantidadInicialModal, setCantidadInicialModal] = useState(1);
   const tipoServicioAlComplementarRef = useRef(null);
   const selectedPlatosRef = useRef([]);
   const cantidadesRef = useRef({});
@@ -550,7 +551,8 @@ const OrdenesScreen = ({ route }) => {
     }
   };
 
-  const handleAddPlato = (plato) => {
+  const handleAddPlato = (plato, cantidadPlatos = 1) => {
+    const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
     if (platoRequiereModalAlSumar(plato)) {
       setFocoComplementos(null);
       setOcultarSumarComplementos(false);
@@ -558,6 +560,7 @@ const OrdenesScreen = ({ route }) => {
       tipoServicioAlComplementarRef.current = null;
       setComplementosInicialesModal(null);
       setNotaInicialModal("");
+      setCantidadInicialModal(n);
       setPlatoParaComplementar(plato);
       return;
     }
@@ -569,16 +572,16 @@ const OrdenesScreen = ({ route }) => {
         comps,
         { afectanPrecio: afectan }
       );
-      agregarPlatoSinComplementos(plato, comps, "", calc.precioUnitario, calc.extraComplementos, 1);
+      agregarPlatoSinComplementos(plato, comps, "", calc.precioUnitario, calc.extraComplementos, n);
       return;
     }
-    agregarPlatoSinComplementos(plato);
+    agregarPlatoSinComplementos(plato, [], "", null, null, n);
   };
 
-  const handleAddPlatoFromMenu = (plato) => {
-    handleAddPlato(plato);
+  const handleAddPlatoFromMenu = (plato, cantidadPlatos = 1) => {
+    handleAddPlato(plato, cantidadPlatos);
     if (!platoRequiereModalAlSumar(plato)) {
-      avisarPlatoAgregado(plato.nombre);
+      avisarPlatoAgregado(plato.nombreMostrado || plato.nombre, Math.max(1, Number(cantidadPlatos) || 1));
     }
   };
 
@@ -636,6 +639,7 @@ const OrdenesScreen = ({ route }) => {
     setEditandoInstanceId(null);
     setFocoComplementos(null);
     setOcultarSumarComplementos(false);
+    setCantidadInicialModal(1);
     tipoServicioAlComplementarRef.current = null;
   };
 
@@ -761,45 +765,68 @@ const OrdenesScreen = ({ route }) => {
     });
   };
 
-  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, numeroSerie, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
+  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, numeroSerie, _cantidadPlatos }) => {
     if (editandoInstanceId) {
       const linea = selectedPlatosRef.current.find(
         (p) => (p.instanceId || p._id) === editandoInstanceId
       );
       if (linea) {
         const n = cantidadesRef.current[editandoInstanceId] || linea.cantidad || 1;
-        const partes = partirLineaPorVariante(linea, complementosSeleccionados, n);
-        const parte = partes[0] || { complementos: complementosSeleccionados, cantidad: n };
+        const partes = expandirLineaComplementos(linea, complementosSeleccionados, n);
+        const parte0 = partes[0] || { complementos: complementosSeleccionados, cantidad: n };
         const afectan = linea.complementosAfectanPrecio !== false;
-        const calc = _precioUnitario != null
-          ? { precioUnitario: _precioUnitario, extraComplementos: _extraComplementos }
-          : calcularPrecioUnitarioConComplementos(
-            linea.precio || 0,
-            parte.complementos,
-            { afectanPrecio: afectan }
-          );
-        const comps = (parte.complementos || []).map((comp) => ({
+        const calc0 = calcularPrecioUnitarioConComplementos(
+          linea.precio || 0,
+          parte0.complementos,
+          { afectanPrecio: afectan }
+        );
+        const comps0 = (parte0.complementos || []).map((comp) => ({
           grupo: comp.grupo,
           opcion: comp.opcion,
           cantidad: comp.cantidad || 1,
           ...(comp.precio != null ? { precio: Number(comp.precio) || 0 } : {}),
         }));
         const serie = normalizarNumeroSerie(numeroSerie || linea.numeroSerie);
+        const cant0 = Math.max(1, Number(parte0.cantidad) || 1);
         const nextPlatos = selectedPlatosRef.current.map((p) => {
           if ((p.instanceId || p._id) !== editandoInstanceId) return p;
           return {
             ...p,
-            complementosElegidos: comps,
+            cantidad: cant0,
+            complementosElegidos: comps0,
             notaEspecial: notaEspecial || "",
-            ...(calc.precioUnitario != null ? { precioUnitario: Number(calc.precioUnitario) } : {}),
-            ...(calc.extraComplementos != null ? { extraComplementos: Number(calc.extraComplementos) } : {}),
-            ...(parte.nombreCocinaPedido ? { nombreCocinaPedido: parte.nombreCocinaPedido } : {}),
-            ...(parte.variantePlato ? { variantePlato: parte.variantePlato } : {}),
+            ...(calc0.precioUnitario != null ? { precioUnitario: Number(calc0.precioUnitario) } : {}),
+            ...(calc0.extraComplementos != null ? { extraComplementos: Number(calc0.extraComplementos) } : {}),
+            ...(parte0.nombreCocinaPedido ? { nombreCocinaPedido: parte0.nombreCocinaPedido } : {}),
+            ...(parte0.variantePlato ? { variantePlato: parte0.variantePlato } : {}),
             ...(serie ? { numeroSerie: serie } : {}),
           };
         });
         selectedPlatosRef.current = nextPlatos;
+        cantidadesRef.current = { ...cantidadesRef.current, [editandoInstanceId]: cant0 };
         setSelectedPlatos(nextPlatos);
+        setCantidades(cantidadesRef.current);
+        partes.slice(1).forEach((parte) => {
+          const calc = calcularPrecioUnitarioConComplementos(
+            linea.precio || 0,
+            parte.complementos,
+            { afectanPrecio: afectan }
+          );
+          agregarPlatoSinComplementos(
+            linea,
+            parte.complementos,
+            notaEspecial,
+            calc.precioUnitario,
+            calc.extraComplementos,
+            parte.cantidad,
+            linea.tipoServicio,
+            {
+              nombreCocinaPedido: parte.nombreCocinaPedido,
+              variantePlato: parte.variantePlato,
+              ...(serie ? { numeroSerie: serie } : {}),
+            }
+          );
+        });
       }
       cerrarModalComplementosYReabrirMenu();
       return;
@@ -807,7 +834,7 @@ const OrdenesScreen = ({ route }) => {
     if (platoParaComplementar) {
       const nombre = platoParaComplementar.nombre;
       const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
-      const partes = partirLineaPorVariante(platoParaComplementar, complementosSeleccionados, n);
+      const partes = expandirLineaComplementos(platoParaComplementar, complementosSeleccionados, n);
       const afectan = platoParaComplementar.complementosAfectanPrecio !== false;
       const serie = normalizarNumeroSerie(numeroSerie);
       let totalUnidades = 0;
@@ -1616,15 +1643,16 @@ const OrdenesScreen = ({ route }) => {
   const platosFiltrados = useMemo(() => {
     const base = platosPorTipoDisponibles;
     const search = (searchPlatoDebounced || "").trim();
+    const conAlias = expandirFilasBuscadorPlatos(base);
     if (search.length > 0) {
-      const matched = base.filter((p) => platoCoincideBusqueda(p, search));
+      const matched = conAlias.filter((p) => platoCoincideBusqueda(p, search));
       return ordenarPlatosPorCodigoBusqueda(matched, search);
     }
-    if (!categoriaFiltro) return base;
+    if (!categoriaFiltro) return conAlias;
     if (categoriaFiltro === CAT_FAVORITOS) {
-      return base.filter((p) => favoritoIds.includes(String(p._id)));
+      return conAlias.filter((p) => favoritoIds.includes(String(p._id)));
     }
-    return base.filter((p) => p.categoria === categoriaFiltro);
+    return conAlias.filter((p) => p.categoria === categoriaFiltro);
   }, [platosPorTipoDisponibles, searchPlatoDebounced, categoriaFiltro, favoritoIds]);
 
   // Al enfocar o escribir en búsqueda → categoría a "Todos" para búsqueda global
@@ -2076,6 +2104,8 @@ const OrdenesScreen = ({ route }) => {
             ? 'Sin mesa'
             : (selectedMesa?.nummesa != null ? `Mesa ${selectedMesa.nummesa}` : null)
         }
+        onEnviarOrden={handleEnviarComanda}
+        enviandoOrden={isSendingComanda}
       />
 
       {/* Overlay de Carga Animado */}
@@ -2099,8 +2129,10 @@ const OrdenesScreen = ({ route }) => {
             ? (cantidades[editandoInstanceId]
               || selectedPlatos.find((p) => (p.instanceId || p._id) === editandoInstanceId)?.cantidad
               || 1)
-            : 1
+            : cantidadInicialModal
         }
+        onEnviarOrden={handleEnviarComanda}
+        enviandoOrden={isSendingComanda}
         numeroSerieInicial={
           (platoParaComplementar && platoParaComplementar.numeroSerie)
           || selectedPlatos.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))

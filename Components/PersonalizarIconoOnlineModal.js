@@ -15,6 +15,7 @@ import { useOnlineBadge, DEFAULT_ONLINE_BADGE_OPACITY } from '../context/OnlineB
 import { useAvisoPlatoAgregado } from '../context/AvisoPlatoAgregadoContext';
 import { useOmitirConfirmacionPago } from '../context/OmitirConfirmacionPagoContext';
 import { useBotonCantidadPlato } from '../context/BotonCantidadPlatoContext';
+import { useBotonEnviarOrden } from '../context/BotonEnviarOrdenContext';
 import { useAbrirMenuNuevaOrden } from '../context/AbrirMenuNuevaOrdenContext';
 import { themeLight } from '../constants/theme';
 import {
@@ -24,7 +25,19 @@ import {
   BOTON_CANTIDAD_COLOR_PRESETS,
   BOTON_CANTIDAD_SIZE_DEFAULT,
   BOTON_CANTIDAD_COLOR_DEFAULT,
+  ESTILO_CANTIDAD_STEPPER,
+  ESTILO_CANTIDAD_AGREGAR,
+  ESTILO_CANTIDAD_DEFAULT,
 } from '../utils/botonCantidadPlato';
+import {
+  BOTON_ENVIAR_SIZE_MIN,
+  BOTON_ENVIAR_SIZE_MAX,
+  BOTON_ENVIAR_SIZE_PRESETS,
+  BOTON_ENVIAR_COLOR_PRESETS,
+  BOTON_ENVIAR_SIZE_DEFAULT,
+  BOTON_ENVIAR_COLOR_DEFAULT,
+  BOTON_ENVIAR_VISIBLE_DEFAULT,
+} from '../utils/botonEnviarOrden';
 
 const PRESETS = [
   { label: 'Baja', value: 0.25 },
@@ -96,7 +109,20 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
     reset: resetQty,
     estilo: estiloQty,
     iconSize: iconSizeQty,
+    estiloAgregar,
+    setEstiloAgregar,
   } = useBotonCantidadPlato();
+  const {
+    size: enviarSize,
+    color: enviarColor,
+    visible: enviarVisible,
+    setSize: setEnviarSize,
+    setColor: setEnviarColor,
+    setVisible: setEnviarVisible,
+    reset: resetEnviar,
+    estilo: estiloEnviar,
+    iconSize: iconSizeEnviar,
+  } = useBotonEnviarOrden();
   const pct = Math.round(opacity * 100);
 
   return (
@@ -200,8 +226,38 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
             Botones − y +
           </Text>
           <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
-            Tamaño y color de restar/sumar en Órdenes y en el buscador de platos.
+            Estilo 1: restar/sumar sobre lo que ya está en la orden. Estilo 2 (por defecto): elegís cuántos con −/+ (siempre desde 1) y tocás Agregar; el precio y el 2x se actualizan con lo ya pedido.
           </Text>
+          <View style={styles.estiloRow}>
+            <TouchableOpacity
+              style={[
+                styles.estiloChip,
+                {
+                  borderColor: estiloAgregar === ESTILO_CANTIDAD_STEPPER ? qtyColor : theme.colors.border,
+                  backgroundColor: estiloAgregar === ESTILO_CANTIDAD_STEPPER ? qtyColor + '22' : theme.colors.background,
+                },
+              ]}
+              onPress={() => setEstiloAgregar(ESTILO_CANTIDAD_STEPPER)}
+            >
+              <Text style={[styles.chipText, { color: estiloAgregar === ESTILO_CANTIDAD_STEPPER ? qtyColor : theme.colors.text.secondary }]}>
+                Estilo 1 · − 0 +
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.estiloChip,
+                {
+                  borderColor: estiloAgregar === ESTILO_CANTIDAD_AGREGAR ? qtyColor : theme.colors.border,
+                  backgroundColor: estiloAgregar === ESTILO_CANTIDAD_AGREGAR ? qtyColor + '22' : theme.colors.background,
+                },
+              ]}
+              onPress={() => setEstiloAgregar(ESTILO_CANTIDAD_AGREGAR)}
+            >
+              <Text style={[styles.chipText, { color: estiloAgregar === ESTILO_CANTIDAD_AGREGAR ? qtyColor : theme.colors.text.secondary }]}>
+                Estilo 2 · − 1 + Agregar
+              </Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.previewQtyWrap} pointerEvents="none">
             <View style={[styles.previewQtyBtn, estiloQty]}>
               <MaterialCommunityIcons name="minus" size={iconSizeQty} color="#FFFFFF" />
@@ -280,13 +336,125 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
             })}
           </View>
           {(qtySize !== BOTON_CANTIDAD_SIZE_DEFAULT ||
-            qtyColor.toUpperCase() !== BOTON_CANTIDAD_COLOR_DEFAULT) && (
+            qtyColor.toUpperCase() !== BOTON_CANTIDAD_COLOR_DEFAULT ||
+            estiloAgregar !== ESTILO_CANTIDAD_DEFAULT) && (
             <TouchableOpacity
               style={[styles.reset, { borderColor: theme.colors.border }]}
               onPress={resetQty}
             >
               <Text style={[styles.resetText, { color: theme.colors.text.secondary }]}>
                 Restaurar tamaño y color por defecto
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Botón E (enviar orden)
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            En el menú y en guarniciones, a la izquierda de la X. Hace lo mismo que Enviar Orden.
+          </Text>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+                Mostrar botón E
+              </Text>
+              <Text style={[styles.switchHint, { color: theme.colors.text.secondary }]}>
+                {enviarVisible ? 'Visible en menú y guarniciones' : 'Oculto'}
+              </Text>
+            </View>
+            <Switch
+              value={enviarVisible}
+              onValueChange={setEnviarVisible}
+              trackColor={{ false: theme.colors.border, true: theme.colors.primary + '88' }}
+              thumbColor={enviarVisible ? theme.colors.primary : theme.colors.text.light}
+              accessibilityLabel="Mostrar botón E de enviar orden"
+            />
+          </View>
+          <View style={styles.previewQtyWrap} pointerEvents="none">
+            <View style={[styles.previewQtyBtn, estiloEnviar]}>
+              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: iconSizeEnviar }}>E</Text>
+            </View>
+          </View>
+          <View style={styles.rowLabel}>
+            <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+              Tamaño
+            </Text>
+            <Text style={[styles.pct, { color: theme.colors.primary }]}>{enviarSize} px</Text>
+          </View>
+          <ValueSlider
+            value={enviarSize}
+            onChange={setEnviarSize}
+            min={BOTON_ENVIAR_SIZE_MIN}
+            max={BOTON_ENVIAR_SIZE_MAX}
+            trackColor={theme.colors.border}
+            fillColor={enviarColor}
+            thumbColor={enviarColor}
+          />
+          <View style={styles.presets}>
+            {BOTON_ENVIAR_SIZE_PRESETS.map((p) => {
+              const active = enviarSize === p.value;
+              return (
+                <TouchableOpacity
+                  key={p.label}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: active ? enviarColor + '22' : theme.colors.background,
+                      borderColor: active ? enviarColor : theme.colors.border,
+                    },
+                  ]}
+                  onPress={() => setEnviarSize(p.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: active ? enviarColor : theme.colors.text.secondary },
+                    ]}
+                  >
+                    {p.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={[styles.label, { color: theme.colors.text.primary, marginTop: 16, marginBottom: 10 }]}>
+            Color
+          </Text>
+          <View style={styles.colorRow}>
+            {BOTON_ENVIAR_COLOR_PRESETS.map((p) => {
+              const active = enviarColor.toUpperCase() === p.value.toUpperCase();
+              return (
+                <TouchableOpacity
+                  key={p.value}
+                  style={[
+                    styles.colorSwatch,
+                    { backgroundColor: p.value },
+                    active && styles.colorSwatchActive,
+                  ]}
+                  onPress={() => setEnviarColor(p.value)}
+                  accessibilityLabel={p.label}
+                  activeOpacity={0.8}
+                >
+                  {active ? (
+                    <MaterialCommunityIcons name="check" size={16} color="#FFFFFF" />
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {(enviarSize !== BOTON_ENVIAR_SIZE_DEFAULT ||
+            enviarColor.toUpperCase() !== BOTON_ENVIAR_COLOR_DEFAULT.toUpperCase() ||
+            enviarVisible !== BOTON_ENVIAR_VISIBLE_DEFAULT) && (
+            <TouchableOpacity
+              style={[styles.reset, { borderColor: theme.colors.border }]}
+              onPress={resetEnviar}
+            >
+              <Text style={[styles.resetText, { color: theme.colors.text.secondary }]}>
+                Restaurar botón E por defecto
               </Text>
             </TouchableOpacity>
           )}
@@ -492,6 +660,19 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  estiloRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  estiloChip: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
   },
   reset: {
     marginTop: 16,

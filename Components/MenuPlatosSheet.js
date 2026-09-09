@@ -19,6 +19,7 @@ import { useTheme } from '../context/ThemeContext';
 import { themeLight } from '../constants/theme';
 import { CAT_FAVORITOS } from '../helpers/platosFavoritosMozo';
 import PlatoBuscadorCard from './PlatoBuscadorCard';
+import BotonEnviarOrden from './BotonEnviarOrden';
 
 const MIN_LIST = 140;
 
@@ -94,6 +95,8 @@ export default function MenuPlatosSheet({
   listRef,
   onListScroll,
   numeroMesa = null,
+  onEnviarOrden = null,
+  enviandoOrden = false,
 }) {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
@@ -180,22 +183,25 @@ export default function MenuPlatosSheet({
           <View style={styles.sheet}>
             <View onLayout={onChromeLayout} style={styles.chrome}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Menú</Text>
-                {numeroMesa ? (
-                  <Text style={styles.mesaNumeroHeader} numberOfLines={1}>
-                    {numeroMesa}
-                  </Text>
-                ) : (
-                  <View style={{ flex: 1 }} />
-                )}
-                <TouchableOpacity
-                  onPress={onClose}
-                  style={styles.closeButton}
-                  accessibilityLabel="Cerrar menú"
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <MaterialCommunityIcons name="close" size={32} color="#FFFFFF" />
-                </TouchableOpacity>
+                <View style={styles.headerTitleRow}>
+                  <Text style={styles.modalTitle}>Menú</Text>
+                  {numeroMesa ? (
+                    <Text style={styles.mesaNumeroHeader} numberOfLines={1}>
+                      {numeroMesa}
+                    </Text>
+                  ) : null}
+                </View>
+                <View style={styles.headerActions}>
+                  <BotonEnviarOrden onPress={onEnviarOrden} disabled={enviandoOrden} />
+                  <TouchableOpacity
+                    onPress={onClose}
+                    style={styles.closeButton}
+                    accessibilityLabel="Cerrar menú"
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <MaterialCommunityIcons name="close" size={32} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {!tipoPlatoFiltro ? (
@@ -373,7 +379,7 @@ export default function MenuPlatosSheet({
               <FlatList
                 ref={listRef}
                 data={platosFiltrados}
-                keyExtractor={(item) => String(item._id)}
+                keyExtractor={(item) => String(item._filaBuscadorKey || item._id)}
                 renderItem={renderPlato}
                 extraData={{ selectedPlatos, cantidades, tipoServicioModal, favoritoIds }}
                 style={{ height: listH }}
@@ -429,6 +435,19 @@ const makeStyles = (theme) => StyleSheet.create({
     alignItems: 'center',
     marginBottom: theme.spacing.md,
   },
+  headerTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingRight: 8,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   closeButton: {
     backgroundColor: '#DC2626',
     width: 48,
@@ -443,9 +462,6 @@ const makeStyles = (theme) => StyleSheet.create({
     color: theme.colors.text.primary,
   },
   mesaNumeroHeader: {
-    flex: 1,
-    textAlign: 'right',
-    marginRight: 12,
     fontSize: 18,
     fontWeight: '800',
     color: theme.colors.primary,

@@ -29,19 +29,11 @@ const BottomNavBar = ({ activeIndex = 0, activeRoute = null, navigation: navProp
     { route: "Inicio", icono: "🏠", label: "Inicio" },
     { route: "Ordenes", icono: "🍽️", label: "Órdenes" },
     { route: "Pagos", icono: "💰", label: "Pagos" },
-    { route: "Chat", icono: "💬", label: "Chat", stackRoute: true },
     { route: "Mas", icono: "⚙️", label: "Más" },
   ];
 
-  const handleTabPress = (routeName, isFocused, isStackRoute) => {
+  const handleTabPress = (routeName, isFocused) => {
     if (isFocused || !navigation) return;
-    if (isStackRoute) {
-      // Chat vive en el Stack padre (App.js), no en el Tab navigator
-      const parent = navigation.getParent?.();
-      if (parent) parent.navigate(routeName);
-      else navigation.navigate(routeName);
-      return;
-    }
     navigation.navigate(routeName);
   };
 
@@ -68,7 +60,6 @@ const BottomNavBar = ({ activeIndex = 0, activeRoute = null, navigation: navProp
       {/* Tabs container */}
       <View style={styles.tabsContainer}>
         {tabsConfig.map((tabConfig, index) => {
-          // Preferir nombre de ruta (evita desfase por Chat fuera del Tab navigator)
           const isFocused = activeRoute
             ? activeRoute === tabConfig.route
             : activeIndex === index;
@@ -81,7 +72,7 @@ const BottomNavBar = ({ activeIndex = 0, activeRoute = null, navigation: navProp
               activeColor="#FFFFFF"
               inactiveColor="#FFFFFFCC"
               active={isFocused}
-              onPress={() => handleTabPress(tabConfig.route, isFocused, tabConfig.stackRoute)}
+              onPress={() => handleTabPress(tabConfig.route, isFocused)}
               tabSize={tabSize}
             />
           );

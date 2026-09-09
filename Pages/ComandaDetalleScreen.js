@@ -32,10 +32,10 @@ import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle } from '../utils/comandaHelpers';
-import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato } from '../utils/platoGuarniciones';
+import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato, expandirLineaComplementos } from '../utils/platoGuarniciones';
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
-import { partirLineaPorVariante, mismaVariantePlato, esSeleccionVariantePlato } from '../utils/variantePlato';
-import { platoRequiereModalAlSumar, ultimaLineaDelPlato, cantidadTotalDelPlato, platoCoincideBusqueda } from '../utils/platoBuscador';
+import { mismaVariantePlato, esSeleccionVariantePlato } from '../utils/variantePlato';
+import { platoRequiereModalAlSumar, ultimaLineaDelPlato, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos } from '../utils/platoBuscador';
 import PlatoBuscadorCard from '../Components/PlatoBuscadorCard';
 import { calcularPrecioUnitarioConComplementos } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
@@ -260,6 +260,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [editandoInstanceId, setEditandoInstanceId] = useState(null);
   const [focoComplementos, setFocoComplementos] = useState(null);
   const [ocultarSumarComplementos, setOcultarSumarComplementos] = useState(false);
+  const [cantidadInicialModal, setCantidadInicialModal] = useState(1);
   const tipoServicioAlComplementarRef = useRef(null);
   const autoEntregaSalioRef = useRef(new Set());
   const inicioCountdownFallbackRef = useRef({});
@@ -1145,7 +1146,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     esSeleccionSinMesa(mesa) ? 'para_llevar' : (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa')
   );
 
-  const handleAgregarPlato = (plato) => {
+  const handleAgregarPlato = (plato, cantidadPlatos = 1) => {
+    const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
     if (platoRequiereModalAlSumar(plato)) {
       setFocoComplementos(null);
       setOcultarSumarComplementos(false);
@@ -1153,6 +1155,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       tipoServicioAlComplementarRef.current = null;
       setComplementosInicialesModal(null);
       setNotaInicialModal('');
+      setCantidadInicialModal(n);
       setPlatoParaComplementar(plato);
       return;
     }
@@ -1164,10 +1167,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         comps,
         { afectanPrecio: afectan }
       );
-      agregarPlatoSinComplementos(plato, comps, '', calc.precioUnitario, calc.extraComplementos, 1);
+      agregarPlatoSinComplementos(plato, comps, '', calc.precioUnitario, calc.extraComplementos, n);
       return;
     }
-    agregarPlatoSinComplementos(plato);
+    agregarPlatoSinComplementos(plato, [], '', null, null, n);
   };
 
   const handleDecrementPlatoFromBuscador = (plato) => {
@@ -1309,7 +1312,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       );
       if (linea) {
         const n = linea.cantidad || 1;
-        const partes = partirLineaPorVariante(linea, complementosSeleccionados, n);
+        const partes = expandirLineaComplementos(linea, complementosSeleccionados, n);
         const parte = partes[0] || { complementos: complementosSeleccionados, cantidad: n };
         const afectan = linea.complementosAfectanPrecio !== false;
         const calc = _precioUnitario != null
@@ -1353,7 +1356,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }
     if (platoParaComplementar) {
       const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
-      const partes = partirLineaPorVariante(platoParaComplementar, complementosSeleccionados, n);
+      const partes = expandirLineaComplementos(platoParaComplementar, complementosSeleccionados, n);
       const afectan = platoParaComplementar.complementosAfectanPrecio !== false;
       const serie = normalizarNumeroSerie(numeroSerie);
       partes.forEach((parte) => {
@@ -1409,7 +1412,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
 
   // Filtrar platos para el modal de edición
-  const platosFiltrados = platos.filter(p => {
+  const platosFiltrados = expandirFilasBuscadorPlatos(platos.filter(p => {
     if (!tipoPlatoFiltro) return false;
     if (!platoEsDeTipo(p, tipoPlatoFiltro)) return false;
     // Verificar stock disponible
@@ -1420,7 +1423,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     // Filtrar por categoría
     if (categoriaFiltro && p.categoria !== categoriaFiltro) return false;
     return true;
-  });
+  }));
 
   const categorias = [...new Set(platos.filter(p => platoEsDeTipo(p, tipoPlatoFiltro)).map(p => p.categoria))].filter(Boolean);
   
@@ -3383,7 +3386,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                         + cantidadTotalDelPlato(platosEditados, plato, null, 'extra_llevar');
                       return (
                         <PlatoBuscadorCard
-                          key={plato._id}
+                          key={plato._filaBuscadorKey || plato._id}
                           plato={plato}
                           cantidadTotal={cantidadTotal}
                           cantidadMesa={cantidadMesa}
@@ -4200,6 +4203,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           setEditandoInstanceId(null);
           setFocoComplementos(null);
           setOcultarSumarComplementos(false);
+          setCantidadInicialModal(1);
           tipoServicioAlComplementarRef.current = null;
         }}
         complementosIniciales={complementosInicialesModal}
@@ -4210,7 +4214,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         cantidadLinea={
           editandoInstanceId
             ? (platosEditados.find((p) => (p.instanceId || p._id) === editandoInstanceId)?.cantidad || 1)
-            : 1
+            : cantidadInicialModal
         }
         numeroSerieInicial={
           (platoParaComplementar && platoParaComplementar.numeroSerie)

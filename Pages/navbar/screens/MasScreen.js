@@ -355,6 +355,24 @@ const MasScreen = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Configuración</Text>
 
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              Haptics.selectionAsync();
+              navigateToStack("Chat");
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuIconContainer, { backgroundColor: theme.colors.primary + "20" }]}>
+              <MaterialCommunityIcons name="chat-processing-outline" size={24} color={theme.colors.primary} />
+            </View>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={styles.menuItemText}>Chat</Text>
+              <Text style={styles.pushHint}>Mensajes con cocina y el equipo</Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.light} />
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
             <View style={[styles.menuIconContainer, { backgroundColor: theme.colors.text.secondary + "20" }]}>
               <MaterialCommunityIcons

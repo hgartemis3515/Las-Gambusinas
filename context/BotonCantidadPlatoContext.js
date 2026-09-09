@@ -4,8 +4,10 @@ import {
   BOTON_CANTIDAD_STORAGE_KEY,
   BOTON_CANTIDAD_SIZE_DEFAULT,
   BOTON_CANTIDAD_COLOR_DEFAULT,
+  ESTILO_CANTIDAD_DEFAULT,
   clampBotonCantidadSize,
   parseBotonCantidadColor,
+  parseEstiloCantidad,
   parseBotonCantidadPrefs,
   iconSizeForBotonCantidad,
   estiloBotonCantidad,
@@ -14,8 +16,10 @@ import {
 const BotonCantidadPlatoContext = createContext({
   size: BOTON_CANTIDAD_SIZE_DEFAULT,
   color: BOTON_CANTIDAD_COLOR_DEFAULT,
+  estiloAgregar: ESTILO_CANTIDAD_DEFAULT,
   setSize: () => {},
   setColor: () => {},
+  setEstiloAgregar: () => {},
   reset: () => {},
   iconSize: iconSizeForBotonCantidad(BOTON_CANTIDAD_SIZE_DEFAULT),
   estilo: estiloBotonCantidad(BOTON_CANTIDAD_SIZE_DEFAULT, BOTON_CANTIDAD_COLOR_DEFAULT),
@@ -24,8 +28,13 @@ const BotonCantidadPlatoContext = createContext({
 export function BotonCantidadPlatoProvider({ children }) {
   const [size, setSizeState] = useState(BOTON_CANTIDAD_SIZE_DEFAULT);
   const [color, setColorState] = useState(BOTON_CANTIDAD_COLOR_DEFAULT);
+  const [estiloAgregar, setEstiloAgregarState] = useState(ESTILO_CANTIDAD_DEFAULT);
   const saveTimer = useRef(null);
-  const prefsRef = useRef({ size: BOTON_CANTIDAD_SIZE_DEFAULT, color: BOTON_CANTIDAD_COLOR_DEFAULT });
+  const prefsRef = useRef({
+    size: BOTON_CANTIDAD_SIZE_DEFAULT,
+    color: BOTON_CANTIDAD_COLOR_DEFAULT,
+    estiloAgregar: ESTILO_CANTIDAD_DEFAULT,
+  });
 
   const persist = useCallback((next) => {
     prefsRef.current = next;
@@ -44,6 +53,7 @@ export function BotonCantidadPlatoProvider({ children }) {
         prefsRef.current = next;
         setSizeState(next.size);
         setColorState(next.color);
+        setEstiloAgregarState(next.estiloAgregar);
       } catch (e) {
         console.warn('Botón cantidad: no se pudo cargar preferencia', e);
       }
@@ -56,19 +66,31 @@ export function BotonCantidadPlatoProvider({ children }) {
   const setSize = useCallback((v) => {
     const nextSize = clampBotonCantidadSize(v);
     setSizeState(nextSize);
-    persist({ size: nextSize, color: prefsRef.current.color });
+    persist({ ...prefsRef.current, size: nextSize });
   }, [persist]);
 
   const setColor = useCallback((v) => {
     const nextColor = parseBotonCantidadColor(v);
     setColorState(nextColor);
-    persist({ size: prefsRef.current.size, color: nextColor });
+    persist({ ...prefsRef.current, color: nextColor });
+  }, [persist]);
+
+  const setEstiloAgregar = useCallback((v) => {
+    const nextEstilo = parseEstiloCantidad(v);
+    setEstiloAgregarState(nextEstilo);
+    persist({ ...prefsRef.current, estiloAgregar: nextEstilo });
   }, [persist]);
 
   const reset = useCallback(() => {
-    setSizeState(BOTON_CANTIDAD_SIZE_DEFAULT);
-    setColorState(BOTON_CANTIDAD_COLOR_DEFAULT);
-    persist({ size: BOTON_CANTIDAD_SIZE_DEFAULT, color: BOTON_CANTIDAD_COLOR_DEFAULT });
+    const next = {
+      size: BOTON_CANTIDAD_SIZE_DEFAULT,
+      color: BOTON_CANTIDAD_COLOR_DEFAULT,
+      estiloAgregar: ESTILO_CANTIDAD_DEFAULT,
+    };
+    setSizeState(next.size);
+    setColorState(next.color);
+    setEstiloAgregarState(next.estiloAgregar);
+    persist(next);
   }, [persist]);
 
   return (
@@ -76,8 +98,10 @@ export function BotonCantidadPlatoProvider({ children }) {
       value={{
         size,
         color,
+        estiloAgregar,
         setSize,
         setColor,
+        setEstiloAgregar,
         reset,
         iconSize: iconSizeForBotonCantidad(size),
         estilo: estiloBotonCantidad(size, color),

@@ -33,17 +33,43 @@ export function platoMuestraBotonV(plato) {
   return gruposAnexarNombreDePlato(plato).length > 0;
 }
 
-/** Coincide nombre o código (1, A, L1…) en el buscador de platos. */
+/** Coincide nombre, alias de buscador o código. */
 export function platoCoincideBusqueda(plato, termino) {
   const q = String(termino || '').trim();
   if (!q) return true;
   const qLower = q.toLowerCase();
   const qUpper = q.toUpperCase();
-  const nombre = String(plato?.nombre || '').toLowerCase();
-  if (nombre.includes(qLower)) return true;
+  const nombres = [
+    plato?.nombre,
+    plato?.nombreMostrado,
+    ...(Array.isArray(plato?.nombresSincronizados) ? plato.nombresSincronizados : []),
+  ];
+  if (nombres.some((n) => String(n || '').toLowerCase().includes(qLower))) return true;
   const codigo = String(plato?.codigo || '').trim().toUpperCase();
   if (!codigo) return false;
   return codigo === qUpper || codigo.includes(qUpper);
+}
+
+/** Una fila por nombre sincronizado: mismo plato, distinto rótulo en el buscador. */
+export function expandirFilasBuscadorPlatos(platos) {
+  const out = [];
+  (Array.isArray(platos) ? platos : []).forEach((p) => {
+    if (!p) return;
+    out.push(p);
+    const extras = Array.isArray(p.nombresSincronizados) ? p.nombresSincronizados : [];
+    extras.forEach((alias, i) => {
+      const n = String(alias || '').trim();
+      if (!n) return;
+      if (n.toLowerCase() === String(p.nombre || '').trim().toLowerCase()) return;
+      out.push({
+        ...p,
+        nombreMostrado: n,
+        _filaBuscadorKey: `${p._id}-alias-${i}`,
+        _esAliasNombre: true,
+      });
+    });
+  });
+  return out;
 }
 
 /** Prioriza coincidencia exacta / prefijo de código. */

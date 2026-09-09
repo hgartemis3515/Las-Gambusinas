@@ -33,17 +33,27 @@ export function parseBotonCantidadColor(raw) {
   return BOTON_CANTIDAD_COLOR_DEFAULT;
 }
 
+export const ESTILO_CANTIDAD_STEPPER = 'stepper';
+export const ESTILO_CANTIDAD_AGREGAR = 'agregar';
+export const ESTILO_CANTIDAD_DEFAULT = ESTILO_CANTIDAD_AGREGAR;
+
+export function parseEstiloCantidad(v) {
+  return v === ESTILO_CANTIDAD_STEPPER ? ESTILO_CANTIDAD_STEPPER : ESTILO_CANTIDAD_AGREGAR;
+}
+
 export function parseBotonCantidadPrefs(raw) {
   try {
     const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
     return {
       size: clampBotonCantidadSize(data?.size),
       color: parseBotonCantidadColor(data?.color),
+      estiloAgregar: parseEstiloCantidad(data?.estiloAgregar),
     };
   } catch {
     return {
       size: BOTON_CANTIDAD_SIZE_DEFAULT,
       color: BOTON_CANTIDAD_COLOR_DEFAULT,
+      estiloAgregar: ESTILO_CANTIDAD_DEFAULT,
     };
   }
 }
