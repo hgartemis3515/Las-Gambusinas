@@ -1294,7 +1294,7 @@ const OrdenesScreen = ({ route }) => {
       const platosData = platosEnvio.map(plato => ({
         plato: plato._id,
         platoId: plato.id || null,
-        estado: "en_espera",
+        estado: "pedido",
         tipoServicio: tipoServicioEnvio,
         tipoPedido: slugTipoPedido(plato.tipoPedido),
         complementosSeleccionados: plato.complementosElegidos || [],

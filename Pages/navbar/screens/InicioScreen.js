@@ -3029,7 +3029,7 @@ const InicioScreen = () => {
       return {
         plato: platoId,
         platoId: platoData?.id || p.platoId || null,
-        estado: p.estado || "en_espera",
+        estado: p.estado || "pedido",
         cantidad: comanda.cantidades?.[index] || 1,
         nombre: platoData?.nombre || "Plato desconocido",
         precio: platoData?.precio || 0,
@@ -3160,7 +3160,7 @@ const InicioScreen = () => {
         return {
           plato: p.plato,
           platoId: platoCompleto?.id || p.platoId || null,
-          estado: p.estado || "en_espera"
+          estado: p.estado || "pedido"
         };
       });
 
@@ -3331,7 +3331,7 @@ const InicioScreen = () => {
         return {
           plato: platoIdValidado,
           platoId: platoIdFinal || p.platoId || null,
-          estado: p.estado || "en_espera",
+          estado: p.estado || "pedido",
           cantidad: p.cantidad || 1
         };
       }).filter(p => p !== null); // Filtrar platos nulos (errores)
@@ -3440,7 +3440,7 @@ const InicioScreen = () => {
       const nuevoPlato = {
         plato: plato._id,
         platoId: plato.id || null, // ID numérico del plato (importante para el backend)
-        estado: "en_espera",
+        estado: "pedido",
         cantidad: 1,
         nombre: plato.nombre,
         precio: plato.precio,

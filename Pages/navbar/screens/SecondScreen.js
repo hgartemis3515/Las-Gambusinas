@@ -356,7 +356,7 @@ const SecondScreen = () => {
       const platosData = selectedPlatos.map(plato => ({
         plato: plato._id,
         platoId: plato.id || null, // ID numérico del plato
-        estado: "en_espera" // Estado estandarizado: en_espera, recoger, pagado
+        estado: "pedido",
       }));
       
       console.log("🍽️ Platos preparados:", platosData.map(p => ({
