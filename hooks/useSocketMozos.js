@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, DeviceEventEmitter } from 'react-native';
 import { io } from 'socket.io-client';
 import moment from 'moment-timezone';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,6 +13,7 @@ import {
 } from '../services/pushNotifications';
 import configuracionService from '../services/configuracionService';
 import { logoutForInvalidToken, isSocketTokenAuthFailure } from '../utils/authSession';
+import { EVT_TIPOS_PLATO_ACTUALIZADOS } from './useTiposPlato';
 
 /**
  * Hook personalizado para manejar conexión Socket.io con namespace /mozos
@@ -692,6 +693,10 @@ const useSocketMozos = ({
       configuracionService.aplicarConfigRemota().catch((e) => {
         console.warn('⚠️ [MOZOS] No se pudo recargar configuración de moneda:', e?.message);
       });
+    });
+
+    socket.on('tipos-plato-reglas-actualizadas', (data) => {
+      DeviceEventEmitter.emit(EVT_TIPOS_PLATO_ACTUALIZADOS, data || {});
     });
 
     // ========== PLAN_PLANTILLA_COMANDAS: Eventos de aprobación y reporte ==========

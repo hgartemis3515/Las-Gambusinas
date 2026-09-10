@@ -55,7 +55,7 @@ import { filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegun
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
-import { slugTipoPorHoraActual } from "../../../utils/horaTipoMenu";
+import { resolverSlugMenuPorHora } from "../../../utils/horaTipoMenu";
 import { useDensidadOrdenes } from "../../../context/DensidadOrdenesContext";
 import { estiloChipCategoria } from "../../../utils/densidadOrdenes";
 import MesaMapView from '../../../Components/MesaMapView';
@@ -540,7 +540,7 @@ const InicioScreen = () => {
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   const [eligiendoTipoMenu, setEligiendoTipoMenu] = useState(false);
   // Catálogo dinámico de tipos de plato desde el backend
-  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo } = useTiposPlato();
+  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo, refresh: refreshTiposPlato } = useTiposPlato();
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [eliminandoUltimaComanda, setEliminandoUltimaComanda] = useState(false);
@@ -5395,10 +5395,17 @@ const InicioScreen = () => {
                 } catch (error) {
                   console.error("Error guardando mesa seleccionada:", error);
                 }
+                let tipoMenuHora = null;
+                if (mesaSeleccionada) {
+                  try {
+                    tipoMenuHora = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
+                  } catch (_) { /* usa catálogo en memoria en Órdenes */ }
+                }
                 navigation.navigate("Ordenes", {
                   modoExtraLlevar: false,
                   ...(mesaSeleccionada ? { mesa: mesaSeleccionada } : {}),
                   ...(mesaSeleccionada && abrirMenuNuevaOrden ? { abrirMenu: true } : {}),
+                  ...(mesaSeleccionada && abrirMenuNuevaOrden && tipoMenuHora ? { tipoMenuHora } : {}),
                 });
               }}
             >
@@ -5926,7 +5933,7 @@ const InicioScreen = () => {
                   style={styles.addPlatoButton}
                   onPress={async () => {
                     await obtenerPlatos();
-                    const autoSlug = slugTipoPorHoraActual(tiposPlatoCatalogo);
+                    const autoSlug = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
                     setTipoPlatoFiltro(autoSlug || null);
                     setSearchPlato("");
                     setCategoriaFiltro(null);

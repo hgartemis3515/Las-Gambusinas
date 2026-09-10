@@ -325,7 +325,7 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
             Nueva orden
           </Text>
           <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
-            Con una mesa marcada en Inicio, Nueva orden selecciona esa mesa en Órdenes y abre el menú para elegir el tipo (desayuno, carta…).
+            Con una mesa marcada, Nueva orden abre Órdenes y el buscador de platos de la carta que coincida con la hora de Perú. Si no hay rango, pide el tipo de menú.
           </Text>
           <View style={styles.switchRow}>
             <View style={{ flex: 1, paddingRight: 12 }}>
@@ -334,7 +334,7 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
               </Text>
               <Text style={[styles.switchHint, { color: theme.colors.text.secondary }]}>
                 {abrirMenuNuevaOrden
-                  ? 'Nueva orden abre el menú de tipos'
+                  ? 'Nueva orden abre el buscador de la carta de esa hora'
                   : 'Solo va a Órdenes con la mesa'}
               </Text>
             </View>

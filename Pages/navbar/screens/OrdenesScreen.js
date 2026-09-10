@@ -23,7 +23,7 @@ import { useBotonesMenuOrden } from "../../../context/BotonesMenuOrdenContext";
 import { useDensidadOrdenes } from "../../../context/DensidadOrdenesContext";
 import { useOrdenesAcciones } from "../../../context/OrdenesAccionesContext";
 import { lerpDensidad, COMPACTO_DEFAULT } from "../../../utils/densidadOrdenes";
-import { slugTipoPorHoraActual } from "../../../utils/horaTipoMenu";
+import { resolverSlugMenuPorHora } from "../../../utils/horaTipoMenu";
 import { clampAccionesEscala, ACCIONES_ESCALA_DEFAULT } from "../../../utils/ordenesAccionesPrefs";
 import { themeLight } from "../../../constants/theme";
 import { useOrientation } from "../../../hooks/useOrientation";
@@ -230,7 +230,7 @@ const OrdenesScreen = ({ route }) => {
   const accionIconSize = Math.max(16, Math.round(24 * (clampAccionesEscala(accionesEscala) / 100)));
   
   // Obtener parámetros de navegación (mesa y reserva desde ComandaDetalle)
-  const { mesa: mesaParam, reserva: reservaParam, modoExtraLlevar: modoExtraParam, origen: origenParam, abrirMenu: abrirMenuParam } = route?.params || {};
+  const { mesa: mesaParam, reserva: reservaParam, modoExtraLlevar: modoExtraParam, origen: origenParam, abrirMenu: abrirMenuParam, tipoMenuHora: tipoMenuHoraParam } = route?.params || {};
   const modoExtraLlevar = modoExtraParam === true;
   const agruparConMesa = origenParam === 'ComandaDetalle' || modoExtraLlevar === true;
   
@@ -249,7 +249,7 @@ const OrdenesScreen = ({ route }) => {
   const [favoritoIds, setFavoritoIds] = useState([]);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   // Catálogo dinámico de tipos de plato desde el backend
-  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo } = useTiposPlato();
+  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo, refresh: refreshTiposPlato } = useTiposPlato();
   // Tipo de servicio para los platos que se agreguen desde el modal de menú:
   // 'mesa' (default, Switch OFF) o 'para_llevar' (Switch ON).
   const [tipoServicioModal, setTipoServicioModal] = useState('mesa');
@@ -379,17 +379,26 @@ const OrdenesScreen = ({ route }) => {
 
   useEffect(() => {
     if (!abrirMenuParam) return;
-    if (mesaParam) setSelectedMesa(mesaParam);
-    loadPlatosData();
-    setTipoPlatoFiltro(slugTipoPorHoraActual(tiposPlatoCatalogo) || null);
-    setCategoriaFiltro(null);
-    setSearchPlato("");
-    if (esSeleccionSinMesa(mesaParam)) {
-      setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
-    }
-    setModalPlatosVisible(true);
-    navigation.setParams({ abrirMenu: undefined });
-  }, [abrirMenuParam, mesaParam, navigation, tiposPlatoCatalogo]);
+    let cancelled = false;
+    (async () => {
+      if (mesaParam) setSelectedMesa(mesaParam);
+      loadPlatosData();
+      let slug = tipoMenuHoraParam || null;
+      if (!slug) {
+        slug = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
+      }
+      if (cancelled) return;
+      setTipoPlatoFiltro(slug || null);
+      setCategoriaFiltro(null);
+      setSearchPlato("");
+      if (esSeleccionSinMesa(mesaParam)) {
+        setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
+      }
+      setModalPlatosVisible(true);
+      navigation.setParams({ abrirMenu: undefined, tipoMenuHora: undefined });
+    })();
+    return () => { cancelled = true; };
+  }, [abrirMenuParam, mesaParam, tipoMenuHoraParam, navigation, refreshTiposPlato]);
 
   useEffect(() => {
     if (modoExtraLlevar) {
@@ -1774,9 +1783,9 @@ const OrdenesScreen = ({ route }) => {
 
   const getMesaEstado = (mesa) => etiquetaEstadoMesa(mesa?.estado || "libre");
 
-  const abrirMenuPlatos = () => {
+  const abrirMenuPlatos = async () => {
     loadPlatosData();
-    const autoSlug = slugTipoPorHoraActual(tiposPlatoCatalogo);
+    const autoSlug = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
     setTipoPlatoFiltro(autoSlug || null);
     setCategoriaFiltro(null);
     setSearchPlato("");

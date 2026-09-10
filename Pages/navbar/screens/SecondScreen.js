@@ -36,6 +36,7 @@ import * as Haptics from 'expo-haptics';
 import { slideInUpCart, fadeInDownPlato, springConfig, moneyEasing } from "../../../constants/animations";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
+import { resolverSlugMenuPorHora } from "../../../utils/horaTipoMenu";
 import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 
 // Map slug -> MaterialCommunityIcons name (fallback)
@@ -61,7 +62,7 @@ const SecondScreen = () => {
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null); // "platos-desayuno" o "carta-normal"
   // Catálogo dinámico de tipos de plato desde el backend
-  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo } = useTiposPlato();
+  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo, refresh: refreshTiposPlato } = useTiposPlato();
   const [isSendingComanda, setIsSendingComanda] = useState(false);
   const [areas, setAreas] = useState([]);
   const [filtroAreaMesa, setFiltroAreaMesa] = useState("All"); // Filtro para el modal de mesas
@@ -640,10 +641,11 @@ const SecondScreen = () => {
         {/* Botones con MotiPressable */}
         <View style={styles.buttonsContainer}>
           <MotiPressable
-            onPress={() => {
+            onPress={async () => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               loadPlatosData();
-              setTipoPlatoFiltro(null);
+              const autoSlug = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
+              setTipoPlatoFiltro(autoSlug || null);
               setCategoriaFiltro(null);
               setSearchPlato("");
               setModalPlatosVisible(true);

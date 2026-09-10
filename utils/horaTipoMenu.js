@@ -1,17 +1,22 @@
 const TZ_LIMA = 'America/Lima';
 
 export function parseHoraHHMM(raw) {
-  const m = String(raw || '').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  const s = String(raw || '').trim();
+  if (s === '24:00' || s === '24:00:00') return '24:00';
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
   if (!m) return '';
   const h = Number(m[1]);
   const min = Number(m[2]);
-  if (!Number.isFinite(h) || !Number.isFinite(min) || h > 23 || min > 59) return '';
+  if (!Number.isFinite(h) || !Number.isFinite(min) || min > 59) return '';
+  if (h === 24 && min === 0) return '24:00';
+  if (h > 23) return '';
   return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
 }
 
 export function horaAHMinutos(raw) {
   const hhmm = parseHoraHHMM(raw);
   if (!hhmm) return null;
+  if (hhmm === '24:00') return 24 * 60;
   const [h, min] = hhmm.split(':').map(Number);
   return h * 60 + min;
 }
@@ -49,7 +54,10 @@ export function duracionRangoMin(iniMin, finMin) {
 
 export function tipoMenuEnHorario(tipo, nowMin) {
   if (!tipo || tipo.activo === false) return false;
-  if (tipo.horaRedirectActiva !== true) return false;
+  const on = tipo.horaRedirectActiva === true
+    || tipo.horaRedirectActiva === 'true'
+    || tipo.horaRedirectActiva === 1;
+  if (!on) return false;
   const ini = horaAHMinutos(tipo.horaRedirectInicio);
   const fin = horaAHMinutos(tipo.horaRedirectFin);
   return minutosEnRango(nowMin, ini, fin);
@@ -67,4 +75,16 @@ export function slugTipoPorHoraActual(tipos, date = new Date()) {
     return (a.orden || 99) - (b.orden || 99);
   });
   return list[0]?.slug || null;
+}
+
+/** Recarga el catálogo si se puede y devuelve el slug de la carta de ahora (Lima). */
+export async function resolverSlugMenuPorHora(refreshFn, catalogoActual) {
+  let tipos = Array.isArray(catalogoActual) ? catalogoActual : [];
+  if (typeof refreshFn === 'function') {
+    try {
+      const fresh = await refreshFn();
+      if (Array.isArray(fresh) && fresh.length) tipos = fresh;
+    } catch (_) { /* usar catálogo en memoria */ }
+  }
+  return slugTipoPorHoraActual(tipos);
 }

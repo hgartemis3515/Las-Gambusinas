@@ -20,6 +20,7 @@ import { editarEliminarTomadasPorCocinaHabilitadoMozos } from "../../../services
 import { comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from "../../../utils/comandaHelpers";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
+import { resolverSlugMenuPorHora } from "../../../utils/horaTipoMenu";
 import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 
 const ThirdScreen = () => {
@@ -32,7 +33,7 @@ const ThirdScreen = () => {
   const [platos, setPlatos] = useState([]);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   // Catálogo dinámico de tipos de plato desde el backend
-  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo } = useTiposPlato();
+  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo, refresh: refreshTiposPlato } = useTiposPlato();
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [permitirEditarEliminarTomadas, setPermitirEditarEliminarTomadas] = useState(false);
@@ -573,10 +574,14 @@ const ThirdScreen = () => {
                   style={styles.addPlatoButton}
                   onPress={async () => {
                     await fetchPlatos();
-                    setTipoPlatoFiltro(null);
                     setSearchPlato("");
                     setCategoriaFiltro(null);
-                    // Mostrar selector de tipo
+                    const autoSlug = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
+                    if (autoSlug) {
+                      setTipoPlatoFiltro(autoSlug);
+                      return;
+                    }
+                    setTipoPlatoFiltro(null);
                     Alert.alert(
                       "Agregar Plato",
                       "Selecciona el tipo de menú:",

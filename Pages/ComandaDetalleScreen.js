@@ -21,7 +21,7 @@ import ModalComplementos from '../Components/ModalComplementos';
 import SelectorTipoMenu from '../Components/SelectorTipoMenu';
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from '../hooks/useTiposPlato';
-import { slugTipoPorHoraActual } from '../utils/horaTipoMenu';
+import { resolverSlugMenuPorHora } from '../utils/horaTipoMenu';
 import { slugTipoPedido, mismoTipoPedido } from '../utils/tipoPedidoLinea';
 import useKeyboardInset from '../hooks/useKeyboardInset';
 import KeyboardAwareResults from '../Components/KeyboardAwareResults';
@@ -252,7 +252,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   const [eligiendoTipoMenu, setEligiendoTipoMenu] = useState(false);
   // Catálogo dinámico de tipos de plato desde el backend
-  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo } = useTiposPlato();
+  const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo, refresh: refreshTiposPlato } = useTiposPlato();
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   // Tipo de servicio para los platos que se agreguen desde esta pantalla:
   // 'mesa' (default, Switch OFF) o 'para_llevar' (Switch ON).
@@ -3667,7 +3667,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   style={styles.addPlatoButton}
                   onPress={async () => {
                     await obtenerPlatos();
-                    const autoSlug = slugTipoPorHoraActual(tiposPlatoCatalogo);
+                    const autoSlug = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
                     setTipoPlatoFiltro(autoSlug || null);
                     setSearchPlato('');
                     setCategoriaFiltro(null);

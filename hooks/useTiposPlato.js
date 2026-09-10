@@ -1,7 +1,21 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { DeviceEventEmitter } from 'react-native';
 import axios from 'axios';
 import apiConfig from '../config/apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
+
+export const EVT_TIPOS_PLATO_ACTUALIZADOS = 'tipos-plato-reglas-actualizadas';
+
+function listaTipos(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.tipos)) return data.tipos;
+  if (Array.isArray(data?.value)) return data.value;
+  return [];
+}
+
+function ordenarTipos(data) {
+  return listaTipos(data).slice().sort((a, b) => (a.orden || 99) - (b.orden || 99));
+}
 
 /**
  * Hook reutilizable para cargar el catálogo de tipos de plato desde el backend.
@@ -19,6 +33,8 @@ import { getFallbackApiBase } from '../config/envDefaults';
 const useTiposPlato = (opts = {}) => {
   const { soloActivos = true, autoLoad = true } = opts;
   const [tipos, setTipos] = useState([]);
+  const tiposRef = useRef([]);
+  tiposRef.current = tipos;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -32,12 +48,13 @@ const useTiposPlato = (opts = {}) => {
       const qs = soloActivos ? '?activos=true' : '';
       const response = await axios.get(`${url}${qs}`, { timeout: 5000 });
       const data = Array.isArray(response.data) ? response.data : (response.data?.value || []);
-      const sorted = data.slice().sort((a, b) => (a.orden || 99) - (b.orden || 99));
+      const sorted = ordenarTipos(data);
       setTipos(sorted);
       return sorted;
     } catch (e) {
       console.warn('useTiposPlato: no se pudo cargar catálogo, fallback legacy', e?.message);
       setError(e?.message || 'Error');
+      if (tiposRef.current.length) return tiposRef.current;
       const fallback = [
         { slug: 'platos-desayuno', nombre: 'Desayuno', nombreCorto: 'DESAYUNO', icono: '🌅', color: '#ffa502', orden: 1, activo: true },
         { slug: 'plato-carta normal', nombre: 'Carta', nombreCorto: 'CARTA', icono: '🍽️', color: '#3498db', orden: 2, activo: true },
@@ -52,6 +69,15 @@ const useTiposPlato = (opts = {}) => {
   useEffect(() => {
     if (autoLoad) fetchTipos();
   }, [autoLoad, fetchTipos]);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(EVT_TIPOS_PLATO_ACTUALIZADOS, (data) => {
+      const sorted = ordenarTipos(data);
+      if (sorted.length) setTipos(sorted);
+      else fetchTipos();
+    });
+    return () => sub.remove();
+  }, [fetchTipos]);
 
   const getTipoBySlug = useCallback((slug) => {
     if (!slug) return null;
