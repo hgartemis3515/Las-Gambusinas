@@ -16,16 +16,19 @@ import { useTheme } from "../context/ThemeContext";
 import { themeLight } from "../constants/theme";
 import {
   normalizarOpcion,
-  getNombreOpcion,
   getPrecioOpcion,
+  getPrecioVariacion,
+  variacionesDeOpcion,
   calcularPrecioUnitarioConComplementos,
 } from "../utils/precioComplementos";
 import { textosGuarnicionesTotales, preseleccionComplementosDePlato, grupoSeleccionFija, preseleccionComplementosFijosDePlato, usaCantidadesTotalesGuarnicion } from "../utils/platoGuarniciones";
-import { grupoEsVariantePlato, grupoAnexaNombre, gruposVarianteDePlato, gruposAnexarNombreDePlato, grupoVarianteSumaDeshabilitada, platoVarianteSumaDeshabilitada, grupoOpCantidades, platoOpCantidades } from "../utils/variantePlato";
+import { grupoEsVariantePlato, grupoAnexaNombre, gruposVarianteDePlato, gruposAnexarNombreDePlato, grupoVarianteSumaDeshabilitada, platoVarianteSumaDeshabilitada, grupoOpCantidades, platoOpCantidades, grupoOpCantidadesDePlato, saboresPorUnidadDePlato, previewCombosOp } from "../utils/variantePlato";
 import BotonEnviarOrden from "./BotonEnviarOrden";
 import { useBotonCantidadPlato } from "../context/BotonCantidadPlatoContext";
+import { useLogicaPachamanca } from "../context/LogicaPachamancaContext";
 import { normalizarNumeroSerie, numeroSerieEsValido, platoRequiereNumeroSerie } from "../utils/numeroSeriePlato";
 import { grupoVisibleEnFoco } from "../utils/platoBuscador";
+import { LOGICA_PACHAMANCA_MISMA, slotsOpNecesarios } from "../utils/logicaPachamanca";
 
 const findGrupoModal = (grupos, nombre) => {
   const key = String(nombre || "").trim().toLowerCase();
@@ -68,12 +71,15 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const theme = themeContext?.theme || themeLight;
   const styles = modalComplementosStyles(theme);
   const { estilo: estiloQty, iconSize: iconSizeQty } = useBotonCantidadPlato();
+  const { logicaPachamanca } = useLogicaPachamanca();
 
   // Estado local para las selecciones del mozo
   // Estructura: { "Proteína": { "Pollo": 2, "Res": 1 }, "Guarnición": { "Ensalada": 1 } }
   const [seleccionesPorGrupo, setSeleccionesPorGrupo] = useState({});
+  const [variacionesPorGrupo, setVariacionesPorGrupo] = useState({});
   const [notaEspecial, setNotaEspecial] = useState("");
   const [cantidadClones, setCantidadClones] = useState(1);
+  const [ordenSabores, setOrdenSabores] = useState([]);
   const [numeroSerie, setNumeroSerie] = useState("");
   const [kbH, setKbH] = useState(0);
   const serieInputRef = useRef(null);
@@ -125,12 +131,21 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       return (comp.cantidad || 1) * factor;
     };
     const nuevaSeleccion = {};
+    const nuevasVars = {};
+    const applyVar = (comp) => {
+      const v = String(comp.variacion || "").trim();
+      if (!v || !comp.grupo || !comp.opcion) return;
+      const gk = String(comp.grupo).trim();
+      if (!nuevasVars[gk]) nuevasVars[gk] = {};
+      nuevasVars[gk][comp.opcion] = v;
+    };
     fuente.forEach((comp) => {
       const grupoKey = String(comp.grupo || "").trim();
       if (!grupoKey) return;
       if (!modoEdicion && nombresFijos.has(grupoKey.toLowerCase())) return;
       if (!nuevaSeleccion[grupoKey]) nuevaSeleccion[grupoKey] = {};
       nuevaSeleccion[grupoKey][comp.opcion] = cantOpcion(comp);
+      applyVar(comp);
     });
     fijos.forEach((comp) => {
       const grupoKey = String(comp.grupo || "").trim();
@@ -138,8 +153,21 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       if (modoEdicion && nuevaSeleccion[grupoKey]) return;
       if (!nuevaSeleccion[grupoKey]) nuevaSeleccion[grupoKey] = {};
       nuevaSeleccion[grupoKey][comp.opcion] = cantOpcion(comp);
+      applyVar(comp);
     });
     setSeleccionesPorGrupo(nuevaSeleccion);
+    setVariacionesPorGrupo(nuevasVars);
+    const gOpInit = grupoOpCantidadesDePlato(plato);
+    const ordenInit = [];
+    if (gOpInit) {
+      const claveOp = String(gOpInit.grupo || '').trim().toLowerCase();
+      fuente.forEach((comp) => {
+        if (String(comp.grupo || '').trim().toLowerCase() !== claveOp) return;
+        const q = Math.max(0, Number(comp.cantidad) || 0);
+        for (let i = 0; i < q; i += 1) ordenInit.push(comp.opcion);
+      });
+    }
+    setOrdenSabores(ordenInit);
     setNotaEspecial(typeof notaInicial === 'string' ? notaInicial : "");
     setCantidadClones(nInit);
     setNumeroSerie(normalizarNumeroSerie(numeroSerieInicial));
@@ -183,17 +211,20 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     const sumaLibre = grupoVarianteSumaDeshabilitada(grupoCfg);
     const n = Math.max(1, Math.min(99, Number(cantidadClones) || 1));
     const totGarn = usaCantidadesTotalesGuarnicion(plato, n);
+    const nSab = saboresPorUnidadDePlato(plato);
+    const maxSlotsOp = slotsOpNecesarios(logicaPachamanca, n, nSab);
 
     // Validar límites
     let maxUnidadesGrupo = grupoNormalizado.maxUnidadesGrupo;
-    if (esOpCant) maxUnidadesGrupo = n;
+    if (esOpCant) maxUnidadesGrupo = maxSlotsOp;
     else if (esVar && !sumaLibre) maxUnidadesGrupo = n;
     else if (!esVar && !esOpCant && !grupoAnexaNombre(grupoCfg) && totGarn) {
       if (maxUnidadesGrupo != null) maxUnidadesGrupo = maxUnidadesGrupo * n;
       else if (grupoNormalizado.modoSeleccion !== 'cantidades') maxUnidadesGrupo = n;
     }
     let maxUnidadesPorOpcion = grupoNormalizado.maxUnidadesPorOpcion;
-    if (!esVar && !esOpCant && !grupoAnexaNombre(grupoCfg) && totGarn && maxUnidadesPorOpcion != null) {
+    if (esOpCant) maxUnidadesPorOpcion = null;
+    else if (!esVar && !esOpCant && !grupoAnexaNombre(grupoCfg) && totGarn && maxUnidadesPorOpcion != null) {
       maxUnidadesPorOpcion = maxUnidadesPorOpcion * n;
     }
     
@@ -207,6 +238,10 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       return; // No puede agregar más de esta opción
     }
 
+    if (esOpCant) {
+      setOrdenSabores((prev) => (prev.length >= maxSlotsOp ? prev : [...prev, opcion]));
+    }
+
     setSeleccionesPorGrupo(prev => ({
       ...prev,
       [grupoNombre]: {
@@ -214,13 +249,22 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
         [opcion]: cantidadActual + 1
       }
     }));
-  }, [getCantidadOpcion, getTotalUnidadesGrupo, cantidadClones, complementos, plato]);
+  }, [getCantidadOpcion, getTotalUnidadesGrupo, cantidadClones, complementos, plato, logicaPachamanca]);
 
   // Decrementar cantidad de una opción
   const decrementarOpcion = useCallback((grupoNombre, opcion) => {
     const cantidadActual = getCantidadOpcion(grupoNombre, opcion);
     
     if (cantidadActual <= 0) return;
+
+    const grupoCfg = findGrupoModal(complementos, grupoNombre);
+    if (grupoOpCantidades(grupoCfg)) {
+      setOrdenSabores((prev) => {
+        const i = prev.lastIndexOf(opcion);
+        if (i < 0) return prev;
+        return [...prev.slice(0, i), ...prev.slice(i + 1)];
+      });
+    }
 
     setSeleccionesPorGrupo(prev => {
       const nuevoGrupo = { ...(prev[grupoNombre] || {}) };
@@ -236,7 +280,14 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
         [grupoNombre]: nuevoGrupo
       };
     });
-  }, [getCantidadOpcion]);
+    if (cantidadActual === 1) {
+      setVariacionesPorGrupo(prev => {
+        const g = { ...(prev[grupoNombre] || {}) };
+        delete g[opcion];
+        return { ...prev, [grupoNombre]: g };
+      });
+    }
+  }, [getCantidadOpcion, complementos]);
 
   // Toggle para modo opciones (legacy - sin cantidades)
   const toggleOpcion = useCallback((grupoNombre, opcion, grupoNormalizado) => {
@@ -252,6 +303,11 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
           [grupoNombre]: nuevoGrupo
         };
       });
+      setVariacionesPorGrupo(prev => {
+        const g = { ...(prev[grupoNombre] || {}) };
+        delete g[opcion];
+        return { ...prev, [grupoNombre]: g };
+      });
     } else {
       // Agregar selección (verificando límites)
       const totalActual = getTotalUnidadesGrupo(grupoNombre);
@@ -259,10 +315,6 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       
       // Si solo permite 1 y ya hay una seleccionada, reemplazar
       if (maxUnidadesGrupo === 1 && totalActual === 1) {
-        // Reemplazar la selección anterior
-        const grupoPrevio = seleccionesPorGrupo[grupoNombre] || {};
-        const opcionPrevia = Object.keys(grupoPrevio)[0];
-        
         setSeleccionesPorGrupo(prev => {
           const nuevoGrupo = { [opcion]: 1 };
           return {
@@ -270,6 +322,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             [grupoNombre]: nuevoGrupo
           };
         });
+        setVariacionesPorGrupo(prev => ({ ...prev, [grupoNombre]: {} }));
         return;
       }
       
@@ -289,11 +342,40 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     }
   }, [getCantidadOpcion, getTotalUnidadesGrupo, seleccionesPorGrupo]);
 
+  const elegirVariacion = useCallback((grupoNombre, opcion, variacionNombre, grupoNormalizado) => {
+    const next = String(variacionNombre || "").trim();
+    if (!next) return;
+    const cant = getCantidadOpcion(grupoNombre, opcion);
+    const actual = String(variacionesPorGrupo[grupoNombre]?.[opcion] || "").trim();
+    if (cant > 0 && actual.toLowerCase() === next.toLowerCase()) {
+      setVariacionesPorGrupo((prev) => {
+        const g = { ...(prev[grupoNombre] || {}) };
+        delete g[opcion];
+        return { ...prev, [grupoNombre]: g };
+      });
+      return;
+    }
+    if (cant <= 0) {
+      if (grupoNormalizado?.modoSeleccion === "cantidades") {
+        incrementarOpcion(grupoNombre, opcion, grupoNormalizado);
+      } else {
+        toggleOpcion(grupoNombre, opcion, grupoNormalizado);
+      }
+    }
+    setVariacionesPorGrupo((prev) => ({
+      ...prev,
+      [grupoNombre]: { ...(prev[grupoNombre] || {}), [opcion]: next },
+    }));
+  }, [getCantidadOpcion, variacionesPorGrupo, incrementarOpcion, toggleOpcion]);
+
   const nClones = Math.max(1, Math.min(99, Number(cantidadClones) || 1));
   const hayVarianteMix = gruposVarianteDePlato(plato).length > 0;
   const hayAnexarNombre = gruposAnexarNombreDePlato(plato).length > 0;
   const sumaMixLibre = platoVarianteSumaDeshabilitada(plato);
   const opCantidades = platoOpCantidades(plato);
+  const nSaboresOp = saboresPorUnidadDePlato(plato);
+  const logicaMismaCombo = logicaPachamanca === LOGICA_PACHAMANCA_MISMA;
+  const maxSlotsOp = slotsOpNecesarios(logicaPachamanca, nClones, nSaboresOp);
   const usarTotalesGarn = usaCantidadesTotalesGuarnicion(plato, nClones);
   const mixSum = useMemo(() => {
     return gruposVarianteDePlato(plato).reduce((s, g) => s + getTotalUnidadesGrupo(g.grupo), 0);
@@ -306,7 +388,9 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       ? "Elegí 1 opción de la variante (TÉ, CAFÉ…). Las otras guarniciones van con cada MIX."
       : `Repartí ${nClones} MIX entre TÉ / CAFÉ / etc. Cada uno lleva las demás guarniciones.`)
     : hayAnexarNombre && opCantidades
-    ? `Repartí ${nClones} sabor(es) según la cantidad elegida.`
+    ? (logicaMismaCombo
+      ? `Elegí ${nSaboresOp} sabor(es) una vez. Agregar Cantidad copia esa mezcla a ${nClones} pachamanca(s).`
+      : `Agregar Cantidad = pachamancas. Los sabores van de a ${nSaboresOp}. Faltan ${Math.max(0, maxSlotsOp - ordenSabores.length)}.`)
     : hayAnexarNombre
     ? `Elegí la opción OP. Se aplica a ${nClones} plato(s).`
     : (nClones === 1
@@ -327,12 +411,12 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       const totGarn = !esVar && !esOpCant && !grupoAnexaNombre(grupoOriginal) && usarTotalesGarn;
       const minBase = grupo.minUnidadesGrupo || (grupo.obligatorio ? 1 : 0);
       const minUnidades = esOpCant
-        ? nClones
+        ? maxSlotsOp
         : esVar
         ? (sumaLibre ? (grupo.minUnidadesGrupo || (grupo.obligatorio ? 1 : 0) || 1) : nClones)
         : minBase * (totGarn ? nClones : 1);
       const maxUnidades = esOpCant
-        ? nClones
+        ? maxSlotsOp
         : esVar
         ? (sumaLibre ? grupo.maxUnidadesGrupo : nClones)
         : (grupo.maxUnidadesGrupo == null
@@ -345,7 +429,9 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       if (totalUnidades < minUnidades) {
         esValido = false;
         mensaje = esOpCant
-          ? `Repartí ${nClones} sabor(es) (faltan ${minUnidades - totalUnidades})`
+          ? (logicaMismaCombo
+            ? `Elegí ${nSaboresOp} sabor(es) (faltan ${minUnidades - totalUnidades})`
+            : `Van de a ${nSaboresOp}: faltan ${minUnidades - totalUnidades} para ${nClones} pachamanca(s)`)
           : esVar
           ? (sumaLibre
             ? `Elegí al menos ${minUnidades} (TÉ, CAFÉ…)`
@@ -354,10 +440,14 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       } else if (maxUnidades !== null && totalUnidades > maxUnidades) {
         esValido = false;
         mensaje = (esVar && !sumaLibre) || esOpCant
-          ? `Suma ${totalUnidades}, debe ser ${nClones} (la cantidad elegida)`
+          ? `Suma ${totalUnidades}, debe ser ${minUnidades}`
           : `Excedido (máx: ${maxUnidades})`;
       } else if (maxUnidades !== null && totalUnidades === maxUnidades) {
-        mensaje = esOpCant ? `✓ ${nClones} sabor(es)` : `✓ Máximo alcanzado`;
+        mensaje = esOpCant
+          ? (logicaMismaCombo
+            ? `✓ Combinación lista × ${nClones}`
+            : `✓ ${nClones} pachamanca(s) de ${nSaboresOp}`)
+          : `✓ Máximo alcanzado`;
       } else if (esVar && sumaLibre && totalUnidades > 0) {
         mensaje = `${totalUnidades} pedida(s) · las fijas ×${totalUnidades}`;
       } else if (totalUnidades >= minUnidades && minUnidades > 0) {
@@ -377,7 +467,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       };
     });
     return estados;
-  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo, nClones, modoEdicion, focoModo, usarTotalesGarn]);
+  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo, nClones, modoEdicion, focoModo, usarTotalesGarn, maxSlotsOp, nSaboresOp, logicaMismaCombo]);
 
   // Verificar si todos los grupos obligatorios tienen selección
   const obligatoriosCompletos = useMemo(() => {
@@ -404,14 +494,27 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   }, [estadoGrupos]);
 
   const cambiarClones = (delta) => {
-    setCantidadClones((c) => {
-      const oldN = Math.max(1, Math.min(99, Number(c) || 1));
-      const newN = Math.max(1, Math.min(99, oldN + delta));
-      if (newN !== oldN && usaCantidadesTotalesGuarnicion(plato, Math.max(oldN, newN))) {
-        setSeleccionesPorGrupo((prev) => escalarCantidadesGuarnicion(prev, oldN, newN, complementos));
-      }
-      return newN;
-    });
+    const oldN = Math.max(1, Math.min(99, Number(cantidadClones) || 1));
+    const newN = Math.max(1, Math.min(99, oldN + delta));
+    if (newN === oldN) return;
+    if (usaCantidadesTotalesGuarnicion(plato, Math.max(oldN, newN))) {
+      setSeleccionesPorGrupo((prev) => escalarCantidadesGuarnicion(prev, oldN, newN, complementos));
+    }
+    if (opCantidades && !logicaMismaCombo) {
+      const cap = slotsOpNecesarios(logicaPachamanca, newN, nSaboresOp);
+      setOrdenSabores((prev) => {
+        if (prev.length <= cap) return prev;
+        const next = prev.slice(0, cap);
+        const gOp = grupoOpCantidadesDePlato(plato);
+        if (gOp) {
+          const counts = {};
+          next.forEach((s) => { counts[s] = (counts[s] || 0) + 1; });
+          setSeleccionesPorGrupo((sel) => ({ ...sel, [gOp.grupo]: counts }));
+        }
+        return next;
+      });
+    }
+    setCantidadClones(newN);
   };
 
   const totalesGuarnicion = useMemo(() => {
@@ -420,11 +523,16 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       const grupoCfg = findGrupoModal(complementos, grupo);
       if (grupoEsVariantePlato(grupoCfg)) return;
       Object.entries(opciones).forEach(([opcion, cantidad]) => {
-        if (cantidad > 0) comps.push({ grupo, opcion, cantidad });
+        if (cantidad > 0) comps.push({
+          grupo,
+          opcion,
+          cantidad,
+          variacion: variacionesPorGrupo[grupo]?.[opcion] || '',
+        });
       });
     });
     return textosGuarnicionesTotales(comps, usarTotalesGarn ? 1 : factorPedido);
-  }, [seleccionesPorGrupo, factorPedido, complementos, usarTotalesGarn]);
+  }, [seleccionesPorGrupo, variacionesPorGrupo, factorPedido, complementos, usarTotalesGarn]);
 
   // v3.0: Cálculo de precios en tiempo real
   // - Si plato.complementosAfectanPrecio === false, los extras son informativos (no suman).
@@ -438,12 +546,14 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       const grupoConfig = findGrupoModal(complementos, grupoNombre);
       Object.entries(opciones).forEach(([opcion, cantidad]) => {
         if (cantidad > 0) {
+          const varNom = variacionesPorGrupo[grupoNombre]?.[opcion];
           const precioOpcion = grupoConfig ? getPrecioOpcion(grupoConfig, opcion) : 0;
+          const precioVar = grupoConfig ? getPrecioVariacion(grupoConfig, opcion, varNom) : 0;
           seleccionesParaCalc.push({
             grupo: grupoNombre,
             opcion,
             cantidad,
-            precio: afectanPrecio ? precioOpcion : 0,
+            precio: afectanPrecio ? precioOpcion + precioVar : 0,
           });
         }
       });
@@ -469,7 +579,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       tieneExtras: calc.extraComplementos > 0,
       extraTotal: calc.extraComplementos * nClones,
     };
-  }, [seleccionesPorGrupo, complementos, basePlato, afectanPrecio, usarTotalesGarn, nClones]);
+  }, [seleccionesPorGrupo, variacionesPorGrupo, complementos, basePlato, afectanPrecio, usarTotalesGarn, nClones]);
 
   const totalOrdenMostrar = useMemo(() => {
     if (usarTotalesGarn) {
@@ -483,14 +593,16 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       const esVar = grupoEsVariantePlato(grupoConfig);
       Object.entries(opciones).forEach(([opcion, cantidad]) => {
         if (cantidad <= 0) return;
-        const p = afectanPrecio && grupoConfig ? getPrecioOpcion(grupoConfig, opcion) : 0;
+        const p = afectanPrecio && grupoConfig
+          ? getPrecioOpcion(grupoConfig, opcion) + getPrecioVariacion(grupoConfig, opcion, variacionesPorGrupo[grupoNombre]?.[opcion])
+          : 0;
         if (esVar) extraMix += p * cantidad;
         else extraGarn += p * cantidad;
       });
     });
     const f = Math.max(1, mixSum);
     return basePlato * f + extraMix + extraGarn * f;
-  }, [sumaMixLibre, preciosResumen.unitario, preciosResumen.extraTotal, nClones, seleccionesPorGrupo, complementos, afectanPrecio, mixSum, basePlato, usarTotalesGarn]);
+  }, [sumaMixLibre, preciosResumen.unitario, preciosResumen.extraTotal, nClones, seleccionesPorGrupo, variacionesPorGrupo, complementos, afectanPrecio, mixSum, basePlato, usarTotalesGarn]);
 
   // Confirmar y agregar el plato con complementos
   const requiereSerie = platoRequiereNumeroSerie(plato);
@@ -528,26 +640,53 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       ? [...kept]
       : (focoModo ? [...fijos, ...keptSinFijos] : [...fijos]);
 
+    const gOpConfirm = grupoOpCantidadesDePlato(plato);
+    const claveOpConfirm = gOpConfirm ? claveGrupoNombre(gOpConfirm.grupo) : '';
+    const ordenEmit = logicaMismaCombo
+      ? ordenSabores.slice(0, nSaboresOp)
+      : ordenSabores;
+
     Object.entries(seleccionesPorGrupo).forEach(([grupoNombre, opciones]) => {
       if (!grupoVisibleEnFoco(findGrupoModal(complementos, grupoNombre), focoModo)) return;
       if (!modoEdicion && nombresFijos.has(claveGrupoNombre(grupoNombre))) return;
+      if (claveOpConfirm && claveGrupoNombre(grupoNombre) === claveOpConfirm) return;
       const grupoConfig = findGrupoModal(complementos, grupoNombre);
       Object.entries(opciones).forEach(([opcion, cantidad]) => {
         if (cantidad > 0) {
           const opDoc = (grupoConfig?.opciones || []).find((o) =>
             String(o?.nombre || '').trim().toLowerCase() === String(opcion).trim().toLowerCase()
           );
+          const variacion = String(variacionesPorGrupo[grupoNombre]?.[opcion] || '').trim();
           const precioOpcion = grupoConfig ? getPrecioOpcion(grupoConfig, opcion) : 0;
+          const precioVar = grupoConfig ? getPrecioVariacion(grupoConfig, opcion, variacion) : 0;
           complementosSeleccionados.push({
             grupo: grupoNombre,
             opcion: opcion,
             cantidad: cantidad,
-            precio: afectanPrecio ? precioOpcion : 0,
+            precio: afectanPrecio ? precioOpcion + precioVar : 0,
             pronombre: String(opDoc?.pronombre || '').trim(),
+            ...(variacion ? { variacion } : {}),
           });
         }
       });
     });
+
+    if (gOpConfirm && ordenEmit.length) {
+      const grupoConfig = gOpConfirm;
+      ordenEmit.forEach((opcion) => {
+        const opDoc = (grupoConfig?.opciones || []).find((o) =>
+          String(o?.nombre || '').trim().toLowerCase() === String(opcion).trim().toLowerCase()
+        );
+        const precioOpcion = getPrecioOpcion(grupoConfig, opcion);
+        complementosSeleccionados.push({
+          grupo: gOpConfirm.grupo,
+          opcion,
+          cantidad: 1,
+          precio: afectanPrecio ? precioOpcion : 0,
+          pronombre: String(opDoc?.pronombre || '').trim(),
+        });
+      });
+    }
 
     const calc = calcularPrecioUnitarioConComplementos(
       basePlato,
@@ -565,6 +704,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     });
 
     setSeleccionesPorGrupo({});
+    setOrdenSabores([]);
     setNotaEspecial("");
     setCantidadClones(1);
     setNumeroSerie("");
@@ -580,6 +720,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   // Cerrar sin guardar
   const handleCancelar = () => {
     setSeleccionesPorGrupo({});
+    setOrdenSabores([]);
     setNotaEspecial("");
     setCantidadClones(1);
     setNumeroSerie("");
@@ -681,7 +822,11 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                   size={18}
                   color={theme.colors.primary}
                 />
-                <Text style={styles.cloneTitle}>OP · {nClones} {nClones === 1 ? 'plato' : 'platos'}</Text>
+                <Text style={styles.cloneTitle}>
+                  {opCantidades
+                    ? (nSaboresOp > 1 ? `OP · de a ${nSaboresOp} sabores` : 'OP · sabores')
+                    : `OP · ${nClones} ${nClones === 1 ? 'plato' : 'platos'}`}
+                </Text>
               </View>
               <Text style={styles.cloneHint}>
                 {gruposVarianteDePlatoHint}
@@ -690,13 +835,21 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
           </View>
           )}
 
-          {focoModo !== 'anexarNombre' && ((!sumaMixLibre) || totalesGuarnicion.length > 0) && (
+          {(focoModo === 'anexarNombre' ? !sumaMixLibre : ((!sumaMixLibre) || totalesGuarnicion.length > 0)) && (
             <View style={styles.totalesBar}>
               <View style={styles.totalesBarTextWrap}>
                 <Text style={styles.totalesBarTitle} numberOfLines={1}>
-                  {factorPedido > 1 ? `Guarniciones a agregar (${factorPedido} platos)` : "Guarniciones a agregar"}
+                  {focoModo === 'anexarNombre'
+                    ? (nClones > 1 ? `Agregar Cantidad (${nClones})` : 'Agregar Cantidad')
+                    : (factorPedido > 1 ? `Guarniciones a agregar (${factorPedido} platos)` : 'Guarniciones a agregar')}
                 </Text>
-                {totalesGuarnicion.length > 0 ? (
+                {focoModo === 'anexarNombre' && opCantidades ? (
+                  <Text style={styles.totalesBarText} numberOfLines={2}>
+                    {logicaMismaCombo
+                      ? `${nClones} pachamanca(s) · ${nSaboresOp} sabor(es) a copiar`
+                      : `${nClones} pachamanca(s) · ${maxSlotsOp} sabores (de a ${nSaboresOp})`}
+                  </Text>
+                ) : totalesGuarnicion.length > 0 ? (
                   <Text style={styles.totalesBarText} numberOfLines={2}>
                     {totalesGuarnicion.join(" · ")}
                   </Text>
@@ -708,7 +861,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                     style={[styles.qtyBtn, estiloQty, nClones <= 1 && styles.cantidadButtonDisabled]}
                     onPress={() => cambiarClones(-1)}
                     disabled={nClones <= 1}
-                    accessibilityLabel="Quitar un plato"
+                    accessibilityLabel="Quitar uno"
                   >
                     <MaterialCommunityIcons name="minus" size={iconSizeQty} color={theme.colors.text.white} />
                   </TouchableOpacity>
@@ -719,12 +872,37 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                     style={[styles.qtyBtn, estiloQty, nClones >= 99 && styles.cantidadButtonDisabled]}
                     onPress={() => cambiarClones(1)}
                     disabled={nClones >= 99}
-                    accessibilityLabel="Sumar un plato"
+                    accessibilityLabel="Sumar uno"
                   >
                     <MaterialCommunityIcons name="plus" size={iconSizeQty} color={theme.colors.text.white} />
                   </TouchableOpacity>
                 </View>
               )}
+            </View>
+          )}
+
+          {focoModo === 'anexarNombre' && opCantidades && (
+            <View style={styles.comboPreview}>
+              {(logicaMismaCombo
+                ? [{
+                    index: 1,
+                    sabores: ordenSabores.slice(0, nSaboresOp),
+                    completo: ordenSabores.length >= nSaboresOp,
+                    faltan: Math.max(0, nSaboresOp - Math.min(ordenSabores.length, nSaboresOp)),
+                    copias: nClones,
+                  }]
+                : previewCombosOp(ordenSabores, nSaboresOp, nClones)
+              ).map((row) => (
+                <Text
+                  key={row.index}
+                  style={[styles.comboPreviewLine, row.completo && styles.comboPreviewOk]}
+                  numberOfLines={1}
+                >
+                  {logicaMismaCombo
+                    ? `${(row.sabores || []).join(' - ') || '…'} × ${row.copias}`
+                    : `${row.index}. ${(row.sabores || []).join(' - ') || '…'}${row.faltan ? `  (${row.faltan} más)` : ''}`}
+                </Text>
+              ))}
             </View>
           )}
 
@@ -749,7 +927,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
               const esOpCantGrupo = grupoOpCantidades(complemento);
               const totEsteGrupo = !esVarGrupo && !esAnexarGrupo && usarTotalesGarn;
               let maxGrupoEfectivo = esOpCantGrupo
-                ? nClones
+                ? maxSlotsOp
                 : esVarGrupo
                 ? (sumaMixLibre ? grupoNormalizado.maxUnidadesGrupo : nClones)
                 : grupoNormalizado.maxUnidadesGrupo;
@@ -757,9 +935,11 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                 if (maxGrupoEfectivo != null) maxGrupoEfectivo = maxGrupoEfectivo * nClones;
                 else if (grupoNormalizado.modoSeleccion !== 'cantidades') maxGrupoEfectivo = nClones;
               }
-              const maxPorOpcionEfectivo = totEsteGrupo && grupoNormalizado.maxUnidadesPorOpcion != null
-                ? grupoNormalizado.maxUnidadesPorOpcion * nClones
-                : grupoNormalizado.maxUnidadesPorOpcion;
+              const maxPorOpcionEfectivo = esOpCantGrupo
+                ? null
+                : (totEsteGrupo && grupoNormalizado.maxUnidadesPorOpcion != null
+                  ? grupoNormalizado.maxUnidadesPorOpcion * nClones
+                  : grupoNormalizado.maxUnidadesPorOpcion);
               const mostrarStepper = esModoCantidad || totEsteGrupo;
               
               return (
@@ -814,35 +994,58 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                       const puedeIncrementar = 
                         (maxGrupoEfectivo === null || getTotalUnidadesGrupo(grupoNormalizado.grupo) < maxGrupoEfectivo) &&
                         (maxPorOpcionEfectivo === null || cantidad < maxPorOpcionEfectivo);
+                      const mostrarVars = !esVarGrupo && !esAnexarGrupo && !esOpCantGrupo;
+                      const varsOpcion = mostrarVars ? variacionesDeOpcion(opcionRaw) : [];
+                      const varActual = String(variacionesPorGrupo[grupoNormalizado.grupo]?.[opcionNombre] || '').trim();
+                      const chipsVars = varsOpcion.map((vr) => {
+                        const activa = isSelected && varActual.toLowerCase() === vr.nombre.toLowerCase();
+                        const pVar = vr.precio || 0;
+                        return (
+                          <TouchableOpacity
+                            key={vr.nombre}
+                            style={[styles.variacionChip, activa && styles.variacionChipSelected]}
+                            onPress={() => elegirVariacion(grupoNormalizado.grupo, opcionNombre, vr.nombre, grupoNormalizado)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.variacionText, activa && styles.variacionTextSelected]}>
+                              {vr.nombre}
+                              {afectanPrecio && pVar > 0 ? ` +S/. ${pVar.toFixed(2)}` : ''}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      });
 
                       // Modo cantidad: mostrar +/- buttons
                       if (mostrarStepper) {
                         return (
                           <View key={optIndex} style={styles.opcionCantidadRow}>
-                            <TouchableOpacity
-                              style={[
-                                styles.opcionChip,
-                                isSelected && styles.opcionChipSelected,
-                              ]}
-                              onPress={() => {
-                                if (totEsteGrupo) {
-                                  if (cantidad === 0) incrementarOpcion(grupoNormalizado.grupo, opcionNombre, grupoNormalizado);
-                                  return;
-                                }
-                                toggleOpcion(grupoNormalizado.grupo, opcionNombre, grupoNormalizado);
-                              }}
-                              activeOpacity={0.7}
-                            >
-                              <Text
+                            <View style={styles.opcionConVariacionesRow}>
+                              <TouchableOpacity
                                 style={[
-                                  styles.opcionText,
-                                  isSelected && styles.opcionTextSelected,
+                                  styles.opcionChip,
+                                  isSelected && styles.opcionChipSelected,
                                 ]}
+                                onPress={() => {
+                                  if (esOpCantGrupo || totEsteGrupo) {
+                                    if (esOpCantGrupo || cantidad === 0) incrementarOpcion(grupoNormalizado.grupo, opcionNombre, grupoNormalizado);
+                                    return;
+                                  }
+                                  toggleOpcion(grupoNormalizado.grupo, opcionNombre, grupoNormalizado);
+                                }}
+                                activeOpacity={0.7}
                               >
-                                {opcionNombre}
-                                {afectanPrecio && opcionPrecio > 0 ? `  +S/. ${opcionPrecio.toFixed(2)}` : ''}
-                              </Text>
-                            </TouchableOpacity>
+                                <Text
+                                  style={[
+                                    styles.opcionText,
+                                    isSelected && styles.opcionTextSelected,
+                                  ]}
+                                >
+                                  {opcionNombre}
+                                  {afectanPrecio && opcionPrecio > 0 ? `  +S/. ${opcionPrecio.toFixed(2)}` : ''}
+                                </Text>
+                              </TouchableOpacity>
+                              {chipsVars}
+                            </View>
                             
                             <View style={styles.cantidadControls}>
                               <TouchableOpacity
@@ -869,37 +1072,39 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                         );
                       }
 
-                      // Modo opciones (legacy): chip simple
+                      // Modo opciones (legacy): chip + variaciones a la derecha
                       return (
-                        <TouchableOpacity
-                          key={optIndex}
-                          style={[
-                            styles.opcionChip,
-                            isSelected && styles.opcionChipSelected,
-                          ]}
-                          onPress={() => toggleOpcion(grupoNormalizado.grupo, opcionNombre, grupoNormalizado)}
-                          activeOpacity={0.7}
-                        >
-                          <MaterialCommunityIcons
-                            name={isSelected ? "checkbox-marked" : "checkbox-blank-outline"}
-                            size={18}
-                            color={
-                              isSelected
-                                ? theme.colors.text.white
-                                : theme.colors.text.secondary
-                            }
-                            style={styles.checkboxIcon}
-                          />
-                          <Text
+                        <View key={optIndex} style={styles.opcionConVariacionesRow}>
+                          <TouchableOpacity
                             style={[
-                              styles.opcionText,
-                              isSelected && styles.opcionTextSelected,
+                              styles.opcionChip,
+                              isSelected && styles.opcionChipSelected,
                             ]}
+                            onPress={() => toggleOpcion(grupoNormalizado.grupo, opcionNombre, grupoNormalizado)}
+                            activeOpacity={0.7}
                           >
-                            {opcionNombre}
-                            {afectanPrecio && opcionPrecio > 0 ? `  +S/. ${opcionPrecio.toFixed(2)}` : ''}
-                          </Text>
-                        </TouchableOpacity>
+                            <MaterialCommunityIcons
+                              name={isSelected ? "checkbox-marked" : "checkbox-blank-outline"}
+                              size={18}
+                              color={
+                                isSelected
+                                  ? theme.colors.text.white
+                                  : theme.colors.text.secondary
+                              }
+                              style={styles.checkboxIcon}
+                            />
+                            <Text
+                              style={[
+                                styles.opcionText,
+                                isSelected && styles.opcionTextSelected,
+                              ]}
+                            >
+                              {opcionNombre}
+                              {afectanPrecio && opcionPrecio > 0 ? `  +S/. ${opcionPrecio.toFixed(2)}` : ''}
+                            </Text>
+                          </TouchableOpacity>
+                          {chipsVars}
+                        </View>
                       );
                     })}
                   </View>
@@ -1126,6 +1331,22 @@ const modalComplementosStyles = (theme) =>
       flexShrink: 0,
       gap: 4,
     },
+    comboPreview: {
+      paddingHorizontal: theme.spacing.lg,
+      paddingVertical: 6,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+      backgroundColor: theme.colors.background,
+      gap: 2,
+    },
+    comboPreviewLine: {
+      fontSize: 12,
+      color: theme.colors.text.secondary,
+      fontWeight: "600",
+    },
+    comboPreviewOk: {
+      color: theme.colors.text.primary,
+    },
     qtyBtn: {
       width: 36,
       height: 36,
@@ -1257,8 +1478,40 @@ const modalComplementosStyles = (theme) =>
     opcionCantidadRow: {
       flexDirection: "row",
       alignItems: "center",
+      flexWrap: "wrap",
       gap: theme.spacing.sm,
       marginBottom: theme.spacing.xs,
+    },
+    opcionConVariacionesRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      alignItems: "center",
+      gap: 6,
+      flexGrow: 1,
+      flexShrink: 1,
+    },
+    variacionChip: {
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: 16,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.background,
+      minHeight: 36,
+      justifyContent: "center",
+    },
+    variacionChipSelected: {
+      backgroundColor: theme.colors.secondary,
+      borderColor: theme.colors.secondary,
+    },
+    variacionText: {
+      fontSize: 12,
+      fontWeight: "500",
+      color: theme.colors.text.primary,
+    },
+    variacionTextSelected: {
+      color: theme.colors.text.white,
+      fontWeight: "600",
     },
     cantidadControls: {
       flexDirection: "row",

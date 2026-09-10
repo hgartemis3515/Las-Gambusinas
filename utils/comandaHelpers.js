@@ -7,6 +7,7 @@
  */
 
 import { slugTipoPedido } from './tipoPedidoLinea';
+import { textoOpcionComplemento } from './precioComplementos';
 
 /** Estados que indican comanda cerrada (fin de ciclo de servicio) */
 const ESTADOS_COMANDA_CERRADA = ['pagado', 'completado', 'cerrado', 'cancelado', 'anulado'];
@@ -688,7 +689,7 @@ export const formatearComplementos = (complementosSeleccionados, maxLength = nul
   
   const partes = complementosSeleccionados.map(comp => {
     const tipo = comp.tipo || comp.grupo || '';
-    const opcion = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : (comp.opcion || '');
+    const opcion = textoOpcionComplemento(comp);
     const cantidad = comp.cantidad || 1;
     
     // v2.0: Agregar cantidad si es mayor a 1
@@ -726,7 +727,7 @@ export const formatearComplementosCompacto = (complementosSeleccionados, maxLeng
   }
   
   const partes = complementosSeleccionados.map(comp => {
-    const opcion = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : (comp.opcion || '');
+    const opcion = textoOpcionComplemento(comp);
     const cantidad = comp.cantidad || 1;
     
     // v2.0: Agregar cantidad si es mayor a 1

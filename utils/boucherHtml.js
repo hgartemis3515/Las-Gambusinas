@@ -8,6 +8,7 @@ import {
   envolverHtmlBoucherTicket,
 } from './boucherPrint';
 import { resolveLogoUrl } from './logoPlantilla';
+import { textoOpcionComplemento } from './precioComplementos';
 
 const escapeHtml = (str) =>
   String(str ?? '')
@@ -235,9 +236,7 @@ export function generarHtmlBoucher({
       html += `<td style="text-align:right;vertical-align:top;font-size:12px;padding:2px 0;white-space:nowrap;">${precio.toFixed(2)}</td>`;
       html += `<td style="text-align:right;vertical-align:top;font-size:12px;padding:2px 0;white-space:nowrap;">${subtotalPlato.toFixed(2)}</td></tr>`;
       complementos.forEach((comp) => {
-        const opcionStr = Array.isArray(comp.opcion)
-          ? comp.opcion.join(', ')
-          : comp.opcion || comp.nombre || '';
+        const opcionStr = textoOpcionComplemento(comp);
         html += '<tr><td colspan="4" style="font-size:11px;color:#666;padding:0 0 2px 8px;">';
         html += `└ ${escapeHtml(opcionStr)}`;
         if (comp.precio > 0) html += ` (+${comp.precio.toFixed(2)})`;

@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   useWindowDimensions,
   ActivityIndicator,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -46,6 +47,7 @@ import {
   clearLastLoginNombre,
   LAST_REMEMBER_ME_KEY,
 } from "../../utils/authSession";
+import { EVT_MOZO_SESSION } from "../../context/DensidadOrdenesContext";
 
 // Componente de partículas flotantes
 const FloatingParticle = ({ delay = 0, screenHeight, screenWidth }) => {
@@ -543,6 +545,7 @@ const Login = () => {
       await AsyncStorage.setItem("authToken", token);
       await saveLastLoginNombre(usuario.name);
       await AsyncStorage.setItem(LAST_REMEMBER_ME_KEY, rememberMe ? "1" : "0");
+      DeviceEventEmitter.emit(EVT_MOZO_SESSION);
       console.log("💾 Usuario y token guardados en AsyncStorage", rememberMe ? "(7d)" : "(12h)");
       updateToken(token);
 

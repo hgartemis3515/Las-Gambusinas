@@ -41,13 +41,92 @@ export function gruposAnexarNombreDePlato(plato) {
   return (plato?.complementos || []).filter(grupoAnexaNombre);
 }
 
-/** OP con cantidades: Cerdo x2 + Pollo x1 = 3 pachamancas (no se reparte la cantidad del plato). */
+/** OP con cantidades: sabores de pachamanca (van de a N por unidad, no se reparte como MIX). */
 export function grupoOpCantidades(grupo) {
   return grupoAnexaNombre(grupo) && grupo?.modoSeleccion === 'cantidades';
 }
 
 export function platoOpCantidades(plato) {
   return gruposAnexarNombreDePlato(plato).some(grupoOpCantidades);
+}
+
+export function grupoOpCantidadesDePlato(plato) {
+  return gruposAnexarNombreDePlato(plato).find(grupoOpCantidades) || null;
+}
+
+function enteroEnRango(v, min, max) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  const i = Math.floor(n);
+  if (i < min || i > max) return null;
+  return i;
+}
+
+/** Sabores por pachamanca: campo del grupo, o “3 sabores” en el nombre, o mín. del grupo. */
+export function saboresPorUnidadDePlato(plato) {
+  const g = grupoOpCantidadesDePlato(plato);
+  const fromField = enteroEnRango(g?.saboresPorUnidad, 1, 8);
+  if (fromField && fromField >= 2) return fromField;
+  const textos = [
+    plato?.nombreCocina,
+    plato?.nombre,
+    plato?.nombreCocinaPedido,
+    plato?.plato?.nombreCocina,
+    plato?.plato?.nombre,
+    g?.grupo,
+  ];
+  for (const t of textos) {
+    const m = String(t || '').match(/(\d+)\s*sabou?res?\b/i);
+    if (m) {
+      const n = enteroEnRango(m[1], 1, 8);
+      if (n) return n;
+    }
+  }
+  const fromMin = enteroEnRango(g?.minUnidadesGrupo, 2, 8);
+  if (fromMin) return fromMin;
+  return fromField || 1;
+}
+
+export function expandirSlotsOp(vars) {
+  const slots = [];
+  (Array.isArray(vars) ? vars : []).forEach((v) => {
+    const q = Math.max(0, Math.min(99, Number(v?.cantidad) || 0));
+    for (let i = 0; i < q; i += 1) slots.push({ ...v, cantidad: 1 });
+  });
+  return slots;
+}
+
+export function chunkSlotsOp(slots, nSab) {
+  const n = Math.max(1, Number(nSab) || 1);
+  const out = [];
+  for (let i = 0; i < slots.length; i += n) out.push(slots.slice(i, i + n));
+  return out;
+}
+
+export function textoComboSabores(slots, grupo) {
+  return (slots || [])
+    .map((v) => nombreCocinaDeOpcion(grupo, v?.opcion))
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+    .join(' - ');
+}
+
+export function previewCombosOp(orden, nSab, nPachamancas) {
+  const sab = Math.max(1, Number(nSab) || 1);
+  const n = Math.max(1, Number(nPachamancas) || 1);
+  const list = Array.isArray(orden) ? orden : [];
+  const rows = [];
+  for (let i = 0; i < n; i += 1) {
+    const slice = list.slice(i * sab, i * sab + sab);
+    const faltan = Math.max(0, sab - slice.length);
+    rows.push({
+      index: i + 1,
+      sabores: slice,
+      completo: faltan === 0,
+      faltan,
+    });
+  }
+  return rows;
 }
 
 function gruposNombreCocinaDePlato(plato) {
@@ -127,14 +206,66 @@ export function partirLineaPorVariante(plato, complementosSeleccionados, cantida
     };
   };
 
-  if (!vars.length) {
-    return [{ complementos: comps, cantidad: n, nombreCocinaPedido: '', variantePlato: null }];
+  const vacio = () => [{ complementos: comps, cantidad: n, nombreCocinaPedido: '', variantePlato: null }];
+
+  const grupoOp = gruposVar.find(grupoOpCantidades);
+  if (grupoOp) {
+    const opVars = vars.filter((v) => claveGrupo(v.grupo) === claveGrupo(grupoOp.grupo));
+    const slots = expandirSlotsOp(opVars);
+    const nSab = saboresPorUnidadDePlato(plato);
+    const unaCombo = (chunk, cant) => {
+      const extra = textoComboSabores(chunk, grupoOp);
+      const base = String(plato?.nombreCocina || plato?.nombre || '').trim();
+      const nombre = anexarSufijoNombre(base, extra);
+      const compsOp = chunk.map((v) => ({
+        ...v,
+        cantidad: 1,
+        pronombre: nombreCocinaDeOpcion(grupoOp, v.opcion),
+      }));
+      return {
+        complementos: [...garnishes, ...compsOp],
+        cantidad: Math.max(1, Number(cant) || 1),
+        nombreCocinaPedido: nombre,
+        variantePlato: {
+          grupo: String(grupoOp.grupo || '').trim(),
+          opcion: extra,
+          pronombre: extra,
+          anexaNombre: true,
+        },
+      };
+    };
+    const mergeCombos = (partes) => {
+      const merged = [];
+      partes.forEach((p) => {
+        const last = merged[merged.length - 1];
+        const same = last
+          && String(last.variantePlato?.opcion || '').toLowerCase()
+            === String(p.variantePlato?.opcion || '').toLowerCase();
+        if (same) last.cantidad += p.cantidad;
+        else merged.push({ ...p });
+      });
+      return merged;
+    };
+    if (!slots.length) return vacio();
+    if (nSab <= 1) {
+      if (opVars.length === 1 && (Number(opVars[0].cantidad) || 1) === 1 && n > 1) {
+        return [unaCombo(slots, n)];
+      }
+      return mergeCombos(opVars.map((v) => unaCombo([{ ...v, cantidad: 1 }], Math.max(1, Number(v.cantidad) || 1))));
+    }
+    if (slots.length % nSab !== 0) {
+      return [unaCombo(slots, 1)];
+    }
+    const chunks = chunkSlotsOp(slots, nSab);
+    if (chunks.length === 1) return [unaCombo(chunks[0], n)];
+    return mergeCombos(chunks.map((ch) => unaCombo(ch, 1)));
   }
+
+  if (!vars.length) return vacio();
   if (vars.length === 1) {
     const grupo = resolver(vars[0]);
     const q = Math.max(1, Number(vars[0].cantidad) || 1);
-    const cant = grupoOpCantidades(grupo) ? q : Math.max(n, q);
-    return [una(vars[0], cant)];
+    return [una(vars[0], Math.max(n, q))];
   }
   return vars.map((v) => una(v, Math.max(1, Number(v.cantidad) || 1)));
 }

@@ -35,19 +35,19 @@ import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle } from '../utils/comandaHelpers';
-import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato, expandirLineaComplementos } from '../utils/platoGuarniciones';
+import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato, expandirLineaComplementos, mismasGuarniciones } from '../utils/platoGuarniciones';
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
 import { mismaVariantePlato, esSeleccionVariantePlato } from '../utils/variantePlato';
 import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos } from '../utils/platoBuscador';
 import PlatoBuscadorCard from '../Components/PlatoBuscadorCard';
-import { calcularPrecioUnitarioConComplementos } from '../utils/precioComplementos';
+import { calcularPrecioUnitarioConComplementos, textoOpcionComplemento, camposSnapshotComplemento } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
 import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA, platoCobradoViaPPA, puedeLiberarComandaCostoCero, filtrarComandasElegiblesPPA } from '../helpers/pagoAdelantadoHelpers';
 import { calcularSubtotalPlatosPagables } from '../utils/pagoParcialHelpers';
 import { esSeleccionSinMesa, SELECCION_SIN_MESA } from '../utils/sinMesaOrden';
 import { esLlevarColor, normalizarTipoServicioLinea } from '../utils/tipoServicio';
-import { msRestantesEntregaAutomatica, formatearCountdownEntrega } from '../utils/entregaAutomatica';
+import { msRestantesEntregaAutomatica, formatearCountdownEntrega, tiempoSalioRequiereAncla } from '../utils/entregaAutomatica';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -93,6 +93,23 @@ function esPagoForzadoEvento(data) {
     || data?.origen === 'forzado'
     || data?.ticket?.pagoForzado === true
     || data?.ticket?.origen === 'forzado';
+}
+
+function indicePlatoPorEventoId(platos, platoId) {
+  const id = platoId == null ? '' : (platoId.toString ? platoId.toString() : String(platoId));
+  if (!id || !Array.isArray(platos)) return -1;
+  const bySubdoc = platos.findIndex((p) => sameId(p._id, id));
+  if (bySubdoc !== -1) return bySubdoc;
+  const byPlatoId = platos.findIndex((p) => p.platoId != null && sameId(p.platoId, id));
+  if (byPlatoId !== -1) return byPlatoId;
+  return platos.findIndex((p) => sameId(p.plato?._id || p.plato, id));
+}
+
+function timestampEstadoPlatoLocal(ts) {
+  if (ts == null || ts === '') return new Date();
+  const ms = new Date(ts).getTime();
+  if (!Number.isFinite(ms) || ms > Date.now() + 2000) return new Date();
+  return ts;
 }
 
 function mergePlatosPreservandoCatalogo(existentes, incoming) {
@@ -332,7 +349,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         const [config, permitirTomadas, minutosEntrega] = await Promise.all([
           configuracionService.obtenerConfigMoneda(true),
           configuracionService.editarEliminarTomadasPorCocinaHabilitadoMozos(),
-          configuracionService.minutosEntregaAutomaticaMozos()
+          configuracionService.minutosEntregaAutomaticaMozos(true)
         ]);
         setConfigMoneda(config);
         setPermitirEditarEliminarTomadas(permitirTomadas);
@@ -645,14 +662,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   );
 
   const msRestantesPlatoEntrega = (plato) => {
-    const t = plato?.tiempos?.salio || plato?.tiempos?.recoger;
-    if (t) return msRestantesEntregaAutomatica(plato, minutosEntregaAuto);
+    if (!tiempoSalioRequiereAncla(plato)) {
+      return msRestantesEntregaAutomatica(plato, minutosEntregaAuto);
+    }
     const key = `${plato?.comandaId}-${plato?._id || plato?.platoId}`;
     if (!inicioCountdownFallbackRef.current[key]) {
       inicioCountdownFallbackRef.current[key] = Date.now();
     }
-    const start = inicioCountdownFallbackRef.current[key];
-    return Math.max(0, start + (Number(minutosEntregaAuto) || 0) * 60 * 1000 - Date.now());
+    return msRestantesEntregaAutomatica(
+      { tiempos: { salio: inicioCountdownFallbackRef.current[key] } },
+      minutosEntregaAuto
+    );
   };
 
   useEffect(() => {
@@ -761,8 +781,19 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       return true;
     };
 
-    // Listeners usan comandasRef.current y refrescarComandasRef.current (siempre actuales)
-    socket.on('plato-actualizado', (data) => {
+    const itemsEstadoPlatoDesdeEvento = (data) => {
+      if (Array.isArray(data?.platos) && data.platos.length) {
+        return data.platos
+          .filter((p) => p?.platoId && p?.nuevoEstado)
+          .map((p) => ({ platoId: p.platoId, nuevoEstado: p.nuevoEstado, pagoAdelantado: p.pagoAdelantado }));
+      }
+      if (data?.platoId && data?.nuevoEstado) {
+        return [{ platoId: data.platoId, nuevoEstado: data.nuevoEstado, pagoAdelantado: data.pagoAdelantado }];
+      }
+      return [];
+    };
+
+    const aplicarEstadosPlatoLocal = (data) => {
       setLocalConnectionStatus('online-active');
       setTimeout(() => setLocalConnectionStatus(connectionStatus || 'conectado'), 2000);
 
@@ -775,20 +806,24 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         const dataComandaId = data.comandaId?.toString ? data.comandaId.toString() : data.comandaId;
         return cId === dataComandaId;
       });
-      
+
       if (comandaIndex === -1 && !esNuestraMesa) return;
 
-      if (data.nuevoEstado === 'recoger') {
-        const comandaLocal = comandaIndex !== -1 ? comandasActuales[comandaIndex] : null;
+      const items = itemsEstadoPlatoDesdeEvento(data);
+      const comandaLocal = comandaIndex !== -1 ? comandasActuales[comandaIndex] : null;
+      for (const item of items) {
+        if (item.nuevoEstado !== 'recoger') continue;
         notifyPlatoListoLocal({
           ...data,
+          platoId: item.platoId,
+          nuevoEstado: item.nuevoEstado,
           comandaNumber: data.comandaNumber ?? comandaLocal?.comandaNumber,
           comanda: data.comanda || comandaLocal,
           mesaNumero: data.mesaNumero ?? mesa?.nummesa ?? mesa?.numero,
         });
       }
 
-      if (comandaIndex !== -1 && data.platoId && data.nuevoEstado) {
+      if (comandaIndex !== -1 && items.length > 0) {
         setComandasState(prev => {
           const nuevasComandas = [...prev];
           const comanda = nuevasComandas[comandaIndex];
@@ -796,39 +831,48 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             setTimeout(() => refrescarComandasRef.current?.(), 100);
             return prev;
           }
-          const platoIdStr = data.platoId?.toString ? data.platoId.toString() : data.platoId;
-          const platoIndex = comanda.platos.findIndex(p => {
-            const pId = p.plato?._id?.toString ? p.plato._id.toString() : p.plato?.toString ? p.plato.toString() : p.platoId?.toString ? p.platoId.toString() : p.plato;
-            return pId === platoIdStr;
-          });
-          if (platoIndex === -1) {
-            setTimeout(() => refrescarComandasRef.current?.(), 100);
-            return prev;
-          }
           const nuevaComanda = { ...comanda };
           const nuevosPlatos = [...nuevaComanda.platos];
-          const platoActualizado = { ...nuevosPlatos[platoIndex] };
-          platoActualizado.estado = data.nuevoEstado;
-          if (data.pagoAdelantado !== undefined) {
-            platoActualizado.pagoAdelantado = data.pagoAdelantado;
+          let alguno = false;
+          let faltaMatch = false;
+          const ts = timestampEstadoPlatoLocal(data.timestamp);
+          for (const item of items) {
+            const platoIndex = indicePlatoPorEventoId(nuevosPlatos, item.platoId);
+            if (platoIndex === -1) {
+              faltaMatch = true;
+              continue;
+            }
+            const platoActualizado = { ...nuevosPlatos[platoIndex] };
+            platoActualizado.estado = item.nuevoEstado;
+            if (item.pagoAdelantado !== undefined) {
+              platoActualizado.pagoAdelantado = item.pagoAdelantado;
+            }
+            if (!platoActualizado.tiempos) platoActualizado.tiempos = {};
+            platoActualizado.tiempos[item.nuevoEstado] = ts;
+            nuevosPlatos[platoIndex] = platoActualizado;
+            alguno = true;
           }
-          if (!platoActualizado.tiempos) platoActualizado.tiempos = {};
-          platoActualizado.tiempos[data.nuevoEstado] = data.timestamp || new Date();
-          nuevosPlatos[platoIndex] = platoActualizado;
+          if (faltaMatch) setTimeout(() => refrescarComandasRef.current?.(), 100);
+          if (!alguno) {
+            if (!faltaMatch) setTimeout(() => refrescarComandasRef.current?.(), 100);
+            return prev;
+          }
           nuevaComanda.platos = nuevosPlatos;
           nuevasComandas[comandaIndex] = nuevaComanda;
           try {
-            // SALIO: haptic de éxito cuando el plato sale de cocina o está listo para recoger
-            if (data.nuevoEstado === 'recoger' || data.nuevoEstado === 'salio') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            const haySalioORecoger = items.some((it) => it.nuevoEstado === 'recoger' || it.nuevoEstado === 'salio');
+            if (haySalioORecoger) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           } catch (_) {}
           return nuevasComandas;
         });
-
       } else {
         refrescarComandasRef.current?.();
       }
-    });
+    };
+
+    socket.on('plato-actualizado', aplicarEstadosPlatoLocal);
+    socket.on('plato-actualizado-batch', aplicarEstadosPlatoLocal);
 
     socket.on('plato-agregado', (data) => {
       if (eventoDeEstaPantalla(data)) refrescarComandasRef.current?.();
@@ -960,6 +1004,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       else socket.emit('leave-mesa', mesaId);
       }
       socket.off('plato-actualizado');
+      socket.off('plato-actualizado-batch');
       socket.off('plato-agregado');
       socket.off('plato-entregado');
       socket.off('comanda-actualizada');
@@ -982,7 +1027,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     useCallback(() => {
       refrescarComandas();
       configuracionService.obtenerConfigMoneda(true).then(setConfigMoneda).catch(() => {});
-      configuracionService.minutosEntregaAutomaticaMozos().then(setMinutosEntregaAuto).catch(() => {});
+      configuracionService.minutosEntregaAutomaticaMozos(true).then(setMinutosEntregaAuto).catch(() => {});
     }, [refrescarComandas])
   );
   
@@ -1244,12 +1289,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
     // v2.0: Normalizar complementos seleccionados (asegurar que tengan cantidad)
     // v3.0: preservar precio del extra (snapshot) si vino del Modal
-    const complementosNormalizados = complementosSeleccionados.map(comp => ({
-      grupo: comp.grupo,
-      opcion: comp.opcion,
-      cantidad: comp.cantidad || 1, // Si no tiene cantidad, asumir 1 (legacy)
-      ...(comp.precio != null ? { precio: Number(comp.precio) || 0 } : {})
-    }));
+    const complementosNormalizados = complementosSeleccionados.map(camposSnapshotComplemento);
 
     const platoConComplementos = {
       ...plato,
@@ -1298,12 +1338,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       if (pComps.length !== newComps.length) return false;
       if (pNota !== newNota) return false;
 
-      // v2.0: Comparar incluyendo cantidad
-      return pComps.every(pc => 
-        newComps.some(nc => nc.grupo === pc.grupo && nc.opcion === pc.opcion && nc.cantidad === pc.cantidad)
-      ) && newComps.every(nc =>
-        pComps.some(pc => pc.grupo === nc.grupo && pc.opcion === nc.opcion && pc.cantidad === nc.cantidad)
-      );
+      // v2.0: Comparar incluyendo cantidad y variación
+      return mismasGuarniciones(pComps, newComps);
     });
 
     if (existsWithSameComplements) {
@@ -1338,12 +1374,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             parte.complementos,
             { afectanPrecio: afectan }
           );
-        const comps = (parte.complementos || []).map((comp) => ({
-          grupo: comp.grupo,
-          opcion: comp.opcion,
-          cantidad: comp.cantidad || 1,
-          ...(comp.precio != null ? { precio: Number(comp.precio) || 0 } : {}),
-        }));
+        const comps = (parte.complementos || []).map(camposSnapshotComplemento);
         const serie = normalizarNumeroSerie(numeroSerie || linea.numeroSerie);
         const next = platosEditadosRef.current.map((p) => {
           if ((p.instanceId || p._id) !== editandoInstanceId) return p;
@@ -3081,7 +3112,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                           {plato.complementosSeleccionados.filter((comp) => !esSeleccionVariantePlato(comp, plato)).map((comp, ci) => {
                             // v2.0: Mostrar cantidad si es mayor a 1
                             const cantidadComp = cantidadGuarnicionEfectiva(comp, plato);
-                            const opcionTexto = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion;
+                            const opcionTexto = textoOpcionComplemento(comp);
                             
                             return (
                               <Text
@@ -3507,7 +3538,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                                 {plato.complementosSeleccionados.filter((comp) => !esSeleccionVariantePlato(comp, plato)).map((comp, ci) => {
                                   // v2.0: Mostrar cantidad si es mayor a 1
                                   const cantidadComp = cantidadGuarnicionEfectiva(comp, plato);
-                                  const opcionTexto = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion;
+                                  const opcionTexto = textoOpcionComplemento(comp);
                                   
                                   return (
                                     <Text
@@ -3923,7 +3954,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                               {plato.complementosSeleccionados.filter((comp) => !esSeleccionVariantePlato(comp, plato)).map((comp, ci) => {
                                 // v2.0: Mostrar cantidad si es mayor a 1
                                 const cantidadComp = cantidadGuarnicionEfectiva(comp, plato);
-                                const opcionTexto = Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion;
+                                const opcionTexto = textoOpcionComplemento(comp);
                                 
                                 return (
                                   <Text

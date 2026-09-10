@@ -39,7 +39,7 @@ import { resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiv
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from "../../../utils/numeroSeriePlato";
 import { mismaVariantePlato, esSeleccionVariantePlato, nombreVisibleConVariante } from "../../../utils/variantePlato";
 import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, platoCoincideBusqueda, ordenarPlatosPorCodigoBusqueda, expandirFilasBuscadorPlatos } from "../../../utils/platoBuscador";
-import { calcularPrecioUnitarioConComplementos } from "../../../utils/precioComplementos";
+import { calcularPrecioUnitarioConComplementos, textoOpcionComplemento, camposSnapshotComplemento } from "../../../utils/precioComplementos";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
 import configuracionService from "../../../services/configuracionService";
@@ -736,12 +736,7 @@ const OrdenesScreen = ({ route }) => {
           : (tipoServicioModal === TIPO_PARA_LLEVAR ? TIPO_PARA_LLEVAR : TIPO_MESA)));
     const instanceId = `${plato._id}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-    const complementosNormalizados = complementosSeleccionados.map(comp => ({
-      grupo: comp.grupo,
-      opcion: comp.opcion,
-      cantidad: comp.cantidad || 1,
-      ...(comp.precio != null ? { precio: Number(comp.precio) || 0 } : {})
-    }));
+    const complementosNormalizados = complementosSeleccionados.map(camposSnapshotComplemento);
 
     const platoConComplementos = {
       ...plato,
@@ -846,12 +841,7 @@ const OrdenesScreen = ({ route }) => {
           parte0.complementos,
           { afectanPrecio: afectan }
         );
-        const comps0 = (parte0.complementos || []).map((comp) => ({
-          grupo: comp.grupo,
-          opcion: comp.opcion,
-          cantidad: comp.cantidad || 1,
-          ...(comp.precio != null ? { precio: Number(comp.precio) || 0 } : {}),
-        }));
+        const comps0 = (parte0.complementos || []).map(camposSnapshotComplemento);
         const serie = normalizarNumeroSerie(numeroSerie || linea.numeroSerie);
         const cant0 = Math.max(1, Number(parte0.cantidad) || 1);
         const nextPlatos = selectedPlatosRef.current.map((p) => {
@@ -1938,7 +1928,7 @@ const OrdenesScreen = ({ route }) => {
                             <View key={idx} style={styles.complementoBadge}>
                               <MaterialCommunityIcons name="check" size={12} color={theme.colors.secondary} />
                               <Text style={styles.complementoText}>
-                                {comp.opcion} x{cantidadComp}
+                                {textoOpcionComplemento(comp)} x{cantidadComp}
                               </Text>
                             </View>
                           );

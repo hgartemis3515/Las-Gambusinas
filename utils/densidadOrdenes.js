@@ -18,6 +18,11 @@ export const CHIP_CATEGORIA_ESCALA_PRESETS = [
   { label: 'Extra', value: 145 },
 ];
 
+export const CUADRO_CATEGORIA_ESCALA_MIN = 70;
+export const CUADRO_CATEGORIA_ESCALA_MAX = 160;
+export const CUADRO_CATEGORIA_ESCALA_DEFAULT = 100;
+export const CUADRO_CATEGORIA_ESCALA_PRESETS = CHIP_CATEGORIA_ESCALA_PRESETS;
+
 export function clampGapCategorias(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return GAP_CATEGORIAS_DEFAULT;
@@ -36,7 +41,13 @@ export function clampChipCategoriaEscala(v) {
   return Math.round(Math.max(CHIP_CATEGORIA_ESCALA_MIN, Math.min(CHIP_CATEGORIA_ESCALA_MAX, n)));
 }
 
-/** Padding, fuente e icono de los cuadros de categoría (códigos / nombres). */
+export function clampCuadroCategoriaEscala(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return CUADRO_CATEGORIA_ESCALA_DEFAULT;
+  return Math.round(Math.max(CUADRO_CATEGORIA_ESCALA_MIN, Math.min(CUADRO_CATEGORIA_ESCALA_MAX, n)));
+}
+
+/** Padding, fuente e icono de los chips de categoría (códigos / nombres en el buscador). */
 export function estiloChipCategoria(escala) {
   const t = clampChipCategoriaEscala(escala) / 100;
   return {
@@ -47,6 +58,26 @@ export function estiloChipCategoria(escala) {
     iconSize: Math.max(12, Math.round(16 * t)),
     minHeight: Math.max(24, Math.round(28 * t)),
     gap: Math.max(2, Math.round(4 * t)),
+  };
+}
+
+/** Cuadros del modal Categorías: columnas según el tamaño pedido y el ancho de pantalla. */
+export function layoutCuadrosCategoria(usableWidth, escala) {
+  const t = clampCuadroCategoriaEscala(escala) / 100;
+  const w = Math.max(160, Number(usableWidth) || 280);
+  const gap = Math.max(6, Math.round(8 * t));
+  const target = Math.round(102 * t);
+  let cols = Math.floor((w + gap) / (target + gap));
+  cols = Math.max(2, Math.min(4, cols || 2));
+  const cardW = (w - gap * (cols - 1)) / cols;
+  return {
+    cols,
+    gap,
+    cardW,
+    imgH: Math.round(cardW * 0.72),
+    fontSize: Math.max(10, Math.round(12 * (cardW / 110))),
+    codeFontSize: Math.max(11, Math.round(15 * (cardW / 110))),
+    iconSize: Math.max(20, Math.round(28 * (cardW / 110))),
   };
 }
 
@@ -72,6 +103,9 @@ export function parseDensidadOrdenes(raw) {
     compacto: clampCompacto(obj.compacto != null ? obj.compacto : COMPACTO_DEFAULT),
     chipCategoriaEscala: clampChipCategoriaEscala(
       obj.chipCategoriaEscala != null ? obj.chipCategoriaEscala : CHIP_CATEGORIA_ESCALA_DEFAULT
+    ),
+    cuadroCategoriaEscala: clampCuadroCategoriaEscala(
+      obj.cuadroCategoriaEscala != null ? obj.cuadroCategoriaEscala : CUADRO_CATEGORIA_ESCALA_DEFAULT
     ),
   };
 }

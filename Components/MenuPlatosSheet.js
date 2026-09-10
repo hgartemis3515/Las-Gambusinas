@@ -28,7 +28,7 @@ import { useDensidadOrdenes } from '../context/DensidadOrdenesContext';
 import { useOrdenesAcciones } from '../context/OrdenesAccionesContext';
 import { estiloBotonCerrarMenu } from '../utils/botonesMenuOrden';
 import { CATEGORIA_ETIQUETA_CODIGO, CATEGORIA_ETIQUETA_NOMBRE } from '../utils/ordenesAccionesPrefs';
-import { estiloChipCategoria } from '../utils/densidadOrdenes';
+import { estiloChipCategoria, layoutCuadrosCategoria } from '../utils/densidadOrdenes';
 import { urlMediaServidor } from '../utils/mediaUrl';
 
 const MIN_LIST = 140;
@@ -70,16 +70,21 @@ function categoriaIcon(categoria) {
   return '🍽️';
 }
 
-function CategoriaFiltroCard({ width, uri, codigo, label, selected, onPress, theme, placeholderIcon }) {
+function CategoriaFiltroCard({ width, uri, codigo, label, selected, onPress, theme, placeholderIcon, imgH, fontSize, codeFontSize, iconSize }) {
   const [fail, setFail] = useState(false);
   useEffect(() => { setFail(false); }, [uri]);
   const showImg = Boolean(uri) && !fail;
   const code = String(codigo || '').trim();
+  const cardW = Number(width) || 110;
+  const hImg = imgH != null ? imgH : Math.round(cardW * 0.72);
+  const fSize = fontSize != null ? fontSize : Math.max(10, Math.round(12 * (cardW / 110)));
+  const cSize = codeFontSize != null ? codeFontSize : Math.max(11, Math.round(15 * (cardW / 110)));
+  const iSize = iconSize != null ? iconSize : Math.max(20, Math.round(28 * (cardW / 110)));
   return (
     <TouchableOpacity
       onPress={onPress}
       style={{
-        width,
+        width: cardW,
         borderRadius: 12,
         borderWidth: selected ? 2 : 1,
         borderColor: selected ? theme.colors.primary : theme.colors.border,
@@ -92,7 +97,7 @@ function CategoriaFiltroCard({ width, uri, codigo, label, selected, onPress, the
       <View
         style={{
           width: '100%',
-          height: Math.round(width * 0.72),
+          height: hImg,
           backgroundColor: theme.colors.border,
           alignItems: 'center',
           justifyContent: 'center',
@@ -108,7 +113,7 @@ function CategoriaFiltroCard({ width, uri, codigo, label, selected, onPress, the
         ) : (
           <MaterialCommunityIcons
             name={placeholderIcon || 'silverware-fork-knife'}
-            size={28}
+            size={iSize}
             color={theme.colors.text.light}
           />
         )}
@@ -124,7 +129,7 @@ function CategoriaFiltroCard({ width, uri, codigo, label, selected, onPress, the
               borderRadius: 6,
             }}
           >
-            <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 15 }}>
+            <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: cSize }}>
               {code}
             </Text>
           </View>
@@ -135,7 +140,7 @@ function CategoriaFiltroCard({ width, uri, codigo, label, selected, onPress, the
         style={{
           paddingHorizontal: 6,
           paddingVertical: 6,
-          fontSize: 12,
+          fontSize: fSize,
           fontWeight: '700',
           textAlign: 'center',
           color: selected ? theme.colors.primary : theme.colors.text.primary,
@@ -191,7 +196,7 @@ export default function MenuPlatosSheet({
   const styles = makeStyles(theme);
   const { size: sizeEnviar } = useBotonEnviarOrden();
   const { cerrarColor } = useBotonesMenuOrden();
-  const { gapCategorias, chipCategoriaEscala } = useDensidadOrdenes();
+  const { gapCategorias, chipCategoriaEscala, cuadroCategoriaEscala } = useDensidadOrdenes();
   const { categoriaEtiqueta, setCategoriaEtiqueta, mostrarBuscarCategorias } = useOrdenesAcciones();
   const chipEstilo = estiloChipCategoria(chipCategoriaEscala);
   const estiloCerrar = estiloBotonCerrarMenu(sizeEnviar, cerrarColor);
@@ -218,7 +223,14 @@ export default function MenuPlatosSheet({
     );
   }, [catsFiltro, filtroCatQ]);
 
-  const filtroCardW = Math.max(88, Math.floor((Math.min(winW, 560) - 48) / 3));
+  const [filtroGridW, setFiltroGridW] = useState(0);
+  const filtroLayout = useMemo(
+    () => layoutCuadrosCategoria(
+      filtroGridW > 0 ? filtroGridW : Math.max(160, Math.min(winW, 560) - 48),
+      cuadroCategoriaEscala
+    ),
+    [filtroGridW, winW, cuadroCategoriaEscala]
+  );
 
   useEffect(() => {
     if (!tipoPlatoFiltro) setFiltroCatOpen(false);
@@ -635,10 +647,20 @@ export default function MenuPlatosSheet({
                     />
                   ) : null}
                   <ScrollView keyboardShouldPersistTaps="handled" style={styles.filtroList}>
-                    <View style={styles.filtroGrid}>
+                    <View
+                      style={[styles.filtroGrid, { gap: filtroLayout.gap }]}
+                      onLayout={(e) => {
+                        const w = e.nativeEvent.layout.width;
+                        if (w > 0 && Math.abs(w - filtroGridW) > 1) setFiltroGridW(w);
+                      }}
+                    >
                       {!filtroCatQ.trim() ? (
                         <CategoriaFiltroCard
-                          width={filtroCardW}
+                          width={filtroLayout.cardW}
+                          imgH={filtroLayout.imgH}
+                          fontSize={filtroLayout.fontSize}
+                          codeFontSize={filtroLayout.codeFontSize}
+                          iconSize={filtroLayout.iconSize}
                           uri=""
                           codigo=""
                           label="Favoritos"
@@ -654,7 +676,11 @@ export default function MenuPlatosSheet({
                       {catsFiltroVisibles.map((c) => (
                         <CategoriaFiltroCard
                           key={c.nombre}
-                          width={filtroCardW}
+                          width={filtroLayout.cardW}
+                          imgH={filtroLayout.imgH}
+                          fontSize={filtroLayout.fontSize}
+                          codeFontSize={filtroLayout.codeFontSize}
+                          iconSize={filtroLayout.iconSize}
                           uri={urlMediaServidor(c.imagenUrl)}
                           codigo={c.codigoMozo}
                           label={String(c.nombre || '').split('(')[0].trim()}

@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cantidadGuarnicionEfectiva } from '../utils/platoGuarniciones';
+import { textoOpcionComplemento } from '../utils/precioComplementos';
 import { esSeleccionVariantePlato, nombreVisibleConVariante } from '../utils/variantePlato';
 import { esLlevarColor, etiquetaLlevarMozo } from '../utils/tipoServicio';
 
@@ -92,7 +93,7 @@ const FilaPlatoCompacta = ({
                   lineHeight: 16,
                 }}
               >
-                · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion} x{cantidadGuarnicionEfectiva(comp, plato)}
+                · {textoOpcionComplemento(comp)} x{cantidadGuarnicionEfectiva(comp, plato)}
               </Text>
             ))}
           </View>

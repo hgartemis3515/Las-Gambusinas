@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,8 @@ import { useBotonCantidadPlato } from '../context/BotonCantidadPlatoContext';
 import { useBotonEnviarOrden } from '../context/BotonEnviarOrdenContext';
 import { useBotonesMenuOrden } from '../context/BotonesMenuOrdenContext';
 import { useAbrirMenuNuevaOrden } from '../context/AbrirMenuNuevaOrdenContext';
+import { useLogicaPachamanca } from '../context/LogicaPachamancaContext';
+import { LOGICAS_PACHAMANCA } from '../utils/logicaPachamanca';
 import { useDensidadOrdenes } from '../context/DensidadOrdenesContext';
 import { useOrdenesAcciones } from '../context/OrdenesAccionesContext';
 import { themeLight } from '../constants/theme';
@@ -53,6 +55,11 @@ import {
   CHIP_CATEGORIA_ESCALA_MAX,
   CHIP_CATEGORIA_ESCALA_DEFAULT,
   CHIP_CATEGORIA_ESCALA_PRESETS,
+  CUADRO_CATEGORIA_ESCALA_MIN,
+  CUADRO_CATEGORIA_ESCALA_MAX,
+  CUADRO_CATEGORIA_ESCALA_DEFAULT,
+  CUADRO_CATEGORIA_ESCALA_PRESETS,
+  layoutCuadrosCategoria,
 } from '../utils/densidadOrdenes';
 import {
   AGREGAR_PLATO_COLOR_DEFAULT,
@@ -159,6 +166,92 @@ function ColorSwatches({ value, onChange, presets }) {
   );
 }
 
+const PREVIEW_CATS_MODAL = [
+  { label: 'Favoritos', codigo: '', icon: 'star' },
+  { label: 'Entradas', codigo: 'ENT', icon: 'silverware-fork-knife' },
+  { label: 'Parrilla', codigo: 'PAR', icon: 'grill' },
+  { label: 'Bebidas', codigo: 'BEB', icon: 'cup' },
+  { label: 'Postres', codigo: 'POS', icon: 'cake-variant' },
+  { label: 'Guarnición', codigo: 'GUA', icon: 'bowl-mix' },
+];
+
+function VistaPreviaModalCategorias({ theme, escala, etiquetaCodigo }) {
+  const [gridW, setGridW] = useState(0);
+  const layout = layoutCuadrosCategoria(gridW > 0 ? gridW : 280, escala);
+  return (
+    <View
+      style={[
+        styles.previewCatModal,
+        { borderColor: theme.colors.border, backgroundColor: theme.colors.background },
+      ]}
+    >
+      <View style={styles.previewCatHeader}>
+        <Text style={[styles.previewCatTitle, { color: theme.colors.text.primary }]}>Categorías</Text>
+        <Text style={[styles.previewCatClose, { color: theme.colors.text.secondary }]}>X</Text>
+      </View>
+      <View
+        style={[styles.previewCatGrid, { gap: layout.gap }]}
+        onLayout={(e) => {
+          const w = e.nativeEvent.layout.width;
+          if (w > 0 && Math.abs(w - gridW) > 1) setGridW(w);
+        }}
+      >
+        {PREVIEW_CATS_MODAL.map((c) => {
+          const showCode = etiquetaCodigo && c.codigo;
+          return (
+            <View
+              key={c.label}
+              style={{
+                width: layout.cardW,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: theme.colors.border,
+                backgroundColor: theme.colors.surface,
+                overflow: 'hidden',
+              }}
+            >
+              <View
+                style={{
+                  height: layout.imgH,
+                  backgroundColor: theme.colors.border,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <MaterialCommunityIcons
+                  name={c.icon}
+                  size={layout.iconSize}
+                  color={theme.colors.text.light}
+                />
+                {showCode ? (
+                  <View style={styles.previewCatCodeBadge}>
+                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: layout.codeFontSize }}>
+                      {c.codigo}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+              <Text
+                numberOfLines={2}
+                style={{
+                  paddingHorizontal: 4,
+                  paddingVertical: 5,
+                  fontSize: layout.fontSize,
+                  fontWeight: '700',
+                  textAlign: 'center',
+                  color: theme.colors.text.primary,
+                }}
+              >
+                {etiquetaCodigo && c.codigo ? c.codigo : c.label}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
@@ -167,6 +260,7 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
   const { omitirConfirmacionPago, setOmitirConfirmacionPago } = useOmitirConfirmacionPago();
   const { ocultarPropina, setOcultarPropina } = useOcultarPropina();
   const { abrirMenuNuevaOrden, setAbrirMenuNuevaOrden } = useAbrirMenuNuevaOrden();
+  const { logicaPachamanca, setLogicaPachamanca } = useLogicaPachamanca();
   const {
     size: qtySize,
     color: qtyColor,
@@ -205,9 +299,11 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
     gapCategorias,
     compacto,
     chipCategoriaEscala,
+    cuadroCategoriaEscala,
     setGapCategorias,
     setCompacto,
     setChipCategoriaEscala,
+    setCuadroCategoriaEscala,
     reset: resetDensidad,
   } = useDensidadOrdenes();
   const {
@@ -346,6 +442,41 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
               accessibilityLabel="Abrir menú al crear una nueva orden"
             />
           </View>
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Pachamanca / OP sabores
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            Cómo el mozo arma las combinaciones. Cocina ve cada pachamanca con sus sabores (de a 1, 2, 3 o 4). No se agrupa Pollo +2 suelto.
+          </Text>
+          <View style={styles.presets}>
+            {LOGICAS_PACHAMANCA.map((p) => {
+              const active = logicaPachamanca === p.id;
+              return (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: active ? theme.colors.primary + '22' : theme.colors.background,
+                      borderColor: active ? theme.colors.primary : theme.colors.border,
+                    },
+                  ]}
+                  onPress={() => setLogicaPachamanca(p.id)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.chipText, { color: active ? theme.colors.primary : theme.colors.text.secondary }]}>
+                    {p.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={[styles.switchHint, { color: theme.colors.text.secondary, marginTop: 6 }]}>
+            {(LOGICAS_PACHAMANCA.find((p) => p.id === logicaPachamanca) || LOGICAS_PACHAMANCA[0]).hint}
+          </Text>
 
           <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
 
@@ -802,10 +933,10 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
             Órdenes: espacio y categorías
           </Text>
           <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
-            En el buscador, a la derecha de Favoritos: nombre o código de Gestionar categorías, y el tamaño de esos cuadros.
+            En el buscador, a la derecha de Favoritos: nombre o código de Gestionar categorías, y el tamaño de esos chips.
           </Text>
           <Text style={[styles.label, { color: theme.colors.text.primary, marginBottom: 10 }]}>
-            Cuadros de categoría
+            Chips de categoría
           </Text>
           <View style={styles.presets}>
             {[
@@ -851,7 +982,7 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
           </View>
           <View style={styles.rowLabel}>
             <Text style={[styles.label, { color: theme.colors.text.primary }]}>
-              Tamaño de los cuadros
+              Tamaño de los chips
             </Text>
             <Text style={[styles.pct, { color: theme.colors.primary }]}>{chipCategoriaEscala}%</Text>
           </View>
@@ -878,6 +1009,55 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
                     },
                   ]}
                   onPress={() => setChipCategoriaEscala(p.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.chipText, { color: active ? theme.colors.primary : theme.colors.text.secondary }]}>
+                    {p.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary, marginTop: 18 }]}>
+            Modal de categorías
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            Vista previa del modal al filtrar categorías. El tamaño de los cuadros se ajusta a tu pantalla y se guarda en tu usuario.
+          </Text>
+          <VistaPreviaModalCategorias
+            theme={theme}
+            escala={cuadroCategoriaEscala}
+            etiquetaCodigo={categoriaEtiqueta === CATEGORIA_ETIQUETA_CODIGO}
+          />
+          <View style={styles.rowLabel}>
+            <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+              Tamaño de los cuadros
+            </Text>
+            <Text style={[styles.pct, { color: theme.colors.primary }]}>{cuadroCategoriaEscala}%</Text>
+          </View>
+          <ValueSlider
+            value={cuadroCategoriaEscala}
+            onChange={setCuadroCategoriaEscala}
+            min={CUADRO_CATEGORIA_ESCALA_MIN}
+            max={CUADRO_CATEGORIA_ESCALA_MAX}
+            trackColor={theme.colors.border}
+            fillColor={theme.colors.primary}
+            thumbColor={theme.colors.primary}
+          />
+          <View style={styles.presets}>
+            {CUADRO_CATEGORIA_ESCALA_PRESETS.map((p) => {
+              const active = cuadroCategoriaEscala === p.value;
+              return (
+                <TouchableOpacity
+                  key={`cuadro-${p.value}`}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: active ? theme.colors.primary + '22' : theme.colors.background,
+                      borderColor: active ? theme.colors.primary : theme.colors.border,
+                    },
+                  ]}
+                  onPress={() => setCuadroCategoriaEscala(p.value)}
                   activeOpacity={0.7}
                 >
                   <Text style={[styles.chipText, { color: active ? theme.colors.primary : theme.colors.text.secondary }]}>
@@ -917,7 +1097,7 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
             fillColor={theme.colors.primary}
             thumbColor={theme.colors.primary}
           />
-          {(gapCategorias !== GAP_CATEGORIAS_DEFAULT || compacto !== COMPACTO_DEFAULT || categoriaEtiqueta !== CATEGORIA_ETIQUETA_NOMBRE || chipCategoriaEscala !== CHIP_CATEGORIA_ESCALA_DEFAULT || mostrarBuscarCategorias !== MOSTRAR_BUSCAR_CATEGORIAS_DEFAULT) && (
+          {(gapCategorias !== GAP_CATEGORIAS_DEFAULT || compacto !== COMPACTO_DEFAULT || categoriaEtiqueta !== CATEGORIA_ETIQUETA_NOMBRE || chipCategoriaEscala !== CHIP_CATEGORIA_ESCALA_DEFAULT || cuadroCategoriaEscala !== CUADRO_CATEGORIA_ESCALA_DEFAULT || mostrarBuscarCategorias !== MOSTRAR_BUSCAR_CATEGORIAS_DEFAULT) && (
             <TouchableOpacity
               style={[styles.reset, { borderColor: theme.colors.border }]}
               onPress={() => {
@@ -1061,6 +1241,39 @@ const styles = StyleSheet.create({
   previewWrap: {
     alignItems: 'center',
     marginBottom: 20,
+  },
+  previewCatModal: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 12,
+  },
+  previewCatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  previewCatTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  previewCatClose: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  previewCatGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  previewCatCodeBadge: {
+    position: 'absolute',
+    left: 6,
+    top: 6,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   previewBadge: {
     flexDirection: 'row',

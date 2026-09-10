@@ -7,6 +7,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import moment from 'moment-timezone';
 import { PUNTOS_ANCHO } from './boucherPrint';
 import { loadLogoBytes } from './logoPlantilla';
+import { textoOpcionComplemento } from './precioComplementos';
 
 const MARGIN_X = 6;
 const CONTENT_W = PUNTOS_ANCHO - MARGIN_X * 2;
@@ -287,9 +288,7 @@ export async function generarPdfBoucherNativo(opts) {
         { size: SIZE_SM }
       );
       complementos.forEach((comp) => {
-        const opcionStr = Array.isArray(comp.opcion)
-          ? comp.opcion.join(', ')
-          : comp.opcion || comp.nombre || '';
+        const opcionStr = textoOpcionComplemento(comp);
         const extra = comp.precio > 0 ? ` (+${comp.precio.toFixed(2)})` : '';
         addWrapped(`  └ ${opcionStr}${extra}`, 'left', { size: SIZE_SM });
       });

@@ -1,4 +1,4 @@
-import { getNombreOpcion } from './precioComplementos';
+import { getNombreOpcion, textoOpcionComplemento } from './precioComplementos';
 import {
   partirLineaPorVariante,
   grupoEsVariantePlato,
@@ -50,8 +50,9 @@ function claveGuarnicion(comp) {
   const grupo = String(comp?.grupo || '').trim().toLowerCase();
   const raw = Array.isArray(comp?.opcion) ? comp.opcion.join(',') : (comp?.opcion || comp?.nombre || '');
   const opcion = String(raw).trim().toLowerCase();
+  const variacion = String(comp?.variacion || '').trim().toLowerCase();
   const cant = Math.max(1, Number(comp?.cantidad) || 1);
-  return `${grupo}|${opcion}|${cant}`;
+  return `${grupo}|${opcion}|${variacion}|${cant}`;
 }
 
 /** True si dos snapshots son la misma receta (grupo + opción + cantidad por unidad). */
@@ -70,7 +71,7 @@ export function textosGuarnicionesTotales(comps, nPlatos) {
   return (Array.isArray(comps) ? comps : [])
     .filter((c) => c && (c.opcion || c.nombre))
     .map((c) => {
-      const opcion = Array.isArray(c.opcion) ? c.opcion.join(', ') : String(c.opcion || c.nombre || '').trim();
+      const opcion = textoOpcionComplemento(c);
       const total = cantidadGuarnicionEfectiva(c, { cantidad: n });
       return total > 1 ? `${opcion} ×${total}` : opcion;
     })

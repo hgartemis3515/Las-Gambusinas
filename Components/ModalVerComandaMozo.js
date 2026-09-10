@@ -12,7 +12,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import moment from "moment-timezone";
 import { useTheme } from "../context/ThemeContext";
 import { themeLight } from "../constants/theme";
-import { formatPendienteCobro } from "../helpers/pendienteCobroMozo";
+import { textoOpcionComplemento } from "../utils/precioComplementos";
 import { esFilaComandaSinMesa } from "../utils/sinMesaOrden";
 
 const ZONA = "America/Lima";
@@ -94,9 +94,7 @@ function cantidadPlato(p, c, i) {
 
 function labelComplemento(comp) {
   if (!comp) return "";
-  const op = Array.isArray(comp.opcion)
-    ? comp.opcion.join(", ")
-    : (comp.opcion || comp.nombre || "");
+  const op = textoOpcionComplemento(comp);
   const cant = Number(comp.cantidad) || 1;
   if (!op) return "";
   return `· ${op}${cant > 1 ? ` x${cant}` : ""}`;

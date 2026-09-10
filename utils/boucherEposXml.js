@@ -3,6 +3,7 @@
  * Sin altura de página: el corte (<cut type="feed"/>) elimina papel en blanco residual.
  */
 import moment from 'moment-timezone';
+import { textoOpcionComplemento } from './precioComplementos';
 
 const EPOS_NS = 'http://www.epson-pos.com/schemas/2011/03/epos-print';
 const CHARS_LINEA = 32;
@@ -239,9 +240,7 @@ export function generarXmlBoucher({
         )
       );
       complementos.forEach((comp) => {
-        const opcionStr = Array.isArray(comp.opcion)
-          ? comp.opcion.join(', ')
-          : comp.opcion || comp.nombre || '';
+        const opcionStr = textoOpcionComplemento(comp);
         const extra = comp.precio > 0 ? ` +${comp.precio.toFixed(2)}` : '';
         parts.push(texto(`  └ ${opcionStr}${extra}`));
       });

@@ -33,6 +33,7 @@ import { filtrarComandasActivas, filtrarComandasPorIds } from "../../../utils/co
 import { esSeleccionSinMesa } from "../../../utils/sinMesaOrden";
 import { esLlevarColor, etiquetaLlevarMozo } from "../../../utils/tipoServicio";
 import { cantidadGuarnicionEfectiva } from "../../../utils/platoGuarniciones";
+import { textoOpcionComplemento } from "../../../utils/precioComplementos";
 import { mostrarOpcionesComanda } from "../../../services/comandaPrint";
 import {
   listarPlatosPagables,
@@ -2452,7 +2453,7 @@ const PagosScreen = () => {
                                 lineHeight: 16,
                               }}
                             >
-                              · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion} x{cantidadGuarnicionEfectiva(comp, platoItem)}
+                              · {textoOpcionComplemento(comp)} x{cantidadGuarnicionEfectiva(comp, platoItem)}
                             </Text>
                           ))}
                         </View>
@@ -2504,7 +2505,7 @@ const PagosScreen = () => {
                             fontStyle: 'italic',
                           }}
                         >
-                          · {Array.isArray(comp.opcion) ? comp.opcion.join(', ') : comp.opcion} x
+                          · {textoOpcionComplemento(comp)} x
                           {cantidadGuarnicionEfectiva(comp, item)}
                         </Text>
                       ))}

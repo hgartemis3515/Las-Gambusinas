@@ -154,9 +154,9 @@ export const editarEliminarTomadasPorCocinaHabilitadoMozos = async () => {
 };
 
 /** Minutos de espera salió → entregado. 0 = al instante. Default 15. */
-export const minutosEntregaAutomaticaMozos = async () => {
+export const minutosEntregaAutomaticaMozos = async (forceRefresh = false) => {
     try {
-        const config = await obtenerConfiguracion();
+        const config = await obtenerConfiguracion(forceRefresh);
         const n = Number(config?.mozos?.entregaAutomaticaMinutos);
         if (!Number.isFinite(n) || n < 0) return 15;
         return Math.min(180, Math.floor(n));
@@ -210,6 +210,9 @@ export const getConfiguracionPorDefecto = () => ({
     zonaHoraria: 'America/Lima',
     cocina: {
         entregarPlatoEnteroAbsoluto: true
+    },
+    mozos: {
+        entregaAutomaticaMinutos: 15
     },
     datosFiscales: {
         nombreComercial: 'Las Gambusinas',

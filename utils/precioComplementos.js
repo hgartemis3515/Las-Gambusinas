@@ -50,6 +50,65 @@ export function getPrecioOpcion(grupo, nombreOpcion) {
   return encontrada ? encontrada.precio : 0;
 }
 
+/** Variaciones de una opción de catálogo (Ensalada → Limón / Vinagreta). */
+export function variacionesDeOpcion(op) {
+  if (op == null || typeof op === 'string') return [];
+  const list = Array.isArray(op.variaciones) ? op.variaciones : [];
+  const seen = new Set();
+  const out = [];
+  for (const v of list) {
+    const nombre = typeof v === 'string' ? String(v).trim() : String(v?.nombre || '').trim();
+    if (!nombre) continue;
+    const key = nombre.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const precio = Number(typeof v === 'object' && v != null ? v.precio : 0);
+    out.push({
+      nombre,
+      precio: Number.isFinite(precio) && precio > 0 ? precio : 0,
+    });
+  }
+  return out;
+}
+
+export function getPrecioVariacion(grupo, nombreOpcion, nombreVar) {
+  const targetOp = String(nombreOpcion || '').trim().toLowerCase();
+  const targetV = String(nombreVar || '').trim().toLowerCase();
+  if (!grupo || !targetOp || !targetV) return 0;
+  const ops = Array.isArray(grupo.opciones) ? grupo.opciones : [];
+  for (const op of ops) {
+    const n = typeof op === 'string' ? op.trim() : String(op?.nombre || op?.opcion || '').trim();
+    if (n.toLowerCase() !== targetOp) continue;
+    const found = variacionesDeOpcion(op).find((v) => v.nombre.toLowerCase() === targetV);
+    return found ? found.precio : 0;
+  }
+  return 0;
+}
+
+/** Texto para mozos / tickets: "Ensalada Limón". */
+export function textoOpcionComplemento(comp) {
+  const op = Array.isArray(comp?.opcion)
+    ? comp.opcion.filter(Boolean).join(', ')
+    : String(comp?.opcion || comp?.nombre || '').trim();
+  const v = String(comp?.variacion || '').trim();
+  if (!op) return v;
+  if (!v) return op;
+  return `${op} ${v}`;
+}
+
+export function camposSnapshotComplemento(comp) {
+  const variacion = String(comp?.variacion || '').trim();
+  const pronombre = String(comp?.pronombre || '').trim();
+  return {
+    grupo: comp.grupo,
+    opcion: comp.opcion,
+    cantidad: comp.cantidad || 1,
+    ...(comp.precio != null ? { precio: Number(comp.precio) || 0 } : {}),
+    ...(pronombre ? { pronombre } : {}),
+    ...(variacion ? { variacion } : {}),
+  };
+}
+
 /**
  * Precio unitario de una línea de plato con complementos.
  * @param {number} precioBase
@@ -134,6 +193,10 @@ export default {
   getNombreOpcion,
   normalizarOpciones,
   getPrecioOpcion,
+  variacionesDeOpcion,
+  getPrecioVariacion,
+  textoOpcionComplemento,
+  camposSnapshotComplemento,
   calcularPrecioUnitarioConComplementos,
   calcularPrecioLinea,
   calcularResumenComplementos,
