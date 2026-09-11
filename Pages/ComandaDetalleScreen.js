@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   View, Text, StyleSheet, ScrollView, TouchableOpacity, 
   Alert, RefreshControl, ActivityIndicator, Modal, TextInput,
@@ -39,7 +39,8 @@ import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidad
 import { hidratarUnidadesDesdeLineas, cantidadDeLinea } from '../utils/unidadesComplemento';
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
 import { mismaVariantePlato, esSeleccionVariantePlato } from '../utils/variantePlato';
-import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos, ordenarPlatosMenu, categoriasDePlato, platoEsDeCategoria } from '../utils/platoBuscador';
+import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos, ordenarPlatosPorCodigoBusqueda, categoriasDePlato, platoEsDeCategoria } from '../utils/platoBuscador';
+import { ordenarCategoriasMozo, ordenarPlatosPorCategoriaYCodigo, platoVisibleEnCarta, cmpPlatosCategoriaYCodigo } from '../utils/ordenCategoriaMozo';
 import PlatoBuscadorCard from '../Components/PlatoBuscadorCard';
 import { calcularPrecioUnitarioConComplementos, textoOpcionComplemento, camposSnapshotComplemento } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
@@ -264,6 +265,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [modalEditarVisible, setModalEditarVisible] = useState(false);
   const [comandaEditando, setComandaEditando] = useState(null);
   const [platos, setPlatos] = useState([]);
+  const [categoriasInfo, setCategoriasInfo] = useState([]);
   const [platosEditables, setPlatosEditables] = useState([]);
   const [platosNoEditables, setPlatosNoEditables] = useState([]);
   const [searchPlato, setSearchPlato] = useState('');
@@ -1154,6 +1156,23 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         : DISHES_API;
       const response = await axios.get(platosURL, { timeout: 5000 });
       setPlatos(response.data || []);
+      try {
+        const primary = apiConfig.isConfigured
+          ? apiConfig.getEndpoint('/platos/categorias?ligero=1')
+          : `${getFallbackApiBase()}/platos/categorias?ligero=1`;
+        const catRes = await axios.get(primary, { timeout: 5000 });
+        setCategoriasInfo(Array.isArray(catRes.data) ? catRes.data : []);
+      } catch (_) {
+        try {
+          const fallback = apiConfig.isConfigured
+            ? apiConfig.getEndpoint('/categorias-plato?ligero=1')
+            : `${getFallbackApiBase()}/categorias-plato?ligero=1`;
+          const catRes = await axios.get(fallback, { timeout: 5000 });
+          setCategoriasInfo(Array.isArray(catRes.data) ? catRes.data : []);
+        } catch {
+          setCategoriasInfo([]);
+        }
+      }
     } catch (error) {
       console.error('Error al obtener platos:', error);
     }
@@ -1547,20 +1566,39 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
 
   // Filtrar platos para el modal de edición
-  const platosFiltrados = expandirFilasBuscadorPlatos(ordenarPlatosMenu(platos.filter(p => {
-    if (!tipoPlatoFiltro) return false;
-    if (!platoEsDeTipo(p, tipoPlatoFiltro)) return false;
-    // Verificar stock disponible
-    const disponible = (p.stock == null || p.stock === undefined || Number(p.stock) > 0);
-    if (!disponible) return false;
-    // Filtrar por búsqueda
-    if (searchPlato && !platoCoincideBusqueda(p, searchPlato)) return false;
-    // Filtrar por categoría
-    if (categoriaFiltro && !platoEsDeCategoria(p, categoriaFiltro)) return false;
-    return true;
-  })));
+  const platosFiltrados = useMemo(() => {
+    const base = platos.filter((p) => {
+      if (!tipoPlatoFiltro) return false;
+      if (!platoEsDeTipo(p, tipoPlatoFiltro)) return false;
+      const disponible = (p.stock == null || p.stock === undefined || Number(p.stock) > 0);
+      if (!disponible) return false;
+      if (!platoVisibleEnCarta(p, categoriasInfo, tipoPlatoFiltro)) return false;
+      if (searchPlato && !platoCoincideBusqueda(p, searchPlato)) return false;
+      if (categoriaFiltro && !platoEsDeCategoria(p, categoriaFiltro)) return false;
+      return true;
+    });
+    const ordenados = ordenarPlatosPorCategoriaYCodigo(base, categoriasInfo, tipoPlatoFiltro);
+    const conAlias = expandirFilasBuscadorPlatos(ordenados);
+    const q = String(searchPlato || '').trim();
+    if (!q) return conAlias;
+    return ordenarPlatosPorCodigoBusqueda(
+      conAlias,
+      q,
+      (a, b) => cmpPlatosCategoriaYCodigo(a, b, categoriasInfo, tipoPlatoFiltro)
+    );
+  }, [platos, tipoPlatoFiltro, categoriasInfo, searchPlato, categoriaFiltro]);
 
-  const categorias = [...new Set(platos.filter(p => platoEsDeTipo(p, tipoPlatoFiltro)).flatMap(p => categoriasDePlato(p)))].filter(Boolean);
+  const categorias = useMemo(() => {
+    const names = [...new Set(
+      platos.filter((p) => platoEsDeTipo(p, tipoPlatoFiltro)).flatMap((p) => categoriasDePlato(p))
+    )].filter(Boolean);
+    return ordenarCategoriasMozo(names, categoriasInfo, tipoPlatoFiltro);
+  }, [platos, tipoPlatoFiltro, categoriasInfo]);
+
+  useEffect(() => {
+    if (!categoriaFiltro) return;
+    if (!categorias.includes(categoriaFiltro)) setCategoriaFiltro(null);
+  }, [categorias, categoriaFiltro]);
   
   // Guardar edición
   const handleGuardarEdicion = async () => {

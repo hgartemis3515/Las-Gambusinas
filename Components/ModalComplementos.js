@@ -26,6 +26,8 @@ import { cloneUnidadEstado, hashUnidadEstado, hidratarUnidadesEstado, fusionarUn
 import { grupoEsVariantePlato, grupoAnexaNombre, gruposVarianteDePlato, gruposAnexarNombreDePlato, grupoVarianteSumaDeshabilitada, platoVarianteSumaDeshabilitada, grupoOpCantidades, platoOpCantidades, grupoOpCantidadesDePlato, saboresPorUnidadDePlato, previewCombosOp } from "../utils/variantePlato";
 import BotonEnviarOrden from "./BotonEnviarOrden";
 import { useBotonCantidadPlato } from "../context/BotonCantidadPlatoContext";
+import { useNUnidadMozo } from "../context/NUnidadMozoContext";
+import { nUnidadColWidth, estiloNUnidadBox, nUnidadFontSize } from "../utils/nUnidadMozo";
 import { useLogicaPachamanca } from "../context/LogicaPachamancaContext";
 import { normalizarNumeroSerie, numeroSerieEsValido, platoRequiereNumeroSerie } from "../utils/numeroSeriePlato";
 import { grupoVisibleEnFoco } from "../utils/platoBuscador";
@@ -51,6 +53,10 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const theme = themeContext?.theme || themeLight;
   const styles = modalComplementosStyles(theme);
   const { estilo: estiloQty, iconSize: iconSizeQty } = useBotonCantidadPlato();
+  const { size: nUnidadSize } = useNUnidadMozo();
+  const nColW = nUnidadColWidth(nUnidadSize);
+  const nBoxEstilo = estiloNUnidadBox(nUnidadSize);
+  const nFont = nUnidadFontSize(nUnidadSize);
   const { logicaPachamanca } = useLogicaPachamanca();
 
   // Estado local para las selecciones del mozo
@@ -805,7 +811,25 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     onClose();
   };
 
-  const bloqueadoConfirmar = !obligatoriosCompletos || hayErrores || hayErroresOtrasUnidades || !serieValida;
+  const puedeContinuarUnidad = editarPorUnidad && unidadActiva < nClones - 1;
+  const bloqueadoUnidadActual = !obligatoriosCompletos || hayErrores || !serieValida;
+  const bloqueadoConfirmar = bloqueadoUnidadActual || hayErroresOtrasUnidades;
+  const bloqueadoFooter = puedeContinuarUnidad ? bloqueadoUnidadActual : bloqueadoConfirmar;
+
+  const handleFooterPrincipal = () => {
+    if (puedeContinuarUnidad) {
+      if (bloqueadoUnidadActual) return;
+      seleccionarUnidad(unidadActiva + 1);
+      return;
+    }
+    handleConfirmar();
+  };
+
+  const textoFooterPrincipal = puedeContinuarUnidad
+    ? "CONTINUAR"
+    : (editarPorUnidad || modoEdicion)
+      ? "Guardar cambios"
+      : (factorPedido > 1 ? `Agregar ${factorPedido} a la orden` : "Agregar a la orden");
 
   // Si no hay plato, o no hay complementos ni número de serie, no mostrar
   if (!plato || (complementos.length === 0 && !requiereSerie)) return null;
@@ -993,7 +1017,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
           <View style={styles.bodyRow}>
           {editarPorUnidad ? (
             <ScrollView
-              style={styles.nList}
+              style={[styles.nList, { width: nColW }]}
               contentContainerStyle={styles.nListContent}
               nestedScrollEnabled
               showsVerticalScrollIndicator
@@ -1012,11 +1036,11 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                   <TouchableOpacity
                     key={i}
                     onPress={() => seleccionarUnidad(i)}
-                    style={[styles.nBox, activa && styles.nBoxActive, distinta && styles.nBoxChanged]}
+                    style={[styles.nBox, nBoxEstilo, activa && styles.nBoxActive, distinta && styles.nBoxChanged]}
                     accessibilityLabel={`Plato N${i + 1}`}
                     accessibilityState={{ selected: activa }}
                   >
-                    <Text style={[styles.nBoxText, activa && styles.nBoxTextActive]}>{`N${i + 1}`}</Text>
+                    <Text style={[styles.nBoxText, { fontSize: nFont }, activa && styles.nBoxTextActive]}>{`N${i + 1}`}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -1155,6 +1179,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                                     styles.opcionText,
                                     isSelected && styles.opcionTextSelected,
                                   ]}
+                                  numberOfLines={1}
                                 >
                                   {opcionNombre}
                                   {afectanPrecio && opcionPrecio > 0 ? `  +S/. ${opcionPrecio.toFixed(2)}` : ''}
@@ -1289,21 +1314,19 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             <TouchableOpacity
               style={[
                 styles.confirmButton,
-                bloqueadoConfirmar && styles.confirmButtonDisabled,
+                bloqueadoFooter && styles.confirmButtonDisabled,
               ]}
-              onPress={handleConfirmar}
-              disabled={bloqueadoConfirmar}
+              onPress={handleFooterPrincipal}
+              disabled={bloqueadoFooter}
               activeOpacity={0.8}
             >
               <MaterialCommunityIcons
-                name="check"
+                name={puedeContinuarUnidad ? "arrow-right" : "check"}
                 size={20}
                 color={theme.colors.text.white}
               />
               <Text style={styles.confirmButtonText}>
-                {modoEdicion
-                  ? "Guardar cambios"
-                  : (factorPedido > 1 ? `Agregar ${factorPedido} a la orden` : "Agregar a la orden")}
+                {textoFooterPrincipal}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1330,6 +1353,18 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
               />
               <Text style={styles.warningText}>
                 Completa las opciones requeridas
+              </Text>
+            </View>
+          )}
+          {hayErroresOtrasUnidades && !puedeContinuarUnidad && (
+            <View style={styles.warningContainer}>
+              <MaterialCommunityIcons
+                name="alert-circle"
+                size={16}
+                color={theme.colors.warning}
+              />
+              <Text style={styles.warningText}>
+                Completa las variaciones de N1 a N{nClones}
               </Text>
             </View>
           )}
@@ -1505,29 +1540,27 @@ const modalComplementosStyles = (theme) =>
     bodyRow: {
       flexDirection: "row",
       alignItems: "stretch",
-      flex: 1,
-      minHeight: 280,
-      maxHeight: 560,
+      flexGrow: 1,
+      flexShrink: 1,
+      minHeight: 220,
+      maxHeight: 520,
     },
     nList: {
-      width: 52,
-      flexGrow: 1,
+      flexGrow: 0,
       flexShrink: 0,
-      maxHeight: 560,
+      alignSelf: "stretch",
       borderRightWidth: 1,
       borderRightColor: theme.colors.border,
       backgroundColor: theme.colors.background,
     },
     nListContent: {
       paddingVertical: 8,
-      paddingHorizontal: 6,
+      paddingLeft: 6,
+      paddingRight: 6,
       gap: 6,
-      alignItems: "center",
+      alignItems: "flex-start",
     },
     nBox: {
-      width: 40,
-      height: 40,
-      borderRadius: 10,
       borderWidth: 2,
       borderColor: theme.colors.border,
       backgroundColor: theme.colors.surface,
@@ -1550,8 +1583,8 @@ const modalComplementosStyles = (theme) =>
       color: theme.colors.text.white,
     },
     modalScrollView: {
-      maxHeight: 450,
       flex: 1,
+      minWidth: 0,
     },
     modalScrollContent: {
       padding: theme.spacing.lg,
@@ -1611,7 +1644,9 @@ const modalComplementosStyles = (theme) =>
     opcionesContainer: {
       flexDirection: "row",
       flexWrap: "wrap",
+      alignItems: "flex-start",
       gap: theme.spacing.sm,
+      width: "100%",
     },
     opcionChip: {
       flexDirection: "row",
@@ -1623,6 +1658,8 @@ const modalComplementosStyles = (theme) =>
       borderWidth: 2,
       borderColor: theme.colors.border,
       minHeight: 44,
+      flexShrink: 1,
+      maxWidth: "100%",
     },
     opcionChipSelected: {
       backgroundColor: theme.colors.primary,
@@ -1643,7 +1680,8 @@ const modalComplementosStyles = (theme) =>
     opcionCantidadRow: {
       flexDirection: "row",
       alignItems: "center",
-      flexWrap: "wrap",
+      flexWrap: "nowrap",
+      width: "100%",
       gap: theme.spacing.sm,
       marginBottom: theme.spacing.xs,
     },
@@ -1654,6 +1692,7 @@ const modalComplementosStyles = (theme) =>
       gap: 6,
       flexGrow: 1,
       flexShrink: 1,
+      minWidth: 0,
     },
     variacionChip: {
       paddingVertical: 6,
@@ -1681,6 +1720,8 @@ const modalComplementosStyles = (theme) =>
     cantidadControls: {
       flexDirection: "row",
       alignItems: "center",
+      flexShrink: 0,
+      alignSelf: "center",
       backgroundColor: theme.colors.background,
       borderRadius: 12,
       overflow: "hidden",
@@ -1688,6 +1729,8 @@ const modalComplementosStyles = (theme) =>
     cantidadButton: {
       width: 32,
       height: 32,
+      flexGrow: 0,
+      flexShrink: 0,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: theme.colors.primary,
@@ -1707,6 +1750,7 @@ const modalComplementosStyles = (theme) =>
       fontWeight: "700",
       color: theme.colors.primary,
       minWidth: 28,
+      flexShrink: 0,
     },
     serieContainer: {
       marginHorizontal: theme.spacing.lg,

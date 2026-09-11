@@ -20,7 +20,16 @@ import { useBotonEnviarOrden } from '../context/BotonEnviarOrdenContext';
 import { useBotonesMenuOrden } from '../context/BotonesMenuOrdenContext';
 import { useAbrirMenuNuevaOrden } from '../context/AbrirMenuNuevaOrdenContext';
 import { useLogicaPachamanca } from '../context/LogicaPachamancaContext';
+import { useNUnidadMozo } from '../context/NUnidadMozoContext';
 import { LOGICAS_PACHAMANCA } from '../utils/logicaPachamanca';
+import {
+  N_UNIDAD_SIZE_MIN,
+  N_UNIDAD_SIZE_MAX,
+  N_UNIDAD_SIZE_DEFAULT,
+  N_UNIDAD_SIZE_PRESETS,
+  estiloNUnidadBox,
+  nUnidadFontSize,
+} from '../utils/nUnidadMozo';
 import { useDensidadOrdenes } from '../context/DensidadOrdenesContext';
 import { useOrdenesAcciones } from '../context/OrdenesAccionesContext';
 import { themeLight } from '../constants/theme';
@@ -261,6 +270,7 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
   const { ocultarPropina, setOcultarPropina } = useOcultarPropina();
   const { abrirMenuNuevaOrden, setAbrirMenuNuevaOrden } = useAbrirMenuNuevaOrden();
   const { logicaPachamanca, setLogicaPachamanca } = useLogicaPachamanca();
+  const { size: nUnidadSize, setSize: setNUnidadSize, reset: resetNUnidad } = useNUnidadMozo();
   const {
     size: qtySize,
     color: qtyColor,
@@ -477,6 +487,85 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
           <Text style={[styles.switchHint, { color: theme.colors.text.secondary, marginTop: 6 }]}>
             {(LOGICAS_PACHAMANCA.find((p) => p.id === logicaPachamanca) || LOGICAS_PACHAMANCA[0]).hint}
           </Text>
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Cuadros N1, N2… (guarniciones y OP)
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            Tamaño de los botones N1, N2… a la izquierda del modal. Van pegados al borde.
+          </Text>
+          <View style={styles.previewNRow} pointerEvents="none">
+            {['N1', 'N2', 'N3'].map((label, i) => (
+              <View
+                key={label}
+                style={[
+                  styles.previewNBox,
+                  estiloNUnidadBox(nUnidadSize),
+                  i === 0 && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+                ]}
+              >
+                <Text
+                  style={{
+                    fontSize: nUnidadFontSize(nUnidadSize),
+                    fontWeight: '800',
+                    color: i === 0 ? '#FFFFFF' : theme.colors.text.primary,
+                  }}
+                >
+                  {label}
+                </Text>
+              </View>
+            ))}
+          </View>
+          <View style={styles.rowLabel}>
+            <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+              Tamaño
+            </Text>
+            <Text style={[styles.pct, { color: theme.colors.primary }]}>{nUnidadSize} px</Text>
+          </View>
+          <ValueSlider
+            value={nUnidadSize}
+            onChange={setNUnidadSize}
+            min={N_UNIDAD_SIZE_MIN}
+            max={N_UNIDAD_SIZE_MAX}
+            trackColor={theme.colors.border}
+            fillColor={theme.colors.primary}
+            thumbColor={theme.colors.primary}
+          />
+          <View style={styles.presets}>
+            {N_UNIDAD_SIZE_PRESETS.map((p) => {
+              const active = nUnidadSize === p.value;
+              return (
+                <TouchableOpacity
+                  key={p.label}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: active ? theme.colors.primary + '22' : theme.colors.background,
+                      borderColor: active ? theme.colors.primary : theme.colors.border,
+                    },
+                  ]}
+                  onPress={() => setNUnidadSize(p.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.chipText, { color: active ? theme.colors.primary : theme.colors.text.secondary }]}>
+                    {p.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {nUnidadSize !== N_UNIDAD_SIZE_DEFAULT && (
+            <TouchableOpacity
+              style={[styles.reset, { borderColor: theme.colors.border }]}
+              onPress={resetNUnidad}
+            >
+              <Text style={[styles.resetText, { color: theme.colors.text.secondary }]}>
+                Restaurar tamaño N1… por defecto
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
 
@@ -1378,6 +1467,21 @@ const styles = StyleSheet.create({
     minHeight: 56,
   },
   previewQtyBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewNRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 8,
+    marginBottom: 14,
+    minHeight: 56,
+  },
+  previewNBox: {
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -16,6 +16,7 @@ import { BotonesMenuOrdenProvider } from './context/BotonesMenuOrdenContext';
 import { AbrirMenuNuevaOrdenProvider } from './context/AbrirMenuNuevaOrdenContext';
 import { LogicaPachamancaProvider } from './context/LogicaPachamancaContext';
 import { DensidadOrdenesProvider } from './context/DensidadOrdenesContext';
+import { NUnidadMozoProvider } from './context/NUnidadMozoContext';
 import { OrdenesAccionesProvider } from './context/OrdenesAccionesContext';
 import SplashScreen from './Pages/Splash/SplashScreen';
 import Login from './Pages/Login/Login';
@@ -85,6 +86,7 @@ export default function App() {
           <AbrirMenuNuevaOrdenProvider>
           <LogicaPachamancaProvider>
           <DensidadOrdenesProvider>
+          <NUnidadMozoProvider>
           <OrdenesAccionesProvider>
           <SocketProvider>
             <>
@@ -148,6 +150,7 @@ export default function App() {
             </>
           </SocketProvider>
           </OrdenesAccionesProvider>
+          </NUnidadMozoProvider>
           </DensidadOrdenesProvider>
           </LogicaPachamancaProvider>
           </AbrirMenuNuevaOrdenProvider>

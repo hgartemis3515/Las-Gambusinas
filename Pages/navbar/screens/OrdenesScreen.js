@@ -39,7 +39,8 @@ import { resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiv
 import { hidratarUnidadesDesdeLineas, cantidadDeLinea } from "../../../utils/unidadesComplemento";
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from "../../../utils/numeroSeriePlato";
 import { mismaVariantePlato, esSeleccionVariantePlato, nombreVisibleConVariante } from "../../../utils/variantePlato";
-import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, platoCoincideBusqueda, ordenarPlatosPorCodigoBusqueda, ordenarPlatosMenu, expandirFilasBuscadorPlatos, categoriasDePlato, platoEsDeCategoria } from "../../../utils/platoBuscador";
+import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, platoCoincideBusqueda, ordenarPlatosPorCodigoBusqueda, expandirFilasBuscadorPlatos, categoriasDePlato, platoEsDeCategoria } from "../../../utils/platoBuscador";
+import { ordenarCategoriasMozo, ordenarPlatosPorCategoriaYCodigo, platoVisibleEnCarta, cmpPlatosCategoriaYCodigo } from "../../../utils/ordenCategoriaMozo";
 import { calcularPrecioUnitarioConComplementos, textoOpcionComplemento, camposSnapshotComplemento } from "../../../utils/precioComplementos";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
@@ -1730,9 +1731,18 @@ const OrdenesScreen = ({ route }) => {
     return tipoNormalizado(p?.tipo) === target;
   };
 
-  const categorias = tipoPlatoFiltro
-    ? [...new Set(platos.filter(p => platoEsDeTipo(p, tipoPlatoFiltro)).flatMap(p => categoriasDePlato(p)))].filter(Boolean)
-    : [];
+  const categorias = useMemo(() => {
+    if (!tipoPlatoFiltro) return [];
+    const names = [...new Set(
+      platos.filter((p) => platoEsDeTipo(p, tipoPlatoFiltro)).flatMap((p) => categoriasDePlato(p))
+    )].filter(Boolean);
+    return ordenarCategoriasMozo(names, categoriasInfo, tipoPlatoFiltro);
+  }, [platos, tipoPlatoFiltro, categoriasInfo]);
+
+  useEffect(() => {
+    if (!categoriaFiltro || categoriaFiltro === CAT_FAVORITOS) return;
+    if (!categorias.includes(categoriaFiltro)) setCategoriaFiltro(null);
+  }, [categorias, categoriaFiltro]);
 
   // Platos disponibles (tipo + stock > 0)
   const platosPorTipoDisponibles = useMemo(
@@ -1740,26 +1750,28 @@ const OrdenesScreen = ({ route }) => {
       platos.filter((p) => {
         const matchTipo = !tipoPlatoFiltro || platoEsDeTipo(p, tipoPlatoFiltro);
         const disponible = (p.stock == null || p.stock === undefined || Number(p.stock) > 0);
-        return matchTipo && disponible;
+        const visibleCarta = platoVisibleEnCarta(p, categoriasInfo, tipoPlatoFiltro);
+        return matchTipo && disponible && visibleCarta;
       }),
-    [platos, tipoPlatoFiltro]
+    [platos, tipoPlatoFiltro, categoriasInfo]
   );
 
   // Búsqueda global: si hay texto, filtra por nombre en TODOS (ignora categoría). Si no hay texto, filtra por categoría.
   const platosFiltrados = useMemo(() => {
-    const base = ordenarPlatosMenu(platosPorTipoDisponibles);
+    const base = ordenarPlatosPorCategoriaYCodigo(platosPorTipoDisponibles, categoriasInfo, tipoPlatoFiltro);
     const search = (searchPlatoDebounced || "").trim();
     const conAlias = expandirFilasBuscadorPlatos(base);
+    const cmpTie = (a, b) => cmpPlatosCategoriaYCodigo(a, b, categoriasInfo, tipoPlatoFiltro);
     if (search.length > 0) {
       const matched = conAlias.filter((p) => platoCoincideBusqueda(p, search));
-      return ordenarPlatosPorCodigoBusqueda(matched, search);
+      return ordenarPlatosPorCodigoBusqueda(matched, search, cmpTie);
     }
     if (!categoriaFiltro) return conAlias;
     if (categoriaFiltro === CAT_FAVORITOS) {
       return conAlias.filter((p) => favoritoIds.includes(String(p._id)));
     }
     return conAlias.filter((p) => platoEsDeCategoria(p, categoriaFiltro));
-  }, [platosPorTipoDisponibles, searchPlatoDebounced, categoriaFiltro, favoritoIds]);
+  }, [platosPorTipoDisponibles, searchPlatoDebounced, categoriaFiltro, favoritoIds, categoriasInfo, tipoPlatoFiltro]);
 
   // Al enfocar o escribir en búsqueda → categoría a "Todos" para búsqueda global
   const handleSearchFocus = useCallback(() => {

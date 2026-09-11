@@ -19,6 +19,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { themeLight } from '../constants/theme';
 import { CAT_FAVORITOS } from '../helpers/platosFavoritosMozo';
+import { ordenarCategoriasMozo, infoCategoriaPorNombre } from '../utils/ordenCategoriaMozo';
 import PlatoBuscadorCard from './PlatoBuscadorCard';
 import BotonEnviarOrden from './BotonEnviarOrden';
 import BotonSumarBusqueda from './BotonSumarBusqueda';
@@ -206,13 +207,16 @@ export default function MenuPlatosSheet({
   const [filtroCatQ, setFiltroCatQ] = useState('');
 
   const catsFiltro = useMemo(() => {
-    const byName = new Map((categoriasInfo || []).map((c) => [c.nombre, c]));
-    return (categorias || []).map((nombre) => ({
-      nombre,
-      codigoMozo: (byName.get(nombre)?.codigoMozo || '').toUpperCase(),
-      imagenUrl: byName.get(nombre)?.imagenUrl || '',
-    }));
-  }, [categorias, categoriasInfo]);
+    const names = ordenarCategoriasMozo(categorias || [], categoriasInfo, tipoPlatoFiltro);
+    return names.map((nombre) => {
+      const info = infoCategoriaPorNombre(categoriasInfo, nombre);
+      return {
+        nombre,
+        codigoMozo: String(info.codigoMozo || '').toUpperCase(),
+        imagenUrl: info.imagenUrl || '',
+      };
+    });
+  }, [categorias, categoriasInfo, tipoPlatoFiltro]);
 
   const catsFiltroVisibles = useMemo(() => {
     const q = String(filtroCatQ || '').trim().toLowerCase();
@@ -531,8 +535,9 @@ export default function MenuPlatosSheet({
                         Favoritos
                       </Text>
                     </TouchableOpacity>
-                    {categorias.map((cat) => {
-                      const infoCat = catsFiltro.find((c) => c.nombre === cat);
+                    {catsFiltro.map((c) => {
+                      const cat = c.nombre;
+                      const infoCat = c;
                       const codigoCat = (infoCat?.codigoMozo || '').trim();
                       const uriCat = urlMediaServidor(infoCat?.imagenUrl);
                       const nombreCat = cat.split('(')[0].trim();

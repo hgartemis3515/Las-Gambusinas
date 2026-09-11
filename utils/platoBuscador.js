@@ -122,7 +122,7 @@ export function ordenarPlatosMenu(platos) {
 }
 
 /** Prioriza coincidencia exacta / prefijo de código. */
-export function ordenarPlatosPorCodigoBusqueda(platos, termino) {
+export function ordenarPlatosPorCodigoBusqueda(platos, termino, cmpTie) {
   const qU = String(termino || '').trim().toUpperCase();
   if (!qU || !Array.isArray(platos)) return platos;
   const score = (p) => {
@@ -139,6 +139,7 @@ export function ordenarPlatosPorCodigoBusqueda(platos, termino) {
   return [...platos].sort((a, b) => {
     const d = score(b) - score(a);
     if (d) return d;
+    if (typeof cmpTie === 'function') return cmpTie(a, b);
     const oa = Number(a?.orden);
     const ob = Number(b?.orden);
     const fa = Number.isFinite(oa) ? oa : Number.MAX_SAFE_INTEGER;
