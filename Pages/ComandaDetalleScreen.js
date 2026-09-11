@@ -35,10 +35,11 @@ import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle } from '../utils/comandaHelpers';
-import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato, expandirLineaComplementos, mismasGuarniciones } from '../utils/platoGuarniciones';
+import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato, mismasGuarniciones, platoEditableEnOrdenes, resolverPartesComplementos } from '../utils/platoGuarniciones';
+import { hidratarUnidadesDesdeLineas, cantidadDeLinea } from '../utils/unidadesComplemento';
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
 import { mismaVariantePlato, esSeleccionVariantePlato } from '../utils/variantePlato';
-import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos } from '../utils/platoBuscador';
+import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos, ordenarPlatosMenu, categoriasDePlato, platoEsDeCategoria } from '../utils/platoBuscador';
 import PlatoBuscadorCard from '../Components/PlatoBuscadorCard';
 import { calcularPrecioUnitarioConComplementos, textoOpcionComplemento, camposSnapshotComplemento } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
@@ -283,6 +284,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [focoComplementos, setFocoComplementos] = useState(null);
   const [ocultarSumarComplementos, setOcultarSumarComplementos] = useState(false);
   const [cantidadInicialModal, setCantidadInicialModal] = useState(1);
+  const [unidadesInicialesModal, setUnidadesInicialesModal] = useState(null);
+  const [editandoGrupoIds, setEditandoGrupoIds] = useState(null);
   const tipoServicioAlComplementarRef = useRef(null);
   const autoEntregaSalioRef = useRef(new Set());
   const inicioCountdownFallbackRef = useRef({});
@@ -1198,10 +1201,23 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
   const handleAgregarPlato = (plato, cantidadPlatos = 1) => {
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
+    if (!platoRequiereModalAlSumar(plato) && platoRequiereModalOp(plato)) {
+      const ultima = ultimaLineaDelPlato(platosEditados, plato, tipoServicioMenuEdicion(), { exacto: true });
+      if (ultima) {
+        const next = platosEditados.map((p) =>
+          p === ultima ? { ...p, cantidad: Math.min(99, (p.cantidad || 1) + n) } : p
+        );
+        platosEditadosRef.current = next;
+        setPlatosEditados(next);
+        return;
+      }
+    }
     if (platoRequiereModalAlSumar(plato)) {
       setFocoComplementos(null);
       setOcultarSumarComplementos(false);
       setEditandoInstanceId(null);
+      setEditandoGrupoIds(null);
+      setUnidadesInicialesModal(null);
       tipoServicioAlComplementarRef.current = null;
       setComplementosInicialesModal(null);
       setNotaInicialModal('');
@@ -1213,6 +1229,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       setFocoComplementos('anexarNombre');
       setOcultarSumarComplementos(true);
       setEditandoInstanceId(null);
+      setEditandoGrupoIds(null);
+      setUnidadesInicialesModal(null);
       tipoServicioAlComplementarRef.current = null;
       setComplementosInicialesModal(null);
       setNotaInicialModal('');
@@ -1252,29 +1270,37 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
 
   const abrirFocoDesdeBuscador = (plato, focoModo) => {
-    const ultima = ultimaLineaDelPlato(platosEditados, plato, tipoServicioMenuEdicion(), { exacto: true });
-    if (!ultima && (platoRequiereModalAlSumar(plato) || platoRequiereModalOp(plato))) {
+    const lineas = lineasDelPlatoEnCarrito(platosEditados, plato, tipoServicioMenuEdicion(), { exacto: true });
+    if (!lineas.length && (platoRequiereModalAlSumar(plato) || platoRequiereModalOp(plato))) {
       handleAgregarPlato(plato);
       return;
     }
     setFocoComplementos(focoModo);
     setOcultarSumarComplementos(true);
-    if (ultima) {
-      const resuelto = resolverPlatoConGrupos(ultima, platos);
-      setEditandoInstanceId(ultima.instanceId || ultima._id);
-      tipoServicioAlComplementarRef.current = ultima.tipoServicio || 'mesa';
-      setComplementosInicialesModal(guarnicionesElegidas(ultima));
-      setNotaInicialModal(ultima.notaEspecial || '');
+    if (lineas.length) {
+      const ids = lineas.map((p) => p.instanceId || p._id);
+      const resuelto = resolverPlatoConGrupos(lineas[0], platos);
+      const seed = hidratarUnidadesDesdeLineas(resuelto || lineas[0], lineas);
+      setEditandoInstanceId(ids[0]);
+      setEditandoGrupoIds(ids);
+      setUnidadesInicialesModal(seed);
+      setCantidadInicialModal(Math.max(1, seed.length));
+      tipoServicioAlComplementarRef.current = lineas[0].tipoServicio || 'mesa';
+      setComplementosInicialesModal(guarnicionesElegidas(lineas[0]));
+      setNotaInicialModal(lineas[0].notaEspecial || '');
       setPlatoParaComplementar({
-        ...(resuelto || ultima),
-        numeroSerie: ultima.numeroSerie || resuelto?.numeroSerie || '',
+        ...(resuelto || lineas[0]),
+        numeroSerie: lineas[0].numeroSerie || resuelto?.numeroSerie || '',
       });
       return;
     }
     setEditandoInstanceId(null);
+    setEditandoGrupoIds(null);
+    setUnidadesInicialesModal(null);
     tipoServicioAlComplementarRef.current = null;
     setComplementosInicialesModal(null);
     setNotaInicialModal('');
+    setCantidadInicialModal(1);
     setPlatoParaComplementar(plato);
   };
 
@@ -1357,14 +1383,41 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
 
   // Función para confirmar complementos desde el modal
-  const handleConfirmarComplementosEdicion = ({ complementosSeleccionados, notaEspecial, numeroSerie, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
+  const handleEditarGuarnicionesLinea = (platoLinea) => {
+    const resuelto = resolverPlatoConGrupos(platoLinea, platos);
+    if (!resuelto?.complementos?.length && !platoRequiereNumeroSerie(resuelto || platoLinea)) {
+      Alert.alert(
+        'Guarniciones',
+        'No se pueden cargar las guarniciones de este combo. Agrégalo otra vez desde el menú.'
+      );
+      return;
+    }
+    const id = platoLinea.instanceId || platoLinea._id;
+    const n = cantidadDeLinea(platoLinea);
+    const seed = hidratarUnidadesDesdeLineas(resuelto || platoLinea, [platoLinea]);
+    setFocoComplementos(null);
+    setOcultarSumarComplementos(false);
+    setEditandoInstanceId(id);
+    setEditandoGrupoIds([id]);
+    setUnidadesInicialesModal(seed);
+    setCantidadInicialModal(n);
+    tipoServicioAlComplementarRef.current = platoLinea.tipoServicio || 'mesa';
+    setComplementosInicialesModal(guarnicionesElegidas(platoLinea));
+    setNotaInicialModal(platoLinea.notaEspecial || '');
+    setPlatoParaComplementar({
+      ...resuelto,
+      numeroSerie: platoLinea.numeroSerie || resuelto.numeroSerie || '',
+    });
+  };
+
+  const handleConfirmarComplementosEdicion = ({ complementosSeleccionados, notaEspecial, numeroSerie, _precioUnitario, _extraComplementos, _cantidadPlatos, _partes }) => {
     if (editandoInstanceId) {
       const linea = platosEditadosRef.current.find(
         (p) => (p.instanceId || p._id) === editandoInstanceId
       );
       if (linea) {
-        const n = linea.cantidad || 1;
-        const partes = expandirLineaComplementos(linea, complementosSeleccionados, n);
+        const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || linea.cantidad || 1));
+        const partes = resolverPartesComplementos(linea, complementosSeleccionados, n, _partes);
         const parte = partes[0] || { complementos: complementosSeleccionados, cantidad: n };
         const afectan = linea.complementosAfectanPrecio !== false;
         const calc = _precioUnitario != null
@@ -1376,10 +1429,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           );
         const comps = (parte.complementos || []).map(camposSnapshotComplemento);
         const serie = normalizarNumeroSerie(numeroSerie || linea.numeroSerie);
-        const next = platosEditadosRef.current.map((p) => {
+        const cant0 = Math.max(1, Number(parte.cantidad) || 1);
+        const idsGrupo = (editandoGrupoIds?.length ? editandoGrupoIds : [editandoInstanceId]).map(String);
+        const idKeep = String(editandoInstanceId);
+        const next = platosEditadosRef.current.filter((p) => {
+          const id = String(p.instanceId || p._id);
+          return !(idsGrupo.includes(id) && id !== idKeep);
+        }).map((p) => {
           if ((p.instanceId || p._id) !== editandoInstanceId) return p;
           return {
             ...p,
+            cantidad: cant0,
             complementosSeleccionados: comps,
             notaEspecial: notaEspecial || '',
             ...(calc.precioUnitario != null ? { precioUnitario: Number(calc.precioUnitario) } : {}),
@@ -1391,19 +1451,43 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         });
         platosEditadosRef.current = next;
         setPlatosEditados(next);
+        partes.slice(1).forEach((pExtra) => {
+          const calcE = calcularPrecioUnitarioConComplementos(
+            linea.precio || 0,
+            pExtra.complementos,
+            { afectanPrecio: afectan }
+          );
+          agregarPlatoSinComplementos(
+            linea,
+            pExtra.complementos,
+            notaEspecial,
+            calcE.precioUnitario,
+            calcE.extraComplementos,
+            pExtra.cantidad,
+            linea.tipoServicio,
+            {
+              nombreCocinaPedido: pExtra.nombreCocinaPedido,
+              variantePlato: pExtra.variantePlato,
+              ...(serie ? { numeroSerie: serie } : {}),
+            }
+          );
+        });
       }
       setPlatoParaComplementar(null);
       setComplementosInicialesModal(null);
+      setUnidadesInicialesModal(null);
       setNotaInicialModal('');
       setEditandoInstanceId(null);
+      setEditandoGrupoIds(null);
       setFocoComplementos(null);
       setOcultarSumarComplementos(false);
+      setCantidadInicialModal(1);
       tipoServicioAlComplementarRef.current = null;
       return;
     }
     if (platoParaComplementar) {
       const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
-      const partes = expandirLineaComplementos(platoParaComplementar, complementosSeleccionados, n);
+      const partes = resolverPartesComplementos(platoParaComplementar, complementosSeleccionados, n, _partes);
       const afectan = platoParaComplementar.complementosAfectanPrecio !== false;
       const serie = normalizarNumeroSerie(numeroSerie);
       partes.forEach((parte) => {
@@ -1429,9 +1513,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       });
       setPlatoParaComplementar(null);
       setComplementosInicialesModal(null);
+      setUnidadesInicialesModal(null);
       setNotaInicialModal('');
+      setEditandoInstanceId(null);
+      setEditandoGrupoIds(null);
       setFocoComplementos(null);
       setOcultarSumarComplementos(false);
+      setCantidadInicialModal(1);
       tipoServicioAlComplementarRef.current = null;
     }
   };
@@ -1459,7 +1547,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
 
   // Filtrar platos para el modal de edición
-  const platosFiltrados = expandirFilasBuscadorPlatos(platos.filter(p => {
+  const platosFiltrados = expandirFilasBuscadorPlatos(ordenarPlatosMenu(platos.filter(p => {
     if (!tipoPlatoFiltro) return false;
     if (!platoEsDeTipo(p, tipoPlatoFiltro)) return false;
     // Verificar stock disponible
@@ -1468,11 +1556,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     // Filtrar por búsqueda
     if (searchPlato && !platoCoincideBusqueda(p, searchPlato)) return false;
     // Filtrar por categoría
-    if (categoriaFiltro && p.categoria !== categoriaFiltro) return false;
+    if (categoriaFiltro && !platoEsDeCategoria(p, categoriaFiltro)) return false;
     return true;
-  }));
+  })));
 
-  const categorias = [...new Set(platos.filter(p => platoEsDeTipo(p, tipoPlatoFiltro)).map(p => p.categoria))].filter(Boolean);
+  const categorias = [...new Set(platos.filter(p => platoEsDeTipo(p, tipoPlatoFiltro)).flatMap(p => categoriasDePlato(p)))].filter(Boolean);
   
   // Guardar edición
   const handleGuardarEdicion = async () => {
@@ -3580,6 +3668,19 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                           </Text>
                         </View>
                         <View style={styles.platoEditActions}>
+                          {platoEditableEnOrdenes(plato, platos) && (
+                            <TouchableOpacity
+                              onPress={() => handleEditarGuarnicionesLinea(plato)}
+                              accessibilityLabel="Editar guarniciones o variaciones"
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              <MaterialCommunityIcons
+                                name="pencil-outline"
+                                size={20}
+                                color={isDark ? '#F9FAFB' : '#C41E3A'}
+                              />
+                            </TouchableOpacity>
+                          )}
                           <TouchableOpacity
                             style={[
                               styles.cantidadButton, 
@@ -4257,22 +4358,31 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         onClose={() => {
           setPlatoParaComplementar(null);
           setComplementosInicialesModal(null);
+          setUnidadesInicialesModal(null);
           setNotaInicialModal('');
           setEditandoInstanceId(null);
+          setEditandoGrupoIds(null);
           setFocoComplementos(null);
           setOcultarSumarComplementos(false);
           setCantidadInicialModal(1);
           tipoServicioAlComplementarRef.current = null;
         }}
         complementosIniciales={complementosInicialesModal}
+        unidadesIniciales={unidadesInicialesModal}
         notaInicial={notaInicialModal}
         modoEdicion={!!editandoInstanceId}
         ocultarSumar={ocultarSumarComplementos}
         focoModo={focoComplementos}
         cantidadLinea={
-          editandoInstanceId
-            ? (platosEditados.find((p) => (p.instanceId || p._id) === editandoInstanceId)?.cantidad || 1)
-            : cantidadInicialModal
+          Math.max(
+            1,
+            Number(
+              (unidadesInicialesModal && unidadesInicialesModal.length)
+              || (editandoInstanceId
+                ? platosEditados.find((p) => (p.instanceId || p._id) === editandoInstanceId)?.cantidad
+                : cantidadInicialModal)
+            ) || 1
+          )
         }
         numeroSerieInicial={
           (platoParaComplementar && platoParaComplementar.numeroSerie)

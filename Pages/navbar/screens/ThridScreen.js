@@ -396,14 +396,22 @@ const ThirdScreen = () => {
     return mismoSlug(p?.tipo);
   };
 
+  const categoriasDe = (p) => {
+    const arr = Array.isArray(p?.categorias) ? p.categorias.map((c) => String(c || '').trim()).filter(Boolean) : [];
+    const legacy = String(p?.categoria || '').trim();
+    const seen = new Set(arr.map((c) => c.toLowerCase()));
+    if (legacy && !seen.has(legacy.toLowerCase())) arr.unshift(legacy);
+    return arr;
+  };
+
   const categorias = tipoPlatoFiltro
-    ? [...new Set(platos.filter(p => platoEsDeTipo(p, tipoPlatoFiltro)).map(p => p.categoria))].filter(Boolean)
+    ? [...new Set(platos.filter(p => platoEsDeTipo(p, tipoPlatoFiltro)).flatMap(p => categoriasDe(p)))].filter(Boolean)
     : [];
 
   const platosFiltrados = platos.filter(p => {
     const matchTipo = !tipoPlatoFiltro || platoEsDeTipo(p, tipoPlatoFiltro);
     const matchSearch = !searchPlato || p.nombre.toLowerCase().includes(searchPlato.toLowerCase());
-    const matchCategoria = !categoriaFiltro || p.categoria === categoriaFiltro;
+    const matchCategoria = !categoriaFiltro || categoriasDe(p).some((c) => c === categoriaFiltro);
     return matchTipo && matchSearch && matchCategoria;
   });
 

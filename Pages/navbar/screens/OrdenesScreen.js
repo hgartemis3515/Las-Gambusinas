@@ -35,10 +35,11 @@ import * as Haptics from "expo-haptics";
 import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
 import BotonEnviarOrden from "../../../Components/BotonEnviarOrden";
-import { resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato, platoEditableEnOrdenes, expandirLineaComplementos } from "../../../utils/platoGuarniciones";
+import { resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato, platoEditableEnOrdenes, resolverPartesComplementos } from "../../../utils/platoGuarniciones";
+import { hidratarUnidadesDesdeLineas, cantidadDeLinea } from "../../../utils/unidadesComplemento";
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from "../../../utils/numeroSeriePlato";
 import { mismaVariantePlato, esSeleccionVariantePlato, nombreVisibleConVariante } from "../../../utils/variantePlato";
-import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, platoCoincideBusqueda, ordenarPlatosPorCodigoBusqueda, expandirFilasBuscadorPlatos } from "../../../utils/platoBuscador";
+import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, platoCoincideBusqueda, ordenarPlatosPorCodigoBusqueda, ordenarPlatosMenu, expandirFilasBuscadorPlatos, categoriasDePlato, platoEsDeCategoria } from "../../../utils/platoBuscador";
 import { calcularPrecioUnitarioConComplementos, textoOpcionComplemento, camposSnapshotComplemento } from "../../../utils/precioComplementos";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
@@ -270,6 +271,8 @@ const OrdenesScreen = ({ route }) => {
   const [focoComplementos, setFocoComplementos] = useState(null);
   const [ocultarSumarComplementos, setOcultarSumarComplementos] = useState(false);
   const [cantidadInicialModal, setCantidadInicialModal] = useState(1);
+  const [unidadesInicialesModal, setUnidadesInicialesModal] = useState(null);
+  const [editandoGrupoIds, setEditandoGrupoIds] = useState(null);
   const tipoServicioAlComplementarRef = useRef(null);
   const selectedPlatosRef = useRef([]);
   const cantidadesRef = useRef({});
@@ -599,10 +602,26 @@ const OrdenesScreen = ({ route }) => {
 
   const handleAddPlato = (plato, cantidadPlatos = 1) => {
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
+    if (!platoRequiereModalAlSumar(plato) && platoRequiereModalOp(plato)) {
+      const ultima = ultimaLineaDelPlato(selectedPlatos, plato, tipoServicioMenuActual(), { exacto: true });
+      if (ultima) {
+        const id = ultima.instanceId || ultima._id;
+        const current = cantidadDeLinea(ultima, cantidades);
+        const newCant = Math.min(99, current + n);
+        setCantidades({ ...cantidades, [id]: newCant });
+        setSelectedPlatos(selectedPlatos.map((p) =>
+          (p.instanceId || p._id) === id ? { ...p, cantidad: newCant } : p
+        ));
+        avisarPlatoAgregado(plato.nombreMostrado || plato.nombre, n);
+        return;
+      }
+    }
     if (platoRequiereModalAlSumar(plato)) {
       setFocoComplementos(null);
       setOcultarSumarComplementos(false);
       setEditandoInstanceId(null);
+      setEditandoGrupoIds(null);
+      setUnidadesInicialesModal(null);
       tipoServicioAlComplementarRef.current = null;
       setComplementosInicialesModal(null);
       setNotaInicialModal("");
@@ -614,6 +633,8 @@ const OrdenesScreen = ({ route }) => {
       setFocoComplementos("anexarNombre");
       setOcultarSumarComplementos(true);
       setEditandoInstanceId(null);
+      setEditandoGrupoIds(null);
+      setUnidadesInicialesModal(null);
       tipoServicioAlComplementarRef.current = null;
       setComplementosInicialesModal(null);
       setNotaInicialModal("");
@@ -666,34 +687,45 @@ const OrdenesScreen = ({ route }) => {
   };
 
   const abrirFocoDesdeBuscador = (plato, focoModo) => {
-    const ultima = ultimaLineaDelPlato(selectedPlatos, plato, tipoServicioMenuActual(), { exacto: true });
-    if (!ultima && (platoRequiereModalAlSumar(plato) || platoRequiereModalOp(plato))) {
+    const lineas = lineasDelPlatoEnCarrito(selectedPlatos, plato, tipoServicioMenuActual(), { exacto: true });
+    if (!lineas.length && (platoRequiereModalAlSumar(plato) || platoRequiereModalOp(plato))) {
       handleAddPlato(plato);
       return;
     }
     setFocoComplementos(focoModo);
     setOcultarSumarComplementos(true);
-    if (ultima) {
-      setEditandoInstanceId(ultima.instanceId || ultima._id);
-      abrirModalGuarniciones(ultima, {
-        iniciales: guarnicionesElegidas(ultima),
-        nota: ultima.notaEspecial || "",
-        tipoServicio: ultima.tipoServicio,
+    if (lineas.length) {
+      const ids = lineas.map((p) => p.instanceId || p._id);
+      const resuelto = resolverPlatoConGrupos(lineas[0], platos);
+      const seed = hidratarUnidadesDesdeLineas(resuelto || lineas[0], lineas, cantidades);
+      setEditandoInstanceId(ids[0]);
+      setEditandoGrupoIds(ids);
+      setUnidadesInicialesModal(seed);
+      setCantidadInicialModal(Math.max(1, seed.length));
+      abrirModalGuarniciones(lineas[0], {
+        iniciales: guarnicionesElegidas(lineas[0]),
+        nota: lineas[0].notaEspecial || "",
+        tipoServicio: lineas[0].tipoServicio,
       });
       return;
     }
     setEditandoInstanceId(null);
+    setEditandoGrupoIds(null);
+    setUnidadesInicialesModal(null);
     tipoServicioAlComplementarRef.current = null;
     setComplementosInicialesModal(null);
     setNotaInicialModal("");
+    setCantidadInicialModal(1);
     setPlatoParaComplementar(plato);
   };
 
   const cerrarModalComplementosYReabrirMenu = () => {
     setPlatoParaComplementar(null);
     setComplementosInicialesModal(null);
+    setUnidadesInicialesModal(null);
     setNotaInicialModal("");
     setEditandoInstanceId(null);
+    setEditandoGrupoIds(null);
     setFocoComplementos(null);
     setOcultarSumarComplementos(false);
     setCantidadInicialModal(1);
@@ -807,9 +839,14 @@ const OrdenesScreen = ({ route }) => {
       return;
     }
     const id = platoLinea.instanceId || platoLinea._id;
+    const n = cantidadDeLinea(platoLinea, cantidades);
+    const seed = hidratarUnidadesDesdeLineas(resuelto || platoLinea, [platoLinea], cantidades);
     setFocoComplementos(null);
     setOcultarSumarComplementos(false);
     setEditandoInstanceId(id);
+    setEditandoGrupoIds([id]);
+    setUnidadesInicialesModal(seed);
+    setCantidadInicialModal(n);
     abrirModalGuarniciones(platoLinea, {
       iniciales: platoLinea.complementosElegidos || [],
       nota: platoLinea.notaEspecial || "",
@@ -817,7 +854,7 @@ const OrdenesScreen = ({ route }) => {
     });
   };
 
-  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, numeroSerie, _cantidadPlatos }) => {
+  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, numeroSerie, _cantidadPlatos, _partes }) => {
     if (editandoInstanceId) {
       const linea = selectedPlatosRef.current.find(
         (p) => (p.instanceId || p._id) === editandoInstanceId
@@ -833,7 +870,7 @@ const OrdenesScreen = ({ route }) => {
               || 1
           )
         );
-        const partes = expandirLineaComplementos(linea, complementosSeleccionados, n);
+        const partes = resolverPartesComplementos(linea, complementosSeleccionados, n, _partes);
         const parte0 = partes[0] || { complementos: complementosSeleccionados, cantidad: n };
         const afectan = linea.complementosAfectanPrecio !== false;
         const calc0 = calcularPrecioUnitarioConComplementos(
@@ -844,7 +881,17 @@ const OrdenesScreen = ({ route }) => {
         const comps0 = (parte0.complementos || []).map(camposSnapshotComplemento);
         const serie = normalizarNumeroSerie(numeroSerie || linea.numeroSerie);
         const cant0 = Math.max(1, Number(parte0.cantidad) || 1);
-        const nextPlatos = selectedPlatosRef.current.map((p) => {
+        const idsGrupo = (editandoGrupoIds?.length ? editandoGrupoIds : [editandoInstanceId]).map(String);
+        const idKeep = String(editandoInstanceId);
+        const nextCant = { ...cantidadesRef.current };
+        const nextPlatos = selectedPlatosRef.current.filter((p) => {
+          const id = String(p.instanceId || p._id);
+          if (idsGrupo.includes(id) && id !== idKeep) {
+            delete nextCant[id];
+            return false;
+          }
+          return true;
+        }).map((p) => {
           if ((p.instanceId || p._id) !== editandoInstanceId) return p;
           return {
             ...p,
@@ -859,7 +906,8 @@ const OrdenesScreen = ({ route }) => {
           };
         });
         selectedPlatosRef.current = nextPlatos;
-        cantidadesRef.current = { ...cantidadesRef.current, [editandoInstanceId]: cant0 };
+        nextCant[editandoInstanceId] = cant0;
+        cantidadesRef.current = nextCant;
         setSelectedPlatos(nextPlatos);
         setCantidades(cantidadesRef.current);
         partes.slice(1).forEach((parte) => {
@@ -890,7 +938,7 @@ const OrdenesScreen = ({ route }) => {
     if (platoParaComplementar) {
       const nombre = platoParaComplementar.nombre;
       const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
-      const partes = expandirLineaComplementos(platoParaComplementar, complementosSeleccionados, n);
+      const partes = resolverPartesComplementos(platoParaComplementar, complementosSeleccionados, n, _partes);
       const afectan = platoParaComplementar.complementosAfectanPrecio !== false;
       const serie = normalizarNumeroSerie(numeroSerie);
       let totalUnidades = 0;
@@ -1683,7 +1731,7 @@ const OrdenesScreen = ({ route }) => {
   };
 
   const categorias = tipoPlatoFiltro
-    ? [...new Set(platos.filter(p => platoEsDeTipo(p, tipoPlatoFiltro)).map(p => p.categoria))].filter(Boolean)
+    ? [...new Set(platos.filter(p => platoEsDeTipo(p, tipoPlatoFiltro)).flatMap(p => categoriasDePlato(p)))].filter(Boolean)
     : [];
 
   // Platos disponibles (tipo + stock > 0)
@@ -1699,7 +1747,7 @@ const OrdenesScreen = ({ route }) => {
 
   // Búsqueda global: si hay texto, filtra por nombre en TODOS (ignora categoría). Si no hay texto, filtra por categoría.
   const platosFiltrados = useMemo(() => {
-    const base = platosPorTipoDisponibles;
+    const base = ordenarPlatosMenu(platosPorTipoDisponibles);
     const search = (searchPlatoDebounced || "").trim();
     const conAlias = expandirFilasBuscadorPlatos(base);
     if (search.length > 0) {
@@ -1710,7 +1758,7 @@ const OrdenesScreen = ({ route }) => {
     if (categoriaFiltro === CAT_FAVORITOS) {
       return conAlias.filter((p) => favoritoIds.includes(String(p._id)));
     }
-    return conAlias.filter((p) => p.categoria === categoriaFiltro);
+    return conAlias.filter((p) => platoEsDeCategoria(p, categoriaFiltro));
   }, [platosPorTipoDisponibles, searchPlatoDebounced, categoriaFiltro, favoritoIds]);
 
   // Al enfocar o escribir en búsqueda → categoría a "Todos" para búsqueda global
@@ -1954,7 +2002,7 @@ const OrdenesScreen = ({ route }) => {
                       <TouchableOpacity
                         style={styles.editFijosButton}
                         onPress={() => handleEditarGuarnicionesLinea(plato)}
-                        accessibilityLabel="Editar guarniciones del plato"
+                        accessibilityLabel="Editar guarniciones o variaciones"
                       >
                         <MaterialCommunityIcons name="pencil-outline" size={20} color={theme.colors.primary} />
                       </TouchableOpacity>
@@ -2232,16 +2280,22 @@ const OrdenesScreen = ({ route }) => {
         onConfirm={handleConfirmarComplementos}
         onClose={cerrarModalComplementosYReabrirMenu}
         complementosIniciales={complementosInicialesModal}
+        unidadesIniciales={unidadesInicialesModal}
         notaInicial={notaInicialModal}
         modoEdicion={!!editandoInstanceId}
         ocultarSumar={ocultarSumarComplementos}
         focoModo={focoComplementos}
         cantidadLinea={
-          editandoInstanceId
-            ? (cantidades[editandoInstanceId]
-              || selectedPlatos.find((p) => (p.instanceId || p._id) === editandoInstanceId)?.cantidad
-              || 1)
-            : cantidadInicialModal
+          Math.max(
+            1,
+            Number(
+              (unidadesInicialesModal && unidadesInicialesModal.length)
+              || (editandoInstanceId
+                ? (cantidades[editandoInstanceId]
+                  ?? selectedPlatos.find((p) => (p.instanceId || p._id) === editandoInstanceId)?.cantidad)
+                : cantidadInicialModal)
+            ) || 1
+          )
         }
         onEnviarOrden={handleEnviarComanda}
         enviandoOrden={isSendingComanda}

@@ -125,15 +125,26 @@ export function platoRequiereEleccionComplementos(plato, catalogo) {
 }
 
 /**
- * Plato editable en la lista de Órdenes: botón para cambiar fijos después de agregar.
- * `platoEditable === false` lo apaga. Sin flag, los que ya tienen grupos fijos se consideran editables.
+ * Lápiz en la lista de seleccionados: guarniciones (G) o variaciones (OP).
+ * `platoEditable === false` lo apaga.
  */
 export function platoEditableEnOrdenes(plato, catalogo) {
   const p = catalogo ? resolverPlatoConGrupos(plato, catalogo) : plato;
   if (!p) return false;
   if (p.platoEditable === false) return false;
-  if (p.platoEditable === true) return gruposGuarnicion(p).length > 0;
-  return gruposGuarnicion(p).some((g) => grupoSeleccionFija(g));
+  return gruposGuarnicion(p).length > 0;
+}
+
+export function resolverPartesComplementos(plato, complementosSeleccionados, cantidadPlatos, partesExplicitas) {
+  if (Array.isArray(partesExplicitas) && partesExplicitas.length > 0) {
+    return partesExplicitas.map((p) => ({
+      complementos: Array.isArray(p.complementos) ? p.complementos : [],
+      cantidad: Math.max(1, Math.min(99, Number(p.cantidad) || 1)),
+      nombreCocinaPedido: p.nombreCocinaPedido || '',
+      variantePlato: p.variantePlato || null,
+    }));
+  }
+  return expandirLineaComplementos(plato, complementosSeleccionados, cantidadPlatos);
 }
 
 function opcionesAAplicarDeGrupo(grupo) {
@@ -207,7 +218,7 @@ function claveGrupoNombre(v) {
   return String(v || '').trim().toLowerCase();
 }
 
-/** Con 2+ platos (sin MIX), el modal edita el total de guarniciones, no “por plato”. */
+/** @deprecated El modal edita por unidad (N1…Nn). Se conserva por si llega un payload legado. */
 export function usaCantidadesTotalesGuarnicion(plato, nPlatos) {
   const n = Math.max(1, Number(nPlatos) || 1);
   if (n <= 1) return false;
@@ -254,30 +265,8 @@ export function partirLineaPorGuarniciones(plato, complementosSeleccionados, can
     return [{ complementos: [...perUnit, ...extras], cantidad: n }];
   }
 
-  const plates = Array.from({ length: n }, () => extras.map((e) => ({ ...e })));
-  garnishes.forEach((c) => {
-    const q = Math.max(0, Math.floor(Number(c.cantidad) || 0));
-    for (let i = 0; i < q; i += 1) {
-      const list = plates[i % n];
-      const existing = list.find(
-        (x) => claveGrupoNombre(x.grupo) === claveGrupoNombre(c.grupo)
-          && String(x.opcion || '').trim().toLowerCase() === String(c.opcion || '').trim().toLowerCase()
-      );
-      if (existing) existing.cantidad = (Number(existing.cantidad) || 1) + 1;
-      else list.push({ ...c, cantidad: 1 });
-    }
-  });
-
-  const merged = [];
-  plates.forEach((compsPlate) => {
-    const last = merged[merged.length - 1];
-    if (last && mismasGuarniciones(last.complementos, compsPlate)) {
-      last.cantidad += 1;
-    } else {
-      merged.push({ complementos: compsPlate, cantidad: 1 });
-    }
-  });
-  return merged.length ? merged : [{ complementos: comps, cantidad: n }];
+  // Cantidades ya son por plato (1 papa × 5 leñas). Round-robin rompía cocina al editar un solo N.
+  return [{ complementos: comps, cantidad: n }];
 }
 
 export function expandirLineaComplementos(plato, complementosSeleccionados, cantidadPlatos) {

@@ -15,10 +15,11 @@ import { apiConfig } from "../apiConfig";
 import { getFallbackApiBase } from "../config/envDefaults";
 import configuracionService from "../services/configuracionService";
 import ModalComplementos from "../Components/ModalComplementos";
-import { resolverPlatoConGrupos, guarnicionesElegidas, preseleccionComplementosDePlato, cantidadGuarnicionEfectiva, expandirLineaComplementos } from "../utils/platoGuarniciones";
+import { resolverPlatoConGrupos, guarnicionesElegidas, preseleccionComplementosDePlato, cantidadGuarnicionEfectiva, platoEditableEnOrdenes, resolverPartesComplementos } from "../utils/platoGuarniciones";
+import { hidratarUnidadesDesdeLineas, cantidadDeLinea } from "../utils/unidadesComplemento";
 import { numeroSerieEsValido, normalizarNumeroSerie } from "../utils/numeroSeriePlato";
 import { mismaVariantePlato, esSeleccionVariantePlato } from "../utils/variantePlato";
-import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos } from "../utils/platoBuscador";
+import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos, ordenarPlatosMenu, categoriasDePlato, platoEsDeCategoria } from "../utils/platoBuscador";
 import PlatoBuscadorCard from "../Components/PlatoBuscadorCard";
 import { calcularPrecioUnitarioConComplementos } from "../utils/precioComplementos";
 import StepIndicator, { PASOS } from "../Components/reserva/StepIndicator";
@@ -118,6 +119,8 @@ export default function ReservaWizardScreen() {
   const [focoComplementos, setFocoComplementos] = useState(null);
   const [ocultarSumarComplementos, setOcultarSumarComplementos] = useState(false);
   const [cantidadInicialModal, setCantidadInicialModal] = useState(1);
+  const [unidadesInicialesModal, setUnidadesInicialesModal] = useState(null);
+  const [editandoGrupoIds, setEditandoGrupoIds] = useState(null);
   const [errorBanner, setErrorBanner] = useState(null);
   const [exito, setExito] = useState(null);
   const [aprobado, setAprobado] = useState(false);
@@ -378,15 +381,15 @@ export default function ReservaWizardScreen() {
 
   const categorias = useMemo(() => {
     const set = new Set();
-    platos.forEach((p) => { if (p.categoria || p.tipo) set.add(p.categoria || p.tipo); });
+    platos.forEach((p) => categoriasDePlato(p).forEach((c) => set.add(c)));
     return Array.from(set);
   }, [platos]);
 
   const platosFiltrados = useMemo(() => {
     const search = (searchDebounced || "").toLowerCase();
-    let list = expandirFilasBuscadorPlatos(platos);
+    let list = expandirFilasBuscadorPlatos(ordenarPlatosMenu(platos));
     if (search.length > 0) list = list.filter((p) => platoCoincideBusqueda(p, search));
-    else if (categoriaFiltro) list = list.filter((p) => (p.categoria || p.tipo) === categoriaFiltro);
+    else if (categoriaFiltro) list = list.filter((p) => platoEsDeCategoria(p, categoriaFiltro));
     return list;
   }, [platos, searchDebounced, categoriaFiltro]);
 
@@ -448,10 +451,19 @@ export default function ReservaWizardScreen() {
 
   const tocarPlato = (plato, cantidadPlatos = 1) => {
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
+    if (!platoRequiereModalAlSumar(plato) && platoRequiereModalOp(plato)) {
+      const ultima = ultimaLineaDelPlato(selPlatos, plato, tipoServicioModal, { exacto: true });
+      if (ultima) {
+        cantInstancia(ultima.instanceId, n);
+        return;
+      }
+    }
     if (platoRequiereModalAlSumar(plato)) {
       setFocoComplementos(null);
       setOcultarSumarComplementos(false);
       setEditandoInstanceId(null);
+      setEditandoGrupoIds(null);
+      setUnidadesInicialesModal(null);
       tipoServicioAlComplementarRef.current = tipoServicioModal === "para_llevar" ? "para_llevar" : "mesa";
       setComplementosInicialesModal(null);
       setNotaInicialModal("");
@@ -463,6 +475,8 @@ export default function ReservaWizardScreen() {
       setFocoComplementos("anexarNombre");
       setOcultarSumarComplementos(true);
       setEditandoInstanceId(null);
+      setEditandoGrupoIds(null);
+      setUnidadesInicialesModal(null);
       tipoServicioAlComplementarRef.current = tipoServicioModal === "para_llevar" ? "para_llevar" : "mesa";
       setComplementosInicialesModal(null);
       setNotaInicialModal("");
@@ -495,67 +509,118 @@ export default function ReservaWizardScreen() {
   };
 
   const abrirFocoDesdeBuscador = (plato, focoModo) => {
-    const ultima = ultimaLineaDelPlato(selPlatos, plato, tipoServicioModal, { exacto: true });
-    if (!ultima && (platoRequiereModalAlSumar(plato) || platoRequiereModalOp(plato))) {
+    const lineas = lineasDelPlatoEnCarrito(selPlatos, plato, tipoServicioModal, { exacto: true });
+    if (!lineas.length && (platoRequiereModalAlSumar(plato) || platoRequiereModalOp(plato))) {
       tocarPlato(plato);
       return;
     }
     setFocoComplementos(focoModo);
     setOcultarSumarComplementos(true);
-    if (ultima) {
-      const resuelto = resolverPlatoConGrupos(ultima, platos);
-      setEditandoInstanceId(ultima.instanceId);
-      tipoServicioAlComplementarRef.current = ultima.tipoServicio || "mesa";
-      setComplementosInicialesModal(guarnicionesElegidas(ultima));
-      setNotaInicialModal(ultima.notaEspecial || "");
+    if (lineas.length) {
+      const ids = lineas.map((p) => p.instanceId);
+      const resuelto = resolverPlatoConGrupos(lineas[0], platos);
+      const seed = hidratarUnidadesDesdeLineas(resuelto || lineas[0], lineas);
+      setEditandoInstanceId(ids[0]);
+      setEditandoGrupoIds(ids);
+      setUnidadesInicialesModal(seed);
+      setCantidadInicialModal(Math.max(1, seed.length));
+      tipoServicioAlComplementarRef.current = lineas[0].tipoServicio || "mesa";
+      setComplementosInicialesModal(guarnicionesElegidas(lineas[0]));
+      setNotaInicialModal(lineas[0].notaEspecial || "");
       setPlatoParaComplementar({
-        ...(resuelto || ultima),
-        numeroSerie: ultima.numeroSerie || resuelto?.numeroSerie || "",
+        ...(resuelto || lineas[0]),
+        numeroSerie: lineas[0].numeroSerie || resuelto?.numeroSerie || "",
       });
       return;
     }
     setEditandoInstanceId(null);
+    setEditandoGrupoIds(null);
+    setUnidadesInicialesModal(null);
     tipoServicioAlComplementarRef.current = tipoServicioModal === "para_llevar" ? "para_llevar" : "mesa";
     setComplementosInicialesModal(null);
     setNotaInicialModal("");
+    setCantidadInicialModal(1);
     setPlatoParaComplementar(plato);
   };
 
-  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, numeroSerie, _precioUnitario, _extraComplementos, _cantidadPlatos }) => {
+  const handleEditarGuarnicionesLinea = (platoLinea) => {
+    const resuelto = resolverPlatoConGrupos(platoLinea, platos);
+    if (!resuelto?.complementos?.length) {
+      Alert.alert("Guarniciones", "No se pueden cargar las guarniciones de este combo. Agrégalo otra vez desde el menú.");
+      return;
+    }
+    const n = cantidadDeLinea(platoLinea);
+    const seed = hidratarUnidadesDesdeLineas(resuelto || platoLinea, [platoLinea]);
+    setFocoComplementos(null);
+    setOcultarSumarComplementos(false);
+    setEditandoInstanceId(platoLinea.instanceId);
+    setEditandoGrupoIds([platoLinea.instanceId]);
+    setUnidadesInicialesModal(seed);
+    setCantidadInicialModal(n);
+    tipoServicioAlComplementarRef.current = platoLinea.tipoServicio || "mesa";
+    setComplementosInicialesModal(guarnicionesElegidas(platoLinea));
+    setNotaInicialModal(platoLinea.notaEspecial || "");
+    setPlatoParaComplementar({
+      ...resuelto,
+      numeroSerie: platoLinea.numeroSerie || resuelto.numeroSerie || "",
+    });
+  };
+
+  const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, numeroSerie, _precioUnitario, _extraComplementos, _cantidadPlatos, _partes }) => {
     if (editandoInstanceId) {
-      const n = selPlatos.find((p) => p.instanceId === editandoInstanceId)?.cantidad || 1;
-      setSelPlatos((c) => c.map((p) => {
-        if (p.instanceId !== editandoInstanceId) return p;
-        const partes = expandirLineaComplementos(p, complementosSeleccionados, n);
-        const parte = partes[0] || { complementos: complementosSeleccionados, cantidad: n };
-        const afectan = p.complementosAfectanPrecio !== false;
-        const calc = _precioUnitario != null
-          ? { precioUnitario: _precioUnitario, extraComplementos: _extraComplementos }
-          : calcularPrecioUnitarioConComplementos(p.precio || 0, parte.complementos, { afectanPrecio: afectan });
-        const serie = normalizarNumeroSerie(numeroSerie || p.numeroSerie);
-        return {
-          ...p,
-          complementosElegidos: parte.complementos || [],
-          notaEspecial: notaEspecial || "",
-          precioUnitario: calc.precioUnitario,
-          extraComplementosV3: calc.extraComplementos,
-          ...(parte.nombreCocinaPedido ? { nombreCocinaPedido: parte.nombreCocinaPedido } : {}),
-          ...(parte.variantePlato ? { variantePlato: parte.variantePlato } : {}),
-          ...(serie ? { numeroSerie: serie } : {}),
-        };
-      }));
+      setSelPlatos((c) => {
+        const idx = c.findIndex((p) => p.instanceId === editandoInstanceId);
+        if (idx < 0) return c;
+        const linea = c[idx];
+        const n = Math.max(1, Number(_cantidadPlatos) || linea.cantidad || 1);
+        const partes = resolverPartesComplementos(linea, complementosSeleccionados, n, _partes);
+        const serie = normalizarNumeroSerie(numeroSerie || linea.numeroSerie);
+        const nuevas = partes.map((parte, i) => {
+          const afectan = linea.complementosAfectanPrecio !== false;
+          const calc = calcularPrecioUnitarioConComplementos(
+            linea.precio || 0,
+            parte.complementos,
+            { afectanPrecio: afectan }
+          );
+          const base = i === 0
+            ? linea
+            : {
+              ...linea,
+              instanceId: `${linea._id}_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
+            };
+          return {
+            ...base,
+            cantidad: Math.max(1, Number(parte.cantidad) || 1),
+            complementosElegidos: parte.complementos || [],
+            notaEspecial: notaEspecial || "",
+            precioUnitario: calc.precioUnitario,
+            extraComplementosV3: calc.extraComplementos,
+            ...(parte.nombreCocinaPedido ? { nombreCocinaPedido: parte.nombreCocinaPedido } : {}),
+            ...(parte.variantePlato ? { variantePlato: parte.variantePlato } : {}),
+            ...(serie ? { numeroSerie: serie } : {}),
+          };
+        });
+        const idsGrupo = new Set((editandoGrupoIds?.length ? editandoGrupoIds : [editandoInstanceId]).map(String));
+        const sinOtros = c.filter((p, i) => i === idx || !idsGrupo.has(String(p.instanceId)));
+        const idxKeep = sinOtros.findIndex((p) => p.instanceId === editandoInstanceId);
+        const at = idxKeep < 0 ? idx : idxKeep;
+        return [...sinOtros.slice(0, at), ...nuevas, ...sinOtros.slice(at + 1)];
+      });
       setEditandoInstanceId(null);
+      setEditandoGrupoIds(null);
       setFocoComplementos(null);
       setOcultarSumarComplementos(false);
       tipoServicioAlComplementarRef.current = null;
       setPlatoParaComplementar(null);
       setComplementosInicialesModal(null);
+      setUnidadesInicialesModal(null);
       setNotaInicialModal("");
+      setCantidadInicialModal(1);
       return;
     }
     if (platoParaComplementar) {
       const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
-      const partes = expandirLineaComplementos(platoParaComplementar, complementosSeleccionados, n);
+      const partes = resolverPartesComplementos(platoParaComplementar, complementosSeleccionados, n, _partes);
       const afectan = platoParaComplementar.complementosAfectanPrecio !== false;
       const serie = normalizarNumeroSerie(numeroSerie);
       partes.forEach((parte) => {
@@ -583,9 +648,13 @@ export default function ReservaWizardScreen() {
     tipoServicioAlComplementarRef.current = null;
     setPlatoParaComplementar(null);
     setComplementosInicialesModal(null);
+    setUnidadesInicialesModal(null);
     setNotaInicialModal("");
+    setEditandoInstanceId(null);
+    setEditandoGrupoIds(null);
     setFocoComplementos(null);
     setOcultarSumarComplementos(false);
+    setCantidadInicialModal(1);
   };
 
   const cantInstancia = (instanceId, d) => setSelPlatos((c) => c.map((p) => p.instanceId === instanceId ? { ...p, cantidad: Math.max(1, (p.cantidad || 1) + d) } : p));
@@ -944,6 +1013,15 @@ export default function ReservaWizardScreen() {
                       <TouchableOpacity onPress={() => cantInstancia(p.instanceId, -1)} style={s.cantBtn}><Text style={s.cantBtnText}>−</Text></TouchableOpacity>
                       <Text style={s.cantNum}>{p.cantidad}</Text>
                       <TouchableOpacity onPress={() => incrementarInstancia(p)} style={s.cantBtn}><Text style={s.cantBtnText}>+</Text></TouchableOpacity>
+                      {platoEditableEnOrdenes(p, platos) && (
+                        <TouchableOpacity
+                          onPress={() => handleEditarGuarnicionesLinea(p)}
+                          accessibilityLabel="Editar guarniciones o variaciones"
+                          hitSlop={8}
+                        >
+                          <MaterialCommunityIcons name="pencil-outline" size={18} color={cPrimary} />
+                        </TouchableOpacity>
+                      )}
                       <TouchableOpacity onPress={() => quitarInstancia(p.instanceId)} style={s.quitarBtn}><MaterialCommunityIcons name="trash-can-outline" size={16} color={cDanger} /></TouchableOpacity>
                     </View>
                   </MotiView>
@@ -1063,21 +1141,30 @@ export default function ReservaWizardScreen() {
         onClose={() => {
           setPlatoParaComplementar(null);
           setComplementosInicialesModal(null);
+          setUnidadesInicialesModal(null);
           setNotaInicialModal("");
           setEditandoInstanceId(null);
+          setEditandoGrupoIds(null);
           setFocoComplementos(null);
           setOcultarSumarComplementos(false);
           setCantidadInicialModal(1);
         }}
         complementosIniciales={complementosInicialesModal}
+        unidadesIniciales={unidadesInicialesModal}
         notaInicial={notaInicialModal}
         modoEdicion={!!editandoInstanceId}
         ocultarSumar={ocultarSumarComplementos}
         focoModo={focoComplementos}
         cantidadLinea={
-          editandoInstanceId
-            ? (selPlatos.find((p) => p.instanceId === editandoInstanceId)?.cantidad || 1)
-            : cantidadInicialModal
+          Math.max(
+            1,
+            Number(
+              (unidadesInicialesModal && unidadesInicialesModal.length)
+              || (editandoInstanceId
+                ? selPlatos.find((p) => p.instanceId === editandoInstanceId)?.cantidad
+                : cantidadInicialModal)
+            ) || 1
+          )
         }
         numeroSerieInicial={
           (platoParaComplementar && platoParaComplementar.numeroSerie)

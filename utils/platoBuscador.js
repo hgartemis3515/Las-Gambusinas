@@ -31,6 +31,28 @@ export function codigoMozoVisible(plato) {
   return String(plato?.codigo || '').trim().toUpperCase();
 }
 
+export function categoriasDePlato(p) {
+  if (!p) return [];
+  const arr = Array.isArray(p.categorias) ? p.categorias.map((c) => String(c || '').trim()).filter(Boolean) : [];
+  const seen = new Set();
+  const out = [];
+  arr.forEach((c) => {
+    const k = c.toLowerCase();
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push(c);
+  });
+  const legacy = String(p.categoria || p.cat || '').trim();
+  if (legacy && !seen.has(legacy.toLowerCase())) out.unshift(legacy);
+  return out.length ? out : [];
+}
+
+export function platoEsDeCategoria(p, cat) {
+  const target = String(cat || '').trim().toLowerCase();
+  if (!target) return true;
+  return categoriasDePlato(p).some((c) => c.toLowerCase() === target);
+}
+
 /** Guarnición que el mozo elige (no MIX, no variación de nombre, no fijo). */
 export function platoMuestraBotonG(plato) {
   return gruposGuarnicion(plato).some((g) => grupoEsGuarnicionMozo(g) && !grupoSeleccionFija(g));
@@ -83,6 +105,22 @@ export function expandirFilasBuscadorPlatos(platos) {
   return out;
 }
 
+/** Orden de carta (admin ↑↓): menor `orden` primero. */
+export function ordenarPlatosMenu(platos) {
+  if (!Array.isArray(platos)) return [];
+  return [...platos].sort((a, b) => {
+    const oa = Number(a?.orden);
+    const ob = Number(b?.orden);
+    const fa = Number.isFinite(oa) ? oa : Number.MAX_SAFE_INTEGER;
+    const fb = Number.isFinite(ob) ? ob : Number.MAX_SAFE_INTEGER;
+    if (fa !== fb) return fa - fb;
+    const ia = Number(a?.id) || 0;
+    const ib = Number(b?.id) || 0;
+    if (ia !== ib) return ia - ib;
+    return String(a?.nombre || '').localeCompare(String(b?.nombre || ''), 'es');
+  });
+}
+
 /** Prioriza coincidencia exacta / prefijo de código. */
 export function ordenarPlatosPorCodigoBusqueda(platos, termino) {
   const qU = String(termino || '').trim().toUpperCase();
@@ -98,7 +136,16 @@ export function ordenarPlatosPorCodigoBusqueda(platos, termino) {
     if (ck.includes(qU)) return 1;
     return 0;
   };
-  return [...platos].sort((a, b) => score(b) - score(a));
+  return [...platos].sort((a, b) => {
+    const d = score(b) - score(a);
+    if (d) return d;
+    const oa = Number(a?.orden);
+    const ob = Number(b?.orden);
+    const fa = Number.isFinite(oa) ? oa : Number.MAX_SAFE_INTEGER;
+    const fb = Number.isFinite(ob) ? ob : Number.MAX_SAFE_INTEGER;
+    if (fa !== fb) return fa - fb;
+    return 0;
+  });
 }
 
 /** MIX o número de serie: el + del buscador sigue abriendo el modal. OP va en modal aparte. */

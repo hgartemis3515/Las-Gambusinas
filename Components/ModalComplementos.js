@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -21,7 +21,8 @@ import {
   variacionesDeOpcion,
   calcularPrecioUnitarioConComplementos,
 } from "../utils/precioComplementos";
-import { textosGuarnicionesTotales, preseleccionComplementosDePlato, grupoSeleccionFija, preseleccionComplementosFijosDePlato, usaCantidadesTotalesGuarnicion } from "../utils/platoGuarniciones";
+import { textosGuarnicionesTotales, grupoSeleccionFija, preseleccionComplementosFijosDePlato } from "../utils/platoGuarniciones";
+import { cloneUnidadEstado, hashUnidadEstado, hidratarUnidadesEstado, fusionarUnidadesComplementos, claveGrupoNombre } from "../utils/unidadesComplemento";
 import { grupoEsVariantePlato, grupoAnexaNombre, gruposVarianteDePlato, gruposAnexarNombreDePlato, grupoVarianteSumaDeshabilitada, platoVarianteSumaDeshabilitada, grupoOpCantidades, platoOpCantidades, grupoOpCantidadesDePlato, saboresPorUnidadDePlato, previewCombosOp } from "../utils/variantePlato";
 import BotonEnviarOrden from "./BotonEnviarOrden";
 import { useBotonCantidadPlato } from "../context/BotonCantidadPlatoContext";
@@ -45,28 +46,7 @@ const findGrupoModal = (grupos, nombre) => {
  * @param {function} onClose - Callback para cerrar el modal sin guardar
  * @param {array} complementosIniciales - Complementos ya seleccionados (para edición)
  */
-const claveGrupoNombre = (n) => String(n || "").trim().toLowerCase();
-
-const claveGrupoSkipVar = (g) => grupoEsVariantePlato(g) || grupoAnexaNombre(g);
-
-function escalarCantidadesGuarnicion(prev, oldN, newN, grupos) {
-  if (oldN === newN || oldN < 1 || newN < 1) return prev;
-  const next = { ...prev };
-  Object.keys(prev).forEach((grupoNombre) => {
-    const cfg = findGrupoModal(grupos, grupoNombre);
-    if (claveGrupoSkipVar(cfg)) return;
-    const opciones = prev[grupoNombre] || {};
-    const scaled = {};
-    Object.entries(opciones).forEach(([op, cant]) => {
-      const q = Number(cant) || 0;
-      scaled[op] = q % oldN === 0 ? (q / oldN) * newN : q;
-    });
-    next[grupoNombre] = scaled;
-  });
-  return next;
-}
-
-const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIniciales = null, notaInicial = "", numeroSerieInicial = "", modoEdicion = false, cantidadLinea = 1, ocultarSumar = false, focoModo = null, onEnviarOrden = null, enviandoOrden = false }) => {
+const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIniciales = null, unidadesIniciales = null, notaInicial = "", numeroSerieInicial = "", modoEdicion = false, cantidadLinea = 1, ocultarSumar = false, focoModo = null, onEnviarOrden = null, enviandoOrden = false }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const styles = modalComplementosStyles(theme);
@@ -82,8 +62,15 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const [ordenSabores, setOrdenSabores] = useState([]);
   const [numeroSerie, setNumeroSerie] = useState("");
   const [kbH, setKbH] = useState(0);
+  const [unidadActiva, setUnidadActiva] = useState(0);
   const serieInputRef = useRef(null);
   const initKeyRef = useRef("");
+  const unidadesRef = useRef([]);
+  const plantillaDefaultRef = useRef(null);
+  const unidadActivaRef = useRef(0);
+  const seleccionesRef = useRef({});
+  const variacionesRef = useRef({});
+  const ordenSaboresRef = useRef([]);
 
   // Los complementos del plato (array de grupos)
   const complementos = plato?.complementos || [];
@@ -104,74 +91,75 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   }, []);
 
   const platoKey = plato?._id || plato?.id || '';
+  seleccionesRef.current = seleccionesPorGrupo;
+  variacionesRef.current = variacionesPorGrupo;
+  ordenSaboresRef.current = ordenSabores;
+  unidadActivaRef.current = unidadActiva;
 
-  // null = plato nuevo → preselección de platos.html. Array = edición (aunque esté vacío).
-  // Solo hidratar al abrir o cambiar de plato. Si no, un re-render del padre
-  // (numeroSerieInicial / plato nuevo) borra lo que el mozo está escribiendo.
-  useEffect(() => {
+  const seedLen = Array.isArray(unidadesIniciales) ? unidadesIniciales.length : 0;
+
+  // Hidratar antes del paint para que N1…Nn coincidan con la cantidad ya pedida.
+  useLayoutEffect(() => {
     if (!visible) {
       initKeyRef.current = "";
       return;
     }
-    const nInit = Math.max(1, Math.min(99, Number(cantidadLinea) || 1));
-    const initKey = `${platoKey}|${modoEdicion ? "edicion" : "nuevo"}|${focoModo || ""}|${ocultarSumar ? 1 : 0}|${nInit}`;
+    const nInit = Math.max(1, Math.min(99, Number(cantidadLinea) || seedLen || 1));
+    const baseKey = `${platoKey}|${modoEdicion ? "edicion" : "nuevo"}|${focoModo || ""}|${ocultarSumar ? 1 : 0}`;
+    const initKey = `${baseKey}|${nInit}|${seedLen}`;
     if (initKeyRef.current === initKey) return;
+
+    const mismaSesion = String(initKeyRef.current || "").startsWith(`${baseKey}|`);
     initKeyRef.current = initKey;
-    const factorGarn = usaCantidadesTotalesGuarnicion(plato, nInit) ? nInit : 1;
-    const fijos = preseleccionComplementosFijosDePlato(plato);
-    const nombresFijos = new Set(
-      fijos.map((c) => String(c.grupo || "").trim().toLowerCase())
-    );
-    const fuente = Array.isArray(complementosIniciales)
-      ? complementosIniciales
-      : preseleccionComplementosDePlato(plato);
-    const cantOpcion = (comp) => {
-      const cfg = findGrupoModal(plato?.complementos, comp.grupo);
-      const factor = claveGrupoSkipVar(cfg) ? 1 : factorGarn;
-      return (comp.cantidad || 1) * factor;
-    };
-    const nuevaSeleccion = {};
-    const nuevasVars = {};
-    const applyVar = (comp) => {
-      const v = String(comp.variacion || "").trim();
-      if (!v || !comp.grupo || !comp.opcion) return;
-      const gk = String(comp.grupo).trim();
-      if (!nuevasVars[gk]) nuevasVars[gk] = {};
-      nuevasVars[gk][comp.opcion] = v;
-    };
-    fuente.forEach((comp) => {
-      const grupoKey = String(comp.grupo || "").trim();
-      if (!grupoKey) return;
-      if (!modoEdicion && nombresFijos.has(grupoKey.toLowerCase())) return;
-      if (!nuevaSeleccion[grupoKey]) nuevaSeleccion[grupoKey] = {};
-      nuevaSeleccion[grupoKey][comp.opcion] = cantOpcion(comp);
-      applyVar(comp);
-    });
-    fijos.forEach((comp) => {
-      const grupoKey = String(comp.grupo || "").trim();
-      if (!grupoKey) return;
-      if (modoEdicion && nuevaSeleccion[grupoKey]) return;
-      if (!nuevaSeleccion[grupoKey]) nuevaSeleccion[grupoKey] = {};
-      nuevaSeleccion[grupoKey][comp.opcion] = cantOpcion(comp);
-      applyVar(comp);
-    });
-    setSeleccionesPorGrupo(nuevaSeleccion);
-    setVariacionesPorGrupo(nuevasVars);
-    const gOpInit = grupoOpCantidadesDePlato(plato);
-    const ordenInit = [];
-    if (gOpInit) {
-      const claveOp = String(gOpInit.grupo || '').trim().toLowerCase();
-      fuente.forEach((comp) => {
-        if (String(comp.grupo || '').trim().toLowerCase() !== claveOp) return;
-        const q = Math.max(0, Number(comp.cantidad) || 0);
-        for (let i = 0; i < q; i += 1) ordenInit.push(comp.opcion);
-      });
+    const sumaLibreInit = platoVarianteSumaDeshabilitada(plato);
+
+    if (mismaSesion && !sumaLibreInit && unidadesRef.current.length) {
+      const list = unidadesRef.current;
+      if (nInit > list.length) {
+        const plantilla = cloneUnidadEstado(plantillaDefaultRef.current || list[0]);
+        while (list.length < nInit) list.push(cloneUnidadEstado(plantilla));
+      } else if (nInit < list.length) {
+        list.length = nInit;
+        if (unidadActivaRef.current >= nInit) {
+          const i = nInit - 1;
+          unidadActivaRef.current = i;
+          setUnidadActiva(i);
+          const u = list[i] || { selecciones: {}, variaciones: {}, ordenSabores: [] };
+          setSeleccionesPorGrupo(u.selecciones || {});
+          setVariacionesPorGrupo(u.variaciones || {});
+          setOrdenSabores(u.ordenSabores || []);
+        }
+      }
+      setCantidadClones(nInit);
+      return;
     }
-    setOrdenSabores(ordenInit);
+
+    const nUnidades = sumaLibreInit ? 1 : nInit;
+    let unidades;
+    if (!sumaLibreInit && seedLen > 0) {
+      unidades = unidadesIniciales.map(cloneUnidadEstado);
+      const plantilla = cloneUnidadEstado(unidades[0] || { selecciones: {}, variaciones: {}, ordenSabores: [] });
+      while (unidades.length < nUnidades) unidades.push(cloneUnidadEstado(plantilla));
+      if (unidades.length > nUnidades) unidades.length = nUnidades;
+    } else {
+      unidades = hidratarUnidadesEstado(
+        plato,
+        Array.isArray(complementosIniciales) ? complementosIniciales : null,
+        nUnidades
+      );
+    }
+    unidadesRef.current = unidades.map(cloneUnidadEstado);
+    plantillaDefaultRef.current = cloneUnidadEstado(unidades[0] || { selecciones: {}, variaciones: {}, ordenSabores: [] });
+    const u0 = unidades[0] || { selecciones: {}, variaciones: {}, ordenSabores: [] };
+    setSeleccionesPorGrupo(u0.selecciones || {});
+    setVariacionesPorGrupo(u0.variaciones || {});
+    setOrdenSabores(u0.ordenSabores || []);
+    setUnidadActiva(0);
+    unidadActivaRef.current = 0;
     setNotaEspecial(typeof notaInicial === 'string' ? notaInicial : "");
     setCantidadClones(nInit);
     setNumeroSerie(normalizarNumeroSerie(numeroSerieInicial));
-  }, [visible, complementosIniciales, notaInicial, numeroSerieInicial, platoKey, modoEdicion, cantidadLinea, ocultarSumar, focoModo]);
+  }, [visible, complementosIniciales, seedLen, notaInicial, numeroSerieInicial, platoKey, modoEdicion, cantidadLinea, ocultarSumar, focoModo]);
 
   useEffect(() => {
     if (!visible) {
@@ -210,14 +198,17 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     const esOpCant = grupoOpCantidades(grupoCfg);
     const sumaLibre = grupoVarianteSumaDeshabilitada(grupoCfg);
     const n = Math.max(1, Math.min(99, Number(cantidadClones) || 1));
-    const totGarn = usaCantidadesTotalesGuarnicion(plato, n);
+    const totGarn = false;
     const nSab = saboresPorUnidadDePlato(plato);
-    const maxSlotsOp = slotsOpNecesarios(logicaPachamanca, n, nSab);
+    const porUnidad = !platoVarianteSumaDeshabilitada(plato) && n > 1;
+    const maxSlotsOp = porUnidad
+      ? nSab
+      : slotsOpNecesarios(logicaPachamanca, n, nSab);
 
     // Validar límites
     let maxUnidadesGrupo = grupoNormalizado.maxUnidadesGrupo;
     if (esOpCant) maxUnidadesGrupo = maxSlotsOp;
-    else if (esVar && !sumaLibre) maxUnidadesGrupo = n;
+    else if (esVar && !sumaLibre) maxUnidadesGrupo = porUnidad ? 1 : n;
     else if (!esVar && !esOpCant && !grupoAnexaNombre(grupoCfg) && totGarn) {
       if (maxUnidadesGrupo != null) maxUnidadesGrupo = maxUnidadesGrupo * n;
       else if (grupoNormalizado.modoSeleccion !== 'cantidades') maxUnidadesGrupo = n;
@@ -375,8 +366,11 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const opCantidades = platoOpCantidades(plato);
   const nSaboresOp = saboresPorUnidadDePlato(plato);
   const logicaMismaCombo = logicaPachamanca === LOGICA_PACHAMANCA_MISMA;
-  const maxSlotsOp = slotsOpNecesarios(logicaPachamanca, nClones, nSaboresOp);
-  const usarTotalesGarn = usaCantidadesTotalesGuarnicion(plato, nClones);
+  const editarPorUnidad = !sumaMixLibre && nClones > 1;
+  const maxSlotsOp = editarPorUnidad
+    ? nSaboresOp
+    : slotsOpNecesarios(logicaPachamanca, nClones, nSaboresOp);
+  const usarTotalesGarn = false;
   const mixSum = useMemo(() => {
     return gruposVarianteDePlato(plato).reduce((s, g) => s + getTotalUnidadesGrupo(g.grupo), 0);
   }, [plato, getTotalUnidadesGrupo, seleccionesPorGrupo]);
@@ -384,18 +378,26 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const gruposVarianteDePlatoHint = sumaMixLibre
     ? "Las cantidades de TÉ / CAFÉ son lo que se pide. Las fijas se multiplican por ese total."
     : hayVarianteMix
-    ? (nClones === 1
+    ? (editarPorUnidad
+      ? "Cada N es un MIX. Tocá N5 para cambiar solo ese (TÉ / CAFÉ y guarniciones)."
+      : (nClones === 1
       ? "Elegí 1 opción de la variante (TÉ, CAFÉ…). Las otras guarniciones van con cada MIX."
-      : `Repartí ${nClones} MIX entre TÉ / CAFÉ / etc. Cada uno lleva las demás guarniciones.`)
+      : `Repartí ${nClones} MIX entre TÉ / CAFÉ / etc. Cada uno lleva las demás guarniciones.`))
     : hayAnexarNombre && opCantidades
-    ? (logicaMismaCombo
+    ? (editarPorUnidad
+      ? `Cada N es una pachamanca (${nSaboresOp} sabor(es)). Tocá N5, restá un sabor y sumá otro.`
+      : (logicaMismaCombo
       ? `Elegí ${nSaboresOp} sabor(es) una vez. Agregar Cantidad copia esa mezcla a ${nClones} pachamanca(s).`
-      : `Agregar Cantidad = pachamancas. Los sabores van de a ${nSaboresOp}. Faltan ${Math.max(0, maxSlotsOp - ordenSabores.length)}.`)
+      : `Agregar Cantidad = pachamancas. Los sabores van de a ${nSaboresOp}. Faltan ${Math.max(0, maxSlotsOp - ordenSabores.length)}.`))
     : hayAnexarNombre
-    ? `Elegí la opción OP. Se aplica a ${nClones} plato(s).`
-    : (nClones === 1
+    ? (editarPorUnidad
+      ? "Cada N es un plato. Tocá N5 para cambiar solo esa variación OP."
+      : `Elegí la opción OP. Se aplica a ${nClones} plato(s).`)
+    : (editarPorUnidad
+      ? "Cada N es un plato con sus guarniciones. Tocá N5, restá una y sumá otra."
+      : (nClones === 1
       ? "Las cantidades de abajo son por cada plato"
-      : `Total de ${nClones} platos: restá de a 1 (ej. 2 papas → 1 papa y 1 frejol)`);
+      : `Total de ${nClones} platos: restá de a 1 (ej. 2 papas → 1 papa y 1 frejol)`));
 
   // Calcular estado de validación para cada grupo
   const estadoGrupos = useMemo(() => {
@@ -413,12 +415,12 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       const minUnidades = esOpCant
         ? maxSlotsOp
         : esVar
-        ? (sumaLibre ? (grupo.minUnidadesGrupo || (grupo.obligatorio ? 1 : 0) || 1) : nClones)
+        ? (sumaLibre ? (grupo.minUnidadesGrupo || (grupo.obligatorio ? 1 : 0) || 1) : (editarPorUnidad ? 1 : nClones))
         : minBase * (totGarn ? nClones : 1);
       const maxUnidades = esOpCant
         ? maxSlotsOp
         : esVar
-        ? (sumaLibre ? grupo.maxUnidadesGrupo : nClones)
+        ? (sumaLibre ? grupo.maxUnidadesGrupo : (editarPorUnidad ? 1 : nClones))
         : (grupo.maxUnidadesGrupo == null
           ? (totGarn && grupo.modoSeleccion !== 'cantidades' ? nClones : null)
           : grupo.maxUnidadesGrupo * (totGarn ? nClones : 1));
@@ -435,7 +437,9 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
           : esVar
           ? (sumaLibre
             ? `Elegí al menos ${minUnidades} (TÉ, CAFÉ…)`
-            : `Repartí ${nClones} entre las opciones (faltan ${minUnidades - totalUnidades})`)
+            : (editarPorUnidad
+              ? 'Elegí 1 opción MIX para este plato'
+              : `Repartí ${nClones} entre las opciones (faltan ${minUnidades - totalUnidades})`))
           : `Faltan ${minUnidades - totalUnidades} unidad(es)`;
       } else if (maxUnidades !== null && totalUnidades > maxUnidades) {
         esValido = false;
@@ -467,7 +471,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       };
     });
     return estados;
-  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo, nClones, modoEdicion, focoModo, usarTotalesGarn, maxSlotsOp, nSaboresOp, logicaMismaCombo]);
+  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo, nClones, modoEdicion, focoModo, usarTotalesGarn, maxSlotsOp, nSaboresOp, logicaMismaCombo, editarPorUnidad]);
 
   // Verificar si todos los grupos obligatorios tienen selección
   const obligatoriosCompletos = useMemo(() => {
@@ -481,38 +485,102 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       const minUnidades = grupoEsVariantePlato(grupoOriginal)
         ? (grupoVarianteSumaDeshabilitada(grupoOriginal)
           ? (grupo.minUnidadesGrupo || 1)
-          : nClones)
+          : (editarPorUnidad ? 1 : nClones))
         : (grupo.minUnidadesGrupo || 1) * (usarTotalesGarn && !grupoEsVariantePlato(grupoOriginal) ? nClones : 1);
       
       return totalUnidades >= minUnidades;
     });
-  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo, nClones, focoModo, usarTotalesGarn]);
+  }, [complementos, seleccionesPorGrupo, getTotalUnidadesGrupo, normalizarGrupo, nClones, focoModo, usarTotalesGarn, editarPorUnidad]);
 
   // Verificar si hay algún error de validación
   const hayErrores = useMemo(() => {
     return Object.values(estadoGrupos).some(e => !e.esValido);
   }, [estadoGrupos]);
 
+  const snapshotUnidadActual = useCallback(() => ({
+    selecciones: JSON.parse(JSON.stringify(seleccionesRef.current || {})),
+    variaciones: JSON.parse(JSON.stringify(variacionesRef.current || {})),
+    ordenSabores: [...(ordenSaboresRef.current || [])],
+  }), []);
+
+  const persistirUnidadActiva = useCallback(() => {
+    const list = unidadesRef.current;
+    const snap = snapshotUnidadActual();
+    if (!list.length) {
+      unidadesRef.current = [snap];
+      return;
+    }
+    const i = Math.max(0, Math.min(unidadActivaRef.current, list.length - 1));
+    list[i] = snap;
+  }, [snapshotUnidadActual]);
+
+  const aplicarUnidadEstado = useCallback((u) => {
+    const next = u || { selecciones: {}, variaciones: {}, ordenSabores: [] };
+    setSeleccionesPorGrupo(next.selecciones || {});
+    setVariacionesPorGrupo(next.variaciones || {});
+    setOrdenSabores(next.ordenSabores || []);
+  }, []);
+
+  const seleccionarUnidad = useCallback((i) => {
+    persistirUnidadActiva();
+    const list = unidadesRef.current;
+    if (i < 0 || i >= list.length) return;
+    unidadActivaRef.current = i;
+    setUnidadActiva(i);
+    aplicarUnidadEstado(list[i]);
+  }, [persistirUnidadActiva, aplicarUnidadEstado]);
+
+  const unidadSeleccionValida = useCallback((estado) => {
+    const sel = estado?.selecciones || {};
+    const totalG = (grupoNombre) => Object.values(sel[grupoNombre] || {}).reduce((s, c) => s + (Number(c) || 0), 0);
+    return complementos.every((grupoOriginal) => {
+      if (!grupoVisibleEnFoco(grupoOriginal, focoModo)) return true;
+      if (!modoEdicion && grupoSeleccionFija(grupoOriginal)) return true;
+      const grupo = normalizarGrupo(grupoOriginal);
+      const esVar = grupoEsVariantePlato(grupoOriginal);
+      const esOpCant = grupoOpCantidades(grupoOriginal);
+      const sumaLibre = grupoVarianteSumaDeshabilitada(grupoOriginal);
+      const total = esOpCant
+        ? (estado.ordenSabores || []).length
+        : totalG(grupo.grupo);
+      const minUnidades = esOpCant
+        ? nSaboresOp
+        : esVar
+        ? (sumaLibre ? (grupo.minUnidadesGrupo || 1) : 1)
+        : (grupo.minUnidadesGrupo || (grupo.obligatorio ? 1 : 0));
+      const maxUnidades = esOpCant
+        ? nSaboresOp
+        : esVar
+        ? (sumaLibre ? grupo.maxUnidadesGrupo : 1)
+        : grupo.maxUnidadesGrupo;
+      if ((grupo.obligatorio || esVar || esOpCant || minUnidades > 0) && total < minUnidades) return false;
+      if (maxUnidades != null && total > maxUnidades) return false;
+      return true;
+    });
+  }, [complementos, focoModo, modoEdicion, normalizarGrupo, nSaboresOp]);
+
+  const hayErroresOtrasUnidades = editarPorUnidad && unidadesRef.current.some((u, i) => (
+    i !== unidadActiva && !unidadSeleccionValida(u)
+  ));
+
   const cambiarClones = (delta) => {
     const oldN = Math.max(1, Math.min(99, Number(cantidadClones) || 1));
     const newN = Math.max(1, Math.min(99, oldN + delta));
     if (newN === oldN) return;
-    if (usaCantidadesTotalesGuarnicion(plato, Math.max(oldN, newN))) {
-      setSeleccionesPorGrupo((prev) => escalarCantidadesGuarnicion(prev, oldN, newN, complementos));
-    }
-    if (opCantidades && !logicaMismaCombo) {
-      const cap = slotsOpNecesarios(logicaPachamanca, newN, nSaboresOp);
-      setOrdenSabores((prev) => {
-        if (prev.length <= cap) return prev;
-        const next = prev.slice(0, cap);
-        const gOp = grupoOpCantidadesDePlato(plato);
-        if (gOp) {
-          const counts = {};
-          next.forEach((s) => { counts[s] = (counts[s] || 0) + 1; });
-          setSeleccionesPorGrupo((sel) => ({ ...sel, [gOp.grupo]: counts }));
-        }
-        return next;
-      });
+    persistirUnidadActiva();
+    const list = unidadesRef.current;
+    if (!list.length) list.push(snapshotUnidadActual());
+    if (newN > list.length) {
+      const plantilla = cloneUnidadEstado(plantillaDefaultRef.current || list[0] || snapshotUnidadActual());
+      while (list.length < newN) list.push(cloneUnidadEstado(plantilla));
+    } else if (newN < list.length) {
+      list.length = newN;
+      if (unidadActivaRef.current >= newN) {
+        const i = newN - 1;
+        unidadActivaRef.current = i;
+        setUnidadActiva(i);
+        aplicarUnidadEstado(list[i]);
+      }
     }
     setCantidadClones(newN);
   };
@@ -609,83 +677,88 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const serieValida = !!focoModo || !requiereSerie || numeroSerieEsValido(numeroSerie);
 
   const handleConfirmar = () => {
-    if (!obligatoriosCompletos || hayErrores || !serieValida) return false;
+    if (!obligatoriosCompletos || hayErrores || hayErroresOtrasUnidades || !serieValida) return false;
 
-    const scaleSiTotal = (c) => {
-      const cfg = findGrupoModal(complementos, c.grupo);
-      if (!usarTotalesGarn || claveGrupoSkipVar(cfg)) return c;
-      return { ...c, cantidad: (Number(c.cantidad) || 1) * nClones };
-    };
-    const fijos = preseleccionComplementosFijosDePlato(plato).map((c) => ({
-      ...scaleSiTotal(c),
-      precio: afectanPrecio ? (Number(c.precio) || 0) : 0,
-    }));
-    const nombresFijos = new Set(
-      fijos.map((c) => claveGrupoNombre(c.grupo))
-    );
-    const visiblesKeys = new Set(
-      complementos
-        .filter((g) => grupoVisibleEnFoco(g, focoModo) && (modoEdicion || !grupoSeleccionFija(g)))
-        .map((g) => claveGrupoNombre(g.grupo))
-    );
-    const fuenteKept = Array.isArray(complementosIniciales)
-      ? complementosIniciales
-      : preseleccionComplementosDePlato(plato);
-    const kept = focoModo
-      ? fuenteKept.filter((c) => !visiblesKeys.has(claveGrupoNombre(c.grupo))).map(scaleSiTotal)
-      : [];
-    const keptSinFijos = kept.filter((c) => !nombresFijos.has(claveGrupoNombre(c.grupo)));
+    persistirUnidadActiva();
+    const list = unidadesRef.current;
+    if (!list.length) list.push(snapshotUnidadActual());
+    if (nClones > list.length) {
+      const plantilla = cloneUnidadEstado(plantillaDefaultRef.current || list[0] || snapshotUnidadActual());
+      while (list.length < nClones) list.push(cloneUnidadEstado(plantilla));
+    } else if (nClones < list.length) {
+      list.length = nClones;
+    }
 
-    const complementosSeleccionados = modoEdicion
-      ? [...kept]
-      : (focoModo ? [...fijos, ...keptSinFijos] : [...fijos]);
+    const complementosDeEstado = (estado) => {
+      const sel = estado?.selecciones || {};
+      const varsMap = estado?.variaciones || {};
+      const orden = estado?.ordenSabores || [];
+      const fijos = preseleccionComplementosFijosDePlato(plato).map((c) => ({
+        ...c,
+        precio: afectanPrecio ? (Number(c.precio) || 0) : 0,
+      }));
+      const nombresFijos = new Set(fijos.map((c) => claveGrupoNombre(c.grupo)));
+      const out = modoEdicion ? [] : [...fijos];
+      const gOpConfirm = grupoOpCantidadesDePlato(plato);
+      const claveOpConfirm = gOpConfirm ? claveGrupoNombre(gOpConfirm.grupo) : '';
+      const ordenEmit = logicaMismaCombo ? orden.slice(0, nSaboresOp) : orden;
 
-    const gOpConfirm = grupoOpCantidadesDePlato(plato);
-    const claveOpConfirm = gOpConfirm ? claveGrupoNombre(gOpConfirm.grupo) : '';
-    const ordenEmit = logicaMismaCombo
-      ? ordenSabores.slice(0, nSaboresOp)
-      : ordenSabores;
-
-    Object.entries(seleccionesPorGrupo).forEach(([grupoNombre, opciones]) => {
-      if (!grupoVisibleEnFoco(findGrupoModal(complementos, grupoNombre), focoModo)) return;
-      if (!modoEdicion && nombresFijos.has(claveGrupoNombre(grupoNombre))) return;
-      if (claveOpConfirm && claveGrupoNombre(grupoNombre) === claveOpConfirm) return;
-      const grupoConfig = findGrupoModal(complementos, grupoNombre);
-      Object.entries(opciones).forEach(([opcion, cantidad]) => {
-        if (cantidad > 0) {
-          const opDoc = (grupoConfig?.opciones || []).find((o) =>
-            String(o?.nombre || '').trim().toLowerCase() === String(opcion).trim().toLowerCase()
-          );
-          const variacion = String(variacionesPorGrupo[grupoNombre]?.[opcion] || '').trim();
-          const precioOpcion = grupoConfig ? getPrecioOpcion(grupoConfig, opcion) : 0;
-          const precioVar = grupoConfig ? getPrecioVariacion(grupoConfig, opcion, variacion) : 0;
-          complementosSeleccionados.push({
-            grupo: grupoNombre,
-            opcion: opcion,
-            cantidad: cantidad,
-            precio: afectanPrecio ? precioOpcion + precioVar : 0,
-            pronombre: String(opDoc?.pronombre || '').trim(),
-            ...(variacion ? { variacion } : {}),
-          });
-        }
-      });
-    });
-
-    if (gOpConfirm && ordenEmit.length) {
-      const grupoConfig = gOpConfirm;
-      ordenEmit.forEach((opcion) => {
-        const opDoc = (grupoConfig?.opciones || []).find((o) =>
-          String(o?.nombre || '').trim().toLowerCase() === String(opcion).trim().toLowerCase()
-        );
-        const precioOpcion = getPrecioOpcion(grupoConfig, opcion);
-        complementosSeleccionados.push({
-          grupo: gOpConfirm.grupo,
-          opcion,
-          cantidad: 1,
-          precio: afectanPrecio ? precioOpcion : 0,
-          pronombre: String(opDoc?.pronombre || '').trim(),
+      Object.entries(sel).forEach(([grupoNombre, opciones]) => {
+        if (!modoEdicion && nombresFijos.has(claveGrupoNombre(grupoNombre))) return;
+        if (claveOpConfirm && claveGrupoNombre(grupoNombre) === claveOpConfirm) return;
+        const grupoConfig = findGrupoModal(complementos, grupoNombre);
+        Object.entries(opciones || {}).forEach(([opcion, cantidad]) => {
+          if (cantidad > 0) {
+            const opDoc = (grupoConfig?.opciones || []).find((o) =>
+              String(o?.nombre || '').trim().toLowerCase() === String(opcion).trim().toLowerCase()
+            );
+            const variacion = String(varsMap[grupoNombre]?.[opcion] || '').trim();
+            const precioOpcion = grupoConfig ? getPrecioOpcion(grupoConfig, opcion) : 0;
+            const precioVar = grupoConfig ? getPrecioVariacion(grupoConfig, opcion, variacion) : 0;
+            out.push({
+              grupo: grupoNombre,
+              opcion,
+              cantidad,
+              precio: afectanPrecio ? precioOpcion + precioVar : 0,
+              pronombre: String(opDoc?.pronombre || '').trim(),
+              ...(variacion ? { variacion } : {}),
+            });
+          }
         });
       });
+
+      if (gOpConfirm && ordenEmit.length) {
+        ordenEmit.forEach((opcion) => {
+          const opDoc = (gOpConfirm?.opciones || []).find((o) =>
+            String(o?.nombre || '').trim().toLowerCase() === String(opcion).trim().toLowerCase()
+          );
+          const precioOpcion = getPrecioOpcion(gOpConfirm, opcion);
+          out.push({
+            grupo: gOpConfirm.grupo,
+            opcion,
+            cantidad: 1,
+            precio: afectanPrecio ? precioOpcion : 0,
+            pronombre: String(opDoc?.pronombre || '').trim(),
+          });
+        });
+      }
+      return out;
+    };
+
+    const unidadesComps = (unidadesRef.current.length ? unidadesRef.current : [snapshotUnidadActual()])
+      .map(complementosDeEstado);
+
+    let complementosSeleccionados;
+    let nPedido;
+    let partes;
+    if (sumaMixLibre) {
+      complementosSeleccionados = unidadesComps[0] || [];
+      nPedido = Math.max(1, Math.min(99, mixSum));
+      partes = null;
+    } else {
+      partes = fusionarUnidadesComplementos(plato, unidadesComps);
+      complementosSeleccionados = partes[0]?.complementos || [];
+      nPedido = partes.reduce((s, p) => s + (Number(p.cantidad) || 1), 0);
     }
 
     const calc = calcularPrecioUnitarioConComplementos(
@@ -700,7 +773,8 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       numeroSerie: requiereSerie ? normalizarNumeroSerie(numeroSerie) : "",
       _precioUnitario: calc.precioUnitario,
       _extraComplementos: calc.extraComplementos,
-      _cantidadPlatos: Math.max(1, Math.min(99, sumaMixLibre ? mixSum : nClones)),
+      _cantidadPlatos: Math.max(1, Math.min(99, nPedido)),
+      ...(partes ? { _partes: partes } : {}),
     });
 
     setSeleccionesPorGrupo({});
@@ -708,6 +782,8 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     setNotaEspecial("");
     setCantidadClones(1);
     setNumeroSerie("");
+    setUnidadActiva(0);
+    unidadesRef.current = [];
     return true;
   };
 
@@ -724,8 +800,12 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     setNotaEspecial("");
     setCantidadClones(1);
     setNumeroSerie("");
+    setUnidadActiva(0);
+    unidadesRef.current = [];
     onClose();
   };
+
+  const bloqueadoConfirmar = !obligatoriosCompletos || hayErrores || hayErroresOtrasUnidades || !serieValida;
 
   // Si no hay plato, o no hay complementos ni número de serie, no mostrar
   if (!plato || (complementos.length === 0 && !requiereSerie)) return null;
@@ -736,7 +816,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       transparent={true}
       animationType="slide"
       statusBarTranslucent
-      onRequestClose={handleCancelar}
+      onRequestClose={handleConfirmar}
       presentationStyle={Platform.OS === "ios" ? "overFullScreen" : undefined}
     >
       <KeyboardAvoidingView
@@ -760,9 +840,9 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             <View style={styles.headerActions}>
               <BotonEnviarOrden
                 onPress={onEnviarOrden ? handleEnviarDesdeModal : undefined}
-                disabled={enviandoOrden || !obligatoriosCompletos || hayErrores || !serieValida}
+                disabled={enviandoOrden || bloqueadoConfirmar}
               />
-              <TouchableOpacity onPress={handleCancelar} style={styles.closeButton}>
+              <TouchableOpacity onPress={handleConfirmar} style={styles.closeButton} accessibilityLabel="Guardar y cerrar">
                 <MaterialCommunityIcons
                   name="close"
                   size={24}
@@ -840,8 +920,12 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
               <View style={styles.totalesBarTextWrap}>
                 <Text style={styles.totalesBarTitle} numberOfLines={1}>
                   {focoModo === 'anexarNombre'
-                    ? (nClones > 1 ? `Agregar Cantidad (${nClones})` : 'Agregar Cantidad')
-                    : (factorPedido > 1 ? `Guarniciones a agregar (${factorPedido} platos)` : 'Guarniciones a agregar')}
+                    ? (editarPorUnidad
+                      ? `OP · N${unidadActiva + 1} de ${nClones}`
+                      : (nClones > 1 ? `Agregar Cantidad (${nClones})` : 'Agregar Cantidad'))
+                    : (editarPorUnidad
+                      ? `Guarniciones · N${unidadActiva + 1} de ${nClones}`
+                      : (factorPedido > 1 ? `Guarniciones a agregar (${factorPedido} platos)` : 'Guarniciones a agregar'))}
                 </Text>
                 {focoModo === 'anexarNombre' && opCantidades ? (
                   <Text style={styles.totalesBarText} numberOfLines={2}>
@@ -881,7 +965,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             </View>
           )}
 
-          {focoModo === 'anexarNombre' && opCantidades && (
+          {focoModo === 'anexarNombre' && opCantidades && !editarPorUnidad && (
             <View style={styles.comboPreview}>
               {(logicaMismaCombo
                 ? [{
@@ -906,6 +990,38 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             </View>
           )}
 
+          <View style={styles.bodyRow}>
+          {editarPorUnidad ? (
+            <ScrollView
+              style={styles.nList}
+              contentContainerStyle={styles.nListContent}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="always"
+            >
+              {Array.from({ length: nClones }, (_, i) => {
+                const activa = unidadActiva === i;
+                const u = i === unidadActiva
+                  ? { selecciones: seleccionesPorGrupo, variaciones: variacionesPorGrupo, ordenSabores }
+                  : unidadesRef.current[i];
+                const base = unidadActiva === 0
+                  ? { selecciones: seleccionesPorGrupo, variaciones: variacionesPorGrupo, ordenSabores }
+                  : unidadesRef.current[0];
+                const distinta = !!(u && base && hashUnidadEstado(u) !== hashUnidadEstado(base));
+                return (
+                  <TouchableOpacity
+                    key={i}
+                    onPress={() => seleccionarUnidad(i)}
+                    style={[styles.nBox, activa && styles.nBoxActive, distinta && styles.nBoxChanged]}
+                    accessibilityLabel={`Plato N${i + 1}`}
+                    accessibilityState={{ selected: activa }}
+                  >
+                    <Text style={[styles.nBoxText, activa && styles.nBoxTextActive]}>{`N${i + 1}`}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          ) : null}
           <ScrollView
             style={[styles.modalScrollView, kbH > 0 && styles.modalScrollViewTeclado]}
             contentContainerStyle={styles.modalScrollContent}
@@ -929,7 +1045,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
               let maxGrupoEfectivo = esOpCantGrupo
                 ? maxSlotsOp
                 : esVarGrupo
-                ? (sumaMixLibre ? grupoNormalizado.maxUnidadesGrupo : nClones)
+                ? (sumaMixLibre ? grupoNormalizado.maxUnidadesGrupo : (editarPorUnidad ? 1 : nClones))
                 : grupoNormalizado.maxUnidadesGrupo;
               if (totEsteGrupo) {
                 if (maxGrupoEfectivo != null) maxGrupoEfectivo = maxGrupoEfectivo * nClones;
@@ -1127,6 +1243,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
               />
             </View>
           </ScrollView>
+          </View>
 
           {/* v3.0: Footer con desglose de precios */}
           {afectanPrecio && preciosResumen.tieneExtras && (
@@ -1172,10 +1289,10 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             <TouchableOpacity
               style={[
                 styles.confirmButton,
-                (!obligatoriosCompletos || hayErrores || !serieValida) && styles.confirmButtonDisabled,
+                bloqueadoConfirmar && styles.confirmButtonDisabled,
               ]}
               onPress={handleConfirmar}
-              disabled={!obligatoriosCompletos || hayErrores || !serieValida}
+              disabled={bloqueadoConfirmar}
               activeOpacity={0.8}
             >
               <MaterialCommunityIcons
@@ -1385,8 +1502,56 @@ const modalComplementosStyles = (theme) =>
       minWidth: 36,
       textAlign: "center",
     },
+    bodyRow: {
+      flexDirection: "row",
+      alignItems: "stretch",
+      flex: 1,
+      minHeight: 280,
+      maxHeight: 560,
+    },
+    nList: {
+      width: 52,
+      flexGrow: 1,
+      flexShrink: 0,
+      maxHeight: 560,
+      borderRightWidth: 1,
+      borderRightColor: theme.colors.border,
+      backgroundColor: theme.colors.background,
+    },
+    nListContent: {
+      paddingVertical: 8,
+      paddingHorizontal: 6,
+      gap: 6,
+      alignItems: "center",
+    },
+    nBox: {
+      width: 40,
+      height: 40,
+      borderRadius: 10,
+      borderWidth: 2,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    nBoxActive: {
+      borderColor: theme.colors.primary,
+      backgroundColor: theme.colors.primary,
+    },
+    nBoxChanged: {
+      borderColor: theme.colors.secondary || theme.colors.primary,
+    },
+    nBoxText: {
+      fontSize: 12,
+      fontWeight: "800",
+      color: theme.colors.text.primary,
+    },
+    nBoxTextActive: {
+      color: theme.colors.text.white,
+    },
     modalScrollView: {
       maxHeight: 450,
+      flex: 1,
     },
     modalScrollContent: {
       padding: theme.spacing.lg,
