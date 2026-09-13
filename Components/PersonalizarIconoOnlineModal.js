@@ -19,9 +19,7 @@ import { useBotonCantidadPlato } from '../context/BotonCantidadPlatoContext';
 import { useBotonEnviarOrden } from '../context/BotonEnviarOrdenContext';
 import { useBotonesMenuOrden } from '../context/BotonesMenuOrdenContext';
 import { useAbrirMenuNuevaOrden } from '../context/AbrirMenuNuevaOrdenContext';
-import { useLogicaPachamanca } from '../context/LogicaPachamancaContext';
 import { useNUnidadMozo } from '../context/NUnidadMozoContext';
-import { LOGICAS_PACHAMANCA } from '../utils/logicaPachamanca';
 import {
   N_UNIDAD_SIZE_MIN,
   N_UNIDAD_SIZE_MAX,
@@ -269,7 +267,6 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
   const { omitirConfirmacionPago, setOmitirConfirmacionPago } = useOmitirConfirmacionPago();
   const { ocultarPropina, setOcultarPropina } = useOcultarPropina();
   const { abrirMenuNuevaOrden, setAbrirMenuNuevaOrden } = useAbrirMenuNuevaOrden();
-  const { logicaPachamanca, setLogicaPachamanca } = useLogicaPachamanca();
   const { size: nUnidadSize, setSize: setNUnidadSize, reset: resetNUnidad } = useNUnidadMozo();
   const {
     size: qtySize,
@@ -456,36 +453,10 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
           <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
 
           <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
-            Pachamanca / OP sabores
+            Pachamanca / OP
           </Text>
           <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
-            Cómo el mozo arma las combinaciones. Cocina ve cada pachamanca con sus sabores (de a 1, 2, 3 o 4). No se agrupa Pollo +2 suelto.
-          </Text>
-          <View style={styles.presets}>
-            {LOGICAS_PACHAMANCA.map((p) => {
-              const active = logicaPachamanca === p.id;
-              return (
-                <TouchableOpacity
-                  key={p.id}
-                  style={[
-                    styles.chip,
-                    {
-                      backgroundColor: active ? theme.colors.primary + '22' : theme.colors.background,
-                      borderColor: active ? theme.colors.primary : theme.colors.border,
-                    },
-                  ]}
-                  onPress={() => setLogicaPachamanca(p.id)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.chipText, { color: active ? theme.colors.primary : theme.colors.text.secondary }]}>
-                    {p.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          <Text style={[styles.switchHint, { color: theme.colors.text.secondary, marginTop: 6 }]}>
-            {(LOGICAS_PACHAMANCA.find((p) => p.id === logicaPachamanca) || LOGICAS_PACHAMANCA[0]).hint}
+            1 corte (pecho / pierna): el mozo suma cantidades y se crean N1, N2… 2 o más sabores (pachamanca): Agregar Cantidad y CONTINUAR en cada N, como antes.
           </Text>
 
           <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />

@@ -41,9 +41,9 @@ export function gruposAnexarNombreDePlato(plato) {
   return (plato?.complementos || []).filter(grupoAnexaNombre);
 }
 
-/** OP con cantidades: sabores de pachamanca (van de a N por unidad, no se reparte como MIX). */
+/** OP: la opción se anexa al nombre. En el modal se elige por cantidad (no chip + Continuar). */
 export function grupoOpCantidades(grupo) {
-  return grupoAnexaNombre(grupo) && grupo?.modoSeleccion === 'cantidades';
+  return grupoAnexaNombre(grupo);
 }
 
 export function platoOpCantidades(plato) {
@@ -111,6 +111,15 @@ export function textoComboSabores(slots, grupo) {
     .join(' - ');
 }
 
+export function etiquetaNOp(sabores) {
+  const parts = (Array.isArray(sabores) ? sabores : [])
+    .map((s) => String(s || '').trim())
+    .filter(Boolean);
+  if (!parts.length) return '';
+  if (parts.length === 1) return parts[0].slice(0, 7);
+  return parts.map((p) => p.slice(0, 1).toUpperCase()).join('');
+}
+
 export function previewCombosOp(orden, nSab, nPachamancas) {
   const sab = Math.max(1, Number(nSab) || 1);
   const n = Math.max(1, Number(nPachamancas) || 1);
@@ -127,6 +136,57 @@ export function previewCombosOp(orden, nSab, nPachamancas) {
     });
   }
   return rows;
+}
+
+export function seleccionesOpDesdeOrden(grupoNombre, orden) {
+  const g = String(grupoNombre || '').trim();
+  const sel = g ? { [g]: {} } : {};
+  (Array.isArray(orden) ? orden : []).forEach((op) => {
+    const key = String(op || '').trim();
+    if (!g || !key) return;
+    sel[g][key] = (sel[g][key] || 0) + 1;
+  });
+  return sel;
+}
+
+export function ordenOpDesdeUnidades(unidades, grupoNombre) {
+  const g = String(grupoNombre || '').trim();
+  const out = [];
+  (Array.isArray(unidades) ? unidades : []).forEach((u) => {
+    const o = u?.ordenSabores;
+    if (Array.isArray(o) && o.length) {
+      o.forEach((op) => {
+        const key = String(op || '').trim();
+        if (key) out.push(key);
+      });
+      return;
+    }
+    const mapa = (g && u?.selecciones && u.selecciones[g]) || {};
+    Object.entries(mapa).forEach(([op, cant]) => {
+      const q = Math.max(0, Math.min(99, Number(cant) || 0));
+      for (let i = 0; i < q; i += 1) out.push(op);
+    });
+  });
+  return out;
+}
+
+export function unidadesOpDesdeOrden(grupoNombre, orden, nSab, nPachamancas, mismaCombo = false) {
+  const sab = Math.max(1, Number(nSab) || 1);
+  const list = Array.isArray(orden) ? orden : [];
+  const n = sab <= 1
+    ? Math.max(1, list.length || 1)
+    : Math.max(1, Number(nPachamancas) || 1);
+  const combo = mismaCombo && sab >= 2 ? list.slice(0, sab) : null;
+  return Array.from({ length: n }, (_, i) => {
+    const slice = combo
+      ? combo
+      : (sab <= 1 ? (list[i] != null ? [list[i]] : []) : list.slice(i * sab, i * sab + sab));
+    return {
+      selecciones: seleccionesOpDesdeOrden(grupoNombre, slice),
+      variaciones: {},
+      ordenSabores: slice,
+    };
+  });
 }
 
 function gruposNombreCocinaDePlato(plato) {
@@ -146,6 +206,24 @@ export function nombreCocinaDeOpcion(grupo, opcionNombre) {
   const corto = String(op?.pronombre || '').trim();
   if (corto) return corto.slice(0, 40);
   return String(opcionNombre || '').trim().slice(0, 40);
+}
+
+/** Palabras OP de una unidad N (pronombre: Pie, Pecho). */
+export function textosOpDeEstado(plato, estado) {
+  const g = grupoOpCantidadesDePlato(plato);
+  if (!g) return [];
+  let orden = Array.isArray(estado?.ordenSabores) ? estado.ordenSabores.filter(Boolean) : [];
+  if (!orden.length) {
+    const mapa = (estado?.selecciones && estado.selecciones[g.grupo]) || {};
+    Object.entries(mapa).forEach(([op, cant]) => {
+      const q = Math.max(0, Math.min(99, Number(cant) || 0));
+      for (let i = 0; i < q; i += 1) orden.push(op);
+    });
+  }
+  return orden
+    .map((op) => nombreCocinaDeOpcion(g, op))
+    .map((s) => String(s || '').trim())
+    .filter(Boolean);
 }
 
 function anexarSufijoNombre(base, extra) {

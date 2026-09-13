@@ -8,13 +8,13 @@ export const LOGICA_PACHAMANCA_MISMA = 'misma';
 export const LOGICAS_PACHAMANCA = [
   {
     id: LOGICA_PACHAMANCA_SECUENCIA,
-    label: '1 · Por pachamanca',
-    hint: 'Agregar Cantidad = cuántas. Los sabores entran de a 1, 2, 3 o 4 según el plato. Pollo + Res es la 1ª; Res + Chancho la 2ª.',
+    label: '1 · Por cantidad',
+    hint: 'Elegí cantidad de pachamancas y tocá sabores en orden. 3 sabores × 2: Pollo, Carnero, Cerdo → N1; Res, Pollo, Carnero → N2. En 1/4 leña, 2 pechos + 2 piernas crea N1…N4. Guardar Cambios, sin Continuar.',
   },
   {
     id: LOGICA_PACHAMANCA_MISMA,
-    label: '2 · Misma combinación',
-    hint: 'Elegís los sabores una vez y la cantidad copia esa mezcla a todas. Menos toques si todas van iguales.',
+    label: '2 · Como ahora',
+    hint: 'Los mismos sabores para todas las pachamancas: elegís la combinación una vez y la cantidad la copia a N1, N2… Guardar Cambios al terminar.',
   },
 ];
 
