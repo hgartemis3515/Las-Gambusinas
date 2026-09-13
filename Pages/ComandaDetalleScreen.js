@@ -39,8 +39,8 @@ import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidad
 import { hidratarUnidadesDesdeLineas, cantidadDeLinea } from '../utils/unidadesComplemento';
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
 import { mismaVariantePlato, esSeleccionVariantePlato } from '../utils/variantePlato';
-import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos, ordenarPlatosPorCodigoBusqueda, categoriasDePlato, platoEsDeCategoria, ordenarPlatosMenu } from '../utils/platoBuscador';
-import { ordenarCategoriasMozo, platoVisibleEnCarta } from '../utils/ordenCategoriaMozo';
+import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos, ordenarPlatosPorCodigoBusqueda, categoriasDePlato, platoEsDeCategoria } from '../utils/platoBuscador';
+import { ordenarCategoriasMozo, platoVisibleEnCarta, ordenarPlatosPorCategoriaYCodigo, cmpPlatosCategoriaYCodigo } from '../utils/ordenCategoriaMozo';
 import PlatoBuscadorCard from '../Components/PlatoBuscadorCard';
 import { calcularPrecioUnitarioConComplementos, textoOpcionComplemento, camposSnapshotComplemento } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
@@ -1578,11 +1578,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       if (categoriaFiltro && !platoEsDeCategoria(p, categoriaFiltro)) return false;
       return true;
     });
-    const ordenados = ordenarPlatosMenu(base);
+    const ordenados = ordenarPlatosPorCategoriaYCodigo(base, categoriasInfo, tipoPlatoFiltro);
     const conAlias = expandirFilasBuscadorPlatos(ordenados);
     const q = String(searchPlato || '').trim();
     if (!q) return conAlias;
-    return ordenarPlatosPorCodigoBusqueda(conAlias, q);
+    return ordenarPlatosPorCodigoBusqueda(conAlias, q, (a, b) =>
+      cmpPlatosCategoriaYCodigo(a, b, categoriasInfo, tipoPlatoFiltro)
+    );
   }, [platos, tipoPlatoFiltro, categoriasInfo, searchPlato, categoriaFiltro]);
 
   const categorias = useMemo(() => {
