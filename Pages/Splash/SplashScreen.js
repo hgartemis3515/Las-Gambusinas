@@ -19,7 +19,7 @@ import { colors } from '../../constants/colors';
 import { checkAndApplyOtaUpdate, getOtaRuntimeInfo } from '../../services/otaUpdates';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const APP_VERSION = Constants.expoConfig?.version || '1.9v';
+const APP_VERSION = Constants.expoConfig?.version || '1.9.1v';
 
 // Partículas flotantes de fondo
 const FloatingParticle = ({ delay, startY }) => {
