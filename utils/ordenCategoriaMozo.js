@@ -77,10 +77,21 @@ export function platoVisibleEnCarta(plato, categoriasInfo, slugTipo) {
   return cats.some((n) => categoriaVisibleEnTipo(infoCategoriaPorNombre(categoriasInfo, n), slugTipo));
 }
 
+function cmpOrdenCampoPlato(a, b) {
+  const oa = Number(a?.orden);
+  const ob = Number(b?.orden);
+  const fa = Number.isFinite(oa) ? oa : Number.MAX_SAFE_INTEGER;
+  const fb = Number.isFinite(ob) ? ob : Number.MAX_SAFE_INTEGER;
+  if (fa !== fb) return fa - fb;
+  return 0;
+}
+
 export function cmpPlatosCategoriaYCodigo(a, b, categoriasInfo, slugTipo) {
   const ra = rankPlatoCategoria(a, categoriasInfo, slugTipo);
   const rb = rankPlatoCategoria(b, categoriasInfo, slugTipo);
   if (ra !== rb) return ra - rb;
+  const byOrden = cmpOrdenCampoPlato(a, b);
+  if (byOrden) return byOrden;
   const cmp = codigoMozoVisible(a).localeCompare(codigoMozoVisible(b), 'es', {
     numeric: true,
     sensitivity: 'base',

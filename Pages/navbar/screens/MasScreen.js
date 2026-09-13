@@ -22,6 +22,8 @@ import { useSocket } from "../../../context/SocketContext";
 import { themeLight } from "../../../constants/theme";
 import SettingsModal from "../../../Components/SettingsModal";
 import PersonalizarIconoOnlineModal from "../../../Components/PersonalizarIconoOnlineModal";
+import PersonalizarAlertaSalioModal from "../../../Components/PersonalizarAlertaSalioModal";
+import PersonalizarMesasModal from "../../../Components/PersonalizarMesasModal";
 import axios from "../../../config/axiosConfig";
 import { apiConfig } from "../../../apiConfig";
 import {
@@ -74,6 +76,8 @@ const MasScreen = () => {
   const [vistaInicio, setVistaInicio] = useState("tarjetas");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [iconoOnlineOpen, setIconoOnlineOpen] = useState(false);
+  const [alertaSalioOpen, setAlertaSalioOpen] = useState(false);
+  const [mesasApodoOpen, setMesasApodoOpen] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(true);
   const [profileSyncing, setProfileSyncing] = useState(false);
   const [serverOk, setServerOk] = useState(null);
@@ -284,6 +288,14 @@ const MasScreen = () => {
         visible={iconoOnlineOpen}
         onClose={() => setIconoOnlineOpen(false)}
       />
+      <PersonalizarAlertaSalioModal
+        visible={alertaSalioOpen}
+        onClose={() => setAlertaSalioOpen(false)}
+      />
+      <PersonalizarMesasModal
+        visible={mesasApodoOpen}
+        onClose={() => setMesasApodoOpen(false)}
+      />
       <ScrollView style={styles.scrollView}>
         <View style={styles.header}>
           <TouchableOpacity
@@ -485,6 +497,42 @@ const MasScreen = () => {
             <View style={{ flex: 1, paddingRight: 8 }}>
               <Text style={styles.menuItemText}>Personalizar</Text>
               <Text style={styles.pushHint}>ONLINE, categorías y aviso al agregar platos</Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.light} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setMesasApodoOpen(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuIconContainer, { backgroundColor: theme.colors.primary + "20" }]}>
+              <MaterialCommunityIcons name="table-furniture" size={24} color={theme.colors.primary} />
+            </View>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={styles.menuItemText}>Personalizar mesas</Text>
+              <Text style={styles.pushHint}>Apodo solo para ti, junto al número de mesa</Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.light} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setAlertaSalioOpen(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuIconContainer, { backgroundColor: "#EA580C20" }]}>
+              <MaterialCommunityIcons name="alert" size={24} color="#EA580C" />
+            </View>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={styles.menuItemText}>Alerta platos Salió</Text>
+              <Text style={styles.pushHint}>Animación del recuadro mientras corre el cronómetro</Text>
             </View>
             <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.light} />
           </TouchableOpacity>

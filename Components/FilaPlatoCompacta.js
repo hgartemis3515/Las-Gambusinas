@@ -5,6 +5,8 @@ import { cantidadGuarnicionEfectiva } from '../utils/platoGuarniciones';
 import { textoOpcionComplemento } from '../utils/precioComplementos';
 import { esSeleccionVariantePlato, nombreVisibleConVariante } from '../utils/variantePlato';
 import { esLlevarColor, etiquetaLlevarMozo } from '../utils/tipoServicio';
+import { useAlertaSalio } from '../context/AlertaSalioContext';
+import AlertaSalioCapa from './AlertaSalioCapa';
 
 /**
  * Componente para renderizar una fila compacta de plato en la tabla
@@ -50,6 +52,9 @@ const FilaPlatoCompacta = ({
     }
   };
   
+  const { prefs } = useAlertaSalio();
+  const alertaOn = esSalio && !esAnulado && !!countdownEntrega;
+  
   return (
     <View
       style={[
@@ -58,11 +63,13 @@ const FilaPlatoCompacta = ({
           backgroundColor: estilosAplicar.fondo,
           borderLeftWidth: 4,
           borderLeftColor: estilosAplicar.borde,
-          // 🔥 NUEVO: Opacidad reducida para platos anulados
           opacity: esAnulado ? 0.6 : 1,
+          overflow: alertaOn ? 'hidden' : 'visible',
         }
       ]}
     >
+      {alertaOn ? <AlertaSalioCapa prefs={prefs} /> : null}
+      <View style={styles.filaContenido} collapsable={false}>
       {/* Nombre del plato (40%) */}
       <View style={styles.columnaNombre}>
         <Text 
@@ -189,6 +196,7 @@ const FilaPlatoCompacta = ({
           </View>
         )}
       </View>
+      </View>
     </View>
   );
 };
@@ -202,6 +210,12 @@ const styles = StyleSheet.create({
     minHeight: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
+  },
+  filaContenido: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 1,
   },
   columnaNombre: {
     flex: 0.4,

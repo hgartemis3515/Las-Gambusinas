@@ -39,8 +39,8 @@ import { resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiv
 import { hidratarUnidadesDesdeLineas, cantidadDeLinea } from "../../../utils/unidadesComplemento";
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from "../../../utils/numeroSeriePlato";
 import { mismaVariantePlato, esSeleccionVariantePlato, nombreVisibleConVariante } from "../../../utils/variantePlato";
-import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, platoCoincideBusqueda, ordenarPlatosPorCodigoBusqueda, expandirFilasBuscadorPlatos, categoriasDePlato, platoEsDeCategoria } from "../../../utils/platoBuscador";
-import { ordenarCategoriasMozo, ordenarPlatosPorCategoriaYCodigo, platoVisibleEnCarta, cmpPlatosCategoriaYCodigo } from "../../../utils/ordenCategoriaMozo";
+import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, platoCoincideBusqueda, ordenarPlatosPorCodigoBusqueda, expandirFilasBuscadorPlatos, categoriasDePlato, platoEsDeCategoria, ordenarPlatosMenu } from "../../../utils/platoBuscador";
+import { ordenarCategoriasMozo, platoVisibleEnCarta } from "../../../utils/ordenCategoriaMozo";
 import { calcularPrecioUnitarioConComplementos, textoOpcionComplemento, camposSnapshotComplemento } from "../../../utils/precioComplementos";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
@@ -1344,7 +1344,7 @@ const OrdenesScreen = ({ route }) => {
         plato: plato._id,
         platoId: plato.id || null,
         estado: "pedido",
-        tipoServicio: tipoServicioEnvio,
+        tipoServicio: plato.tipoServicio || tipoServicioEnvio,
         tipoPedido: slugTipoPedido(plato.tipoPedido),
         complementosSeleccionados: plato.complementosElegidos || [],
         notaEspecial: plato.notaEspecial || "",
@@ -1758,20 +1758,23 @@ const OrdenesScreen = ({ route }) => {
 
   // Búsqueda global: si hay texto, filtra por nombre en TODOS (ignora categoría). Si no hay texto, filtra por categoría.
   const platosFiltrados = useMemo(() => {
-    const base = ordenarPlatosPorCategoriaYCodigo(platosPorTipoDisponibles, categoriasInfo, tipoPlatoFiltro);
+    let list = platosPorTipoDisponibles;
     const search = (searchPlatoDebounced || "").trim();
-    const conAlias = expandirFilasBuscadorPlatos(base);
-    const cmpTie = (a, b) => cmpPlatosCategoriaYCodigo(a, b, categoriasInfo, tipoPlatoFiltro);
+    if (!search) {
+      if (categoriaFiltro === CAT_FAVORITOS) {
+        list = list.filter((p) => favoritoIds.includes(String(p._id)));
+      } else if (categoriaFiltro) {
+        list = list.filter((p) => platoEsDeCategoria(p, categoriaFiltro));
+      }
+    }
+    const ordenados = ordenarPlatosMenu(list);
+    const conAlias = expandirFilasBuscadorPlatos(ordenados);
     if (search.length > 0) {
       const matched = conAlias.filter((p) => platoCoincideBusqueda(p, search));
-      return ordenarPlatosPorCodigoBusqueda(matched, search, cmpTie);
+      return ordenarPlatosPorCodigoBusqueda(matched, search);
     }
-    if (!categoriaFiltro) return conAlias;
-    if (categoriaFiltro === CAT_FAVORITOS) {
-      return conAlias.filter((p) => favoritoIds.includes(String(p._id)));
-    }
-    return conAlias.filter((p) => platoEsDeCategoria(p, categoriaFiltro));
-  }, [platosPorTipoDisponibles, searchPlatoDebounced, categoriaFiltro, favoritoIds, categoriasInfo, tipoPlatoFiltro]);
+    return conAlias;
+  }, [platosPorTipoDisponibles, searchPlatoDebounced, categoriaFiltro, favoritoIds]);
 
   // Al enfocar o escribir en búsqueda → categoría a "Todos" para búsqueda global
   const handleSearchFocus = useCallback(() => {

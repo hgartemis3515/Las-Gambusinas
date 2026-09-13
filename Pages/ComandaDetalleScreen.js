@@ -39,8 +39,8 @@ import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidad
 import { hidratarUnidadesDesdeLineas, cantidadDeLinea } from '../utils/unidadesComplemento';
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
 import { mismaVariantePlato, esSeleccionVariantePlato } from '../utils/variantePlato';
-import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos, ordenarPlatosPorCodigoBusqueda, categoriasDePlato, platoEsDeCategoria } from '../utils/platoBuscador';
-import { ordenarCategoriasMozo, ordenarPlatosPorCategoriaYCodigo, platoVisibleEnCarta, cmpPlatosCategoriaYCodigo } from '../utils/ordenCategoriaMozo';
+import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos, ordenarPlatosPorCodigoBusqueda, categoriasDePlato, platoEsDeCategoria, ordenarPlatosMenu } from '../utils/platoBuscador';
+import { ordenarCategoriasMozo, platoVisibleEnCarta } from '../utils/ordenCategoriaMozo';
 import PlatoBuscadorCard from '../Components/PlatoBuscadorCard';
 import { calcularPrecioUnitarioConComplementos, textoOpcionComplemento, camposSnapshotComplemento } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
@@ -50,6 +50,7 @@ import { calcularSubtotalPlatosPagables } from '../utils/pagoParcialHelpers';
 import { esSeleccionSinMesa, SELECCION_SIN_MESA } from '../utils/sinMesaOrden';
 import { esLlevarColor, normalizarTipoServicioLinea } from '../utils/tipoServicio';
 import { msRestantesEntregaAutomatica, formatearCountdownEntrega, tiempoSalioRequiereAncla } from '../utils/entregaAutomatica';
+import { usuarioPuedeAplicarDescuentos, brutoParaDescuento, clampMontoDescuento, motivoDescuentoFinal, comandaTieneDescuentoMozo } from '../utils/descuentoMozo';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -301,7 +302,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // Estados para descuento (solo admin/supervisor)
   const [modalDescuentoVisible, setModalDescuentoVisible] = useState(false);
-  const [descuentoSeleccionado, setDescuentoSeleccionado] = useState(0);
+  const [descuentoMontoInput, setDescuentoMontoInput] = useState('');
   const [motivoDescuento, setMotivoDescuento] = useState('');
   const [aplicandoDescuento, setAplicandoDescuento] = useState(false);
   const [reservaEfectiva, setReservaEfectiva] = useState(reserva || null);
@@ -1577,15 +1578,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       if (categoriaFiltro && !platoEsDeCategoria(p, categoriaFiltro)) return false;
       return true;
     });
-    const ordenados = ordenarPlatosPorCategoriaYCodigo(base, categoriasInfo, tipoPlatoFiltro);
+    const ordenados = ordenarPlatosMenu(base);
     const conAlias = expandirFilasBuscadorPlatos(ordenados);
     const q = String(searchPlato || '').trim();
     if (!q) return conAlias;
-    return ordenarPlatosPorCodigoBusqueda(
-      conAlias,
-      q,
-      (a, b) => cmpPlatosCategoriaYCodigo(a, b, categoriasInfo, tipoPlatoFiltro)
-    );
+    return ordenarPlatosPorCodigoBusqueda(conAlias, q);
   }, [platos, tipoPlatoFiltro, categoriasInfo, searchPlato, categoriaFiltro]);
 
   const categorias = useMemo(() => {
@@ -1706,98 +1703,134 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }
   };
   
-  // ==================== FUNCIÓN DE DESCUENTO (SOLO ADMIN/SUPERVISOR) ====================
+  // ==================== FUNCIÓN DE DESCUENTO (permiso aplicar-descuentos) ====================
   
-  // Verificar si el usuario puede aplicar descuentos
-  const puedeAplicarDescuento = userInfo && (userInfo.rol === 'admin' || userInfo.rol === 'supervisor');
-  
-  // Abrir modal de descuento
+  const puedeAplicarDescuento = usuarioPuedeAplicarDescuentos(userInfo);
+
   const handleAbrirDescuento = () => {
     if (!puedeAplicarDescuento) {
-      Alert.alert('Acceso Denegado', 'Solo administradores o supervisores pueden aplicar descuentos.');
+      Alert.alert('Acceso Denegado', 'No tienes permiso para aplicar descuentos.');
       return;
     }
-    
     if (comandas.length === 0) {
       Alert.alert('Error', 'No hay comandas para aplicar descuento.');
       return;
     }
-    
-    // Verificar que la comanda no esté pagada
-    const comanda = comandas[0];
-    if (comanda.status === 'pagado') {
-      Alert.alert('Error', 'No se puede aplicar descuento a una comanda ya pagada.');
-      return;
-    }
-    
-    // Inicializar con el descuento actual (si existe)
-    setDescuentoSeleccionado(comanda.descuento || 0);
-    setMotivoDescuento(comanda.motivoDescuento || '');
+    setDescuentoMontoInput('');
+    setMotivoDescuento(comandas[0].motivoDescuento || '');
     setModalDescuentoVisible(true);
   };
-  
-  // Aplicar descuento
-  const handleAplicarDescuento = async () => {
+
+  const enviarDescuentoComanda = async ({ descuento, monto, motivo }) => {
+    const comanda = comandas[0];
+    if (!comanda?._id) {
+      Alert.alert('Error', 'No se encontró la comanda.');
+      return;
+    }
+    const descuentoURL = apiConfig.isConfigured
+      ? `${apiConfig.getEndpoint('/comanda')}/${comanda._id}/descuento`
+      : `${COMANDA_API}/${comanda._id}/descuento`;
+    setAplicandoDescuento(true);
+    try {
+      const body = {
+        motivo: motivoDescuentoFinal(motivo),
+        usuarioId: userInfo._id,
+        usuarioRol: userInfo.rol,
+        sourceApp: 'mozos',
+      };
+      if (monto > 0) {
+        body.monto = Number(Number(monto).toFixed(2));
+        body.descuento = 0;
+      } else {
+        body.descuento = descuento;
+      }
+      const response = await axios.put(descuentoURL, body, {
+        timeout: 10000,
+        headers: { 'Content-Type': 'application/json' },
+      });
+      setModalDescuentoVisible(false);
+      setDescuentoMontoInput('');
+      setMotivoDescuento('');
+      await refrescarComandas();
+      const ahorro = response.data?.descuentoAplicado?.montoDescuento || 0;
+      const nuevoTotal = response.data?.descuentoAplicado?.totalCalculado || 0;
+      Alert.alert(
+        '✅ Descuento Aplicado',
+        `Ahorro: S/. ${ahorro.toFixed(2)}\nNuevo total: S/. ${nuevoTotal.toFixed(2)}`
+      );
+    } catch (error) {
+      console.error('Error aplicando descuento:', error);
+      Alert.alert('Error', error.response?.data?.message || error.message || 'No se pudo aplicar el descuento');
+    } finally {
+      setAplicandoDescuento(false);
+    }
+  };
+
+  const handleAplicarDescuentoMonto = async () => {
     if (!puedeAplicarDescuento) {
       Alert.alert('Error', 'No tienes permisos para aplicar descuentos.');
       return;
     }
-    
-    // Validar motivo si hay descuento
-    if (descuentoSeleccionado > 0 && (!motivoDescuento || motivoDescuento.trim().length < 3)) {
-      Alert.alert('Error', 'Debes ingresar un motivo para el descuento (mínimo 3 caracteres).');
+    const bruto = brutoParaDescuento(comandas[0]);
+    const m = clampMontoDescuento(descuentoMontoInput, bruto);
+    if (!(m > 0)) {
+      Alert.alert('Error', 'Ingresa un monto de descuento en soles.');
       return;
     }
-    
+    await enviarDescuentoComanda({ descuento: 0, monto: m, motivo: motivoDescuento });
+  };
+
+  const handleAplicarDescuento100 = async () => {
+    if (!puedeAplicarDescuento) {
+      Alert.alert('Error', 'No tienes permisos para aplicar descuentos.');
+      return;
+    }
+    const bruto = brutoParaDescuento(comandas[0]);
+    if (!(bruto > 0)) {
+      Alert.alert('Error', 'No hay total para descontar.');
+      return;
+    }
+    await enviarDescuentoComanda({ descuento: 100, monto: bruto, motivo: motivoDescuento });
+  };
+
+  const ejecutarQuitarDescuento = async () => {
     const comanda = comandas[0];
-    if (!comanda || !comanda._id) {
-      Alert.alert('Error', 'No se encontró la comanda.');
-      return;
-    }
-    
+    if (!comanda?._id) return;
+    const descuentoURL = apiConfig.isConfigured
+      ? `${apiConfig.getEndpoint('/comanda')}/${comanda._id}/descuento`
+      : `${COMANDA_API}/${comanda._id}/descuento`;
+    setAplicandoDescuento(true);
     try {
-      setAplicandoDescuento(true);
-      
-      const descuentoURL = apiConfig.isConfigured
-        ? `${apiConfig.getEndpoint('/comanda')}/${comanda._id}/descuento`
-        : `${COMANDA_API}/${comanda._id}/descuento`;
-      
-      const response = await axios.put(descuentoURL, {
-        descuento: descuentoSeleccionado,
-        motivo: motivoDescuento.trim(),
-        usuarioId: userInfo._id,
-        usuarioRol: userInfo.rol
-      }, {
+      await axios.delete(descuentoURL, {
         timeout: 10000,
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        data: {
+          usuarioId: userInfo._id,
+          usuarioRol: userInfo.rol,
+          motivoEliminacion: motivoDescuentoFinal(motivoDescuento),
+          sourceApp: 'mozos',
+        },
       });
-      
-      console.log('✅ Descuento aplicado:', response.data);
-      
-      // Cerrar modal y refrescar
       setModalDescuentoVisible(false);
-      setDescuentoSeleccionado(0);
+      setDescuentoMontoInput('');
       setMotivoDescuento('');
-      
       await refrescarComandas();
-      
-      const ahorro = response.data?.descuentoAplicado?.montoDescuento || 0;
-      const nuevoTotal = response.data?.descuentoAplicado?.totalCalculado || 0;
-      
-      Alert.alert(
-        '✅ Descuento Aplicado',
-        `Descuento del ${descuentoSeleccionado}% aplicado exitosamente.\n\nAhorro: S/. ${ahorro.toFixed(2)}\nNuevo total: S/. ${nuevoTotal.toFixed(2)}`
-      );
-      
+      Alert.alert('Listo', 'Se quitó el descuento.');
     } catch (error) {
-      console.error('Error aplicando descuento:', error);
-      const errorMsg = error.response?.data?.message || error.message || 'No se pudo aplicar el descuento';
-      Alert.alert('Error', errorMsg);
+      Alert.alert('Error', error.response?.data?.message || error.message || 'No se pudo quitar el descuento');
     } finally {
       setAplicandoDescuento(false);
     }
+  };
+
+  const handleQuitarDescuento = () => {
+    Alert.alert(
+      'Quitar descuento',
+      '¿Eliminar el descuento de esta comanda?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Quitar', style: 'destructive', onPress: ejecutarQuitarDescuento },
+      ]
+    );
   };
   
   // ==================== FIN FUNCIÓN DE DESCUENTO ====================
@@ -1966,12 +1999,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   const procederConEliminacion = async () => {
     if (!motivoEliminacion || motivoEliminacion.trim() === '') {
-      Alert.alert('Error', 'Debes indicar un motivo para la eliminación (mínimo 5 caracteres).');
+      Alert.alert('Error', 'Debes indicar un motivo para la eliminación (mínimo 2 caracteres).');
       return;
     }
     
-    if (motivoEliminacion.trim().length < 5) {
-      Alert.alert('Error', 'El motivo debe tener al menos 5 caracteres.');
+    if (motivoEliminacion.trim().length < 2) {
+      Alert.alert('Error', 'El motivo debe tener al menos 2 caracteres.');
       return;
     }
     
@@ -2771,6 +2804,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // Key extractor - usar _id (único por instancia) para diferenciar platos idénticos con diferentes complementos
   const keyExtractor = (item, index) => item._id || `${item.comandaId}-${item.platoId}-${item.index}`;
+
+  const brutoDescuento = brutoParaDescuento(comandas[0]);
+  const montoDescuentoPreview = clampMontoDescuento(descuentoMontoInput, brutoDescuento);
+  const totalDescuentoPreview = Number(Math.max(0, brutoDescuento - montoDescuentoPreview).toFixed(2));
+  const hayDescuentoActual = comandaTieneDescuentoMozo(comandas[0]);
   
   return (
         <View style={[styles.container, { backgroundColor: themeColors.colors?.background || themeColors.background || '#FFFFFF' }]}>
@@ -3043,16 +3081,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               </TouchableOpacity>
             )}
             
-            {/* Botón Descuento - Solo visible para admin/supervisor */}
+            {/* Botón Descuento — solo con permiso aplicar-descuentos (o admin/supervisor) */}
             {puedeAplicarDescuento && (
               <TouchableOpacity
                 style={[
                   styles.actionButton, 
-                  { backgroundColor: '#8B5CF6' }, // Púrpura para descuento
-                  comandas[0]?.status === 'pagado' && styles.actionButtonDisabled
+                  { backgroundColor: '#8B5CF6' },
                 ]}
                 onPress={handleAbrirDescuento}
-                disabled={comandas[0]?.status === 'pagado'}
               >
                 <MaterialCommunityIcons name="percent" size={20} color="#fff" />
                 <Text style={styles.actionButtonText}>Descuento</Text>
@@ -3324,6 +3360,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               multiline
               numberOfLines={3}
             />
+            <Text style={{ fontSize: 12, marginBottom: 12, color: isDark ? '#9CA3AF' : '#6B7280' }}>
+              Motivo obligatorio (mínimo 2 caracteres)
+            </Text>
             
             <View style={styles.modalActions}>
               <TouchableOpacity
@@ -3353,10 +3392,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   styles.modalButton, 
                   styles.modalButtonConfirm,
                   {
-                    backgroundColor: '#EF4444', // Rojo intenso en ambos modos
+                    backgroundColor: '#EF4444',
+                    opacity: motivoEliminacion.trim().length < 2 || platosSeleccionadosEliminar.length === 0 ? 0.5 : 1,
                   }
                 ]}
                 onPress={confirmarEliminacionPlatos}
+                disabled={motivoEliminacion.trim().length < 2 || platosSeleccionadosEliminar.length === 0}
               >
                 <Text style={[styles.modalButtonText, styles.modalButtonTextConfirm, { color: '#FFFFFF' }]}>
                   Eliminar ({platosSeleccionadosEliminar.length})
@@ -4255,7 +4296,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         </View>
       </Modal>
       
-      {/* Modal de Descuento - Solo Admin/Supervisor */}
+      {/* Modal de Descuento — permiso aplicar-descuentos; monto S/. o 100% (igual que comandas.html) */}
       <Modal
         visible={modalDescuentoVisible}
         transparent
@@ -4269,45 +4310,65 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               <Text style={styles.modalTitle}>Aplicar Descuento</Text>
             </View>
             
-            <View style={styles.modalContent}>
-              {/* Info de comanda */}
+            <ScrollView style={styles.modalContent} contentContainerStyle={{ paddingBottom: 8 }} keyboardShouldPersistTaps="handled">
               <View style={[styles.infoBox, { backgroundColor: themeColors.colors?.background || '#f3f4f6' }]}>
                 <Text style={[styles.infoText, { color: themeColors.colors?.text?.secondary || '#6B7280' }]}>
                   Comanda #{comandas[0]?.comandaNumber || 'N/A'}
                 </Text>
                 <Text style={[styles.infoTextBold, { color: themeColors.colors?.text?.primary || '#111827' }]}>
-                  Total actual: S/. {((comandas[0]?.totalCalculado != null ? comandas[0].totalCalculado : (comandas[0]?.precioTotal || 0) * 1.18)).toFixed(2)}
+                  Total: S/. {brutoDescuento.toFixed(2)}
                 </Text>
               </View>
-              
-              {/* Selector de porcentaje */}
-              <Text style={[styles.labelText, { color: themeColors.colors?.text?.primary || '#111827' }]}>
-                Porcentaje de descuento:
-              </Text>
-              <View style={styles.descuentoOptions}>
-                {[0, 50, 80, 100].map(pct => (
-                  <TouchableOpacity
-                    key={pct}
-                    style={[
-                      styles.descuentoOption,
-                      descuentoSeleccionado === pct && styles.descuentoOptionSelected,
-                      { borderColor: descuentoSeleccionado === pct ? '#8B5CF6' : themeColors.colors?.border || '#D1D5DB' }
-                    ]}
-                    onPress={() => setDescuentoSeleccionado(pct)}
-                  >
-                    <Text style={[
-                      styles.descuentoOptionText,
-                      { color: descuentoSeleccionado === pct ? '#8B5CF6' : themeColors.colors?.text?.primary || '#111827' }
-                    ]}>
-                      {pct}%
+
+              {hayDescuentoActual && (
+                <View style={[styles.currentDiscount, { backgroundColor: '#ECFDF5', marginBottom: 12, flexDirection: 'column', alignItems: 'stretch' }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <MaterialCommunityIcons name="tag" size={16} color="#059669" />
+                    <Text style={[styles.currentDiscountText, { color: '#047857' }]}>
+                      Aplicado: -S/. {Number(comandas[0]?.montoDescuento || 0).toFixed(2)}
+                      {comandas[0]?.motivoDescuento ? ` · ${comandas[0].motivoDescuento}` : ''}
                     </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={{ marginTop: 8, paddingVertical: 8, borderRadius: 8, backgroundColor: '#FEE2E2', alignItems: 'center' }}
+                    onPress={handleQuitarDescuento}
+                    disabled={aplicandoDescuento}
+                  >
+                    <Text style={{ color: '#B91C1C', fontWeight: '700', fontSize: 13 }}>Quitar descuento</Text>
                   </TouchableOpacity>
-                ))}
-              </View>
-              
-              {/* Motivo */}
+                </View>
+              )}
+
               <Text style={[styles.labelText, { color: themeColors.colors?.text?.primary || '#111827' }]}>
-                Motivo del descuento {descuentoSeleccionado > 0 && '(requerido)'}:
+                Monto a descontar (S/.)
+              </Text>
+              <View style={styles.descuentoMontoRow}>
+                <TextInput
+                  style={[styles.descuentoMontoInput, {
+                    backgroundColor: themeColors.colors?.background || '#f3f4f6',
+                    borderColor: themeColors.colors?.border || '#D1D5DB',
+                    color: themeColors.colors?.text?.primary || '#111827',
+                  }]}
+                  placeholder="0.00"
+                  placeholderTextColor={themeColors.colors?.text?.muted || '#9CA3AF'}
+                  value={descuentoMontoInput}
+                  onChangeText={setDescuentoMontoInput}
+                  keyboardType="decimal-pad"
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.descuentoBtn100,
+                    !(brutoDescuento > 0) && styles.buttonDisabled,
+                  ]}
+                  onPress={handleAplicarDescuento100}
+                  disabled={aplicandoDescuento || !(brutoDescuento > 0)}
+                >
+                  <Text style={styles.descuentoBtn100Text}>100%</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={[styles.labelText, { color: themeColors.colors?.text?.primary || '#111827' }]}>
+                Motivo (opcional)
               </Text>
               <TextInput
                 style={[styles.motivoInput, { 
@@ -4320,44 +4381,34 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 value={motivoDescuento}
                 onChangeText={setMotivoDescuento}
                 multiline
-                numberOfLines={3}
+                numberOfLines={2}
                 maxLength={200}
               />
-              
-              {/* Preview del ahorro */}
-              {descuentoSeleccionado > 0 && (
-                <View style={[styles.ahorroPreview, { backgroundColor: '#ECFDF5' }]}>
-                  <MaterialCommunityIcons name="tag" size={20} color="#059669" />
-                  <View style={styles.ahorroTextContainer}>
-                    <Text style={styles.ahorroLabel}>Ahorro estimado:</Text>
-                    <Text style={styles.ahorroValue}>
-                      S/. {(((comandas[0]?.precioTotal || 0) * 1.18) * (descuentoSeleccionado / 100)).toFixed(2)}
-                    </Text>
-                    <Text style={styles.ahorroTotal}>
-                      Nuevo total: S/. {(((comandas[0]?.precioTotal || 0) * 1.18) * (1 - descuentoSeleccionado / 100)).toFixed(2)}
-                    </Text>
-                  </View>
-                </View>
-              )}
-              
-              {/* Descuento actual si existe */}
-              {comandas[0]?.descuento > 0 && (
-                <View style={[styles.currentDiscount, { backgroundColor: '#FEF3C7' }]}>
-                  <MaterialCommunityIcons name="information" size={16} color="#D97706" />
-                  <Text style={styles.currentDiscountText}>
-                    Descuento actual: {comandas[0].descuento}% - {comandas[0].motivoDescuento}
+
+              <View style={[styles.ahorroPreview, { backgroundColor: '#ECFDF5' }]}>
+                <MaterialCommunityIcons name="tag" size={20} color="#059669" />
+                <View style={styles.ahorroTextContainer}>
+                  <Text style={styles.ahorroLabel}>Descuento</Text>
+                  <Text style={styles.ahorroValue}>-S/. {montoDescuentoPreview.toFixed(2)}</Text>
+                  <Text style={styles.ahorroTotal}>
+                    Total final: S/. {totalDescuentoPreview.toFixed(2)}
                   </Text>
                 </View>
+              </View>
+
+              {comandas[0]?.status === 'pagado' && (
+                <Text style={{ fontSize: 12, color: '#6B7280', marginBottom: 8 }}>
+                  Comanda pagada: el descuento ajusta el total y los tickets.
+                </Text>
               )}
-            </View>
+            </ScrollView>
             
-            {/* Botones */}
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
                   setModalDescuentoVisible(false);
-                  setDescuentoSeleccionado(0);
+                  setDescuentoMontoInput('');
                   setMotivoDescuento('');
                 }}
               >
@@ -4369,10 +4420,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   styles.modalButton, 
                   styles.confirmButton,
                   { backgroundColor: '#8B5CF6' },
-                  (descuentoSeleccionado > 0 && motivoDescuento.trim().length < 3) && styles.buttonDisabled
+                  !(montoDescuentoPreview > 0) && styles.buttonDisabled
                 ]}
-                onPress={handleAplicarDescuento}
-                disabled={aplicandoDescuento || (descuentoSeleccionado > 0 && motivoDescuento.trim().length < 3)}
+                onPress={handleAplicarDescuentoMonto}
+                disabled={aplicandoDescuento || !(montoDescuentoPreview > 0)}
               >
                 {aplicandoDescuento ? (
                   <ActivityIndicator color="#fff" size="small" />
@@ -4972,6 +5023,7 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     padding: 16,
+    maxHeight: 420,
   },
   infoBox: {
     padding: 12,
@@ -5017,9 +5069,37 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 14,
-    minHeight: 80,
+    minHeight: 64,
     textAlignVertical: 'top',
     marginBottom: 16,
+  },
+  descuentoMontoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  descuentoMontoInput: {
+    flex: 1,
+    borderWidth: 2,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  descuentoBtn100: {
+    height: 44,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#059669',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  descuentoBtn100Text: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
   },
   ahorroPreview: {
     flexDirection: 'row',

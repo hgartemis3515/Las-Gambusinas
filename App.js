@@ -17,6 +17,8 @@ import { AbrirMenuNuevaOrdenProvider } from './context/AbrirMenuNuevaOrdenContex
 import { LogicaPachamancaProvider } from './context/LogicaPachamancaContext';
 import { DensidadOrdenesProvider } from './context/DensidadOrdenesContext';
 import { NUnidadMozoProvider } from './context/NUnidadMozoContext';
+import { AlertaSalioProvider } from './context/AlertaSalioContext';
+import { ApodosMesaProvider } from './context/ApodosMesaContext';
 import { OrdenesAccionesProvider } from './context/OrdenesAccionesContext';
 import SplashScreen from './Pages/Splash/SplashScreen';
 import Login from './Pages/Login/Login';
@@ -87,6 +89,8 @@ export default function App() {
           <LogicaPachamancaProvider>
           <DensidadOrdenesProvider>
           <NUnidadMozoProvider>
+          <AlertaSalioProvider>
+          <ApodosMesaProvider>
           <OrdenesAccionesProvider>
           <SocketProvider>
             <>
@@ -150,6 +154,8 @@ export default function App() {
             </>
           </SocketProvider>
           </OrdenesAccionesProvider>
+          </ApodosMesaProvider>
+          </AlertaSalioProvider>
           </NUnidadMozoProvider>
           </DensidadOrdenesProvider>
           </LogicaPachamancaProvider>

@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import moment from 'moment-timezone';
 import BadgeEstadoPlato from './BadgeEstadoPlato';
+import { useApodosMesa } from '../context/ApodosMesaContext';
+import { textoMesaConApodo } from '../utils/apodosMesa';
 
 /**
  * Header personalizado para ComandaDetalleScreen
@@ -11,6 +13,8 @@ import BadgeEstadoPlato from './BadgeEstadoPlato';
  * Elimina el espacio negro del header del Stack Navigator
  */
 const HeaderComandaDetalle = ({ mesa, comanda, onSync, navigation, connectionStatus = 'desconectado', isConnected = false, reconnectAttempts = 0 }) => {
+  const { apodoDe } = useApodosMesa();
+  const etiquetaMesa = mesa?.sinMesa ? 'Sin mesa' : textoMesaConApodo(mesa, apodoDe(mesa));
   const mozoNombre = comanda?.mozos?.name || 'Desconocido';
   const fechaComanda = comanda?.createdAt 
     ? moment(comanda.createdAt).tz("America/Lima").format("DD/MM/YYYY, h:mm:ss a")
@@ -113,7 +117,7 @@ const HeaderComandaDetalle = ({ mesa, comanda, onSync, navigation, connectionSta
         <View style={styles.headerRow}>
           <Text style={styles.headerText}>Mozo: {mozoNombre}</Text>
           <Text style={styles.headerText}> • </Text>
-          <Text style={styles.headerText}>Mesa: {mesa?.sinMesa ? 'Sin mesa' : (mesa?.nombreCombinado || mesa?.nummesa || 'N/A')}</Text>
+          <Text style={styles.headerText}>Mesa: {etiquetaMesa}</Text>
           <Text style={styles.headerText}> • </Text>
           <Text style={styles.headerText}>{fechaComanda}</Text>
           <Text style={styles.headerText}> • </Text>

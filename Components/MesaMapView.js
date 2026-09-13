@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import { useApodosMesa } from '../context/ApodosMesaContext';
 import { themeLight } from '../constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { obtenerColoresEstadoAdaptados } from '../utils/comandaHelpers';
@@ -36,6 +37,8 @@ const MesaMapItem = React.memo(({
 }) => {
   const config = mesa.mapaConfig || {};
   const isDark = theme?.dark || false;
+  const { apodoDe } = useApodosMesa();
+  const apodo = apodoDe(mesa);
   
   // Obtener colores según estado
   const colores = obtenerColoresEstadoAdaptados(estado, isDark, true);
@@ -68,6 +71,11 @@ const MesaMapItem = React.memo(({
       <Text style={[styles.mesaNumber, { color: colores.textColor }]}>
         {mesa.nombreCombinado || `M${mesa.nummesa}`}
       </Text>
+      {apodo ? (
+        <Text style={[styles.mesaEstado, { color: colores.textColor, opacity: 0.95, fontStyle: 'italic' }]} numberOfLines={1}>
+          {apodo}
+        </Text>
+      ) : null}
       <Text style={[styles.mesaEstado, { color: colores.textColor, opacity: 0.8 }]}>
         {estado}
       </Text>

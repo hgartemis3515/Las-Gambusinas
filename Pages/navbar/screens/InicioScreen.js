@@ -23,6 +23,7 @@ import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, DISHES_API, ARE
 import { getFallbackApiBase } from "../../../config/envDefaults";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
+import { useApodosMesa } from "../../../context/ApodosMesaContext";
 import { useAbrirMenuNuevaOrden } from "../../../context/AbrirMenuNuevaOrdenContext";
 import { themeLight } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
@@ -325,6 +326,8 @@ const MesaAnimada = React.memo(({
   mesaPrincipalNum = null,
   formatearGrupo = ""
 }) => {
+  const { apodoDe } = useApodosMesa();
+  const apodo = apodoDe(mesa);
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
   const pulseScale = useSharedValue(1);
@@ -469,11 +472,20 @@ const MesaAnimada = React.memo(({
           </View>
         )}
         
-        <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25 }]}>
+        <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25, marginBottom: apodo ? 0 : 4 }]}>
           {(mesa.nombreCombinado && String(mesa.nombreCombinado).trim()) ||
             (mesa.nombre && String(mesa.nombre).trim()) ||
             (mesa.nummesa != null && mesa.nummesa !== "" ? `M${mesa.nummesa}` : "Mesa")}
         </Text>
+        {apodo ? (
+          <Text
+            style={[styles.mesaMozo, { fontSize: mesaSize * 0.12, fontStyle: 'italic', opacity: 0.95, marginBottom: 2 }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {apodo}
+          </Text>
+        ) : null}
         {zoomLevel >= 0 && mozoLabel ? (
           <Text
             style={[styles.mesaMozo, { fontSize: mesaSize * (zoomLevel >= 1 ? 0.15 : 0.11) }]}
@@ -3652,8 +3664,8 @@ const InicioScreen = () => {
       return;
     }
 
-    if (!motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 5) {
-      Alert.alert("Error", "Por favor, indique el motivo de la eliminación (mínimo 5 caracteres)");
+    if (!motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 2) {
+      Alert.alert("Error", "Por favor, indique el motivo de la eliminación (mínimo 2 caracteres)");
       return;
     }
 
@@ -6935,7 +6947,7 @@ const InicioScreen = () => {
                 </Text>
                 <TextInput
                   style={[styles.observacionesInput, { 
-                    borderColor: !motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 5 ? colors.danger : theme.colors.primary,
+                    borderColor: !motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 2 ? colors.danger : theme.colors.primary,
                     borderWidth: 2,
                     minHeight: 100
                   }]}
@@ -6946,9 +6958,9 @@ const InicioScreen = () => {
                   multiline
                   numberOfLines={4}
                 />
-                {(!motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 5) && (
+                {(!motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 2) && (
                   <Text style={{ color: colors.danger, fontSize: 12, marginTop: 5 }}>
-                    * El motivo es obligatorio (mínimo 5 caracteres)
+                    * El motivo es obligatorio (mínimo 2 caracteres)
                   </Text>
                 )}
               </View>
@@ -6957,11 +6969,11 @@ const InicioScreen = () => {
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.saveButton, { 
-                  backgroundColor: !motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 5 || platosSeleccionadosEliminar.length === 0 ? '#9CA3AF' : colors.danger,
-                  opacity: !motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 5 || platosSeleccionadosEliminar.length === 0 ? 0.5 : 1
+                  backgroundColor: !motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 2 || platosSeleccionadosEliminar.length === 0 ? '#9CA3AF' : colors.danger,
+                  opacity: !motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 2 || platosSeleccionadosEliminar.length === 0 ? 0.5 : 1
                 }]}
                 onPress={handleConfirmarEliminarPlatos}
-                disabled={!motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 5 || platosSeleccionadosEliminar.length === 0}
+                disabled={!motivoEliminarPlatos || motivoEliminarPlatos.trim().length < 2 || platosSeleccionadosEliminar.length === 0}
               >
                 <MaterialCommunityIcons name="delete-circle" size={20} color={theme.colors.text.white} />
                 <Text style={styles.saveButtonText}> ELIMINAR PLATOS SELECCIONADOS</Text>
