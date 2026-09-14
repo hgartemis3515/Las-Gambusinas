@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -16,24 +16,16 @@ import {
   ALERTA_SALIO_ESTILOS,
   ALERTA_SALIO_COLORES,
   ALERTA_SALIO_VELOCIDAD,
+  fondoAlertaSalio,
 } from '../utils/alertaSalioPrefs';
 
 const PersonalizarAlertaSalioModal = ({ visible, onClose }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
-  const { prefs, setPrefs, reset } = useAlertaSalio();
+  const { prefs, fase, setPrefs, reset } = useAlertaSalio();
   const pal = ALERTA_SALIO_COLORES[prefs.color] || ALERTA_SALIO_COLORES.naranja;
-  const ms = ALERTA_SALIO_VELOCIDAD[prefs.velocidad]?.ms || 750;
   const apagado = prefs.estilo === 'apagado';
-
-  const [flashHi, setFlashHi] = useState(false);
-  useEffect(() => {
-    if (apagado || !visible) return;
-    const interval = setInterval(() => setFlashHi((v) => !v), Math.max(200, Math.round(ms / 2)));
-    return () => clearInterval(interval);
-  }, [apagado, visible, ms]);
-
-  const previewBg = apagado ? pal.lo : (flashHi ? pal.hi : pal.lo);
+  const previewBg = apagado ? pal.lo : fondoAlertaSalio(prefs, fase);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -51,13 +43,28 @@ const PersonalizarAlertaSalioModal = ({ visible, onClose }) => {
           </Text>
           <ScrollView style={{ maxHeight: 460 }}>
             <View
+              collapsable={false}
               style={[
                 styles.preview,
-                { backgroundColor: previewBg, borderLeftColor: pal.chip },
+                { backgroundColor: 'transparent', borderLeftColor: pal.chip },
               ]}
             >
-              <Text style={styles.previewName}>Ceviche</Text>
-              <Text style={styles.previewTimer}>⏱ 02:15</Text>
+              {!apagado ? (
+                <View
+                  key={`prev-${previewBg}-${fase}`}
+                  pointerEvents="none"
+                  collapsable={false}
+                  style={[StyleSheet.absoluteFillObject, { backgroundColor: previewBg, borderRadius: 8 }]}
+                />
+              ) : (
+                <View
+                  pointerEvents="none"
+                  collapsable={false}
+                  style={[StyleSheet.absoluteFillObject, { backgroundColor: pal.lo, borderRadius: 8 }]}
+                />
+              )}
+              <Text style={[styles.previewName, { zIndex: 1 }]}>Ceviche</Text>
+              <Text style={[styles.previewTimer, { zIndex: 1 }]}>⏱ 02:15</Text>
             </View>
 
             <Text style={styles.section}>Animación</Text>

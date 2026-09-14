@@ -125,11 +125,40 @@ function opPorUnidad(opComps, n, nSab) {
  * N recetas (una por plato). Guarniciones se copian por unidad;
  * OP/MIX se reparte a N1…Nn para poder editar solo N5.
  */
+export function fusionarGuarnicionEnUnidadesOp(plato, unidadesOp, unidadFuente) {
+  const keys = new Set(
+    (plato?.complementos || [])
+      .filter((g) => !grupoEsNombreCocina(g))
+      .map((g) => claveGrupoNombre(g.grupo))
+  );
+  const fromUnit = { selecciones: {}, variaciones: {} };
+  Object.entries(unidadFuente?.selecciones || {}).forEach(([g, ops]) => {
+    if (keys.has(claveGrupoNombre(g))) fromUnit.selecciones[g] = { ...ops };
+  });
+  Object.entries(unidadFuente?.variaciones || {}).forEach(([g, ops]) => {
+    if (keys.has(claveGrupoNombre(g))) fromUnit.variaciones[g] = { ...ops };
+  });
+  const garnish = Object.keys(fromUnit.selecciones).length
+    ? fromUnit
+    : estadoDesdeComplementos(
+      extrasYGuarniciones(plato, preseleccionComplementosDePlato(plato)).garnishes,
+      null
+    );
+  return (Array.isArray(unidadesOp) ? unidadesOp : []).map((u) => ({
+    ...u,
+    selecciones: { ...(garnish.selecciones || {}), ...(u.selecciones || {}) },
+    variaciones: { ...(garnish.variaciones || {}), ...(u.variaciones || {}) },
+  }));
+}
+
 export function complementosPorUnidadDesdeLinea(plato, iniciales, nPlatos) {
   const n = Math.max(1, Math.min(99, Number(nPlatos) || 1));
   const defs = preseleccionComplementosDePlato(plato);
   const fuente = Array.isArray(iniciales) ? iniciales : defs;
-  const { garnishes, extras } = extrasYGuarniciones(plato, fuente);
+  const { garnishes: rawG, extras } = extrasYGuarniciones(plato, fuente);
+  const { garnishes: defG } = extrasYGuarniciones(plato, defs);
+  const grupos = new Set(rawG.map((c) => claveGrupoNombre(c.grupo)));
+  const garnishes = [...rawG, ...defG.filter((c) => !grupos.has(claveGrupoNombre(c.grupo)))];
   const garnUnit = guarnicionesPorUnidad(garnishes, n);
   const grupoOp = grupoOpCantidadesDePlato(plato);
   const gruposMix = gruposVarianteDePlato(plato);

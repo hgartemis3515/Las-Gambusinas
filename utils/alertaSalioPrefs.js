@@ -71,3 +71,16 @@ export function alertaSalioAnim(prefs) {
     key: `${p.estilo}-${p.color}-${p.velocidad}`,
   };
 }
+
+/** Color de fondo según fase del reloj global (no depende de estado local de la fila). */
+export function fondoAlertaSalio(prefs, fase) {
+  const pal = ALERTA_SALIO_COLORES[prefs?.color] || ALERTA_SALIO_COLORES.naranja;
+  const estilo = prefs?.estilo || 'destello';
+  if (estilo === 'apagado') return pal.lo;
+  if (estilo === 'sirena') return (fase & 1) === 0 ? pal.hi : pal.alt;
+  if (estilo === 'ola') {
+    const t = Math.abs(fase) % 3;
+    return t === 0 ? pal.lo : t === 1 ? pal.hi : pal.alt;
+  }
+  return (fase & 1) === 0 ? pal.lo : pal.hi;
+}

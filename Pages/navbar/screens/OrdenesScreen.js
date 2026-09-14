@@ -198,20 +198,8 @@ const persistTipoServicioOrdenes = (tipo) => {
   return v;
 };
 
-const irAComandaDetalleTrasEnvio = (navigation, { comanda, mesa, reserva, estadoMesa, agruparConMesa }) => {
-  if (esSeleccionSinMesa(mesa) || !mesa?._id) {
-    navigation.navigate("Pendientes");
-    return;
-  }
-  const params = {
-    mesa: { ...mesa, estado: estadoMesa || mesa.estado || "pedido" },
-    ...(reserva ? { reserva } : {}),
-  };
-  // Extra llevar / nueva comanda desde Detalle: no reemplazar la lista con solo la nueva.
-  if (!agruparConMesa && comanda?._id) {
-    params.comandas = [comanda];
-  }
-  navigation.navigate("ComandaDetalle", params);
+const irAPendientesTrasEnvio = (navigation) => {
+  navigation.navigate("Pendientes");
 };
 
 const OrdenesScreen = ({ route }) => {
@@ -689,7 +677,7 @@ const OrdenesScreen = ({ route }) => {
 
   const abrirFocoDesdeBuscador = (plato, focoModo) => {
     const lineas = lineasDelPlatoEnCarrito(selectedPlatos, plato, tipoServicioMenuActual(), { exacto: true });
-    if (!lineas.length && (platoRequiereModalAlSumar(plato) || platoRequiereModalOp(plato))) {
+    if (!lineas.length && (platoRequiereModalAlSumar(plato) || (platoRequiereModalOp(plato) && focoModo === 'anexarNombre'))) {
       handleAddPlato(plato);
       return;
     }
@@ -1589,13 +1577,7 @@ const OrdenesScreen = ({ route }) => {
       if (modoExtraLlevar) {
         navigation.setParams({ modoExtraLlevar: false });
       }
-      irAComandaDetalleTrasEnvio(navigation, {
-        comanda: comandaParaNav,
-        mesa: mesaParaNav,
-        reserva: reservaParaNav,
-        estadoMesa: estadoParaNav,
-        agruparConMesa,
-      });
+      irAPendientesTrasEnvio(navigation);
     } catch (error) {
       // 🔥 MEJORADO: Verificación exhaustiva antes de mostrar cualquier error
       console.warn("⚠️ Error capturado, verificando si comanda se creó:", error.message);
@@ -1649,13 +1631,7 @@ const OrdenesScreen = ({ route }) => {
         if (modoExtraLlevar) {
         navigation.setParams({ modoExtraLlevar: false });
       }
-      irAComandaDetalleTrasEnvio(navigation, {
-          comanda: comandaParaNav,
-          mesa: mesaParaNav,
-          reserva: reservaParaNav,
-          estadoMesa: estadoParaNav,
-          agruparConMesa,
-        });
+      irAPendientesTrasEnvio(navigation);
         return; // Salir sin mostrar error
       }
       

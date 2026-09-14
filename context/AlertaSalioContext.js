@@ -3,18 +3,31 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ALERTA_SALIO_STORAGE_KEY,
   ALERTA_SALIO_DEFAULTS,
+  ALERTA_SALIO_VELOCIDAD,
   parseAlertaSalioPrefs,
 } from '../utils/alertaSalioPrefs';
 
 const AlertaSalioContext = createContext({
   prefs: ALERTA_SALIO_DEFAULTS,
+  fase: 0,
   setPrefs: () => {},
   reset: () => {},
 });
 
 export function AlertaSalioProvider({ children }) {
   const [prefs, setPrefsState] = useState(ALERTA_SALIO_DEFAULTS);
+  const [fase, setFase] = useState(0);
   const saveTimer = useRef(null);
+
+  useEffect(() => {
+    if (prefs.estilo === 'apagado') return undefined;
+    const ms = ALERTA_SALIO_VELOCIDAD[prefs.velocidad]?.ms || 750;
+    const step = Math.max(220, Math.round(ms / 2));
+    const id = setInterval(() => {
+      setFase(Math.floor(Date.now() / step));
+    }, step);
+    return () => clearInterval(id);
+  }, [prefs.estilo, prefs.velocidad]);
 
   const persist = useCallback((next) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -50,7 +63,7 @@ export function AlertaSalioProvider({ children }) {
     persist({ ...ALERTA_SALIO_DEFAULTS });
   }, [persist]);
 
-  const value = useMemo(() => ({ prefs, setPrefs, reset }), [prefs, setPrefs, reset]);
+  const value = useMemo(() => ({ prefs, fase, setPrefs, reset }), [prefs, fase, setPrefs, reset]);
   return (
     <AlertaSalioContext.Provider value={value}>
       {children}

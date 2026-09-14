@@ -1,4 +1,4 @@
-import { FadeIn, SlideInRight, SlideInUp, SlideInBottom, FadeInDown } from 'react-native-reanimated';
+import { FadeIn, SlideInRight, SlideInUp, SlideInDown, FadeInDown } from 'react-native-reanimated';
 
 /**
  * Presets de animaciones reutilizables para la app Las Gambusinas
@@ -25,7 +25,7 @@ export const slideInUpCart = () =>
 
 // Slide in bottom para modales
 export const slideInBottomModal = () =>
-  SlideInBottom.duration(400);
+  SlideInDown.duration(400);
 
 // Fade in down para lista de platos
 export const fadeInDownPlato = (index) =>

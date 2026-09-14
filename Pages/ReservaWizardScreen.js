@@ -510,7 +510,7 @@ export default function ReservaWizardScreen() {
 
   const abrirFocoDesdeBuscador = (plato, focoModo) => {
     const lineas = lineasDelPlatoEnCarrito(selPlatos, plato, tipoServicioModal, { exacto: true });
-    if (!lineas.length && (platoRequiereModalAlSumar(plato) || platoRequiereModalOp(plato))) {
+    if (!lineas.length && (platoRequiereModalAlSumar(plato) || (platoRequiereModalOp(plato) && focoModo === "anexarNombre"))) {
       tocarPlato(plato);
       return;
     }

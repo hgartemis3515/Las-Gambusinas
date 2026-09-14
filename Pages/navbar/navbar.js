@@ -119,6 +119,7 @@ const NavbarContent = () => {
           inactiveColor="#AAAAAA"
           screenOptions={{
             headerShown: false,
+            lazy: true,
             tabBarStyle: {
               display: "none",
               height: 0,

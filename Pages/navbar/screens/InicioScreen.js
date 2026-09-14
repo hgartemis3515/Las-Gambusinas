@@ -24,6 +24,7 @@ import { getFallbackApiBase } from "../../../config/envDefaults";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { useApodosMesa } from "../../../context/ApodosMesaContext";
+import AlertaSalioFondo, { hayPlatoSalio } from '../../../Components/AlertaSalioFondo';
 import { useAbrirMenuNuevaOrden } from "../../../context/AbrirMenuNuevaOrdenContext";
 import { themeLight } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
@@ -40,7 +41,6 @@ import Animated, {
   withRepeat,
   withTiming,
   withSequence,
-  withTranslateX,
   runOnJS,
   SlideInRight,
   FadeIn,
@@ -324,7 +324,8 @@ const MesaAnimada = React.memo(({
   esMesaPrincipal = true,
   mesasUnidas = [],
   mesaPrincipalNum = null,
-  formatearGrupo = ""
+  formatearGrupo = "",
+  alertaSalio = false,
 }) => {
   const { apodoDe } = useApodosMesa();
   const apodo = apodoDe(mesa);
@@ -443,10 +444,14 @@ const MesaAnimada = React.memo(({
             backgroundColor: estadoColor,
             borderColor: getBorderColor(),
             borderWidth: isSelected ? 4 : 1,
+            overflow: 'hidden',
           },
           animatedStyle,
         ]}
       >
+        <View pointerEvents="box-none" style={StyleSheet.absoluteFill} collapsable={false}>
+          <AlertaSalioFondo on={alertaSalio} />
+        </View>
         {/* Checkbox de selección (modo selección) */}
         {modoSeleccion && (
           <Animated.View style={[styles.mesaCheckbox, checkAnimatedStyle]}>
@@ -472,7 +477,7 @@ const MesaAnimada = React.memo(({
           </View>
         )}
         
-        <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25, marginBottom: apodo ? 0 : 4 }]}>
+        <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25, marginBottom: apodo ? 0 : 4, zIndex: 1 }]}>
           {(mesa.nombreCombinado && String(mesa.nombreCombinado).trim()) ||
             (mesa.nombre && String(mesa.nombre).trim()) ||
             (mesa.nummesa != null && mesa.nummesa !== "" ? `M${mesa.nummesa}` : "Mesa")}
@@ -4992,6 +4997,15 @@ const InicioScreen = () => {
     return false;
   }, [userInfo, reservas, comandas]);
 
+  const mesaAlertaSalioMia = useCallback((mesa) => {
+    if (!mesaAtendidaPorMi(mesa)) return false;
+    const cmds = [
+      ...getComandasPorMesa(mesa.nummesa),
+      ...getComandasActivasPorMesaId(mesa),
+    ];
+    return cmds.some((c) => hayPlatoSalio(c.platos));
+  }, [mesaAtendidaPorMi, comandas]);
+
   // Obtener mesas por área/sección (mantiene ordenamiento numérico)
   // OCULTA las mesas secundarias (las que están unidas a otra mesa principal)
   const getMesasPorArea = useCallback((areaId) => {
@@ -5249,6 +5263,7 @@ const InicioScreen = () => {
               reservas={reservas}
               areaId={seccionActiva === SECCION_YO ? null : (seccionActiva?._id || seccionActiva)}
               onMesaPress={handleSelectMesa}
+              alertaSalioMesa={mesaAlertaSalioMia}
               style={{ flex: 1 }}
             />
           ) : (
@@ -5294,6 +5309,7 @@ const InicioScreen = () => {
                         mesas.find(m => m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString())?.nummesa : null
                       }
                       formatearGrupo={formatearGrupoMesas(mesa)}
+                      alertaSalio={mesaAlertaSalioMia(mesa)}
                     />
                   );
                 })}
@@ -5330,6 +5346,7 @@ const InicioScreen = () => {
                         mesas.find(m => m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString())?.nummesa : null
                       }
                       formatearGrupo={formatearGrupoMesas(mesa)}
+                      alertaSalio={mesaAlertaSalioMia(mesa)}
                     />
                   );
                 })
@@ -7117,6 +7134,7 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
     ...theme.shadows.medium,
   },
   mesaNumber: {

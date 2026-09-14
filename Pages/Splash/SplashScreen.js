@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Image, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Image, Dimensions, InteractionManager } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useSharedValue,
@@ -8,18 +8,15 @@ import Animated, {
   withTiming,
   withSequence,
   withRepeat,
-  interpolate,
   Easing,
-  FadeIn,
-  ZoomIn,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import * as Updates from 'expo-updates';
 import Constants from 'expo-constants';
 import { colors } from '../../constants/colors';
-import { checkAndApplyOtaUpdate, getOtaRuntimeInfo } from '../../services/otaUpdates';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const APP_VERSION = Constants.expoConfig?.version || '1.9.3v';
+const APP_VERSION = Constants.expoConfig?.version || '1.9.8v';
 
 // Partículas flotantes de fondo
 const FloatingParticle = ({ delay, startY }) => {
@@ -90,6 +87,7 @@ export default function SplashScreen({ onFinish }) {
   const [status, setStatus] = useState('Inicializando...');
   const [progress, setProgress] = useState(0);
   const [hasUpdate, setHasUpdate] = useState(false);
+  const [freezeAnims, setFreezeAnims] = useState(false);
   const particles = useRef(
     Array.from({ length: 12 }, (_, i) => ({
       id: i,
@@ -146,7 +144,7 @@ export default function SplashScreen({ onFinish }) {
       setStatus('Verificando actualizaciones...');
       setProgress(45);
 
-      if (!__DEV__) {
+      if (!__DEV__ && !Updates.isEmergencyLaunch) {
         try {
           const updateCheck = await Updates.checkForUpdateAsync();
           if (updateCheck.isAvailable) {
@@ -154,12 +152,28 @@ export default function SplashScreen({ onFinish }) {
             setStatus('Descargando actualización...');
             setProgress(55);
             await Updates.fetchUpdateAsync();
-            setProgress(80);
+            setProgress(90);
             setStatus('Actualización lista. Reiniciando...');
-            await new Promise(r => setTimeout(r, 800));
+            setFreezeAnims(true);
+            cancelAnimation(logoScale);
+            cancelAnimation(logoOpacity);
+            cancelAnimation(textOpacity);
+            cancelAnimation(textTranslateY);
+            cancelAnimation(barWidth);
+            cancelAnimation(barOpacity);
+            cancelAnimation(subtitleOpacity);
+            cancelAnimation(pulseScale);
+            await new Promise((r) => InteractionManager.runAfterInteractions(() => r()));
+            await new Promise((r) => setTimeout(r, 400));
             setProgress(100);
-            await Updates.reloadAsync();
-            return; // reloadAsync reinicia la app
+            try {
+              await Updates.reloadAsync();
+              return;
+            } catch (reloadErr) {
+              console.warn('[Splash] reloadAsync:', reloadErr?.message);
+              setStatus('Cierra y abre la app para aplicar');
+              await new Promise((r) => setTimeout(r, 900));
+            }
           }
         } catch (e) {
             console.warn('[Splash] OTA check error:', e?.message);
@@ -220,17 +234,13 @@ export default function SplashScreen({ onFinish }) {
     opacity: barOpacity.value,
   }));
 
-  const barFillStyle = useAnimatedStyle(() => ({
-    width: `${barWidth.value * 100}%`,
-  }));
-
   return (
     <LinearGradient
       colors={['#0a0a0a', '#1a1a1a', '#0d0d0d']}
       style={styles.container}
     >
       {/* Partículas flotantes */}
-      {particles.map((p) => (
+      {!freezeAnims && particles.map((p) => (
         <FloatingParticle key={p.id} delay={p.delay} startY={p.startY} />
       ))}
 
@@ -261,9 +271,9 @@ export default function SplashScreen({ onFinish }) {
       {/* Barra de progreso */}
       <Animated.View style={[styles.progressContainer, barContainerStyle]}>
         <View style={styles.progressTrack}>
-          <Animated.View style={[styles.progressFill, barFillStyle]}>
+          <View style={[styles.progressFill, { width: `${Math.max(0, Math.min(100, progress))}%` }]}>
             <View style={styles.progressShine} />
-          </Animated.View>
+          </View>
         </View>
         <Text style={styles.statusText} numberOfLines={1}>
           {status}

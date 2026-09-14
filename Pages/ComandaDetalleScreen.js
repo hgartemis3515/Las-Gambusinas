@@ -1291,7 +1291,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
   const abrirFocoDesdeBuscador = (plato, focoModo) => {
     const lineas = lineasDelPlatoEnCarrito(platosEditados, plato, tipoServicioMenuEdicion(), { exacto: true });
-    if (!lineas.length && (platoRequiereModalAlSumar(plato) || platoRequiereModalOp(plato))) {
+    if (!lineas.length && (platoRequiereModalAlSumar(plato) || (platoRequiereModalOp(plato) && focoModo === 'anexarNombre'))) {
       handleAgregarPlato(plato);
       return;
     }
@@ -2903,11 +2903,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 style={styles.platosList}
                 contentContainerStyle={styles.platosListContent}
                 extraData={`${tickEntrega}-${platosSeleccionadosEntregar.length}`}
-                getItemLayout={(data, index) => ({
-                  length: 68,
-                  offset: 68 * index,
-                  index,
-                })}
+                removeClippedSubviews={false}
               />
               
               {/* Totales */}

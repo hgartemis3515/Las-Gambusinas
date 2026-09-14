@@ -14,9 +14,10 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useApodosMesa } from '../context/ApodosMesaContext';
+import { obtenerColoresEstadoAdaptados } from '../utils/comandaHelpers';
 import { themeLight } from '../constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { obtenerColoresEstadoAdaptados } from '../utils/comandaHelpers';
+import AlertaSalioFondo from './AlertaSalioFondo';
 import axios from '../config/axiosConfig';
 import { getMesasAPI } from '../apiConfig';
 
@@ -33,7 +34,8 @@ const MesaMapItem = React.memo(({
   estado, 
   onPress, 
   scale,
-  theme 
+  theme,
+  alertaSalio = false,
 }) => {
   const config = mesa.mapaConfig || {};
   const isDark = theme?.dark || false;
@@ -65,10 +67,12 @@ const MesaMapItem = React.memo(({
           backgroundColor: colores.backgroundColor,
           borderColor: colores.borderColor,
           borderRadius: isRound ? itemWidth / 2 : 12,
+          overflow: 'hidden',
         }
       ]}
     >
-      <Text style={[styles.mesaNumber, { color: colores.textColor }]}>
+      <AlertaSalioFondo on={alertaSalio} />
+      <Text style={[styles.mesaNumber, { color: colores.textColor, zIndex: 1 }]}>
         {mesa.nombreCombinado || `M${mesa.nummesa}`}
       </Text>
       {apodo ? (
@@ -92,6 +96,7 @@ const MesaMapView = ({
   onMesaPress,
   style,
   reservas = [],
+  alertaSalioMesa,
 }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
@@ -225,6 +230,7 @@ const MesaMapView = ({
             onPress={onMesaPress}
             scale={scale}
             theme={theme}
+            alertaSalio={typeof alertaSalioMesa === 'function' ? !!alertaSalioMesa(mesa) : false}
           />
         ))}
       </ScrollView>

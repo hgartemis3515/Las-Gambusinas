@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cantidadGuarnicionEfectiva } from '../utils/platoGuarniciones';
@@ -6,7 +6,7 @@ import { textoOpcionComplemento } from '../utils/precioComplementos';
 import { esSeleccionVariantePlato, nombreVisibleConVariante } from '../utils/variantePlato';
 import { esLlevarColor, etiquetaLlevarMozo } from '../utils/tipoServicio';
 import { useAlertaSalio } from '../context/AlertaSalioContext';
-import { ALERTA_SALIO_COLORES, ALERTA_SALIO_VELOCIDAD } from '../utils/alertaSalioPrefs';
+import { ALERTA_SALIO_COLORES, fondoAlertaSalio } from '../utils/alertaSalioPrefs';
 
 /**
  * Componente para renderizar una fila compacta de plato en la tabla
@@ -43,7 +43,7 @@ const FilaPlatoCompacta = ({
     textoEstado: 'ANULADO'
   };
   
-  const estilosAplicar = esAnulado ? estilosAnulado : estilos;
+  const estilosAplicar = esAnulado ? estilosAnulado : (estilos || estilosAnulado);
   
   // 🔥 NUEVO: Handler para toggle de selección
   const handleToggle = () => {
@@ -52,36 +52,33 @@ const FilaPlatoCompacta = ({
     }
   };
   
-  const { prefs } = useAlertaSalio();
-  const pal = ALERTA_SALIO_COLORES[prefs.color] || ALERTA_SALIO_COLORES.naranja;
-  const alertaOn = esSalio && !esAnulado && puedeMarcarEntregado && prefs.estilo !== 'apagado';
-  const ms = ALERTA_SALIO_VELOCIDAD[prefs.velocidad]?.ms || 750;
-
-  // Destello simple con setInterval + useState: alterna entre pal.lo y pal.hi
-  const [flashHi, setFlashHi] = useState(false);
-  useEffect(() => {
-    if (!alertaOn) return;
-    const interval = setInterval(() => setFlashHi((v) => !v), Math.max(200, Math.round(ms / 2)));
-    return () => clearInterval(interval);
-  }, [alertaOn, ms]);
-
-  const fondoAlerta = alertaOn
-    ? (flashHi ? pal.hi : pal.lo)
-    : estilosAplicar.fondo;
+  const { prefs, fase } = useAlertaSalio();
+  const pal = ALERTA_SALIO_COLORES[prefs?.color] || ALERTA_SALIO_COLORES.naranja;
+  const alertaOn = esSalio && !esAnulado && prefs?.estilo !== 'apagado';
+  const fondoAlerta = alertaOn ? fondoAlertaSalio(prefs, fase) : estilosAplicar?.fondo;
   const bordeAlerta = alertaOn ? pal.chip : estilosAplicar.borde;
 
   return (
     <View
+      collapsable={false}
       style={[
         styles.fila,
         {
-          backgroundColor: fondoAlerta,
+          backgroundColor: alertaOn ? 'transparent' : estilosAplicar.fondo,
           borderLeftWidth: 4,
           borderLeftColor: bordeAlerta,
           opacity: esAnulado ? 0.6 : 1,
         }
       ]}
     >
+      {alertaOn ? (
+        <View
+          key={`alerta-bg-${fondoAlerta}-${fase & 1}`}
+          pointerEvents="none"
+          collapsable={false}
+          style={[StyleSheet.absoluteFillObject, { backgroundColor: fondoAlerta }]}
+        />
+      ) : null}
       <View style={styles.filaContenido} collapsable={false}>
       {/* Nombre del plato (40%) */}
       <View style={styles.columnaNombre}>
@@ -223,6 +220,8 @@ const styles = StyleSheet.create({
     minHeight: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
+    overflow: 'hidden',
+    position: 'relative',
   },
   filaContenido: {
     flex: 1,

@@ -29,6 +29,7 @@ import {
 import { agruparComandasPendientes } from "../../../utils/agruparComandasPendientes";
 import { esFilaComandaSinMesa, COLOR_PARA_LLEVAR } from "../../../utils/sinMesaOrden";
 import { comandaEsDeMozo, idEntidad } from "../../../utils/reservasMozo";
+import AlertaSalioFondo, { hayPlatoSalio } from "../../../Components/AlertaSalioFondo";
 import ModalVerComandaMozo from "../../../Components/ModalVerComandaMozo";
 
 function urlPendienteCobro(mozoId, { pagadasHoy } = {}) {
@@ -270,8 +271,10 @@ const PendientesCobroScreen = () => {
     const monto = (esPagadas || item.pagadaHoy || item.seguimientoPpa)
       ? (item.total ?? item.pendienteCobro)
       : item.pendienteCobro;
+    const haySalio = hayPlatoSalio(item.platos);
     return (
       <View style={styles.row}>
+        <AlertaSalioFondo on={haySalio} />
         <Text
           style={[styles.cell, styles.colMesa, sinMesa && styles.cellParaLlevar]}
           numberOfLines={2}
@@ -504,10 +507,13 @@ const makeStyles = (theme) => StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.colors.border || "#333",
+    overflow: "hidden",
+    position: "relative",
   },
   cell: {
     fontSize: 15,
     color: theme.colors.text?.primary || theme.colors.text?.white || "#111",
+    zIndex: 1,
   },
   colMesa: { flex: 1.15 },
   colComanda: { flex: 1.05 },
@@ -519,6 +525,7 @@ const makeStyles = (theme) => StyleSheet.create({
     alignItems: "center",
     gap: 4,
     paddingRight: 4,
+    zIndex: 1,
   },
   estadoDot: {
     width: 8,
@@ -558,6 +565,7 @@ const makeStyles = (theme) => StyleSheet.create({
     backgroundColor: theme.colors.primary,
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 1,
   },
   verBtnText: {
     color: "#FFFFFF",

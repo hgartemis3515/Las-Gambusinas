@@ -147,14 +147,19 @@ export function resolverPartesComplementos(plato, complementosSeleccionados, can
   return expandirLineaComplementos(plato, complementosSeleccionados, cantidadPlatos);
 }
 
+export function opcionEstaPreseleccionada(op) {
+  if (!op || typeof op !== 'object') return false;
+  return op.preseleccionada === true || op.preseleccionada === 1 || op.preseleccionada === 'true';
+}
+
 function opcionesAAplicarDeGrupo(grupo) {
   const ops = Array.isArray(grupo?.opciones) ? grupo.opciones : [];
   const named = ops.filter((op) => getNombreOpcion(op));
   if (grupoSeleccionFija(grupo)) {
-    const marked = named.filter((op) => op && typeof op === 'object' && op.preseleccionada === true);
+    const marked = named.filter(opcionEstaPreseleccionada);
     return marked.length ? marked : named;
   }
-  return named.filter((op) => op && typeof op === 'object' && op.preseleccionada === true);
+  return named.filter(opcionEstaPreseleccionada);
 }
 
 function snapshotOpcionesGrupo(grupo, opciones) {
@@ -269,6 +274,31 @@ export function partirLineaPorGuarniciones(plato, complementosSeleccionados, can
   return [{ complementos: comps, cantidad: n }];
 }
 
+function platoJuntaGuarniciones(plato) {
+  if (!plato) return false;
+  if (plato.juntarGuarnicionesEntreVariantes === true) return true;
+  const cat = plato.plato;
+  return !!(cat && typeof cat === 'object' && cat.juntarGuarnicionesEntreVariantes === true);
+}
+
+/** Con junta: las guarniciones van en la primera variante (pecho/pierna no duplican papa). */
+function stripGuarnicionTrasPrimeraVariante(plato, parts) {
+  if (!platoJuntaGuarniciones(plato) || !Array.isArray(parts) || parts.length < 2) return parts;
+  const keys = new Set(
+    gruposGuarnicion(plato)
+      .filter((g) => grupoEsVariantePlato(g) || grupoAnexaNombre(g))
+      .map((g) => claveGrupoNombre(g.grupo))
+  );
+  if (!keys.size) return parts;
+  return parts.map((p, i) => {
+    if (i === 0) return p;
+    return {
+      ...p,
+      complementos: (p.complementos || []).filter((c) => keys.has(claveGrupoNombre(c.grupo))),
+    };
+  });
+}
+
 export function expandirLineaComplementos(plato, complementosSeleccionados, cantidadPlatos) {
   const n = Math.max(1, Number(cantidadPlatos) || 1);
   const gParts = partirLineaPorGuarniciones(plato, complementosSeleccionados, n);
@@ -277,7 +307,8 @@ export function expandirLineaComplementos(plato, complementosSeleccionados, cant
     const vars = partirLineaPorVariante(plato, g.complementos, g.cantidad);
     vars.forEach((v) => out.push(v));
   });
-  return out.length
+  const parts = out.length
     ? out
     : [{ complementos: complementosSeleccionados || [], cantidad: n, nombreCocinaPedido: '', variantePlato: null }];
+  return stripGuarnicionTrasPrimeraVariante(plato, parts);
 }

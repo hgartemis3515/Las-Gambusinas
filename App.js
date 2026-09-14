@@ -1,7 +1,9 @@
 import 'react-native-gesture-handler';
 import './utils/registerGsapPlugins';
+import { installJsCrashGuard } from './utils/installJsCrashGuard';
 import React, { useState, useEffect } from 'react';
 import { Platform } from 'react-native';
+import AppErrorBoundary from './Components/AppErrorBoundary';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { ThemeProvider } from './context/ThemeContext';
@@ -42,6 +44,7 @@ import { navigationRef } from './navigationRef';
 if (Platform.OS !== 'web') {
   require('./tasks/backgroundFetchTask');
 }
+installJsCrashGuard();
 
 const Stack = createStackNavigator();
 export { navigationRef };
@@ -64,6 +67,7 @@ export default function App() {
 
   if (showSplash) {
     return (
+      <AppErrorBoundary>
       <SafeAreaProvider>
         <GestureHandlerRootView style={{ flex: 1 }}>
           <ThemeProvider>
@@ -71,10 +75,12 @@ export default function App() {
           </ThemeProvider>
         </GestureHandlerRootView>
       </SafeAreaProvider>
+      </AppErrorBoundary>
     );
   }
 
   return (
+    <AppErrorBoundary>
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <ThemeProvider>
@@ -170,5 +176,6 @@ export default function App() {
         </ThemeProvider>
       </GestureHandlerRootView>
     </SafeAreaProvider>
+    </AppErrorBoundary>
   );
 }
