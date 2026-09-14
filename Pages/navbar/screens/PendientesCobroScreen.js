@@ -31,7 +31,8 @@ import { esFilaComandaSinMesa, COLOR_PARA_LLEVAR } from "../../../utils/sinMesaO
 import { comandaEsDeMozo, idEntidad } from "../../../utils/reservasMozo";
 import AlertaSalioFondo from "../../../Components/AlertaSalioFondo";
 import ModalVerComandaMozo from "../../../Components/ModalVerComandaMozo";
-import { tienePlatoEnSalio } from "../../../utils/alertaSalioPrefs";
+import { useAlertaSalio } from "../../../context/AlertaSalioContext";
+import { fondoAlertaSalio, tienePlatoEnSalio } from "../../../utils/alertaSalioPrefs";
 
 function urlPendienteCobro(mozoId, { pagadasHoy } = {}) {
   const q = `pendiente-cobro?mozoId=${encodeURIComponent(mozoId)}${pagadasHoy ? "&pagadasHoy=1" : ""}`;
@@ -114,10 +115,14 @@ function FilaPendiente({
   const monto = (esPagadas || item.pagadaHoy || item.seguimientoPpa)
     ? (item.total ?? item.pendienteCobro)
     : item.pendienteCobro;
+  const { prefs, fase } = useAlertaSalio();
   const alertaOn = !esPagadas && !item.pagadaHoy && tienePlatoEnSalio(item.platos);
+  const fondoAlerta = alertaOn && prefs?.estilo !== 'apagado'
+    ? fondoAlertaSalio(prefs, fase)
+    : null;
 
   return (
-    <View style={[styles.row, alertaOn && styles.rowAlerta]}>
+    <View style={[styles.row, alertaOn && styles.rowAlerta, fondoAlerta ? { backgroundColor: fondoAlerta } : null]}>
       <AlertaSalioFondo on={alertaOn} />
       <Text
         style={[styles.cell, styles.colMesa, styles.cellFront, sinMesa && styles.cellParaLlevar]}
@@ -155,6 +160,7 @@ const PendientesCobroScreen = () => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const { subscribeToEvents, socket } = useSocket();
+  const { fase: faseAlertaSalio } = useAlertaSalio();
 
   const [comandas, setComandas] = useState([]);
   const [total, setTotal] = useState(0);
@@ -388,6 +394,8 @@ const PendientesCobroScreen = () => {
           data={filas}
           keyExtractor={(item) => String(item.id || item._id)}
           renderItem={renderItem}
+          extraData={faseAlertaSalio}
+          removeClippedSubviews={false}
           refreshControl={(
             <RefreshControl
               refreshing={refreshing}

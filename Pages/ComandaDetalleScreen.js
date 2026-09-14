@@ -31,6 +31,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useDensidadOrdenes } from '../context/DensidadOrdenesContext';
 import { estiloChipCategoria } from '../utils/densidadOrdenes';
 import { useSocket } from '../context/SocketContext';
+import { useAlertaSalio } from '../context/AlertaSalioContext';
 import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
@@ -250,6 +251,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [permitirEditarEliminarTomadas, setPermitirEditarEliminarTomadas] = useState(false);
   const [minutosEntregaAuto, setMinutosEntregaAuto] = useState(15);
   const [tickEntrega, setTickEntrega] = useState(0);
+  const { fase: faseAlertaSalio } = useAlertaSalio();
   
   // Estados para modales
   const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
@@ -601,46 +603,27 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       );
       return;
     }
-    
-    Alert.alert(
-      'Confirmar Entrega',
-      `¿Confirmas que entregaste "${platoObj.plato.nombre}" al cliente?\n\nEsta acción no se puede deshacer.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { 
-          text: 'Confirmar Entrega',
-          onPress: async () => {
-            try {
-              setLoading(true);
-              
-              // 🔥 CRÍTICO: Usar _id del subdocumento (único por instancia) para distinguir platos duplicados
-              // Prioridad: _id (subdocumento) > platoId (numérico) > plato._id (referencia)
-              const platoIdentifier = platoObj._id || platoObj.platoId || platoObj.plato?._id;
-              
-              // Usar endpoint /estado (mismo que cocina) en lugar de /entregar
-              const endpoint = apiConfig.isConfigured
-                ? `${apiConfig.getEndpoint('/comanda')}/${platoObj.comandaId}/plato/${platoIdentifier}/estado`
-                : `${getFallbackApiBase()}/comanda/${platoObj.comandaId}/plato/${platoIdentifier}/estado`;
-              
-              await axios.put(endpoint, { nuevoEstado: 'entregado' });
-              await refrescarComandas();
 
-              // Verificar si todos los platos de la comanda están entregados y corregir status a 'recoger' si aplica (workaround backend).
-              verificarYActualizarEstadoComanda(platoObj.comandaId, axios).catch(() => {});
-              
-              Alert.alert('✓ Entrega Confirmada', `${platoObj.plato.nombre} marcado como entregado.`);
-              
-            } catch (error) {
-              console.error('Error al marcar plato como entregado:', error);
-              const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message;
-              Alert.alert('Error', `No se pudo confirmar la entrega: ${errorMsg}`);
-            } finally {
-              setLoading(false);
-            }
-          }
-        }
-      ]
-    );
+    try {
+      setLoading(true);
+
+      const platoIdentifier = platoObj._id || platoObj.platoId || platoObj.plato?._id;
+
+      const endpoint = apiConfig.isConfigured
+        ? `${apiConfig.getEndpoint('/comanda')}/${platoObj.comandaId}/plato/${platoIdentifier}/estado`
+        : `${getFallbackApiBase()}/comanda/${platoObj.comandaId}/plato/${platoIdentifier}/estado`;
+
+      await axios.put(endpoint, { nuevoEstado: 'entregado' });
+      await refrescarComandas();
+
+      verificarYActualizarEstadoComanda(platoObj.comandaId, axios).catch(() => {});
+    } catch (error) {
+      console.error('Error al marcar plato como entregado:', error);
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message;
+      Alert.alert('Error', `No se pudo confirmar la entrega: ${errorMsg}`);
+    } finally {
+      setLoading(false);
+    }
   };
   
   // FASE 4: Integración WebSocket con manejo mejorado de rooms
@@ -1436,9 +1419,20 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         (p) => (p.instanceId || p._id) === editandoInstanceId
       );
       if (linea) {
+        const catalogo = resolverPlatoConGrupos(linea, platos);
+        const compsIn = fusionarGuarnicionesPreseleccionadasEnLista(
+          catalogo,
+          Array.isArray(complementosSeleccionados) ? complementosSeleccionados : []
+        );
+        const partesIn = Array.isArray(_partes) && _partes.length
+          ? _partes.map((p) => ({
+              ...p,
+              complementos: fusionarGuarnicionesPreseleccionadasEnLista(catalogo, p.complementos),
+            }))
+          : _partes;
         const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || linea.cantidad || 1));
-        const partes = resolverPartesComplementos(linea, complementosSeleccionados, n, _partes);
-        const parte = partes[0] || { complementos: complementosSeleccionados, cantidad: n };
+        const partes = resolverPartesComplementos(linea, compsIn, n, partesIn);
+        const parte = partes[0] || { complementos: compsIn, cantidad: n };
         const afectan = linea.complementosAfectanPrecio !== false;
         const calc = _precioUnitario != null
           ? { precioUnitario: _precioUnitario, extraComplementos: _extraComplementos }
@@ -2656,27 +2650,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     });
   };
   
-  // Confirmar entrega de platos seleccionados
+  // Entregar platos seleccionados sin diálogos de confirmación ni éxito
   const handleEntregarPlatos = async () => {
     if (platosSeleccionadosEntregar.length === 0) {
       Alert.alert('Sin Selección', 'Selecciona al menos un plato para entregar haciendo tap en el checkbox.');
       return;
     }
-    
-    const cantidadPlatos = platosSeleccionadosEntregar.length;
-    
-    // Siempre pedir confirmación
-    Alert.alert(
-      'Confirmar Entrega',
-      `¿Confirmar la entrega de ${cantidadPlatos} plato(s) seleccionado(s)?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { 
-          text: 'Confirmar Entrega', 
-          onPress: () => ejecutarEntregaPlatos() 
-        }
-      ]
-    );
+    await ejecutarEntregaPlatos();
   };
   
   // Ejecutar las peticiones PUT para entregar platos
@@ -2733,25 +2713,21 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       try {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch (_) {}
-      
-      // Mostrar resultado
-      if (errores.length === 0) {
-        Alert.alert(
-          '✓ Entrega Exitosa',
-          `${exitosos} plato(s) marcado(s) como entregado(s).`
-        );
-      } else if (exitosos > 0) {
+
+      if (errores.length > 0) {
+        if (exitosos > 0) {
         const listaErrores = errores.map(e => `• ${e.plato}: ${e.error}`).join('\n');
         Alert.alert(
           'Entrega Parcial',
           `${exitosos} plato(s) entregado(s) correctamente.\n\nErrores:\n${listaErrores}`
         );
-      } else {
+        } else {
         const listaErrores = errores.map(e => `• ${e.plato}: ${e.error}`).join('\n');
         Alert.alert(
           'Error en Entrega',
           `No se pudieron entregar los platos:\n${listaErrores}`
         );
+        }
       }
       
     } catch (error) {
@@ -2905,7 +2881,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 }
                 style={styles.platosList}
                 contentContainerStyle={styles.platosListContent}
-                extraData={`${tickEntrega}-${platosSeleccionadosEntregar.length}`}
+                extraData={`${tickEntrega}-${platosSeleccionadosEntregar.length}-${faseAlertaSalio}`}
                 removeClippedSubviews={false}
               />
               

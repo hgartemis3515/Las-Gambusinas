@@ -27,7 +27,8 @@ import { resolverSlugMenuPorHora } from "../../../utils/horaTipoMenu";
 import { clampAccionesEscala, ACCIONES_ESCALA_DEFAULT } from "../../../utils/ordenesAccionesPrefs";
 import { themeLight } from "../../../constants/theme";
 import { useOrientation } from "../../../hooks/useOrientation";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { CommonActions, useFocusEffect, useNavigation } from "@react-navigation/native";
+import { navigationRef } from "../../../navigationRef";
 import moment from "moment-timezone";
 import debounce from "lodash.debounce";
 import * as Haptics from "expo-haptics";
@@ -200,7 +201,21 @@ const persistTipoServicioOrdenes = (tipo) => {
 };
 
 const irAPendientesTrasEnvio = (navigation) => {
-  navigation.navigate("Pendientes");
+  const irAPendientes = (nav) => {
+    if (!nav?.navigate) return;
+    nav.navigate("Navbar", { screen: "Pendientes" });
+    nav.navigate("Pendientes");
+  };
+  irAPendientes(navigation);
+  irAPendientes(navigation?.getParent?.());
+  if (navigationRef.isReady()) {
+    navigationRef.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: "Navbar", params: { screen: "Pendientes" } }],
+      })
+    );
+  }
 };
 
 const OrdenesScreen = ({ route }) => {
@@ -845,6 +860,22 @@ const OrdenesScreen = ({ route }) => {
   };
 
   const handleConfirmarComplementos = ({ complementosSeleccionados, notaEspecial, numeroSerie, _cantidadPlatos, _partes }) => {
+    const platoCatalogo = resolverPlatoConGrupos(
+      (editandoInstanceId
+        ? selectedPlatosRef.current.find((p) => (p.instanceId || p._id) === editandoInstanceId)
+        : null) || platoParaComplementar,
+      platos
+    );
+    const compsIn = fusionarGuarnicionesPreseleccionadasEnLista(
+      platoCatalogo,
+      Array.isArray(complementosSeleccionados) ? complementosSeleccionados : []
+    );
+    const partesIn = Array.isArray(_partes) && _partes.length
+      ? _partes.map((p) => ({
+          ...p,
+          complementos: fusionarGuarnicionesPreseleccionadasEnLista(platoCatalogo, p.complementos),
+        }))
+      : _partes;
     if (editandoInstanceId) {
       const linea = selectedPlatosRef.current.find(
         (p) => (p.instanceId || p._id) === editandoInstanceId
@@ -860,8 +891,8 @@ const OrdenesScreen = ({ route }) => {
               || 1
           )
         );
-        const partes = resolverPartesComplementos(linea, complementosSeleccionados, n, _partes);
-        const parte0 = partes[0] || { complementos: complementosSeleccionados, cantidad: n };
+        const partes = resolverPartesComplementos(linea, compsIn, n, partesIn);
+        const parte0 = partes[0] || { complementos: compsIn, cantidad: n };
         const afectan = linea.complementosAfectanPrecio !== false;
         const calc0 = calcularPrecioUnitarioConComplementos(
           linea.precio || 0,
@@ -928,7 +959,7 @@ const OrdenesScreen = ({ route }) => {
     if (platoParaComplementar) {
       const nombre = platoParaComplementar.nombre;
       const n = Math.max(1, Math.min(99, Number(_cantidadPlatos) || 1));
-      const partes = resolverPartesComplementos(platoParaComplementar, complementosSeleccionados, n, _partes);
+      const partes = resolverPartesComplementos(platoParaComplementar, compsIn, n, partesIn);
       const afectan = platoParaComplementar.complementosAfectanPrecio !== false;
       const serie = normalizarNumeroSerie(numeroSerie);
       let totalUnidades = 0;

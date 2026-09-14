@@ -147,16 +147,20 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     const nUnidades = sumaLibreInit ? 1 : nInit;
     let unidades;
     if (!sumaLibreInit && seedLen > 0) {
-      unidades = unidadesIniciales.map(cloneUnidadEstado);
+      unidades = unidadesIniciales.map((u) =>
+        aplicarGuarnicionesAUnidadOp(plato, cloneUnidadEstado(u), u)
+      );
       const plantilla = cloneUnidadEstado(unidades[0] || { selecciones: {}, variaciones: {}, ordenSabores: [] });
-      while (unidades.length < nUnidades) unidades.push(cloneUnidadEstado(plantilla));
+      while (unidades.length < nUnidades) {
+        unidades.push(aplicarGuarnicionesAUnidadOp(plato, cloneUnidadEstado(plantilla), plantilla));
+      }
       if (unidades.length > nUnidades) unidades.length = nUnidades;
     } else {
       unidades = hidratarUnidadesEstado(
         plato,
         Array.isArray(complementosIniciales) ? complementosIniciales : null,
         nUnidades
-      );
+      ).map((u) => aplicarGuarnicionesAUnidadOp(plato, u, u));
     }
     unidadesRef.current = unidades.map(cloneUnidadEstado);
     plantillaDefaultRef.current = cloneUnidadEstado(unidades[0] || { selecciones: {}, variaciones: {}, ordenSabores: [] });
@@ -862,7 +866,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
         if (!gCfg || grupoEsVariantePlato(gCfg) || grupoAnexaNombre(gCfg)) return false;
         return Object.values(ops || {}).some((q) => q > 0);
       });
-      if (!modoEdicion && !hayGarnSel) {
+      if (!hayGarnSel) {
         const ya = new Set(out.map((c) => claveGrupoNombre(c.grupo)));
         preseleccionComplementosDePlato(plato).forEach((c) => {
           const gCfg = findGrupoModal(complementos, c.grupo);
@@ -891,9 +895,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
           });
         });
       }
-      return focoModo === 'guarniciones'
-        ? out
-        : fusionarGuarnicionesPreseleccionadasEnLista(plato, out);
+      return fusionarGuarnicionesPreseleccionadasEnLista(plato, out);
     };
 
     const unidadesComps = (unidadesRef.current.length ? unidadesRef.current : [snapshotUnidadActual()])
@@ -1216,7 +1218,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             {/* Grupos de complementos */}
             {complementos.map((complemento, index) => {
               if (!grupoVisibleEnFoco(complemento, focoModo)) return null;
-              if (!modoEdicion && grupoSeleccionFija(complemento)) return null;
+              if (!modoEdicion && grupoSeleccionFija(complemento) && focoModo !== 'guarniciones') return null;
               const grupoNormalizado = normalizarGrupo(complemento);
               const estado = estadoGrupos[grupoNormalizado.grupo] || {};
               const esModoCantidad = grupoNormalizado.modoSeleccion === 'cantidades';

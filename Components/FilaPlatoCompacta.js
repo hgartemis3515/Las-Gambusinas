@@ -64,7 +64,7 @@ const FilaPlatoCompacta = ({
       style={[
         styles.fila,
         {
-          backgroundColor: alertaOn ? 'transparent' : estilosAplicar.fondo,
+          backgroundColor: alertaOn ? fondoAlerta : estilosAplicar.fondo,
           borderLeftWidth: 4,
           borderLeftColor: bordeAlerta,
           opacity: esAnulado ? 0.6 : 1,
@@ -73,10 +73,10 @@ const FilaPlatoCompacta = ({
     >
       {alertaOn ? (
         <View
-          key={`alerta-bg-${fondoAlerta}-${fase & 1}`}
+          key={`alerta-bg-${fondoAlerta}-${fase}`}
           pointerEvents="none"
           collapsable={false}
-          style={[StyleSheet.absoluteFillObject, { backgroundColor: fondoAlerta }]}
+          style={[StyleSheet.absoluteFillObject, { backgroundColor: fondoAlerta, zIndex: 0 }]}
         />
       ) : null}
       <View style={styles.filaContenido} collapsable={false}>

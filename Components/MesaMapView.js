@@ -64,7 +64,7 @@ const MesaMapItem = React.memo(({
           top,
           width: itemWidth,
           height: itemHeight,
-          backgroundColor: colores.backgroundColor,
+          backgroundColor: alertaSalio ? 'transparent' : colores.backgroundColor,
           borderColor: alertaSalio ? '#EA580C' : colores.borderColor,
           borderRadius: isRound ? itemWidth / 2 : 12,
           overflow: 'hidden',

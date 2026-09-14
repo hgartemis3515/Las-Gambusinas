@@ -398,7 +398,8 @@ const MesaAnimada = React.memo(({
       { translateX: translateX.value },
     ],
     opacity: opacity.value * flashOpacity.value,
-  }));
+    backgroundColor: alertaSalio ? 'transparent' : estadoColor,
+  }), [alertaSalio, estadoColor]);
   
   // Animación del checkbox
   const checkAnimatedStyle = useAnimatedStyle(() => ({
@@ -434,24 +435,24 @@ const MesaAnimada = React.memo(({
   }
 
   return (
-    <GestureDetector gesture={tapGesture}>
+    <View style={{ width: mesaSize, height: mesaSize }} collapsable={false}>
+      <AlertaSalioFondo on={alertaSalio} />
+      <GestureDetector gesture={tapGesture}>
       <Animated.View
         style={[
           styles.mesaCard,
           {
             width: mesaSize,
             height: mesaSize,
-            backgroundColor: estadoColor,
+            backgroundColor: alertaSalio ? 'transparent' : estadoColor,
             borderColor: getBorderColor(),
             borderWidth: isSelected ? 4 : (alertaSalio ? 3 : 1),
             overflow: 'hidden',
+            zIndex: 1,
           },
           animatedStyle,
         ]}
       >
-        <View pointerEvents="box-none" style={StyleSheet.absoluteFill} collapsable={false}>
-          <AlertaSalioFondo on={alertaSalio} />
-        </View>
         {/* Checkbox de selección (modo selección) */}
         {modoSeleccion && (
           <Animated.View style={[styles.mesaCheckbox, checkAnimatedStyle]}>
@@ -511,6 +512,7 @@ const MesaAnimada = React.memo(({
         )}
       </Animated.View>
     </GestureDetector>
+    </View>
   );
 });
 

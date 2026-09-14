@@ -9,21 +9,17 @@ export function hayPlatoSalio(platos) {
   );
 }
 
-function AlertaSalioFondoInner() {
+/** Capa de parpadeo. El hook vive aquí (no en un hijo) para que `fase` pinte sí o sí. */
+export default function AlertaSalioFondo({ on }) {
   const { prefs, fase } = useAlertaSalio();
-  if (prefs?.estilo === 'apagado') return null;
+  if (!on || prefs?.estilo === 'apagado') return null;
   const fondo = fondoAlertaSalio(prefs, fase);
   return (
     <View
-      key={`alerta-bg-${fondo}-${fase & 1}`}
+      key={`alerta-bg-${fondo}-${fase}`}
       pointerEvents="none"
       collapsable={false}
-      style={[StyleSheet.absoluteFillObject, { backgroundColor: fondo }]}
+      style={[StyleSheet.absoluteFillObject, { backgroundColor: fondo, zIndex: 0 }]}
     />
   );
-}
-
-export default function AlertaSalioFondo({ on }) {
-  if (!on) return null;
-  return <AlertaSalioFondoInner />;
 }
