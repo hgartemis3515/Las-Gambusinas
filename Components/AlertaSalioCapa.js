@@ -1,101 +1,107 @@
-import React, { useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withRepeat,
-  withTiming,
-  withSequence,
-  interpolateColor,
-  Easing,
-  cancelAnimation,
-} from 'react-native-reanimated';
+import React, { useEffect, useRef } from 'react';
+import { View, Animated, StyleSheet, Easing } from 'react-native';
 import { alertaSalioAnim } from '../utils/alertaSalioPrefs';
 
 function AlertaSalioCapaInner({ anim }) {
-  const t = useSharedValue(0);
-  const w = useSharedValue(1);
-  const lo = anim.pal.lo;
-  const hi = anim.pal.hi;
-  const alt = anim.pal.alt;
-  const estilo = anim.estilo;
+  const opacity = useRef(new Animated.Value(0)).current;
+  const opacityB = useRef(new Animated.Value(0)).current;
+  const translateX = useRef(new Animated.Value(0)).current;
+  const widthRef = useRef(360);
+  const loopRef = useRef(null);
+
+  const { estilo, pal, dur } = anim;
+  const { lo, hi, alt } = pal;
 
   useEffect(() => {
-    t.value = 0;
-    const dur = Math.max(280, anim.dur);
+    if (loopRef.current) {
+      loopRef.current.stop();
+      loopRef.current = null;
+    }
+
+    opacity.setValue(0);
+    opacityB.setValue(0);
+    translateX.setValue(0);
+
+    const half = Math.max(200, Math.round(dur / 2));
+
     if (estilo === 'destello') {
-      const hold = 90;
-      const gap = 70;
-      const rest = Math.round(dur * 0.45);
-      t.value = withRepeat(
-        withSequence(
-          withTiming(1, { duration: 50, easing: Easing.linear }),
-          withTiming(1, { duration: hold }),
-          withTiming(0, { duration: 50, easing: Easing.linear }),
-          withTiming(0, { duration: gap }),
-          withTiming(1, { duration: 50, easing: Easing.linear }),
-          withTiming(1, { duration: hold }),
-          withTiming(0, { duration: 50, easing: Easing.linear }),
-          withTiming(0, { duration: rest }),
-        ),
-        -1,
-        false,
+      const flash = 140;
+      const pause = Math.max(250, Math.round(dur * 0.5));
+      loopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(opacity, { toValue: 1, duration: flash, useNativeDriver: true, easing: Easing.linear }),
+          Animated.timing(opacity, { toValue: 1, duration: 90, useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 0.12, duration: flash, useNativeDriver: true, easing: Easing.linear }),
+          Animated.timing(opacity, { toValue: 0.12, duration: 80, useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 1, duration: flash, useNativeDriver: true, easing: Easing.linear }),
+          Animated.timing(opacity, { toValue: 1, duration: 90, useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 0.12, duration: flash, useNativeDriver: true, easing: Easing.linear }),
+          Animated.timing(opacity, { toValue: 0.12, duration: pause, useNativeDriver: true }),
+        ])
       );
     } else if (estilo === 'sirena') {
-      t.value = withRepeat(
-        withTiming(1, { duration: dur, easing: Easing.inOut(Easing.sin) }),
-        -1,
-        true,
+      loopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(opacity, { toValue: 1, duration: half, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+          Animated.timing(opacity, { toValue: 0, duration: half, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+          Animated.timing(opacityB, { toValue: 1, duration: half, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+          Animated.timing(opacityB, { toValue: 0, duration: half, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+        ])
       );
     } else {
-      t.value = withRepeat(
-        withTiming(1, { duration: Math.round(dur * 1.35), easing: Easing.linear }),
-        -1,
-        false,
+      loopRef.current = Animated.loop(
+        Animated.timing(translateX, { toValue: 1, duration: Math.round(dur * 1.6), useNativeDriver: true, easing: Easing.linear })
       );
     }
-    return () => cancelAnimation(t);
-  }, [estilo, anim.dur, lo, hi, alt, t]);
 
-  const destelloStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(t.value, [0, 1], [lo, hi]),
-  }));
-
-  const sirenaStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(t.value, [0, 1], [hi, alt]),
-  }));
-
-  const olaBandStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: t.value * (w.value + w.value * 0.55) - w.value * 0.55 }],
-  }));
+    if (loopRef.current) loopRef.current.start();
+    return () => {
+      if (loopRef.current) {
+        loopRef.current.stop();
+        loopRef.current = null;
+      }
+    };
+  }, [estilo, dur, opacity, opacityB, translateX]);
 
   if (estilo === 'ola') {
+    const w = widthRef.current || 360;
     return (
       <View
         pointerEvents="none"
-        onLayout={(e) => { w.value = e.nativeEvent.layout.width || 1; }}
-        style={[StyleSheet.absoluteFillObject, styles.capa, { backgroundColor: lo }]}
+        onLayout={(e) => { widthRef.current = e.nativeEvent.layout.width || 360; }}
+        style={[styles.fill, { backgroundColor: lo }]}
       >
         <Animated.View
           style={[
             styles.ola,
-            { backgroundColor: hi },
-            olaBandStyle,
+            {
+              backgroundColor: hi,
+              transform: [{
+                translateX: translateX.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [-0.6 * w, 1.2 * w],
+                }),
+              }],
+            },
           ]}
         />
       </View>
     );
   }
 
+  if (estilo === 'sirena') {
+    return (
+      <View pointerEvents="none" style={[styles.fill, { backgroundColor: lo }]}>
+        <Animated.View style={[styles.fill, { backgroundColor: hi, opacity }]} />
+        <Animated.View style={[styles.fill, { backgroundColor: alt, opacity: opacityB }]} />
+      </View>
+    );
+  }
+
   return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        StyleSheet.absoluteFillObject,
-        styles.capa,
-        estilo === 'sirena' ? sirenaStyle : destelloStyle,
-      ]}
-    />
+    <View pointerEvents="none" style={[styles.fill, { backgroundColor: lo }]}>
+      <Animated.View style={[styles.fill, { backgroundColor: hi, opacity }]} />
+    </View>
   );
 }
 
@@ -106,11 +112,14 @@ export default function AlertaSalioCapa({ prefs }) {
 }
 
 const styles = StyleSheet.create({
-  capa: { zIndex: 0 },
+  fill: {
+    ...StyleSheet.absoluteFillObject,
+  },
   ola: {
     position: 'absolute',
     top: 0,
     bottom: 0,
-    width: '55%',
+    width: '60%',
+    borderRadius: 4,
   },
 });

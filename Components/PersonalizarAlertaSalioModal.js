@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -17,13 +17,23 @@ import {
   ALERTA_SALIO_COLORES,
   ALERTA_SALIO_VELOCIDAD,
 } from '../utils/alertaSalioPrefs';
-import AlertaSalioCapa from './AlertaSalioCapa';
 
 const PersonalizarAlertaSalioModal = ({ visible, onClose }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const { prefs, setPrefs, reset } = useAlertaSalio();
   const pal = ALERTA_SALIO_COLORES[prefs.color] || ALERTA_SALIO_COLORES.naranja;
+  const ms = ALERTA_SALIO_VELOCIDAD[prefs.velocidad]?.ms || 750;
+  const apagado = prefs.estilo === 'apagado';
+
+  const [flashHi, setFlashHi] = useState(false);
+  useEffect(() => {
+    if (apagado || !visible) return;
+    const interval = setInterval(() => setFlashHi((v) => !v), Math.max(200, Math.round(ms / 2)));
+    return () => clearInterval(interval);
+  }, [apagado, visible, ms]);
+
+  const previewBg = apagado ? pal.lo : (flashHi ? pal.hi : pal.lo);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -37,20 +47,17 @@ const PersonalizarAlertaSalioModal = ({ visible, onClose }) => {
             </TouchableOpacity>
           </View>
           <Text style={[styles.hint, { color: theme.colors.text?.secondary || '#6B7280' }]}>
-            El color de fondo parpadea detrás del plato en estado Salió (con cronómetro). El texto no se anima. Se detiene al entregar.
+            El recuadro del plato en Salió (listo para entregar) destella con el color de alerta. El texto no se anima. Se detiene al entregar.
           </Text>
           <ScrollView style={{ maxHeight: 460 }}>
             <View
               style={[
                 styles.preview,
-                { backgroundColor: pal.lo, borderLeftColor: pal.hi },
+                { backgroundColor: previewBg, borderLeftColor: pal.chip },
               ]}
             >
-              <AlertaSalioCapa prefs={prefs} />
-              <View style={styles.previewContent}>
-                <Text style={styles.previewName}>Ceviche</Text>
-                <Text style={styles.previewTimer}>⏱ 02:15</Text>
-              </View>
+              <Text style={styles.previewName}>Ceviche</Text>
+              <Text style={styles.previewTimer}>⏱ 02:15</Text>
             </View>
 
             <Text style={styles.section}>Animación</Text>
@@ -109,13 +116,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     overflow: 'hidden',
     minHeight: 52,
-  },
-  previewContent: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    zIndex: 1,
   },
   previewName: { fontWeight: '700', fontSize: 15, color: '#111827' },
   previewTimer: { fontWeight: '700', fontSize: 13, color: '#9A3412' },
