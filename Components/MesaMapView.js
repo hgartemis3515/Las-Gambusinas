@@ -17,6 +17,8 @@ import { useApodosMesa } from '../context/ApodosMesaContext';
 import { themeLight } from '../constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { obtenerColoresEstadoAdaptados } from '../utils/comandaHelpers';
+import AlertaSalioCapa from './AlertaSalioCapa';
+import { useAlertaSalio } from '../context/AlertaSalioContext';
 import axios from '../config/axiosConfig';
 import { getMesasAPI } from '../apiConfig';
 
@@ -33,12 +35,14 @@ const MesaMapItem = React.memo(({
   estado, 
   onPress, 
   scale,
-  theme 
+  theme,
+  alertaSalio = false,
 }) => {
   const config = mesa.mapaConfig || {};
   const isDark = theme?.dark || false;
   const { apodoDe } = useApodosMesa();
   const apodo = apodoDe(mesa);
+  const { prefs } = useAlertaSalio();
   
   // Obtener colores según estado
   const colores = obtenerColoresEstadoAdaptados(estado, isDark, true);
@@ -63,12 +67,14 @@ const MesaMapItem = React.memo(({
           width: itemWidth,
           height: itemHeight,
           backgroundColor: colores.backgroundColor,
-          borderColor: colores.borderColor,
+          borderColor: alertaSalio ? '#EA580C' : colores.borderColor,
           borderRadius: isRound ? itemWidth / 2 : 12,
+          overflow: 'hidden',
         }
       ]}
     >
-      <Text style={[styles.mesaNumber, { color: colores.textColor }]}>
+      {alertaSalio ? <AlertaSalioCapa prefs={prefs} /> : null}
+      <Text style={[styles.mesaNumber, { color: colores.textColor, zIndex: 1 }]}>
         {mesa.nombreCombinado || `M${mesa.nummesa}`}
       </Text>
       {apodo ? (
@@ -92,6 +98,7 @@ const MesaMapView = ({
   onMesaPress,
   style,
   reservas = [],
+  mesaAlertaSalio = null,
 }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
@@ -225,6 +232,7 @@ const MesaMapView = ({
             onPress={onMesaPress}
             scale={scale}
             theme={theme}
+            alertaSalio={typeof mesaAlertaSalio === 'function' ? !!mesaAlertaSalio(mesa) : false}
           />
         ))}
       </ScrollView>

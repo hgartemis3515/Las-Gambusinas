@@ -71,3 +71,16 @@ export function alertaSalioAnim(prefs) {
     key: `${p.estilo}-${p.color}-${p.velocidad}`,
   };
 }
+
+export function platoActivoEnSalio(plato) {
+  if (!plato || plato.eliminado === true || plato.anulado === true) return false;
+  return String(plato.estado || '').toLowerCase() === 'salio';
+}
+
+export function tienePlatoEnSalio(platos) {
+  return (Array.isArray(platos) ? platos : []).some(platoActivoEnSalio);
+}
+
+export function comandasTienenPlatoEnSalio(comandas) {
+  return (Array.isArray(comandas) ? comandas : []).some((c) => tienePlatoEnSalio(c?.platos));
+}

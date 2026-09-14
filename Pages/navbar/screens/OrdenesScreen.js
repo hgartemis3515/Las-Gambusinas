@@ -36,6 +36,7 @@ import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
 import BotonEnviarOrden from "../../../Components/BotonEnviarOrden";
 import { resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato, platoEditableEnOrdenes, resolverPartesComplementos } from "../../../utils/platoGuarniciones";
+import { fusionarGuarnicionesPreseleccionadasEnLista } from "../../../utils/unidadesComplemento";
 import { hidratarUnidadesDesdeLineas, cantidadDeLinea } from "../../../utils/unidadesComplemento";
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from "../../../utils/numeroSeriePlato";
 import { mismaVariantePlato, esSeleccionVariantePlato, nombreVisibleConVariante } from "../../../utils/variantePlato";
@@ -198,20 +199,8 @@ const persistTipoServicioOrdenes = (tipo) => {
   return v;
 };
 
-const irAComandaDetalleTrasEnvio = (navigation, { comanda, mesa, reserva, estadoMesa, agruparConMesa }) => {
-  if (esSeleccionSinMesa(mesa) || !mesa?._id) {
-    navigation.navigate("Pendientes");
-    return;
-  }
-  const params = {
-    mesa: { ...mesa, estado: estadoMesa || mesa.estado || "pedido" },
-    ...(reserva ? { reserva } : {}),
-  };
-  // Extra llevar / nueva comanda desde Detalle: no reemplazar la lista con solo la nueva.
-  if (!agruparConMesa && comanda?._id) {
-    params.comandas = [comanda];
-  }
-  navigation.navigate("ComandaDetalle", params);
+const irAPendientesTrasEnvio = (navigation) => {
+  navigation.navigate("Pendientes");
 };
 
 const OrdenesScreen = ({ route }) => {
@@ -1346,7 +1335,10 @@ const OrdenesScreen = ({ route }) => {
         estado: "pedido",
         tipoServicio: plato.tipoServicio || tipoServicioEnvio,
         tipoPedido: slugTipoPedido(plato.tipoPedido),
-        complementosSeleccionados: plato.complementosElegidos || [],
+        complementosSeleccionados: fusionarGuarnicionesPreseleccionadasEnLista(
+          resolverPlatoConGrupos(plato, platos),
+          plato.complementosElegidos || plato.complementosSeleccionados || []
+        ),
         notaEspecial: plato.notaEspecial || "",
         nombreCocinaPedido: plato.nombreCocinaPedido || "",
         variantePlato: plato.variantePlato || undefined,
@@ -1557,13 +1549,6 @@ const OrdenesScreen = ({ route }) => {
       }
       
       setMensajeCarga(`¡Comanda #${comandaNumber} enviada!`);
-
-      const reservaParaNav = reservaActiva || reservaParam || null;
-      const mesaParaNav = mesaActualizada
-        ? { ...mesaActualizada, estado: estadoLocal }
-        : mesaActualizada;
-      const comandaParaNav = comandaCreada;
-      const estadoParaNav = estadoLocal;
       
       // Limpiar datos locales
       await AsyncStorage.removeItem("mesaSeleccionada");
@@ -1589,13 +1574,7 @@ const OrdenesScreen = ({ route }) => {
       if (modoExtraLlevar) {
         navigation.setParams({ modoExtraLlevar: false });
       }
-      irAComandaDetalleTrasEnvio(navigation, {
-        comanda: comandaParaNav,
-        mesa: mesaParaNav,
-        reserva: reservaParaNav,
-        estadoMesa: estadoParaNav,
-        agruparConMesa,
-      });
+      irAPendientesTrasEnvio(navigation);
     } catch (error) {
       // 🔥 MEJORADO: Verificación exhaustiva antes de mostrar cualquier error
       console.warn("⚠️ Error capturado, verificando si comanda se creó:", error.message);
@@ -1616,17 +1595,6 @@ const OrdenesScreen = ({ route }) => {
         // Continuar con el flujo de éxito (no mostrar error)
         // Esto ejecutará el código después del try/catch que maneja el éxito
         setMensajeCarga(`¡Comanda #${comandaNumber} enviada!`);
-
-        const reservaParaNav = reservaActiva || reservaParam || null;
-        const estadoParaNav = estadoMesaLocalTrasCrearComanda(
-          mesaActualizada?.estado,
-          !!reservaParaNav,
-          mesaActualizada?.estado
-        );
-        const mesaParaNav = mesaActualizada
-          ? { ...mesaActualizada, estado: estadoParaNav }
-          : mesaActualizada;
-        const comandaParaNav = comandaCreada;
         
         // Limpiar datos locales
         await AsyncStorage.removeItem("mesaSeleccionada");
@@ -1649,13 +1617,7 @@ const OrdenesScreen = ({ route }) => {
         if (modoExtraLlevar) {
         navigation.setParams({ modoExtraLlevar: false });
       }
-      irAComandaDetalleTrasEnvio(navigation, {
-          comanda: comandaParaNav,
-          mesa: mesaParaNav,
-          reserva: reservaParaNav,
-          estadoMesa: estadoParaNav,
-          agruparConMesa,
-        });
+      irAPendientesTrasEnvio(navigation);
         return; // Salir sin mostrar error
       }
       

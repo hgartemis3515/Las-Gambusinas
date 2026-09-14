@@ -61,6 +61,9 @@ import { useDensidadOrdenes } from "../../../context/DensidadOrdenesContext";
 import { estiloChipCategoria } from "../../../utils/densidadOrdenes";
 import MesaMapView from '../../../Components/MesaMapView';
 import SelectorTipoMenu from "../../../Components/SelectorTipoMenu";
+import AlertaSalioCapa from '../../../Components/AlertaSalioCapa';
+import { useAlertaSalio } from '../../../context/AlertaSalioContext';
+import { comandasTienenPlatoEnSalio } from '../../../utils/alertaSalioPrefs';
 
 /** Evita que un evento WebSocket con campos undefined borre datos ya mostrados en la tarjeta. */
 function mergeMesaServidorPatch(mesaAnterior, mesaServidor) {
@@ -324,10 +327,12 @@ const MesaAnimada = React.memo(({
   esMesaPrincipal = true,
   mesasUnidas = [],
   mesaPrincipalNum = null,
-  formatearGrupo = ""
+  formatearGrupo = "",
+  alertaSalio = false,
 }) => {
   const { apodoDe } = useApodosMesa();
   const apodo = apodoDe(mesa);
+  const { prefs } = useAlertaSalio();
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
   const pulseScale = useSharedValue(1);
@@ -442,11 +447,13 @@ const MesaAnimada = React.memo(({
             height: mesaSize,
             backgroundColor: estadoColor,
             borderColor: getBorderColor(),
-            borderWidth: isSelected ? 4 : 1,
+            borderWidth: isSelected ? 4 : (alertaSalio ? 3 : 1),
+            overflow: "hidden",
           },
           animatedStyle,
         ]}
       >
+        {alertaSalio ? <AlertaSalioCapa prefs={prefs} /> : null}
         {/* Checkbox de selección (modo selección) */}
         {modoSeleccion && (
           <Animated.View style={[styles.mesaCheckbox, checkAnimatedStyle]}>
@@ -472,7 +479,7 @@ const MesaAnimada = React.memo(({
           </View>
         )}
         
-        <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25, marginBottom: apodo ? 0 : 4 }]}>
+        <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25, marginBottom: apodo ? 0 : 4, zIndex: 1 }]}>
           {(mesa.nombreCombinado && String(mesa.nombreCombinado).trim()) ||
             (mesa.nombre && String(mesa.nombre).trim()) ||
             (mesa.nummesa != null && mesa.nummesa !== "" ? `M${mesa.nummesa}` : "Mesa")}
@@ -4992,6 +4999,12 @@ const InicioScreen = () => {
     return false;
   }, [userInfo, reservas, comandas]);
 
+  const mesaAlertaSalio = useCallback((mesa) => {
+    if (!mesaAtendidaPorMi(mesa)) return false;
+    if (comandasTienenPlatoEnSalio(getComandasPorMesa(mesa.nummesa))) return true;
+    return comandasTienenPlatoEnSalio(getComandasActivasPorMesaId(mesa));
+  }, [mesaAtendidaPorMi, comandas]);
+
   // Obtener mesas por área/sección (mantiene ordenamiento numérico)
   // OCULTA las mesas secundarias (las que están unidas a otra mesa principal)
   const getMesasPorArea = useCallback((areaId) => {
@@ -5249,6 +5262,7 @@ const InicioScreen = () => {
               reservas={reservas}
               areaId={seccionActiva === SECCION_YO ? null : (seccionActiva?._id || seccionActiva)}
               onMesaPress={handleSelectMesa}
+              mesaAlertaSalio={mesaAlertaSalio}
               style={{ flex: 1 }}
             />
           ) : (
@@ -5294,6 +5308,7 @@ const InicioScreen = () => {
                         mesas.find(m => m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString())?.nummesa : null
                       }
                       formatearGrupo={formatearGrupoMesas(mesa)}
+                      alertaSalio={mesaAlertaSalio(mesa)}
                     />
                   );
                 })}
@@ -5330,6 +5345,7 @@ const InicioScreen = () => {
                         mesas.find(m => m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString())?.nummesa : null
                       }
                       formatearGrupo={formatearGrupoMesas(mesa)}
+                      alertaSalio={mesaAlertaSalio(mesa)}
                     />
                   );
                 })
@@ -7117,6 +7133,7 @@ const InicioScreenStyles = (theme, isMobile, mesaSize, canvasWidth, barraWidth, 
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
     ...theme.shadows.medium,
   },
   mesaNumber: {
