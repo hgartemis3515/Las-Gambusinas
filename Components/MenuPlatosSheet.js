@@ -329,7 +329,9 @@ export default function MenuPlatosSheet({
                 </View>
                 <View style={styles.headerActions}>
                   <BotonSumarBusqueda onPress={onClearSearch} />
-                  <BotonEnviarOrden onPress={onEnviarOrden} disabled={enviandoOrden} />
+                  {typeof onEnviarOrden === 'function' ? (
+                    <BotonEnviarOrden onPress={onEnviarOrden} disabled={enviandoOrden} />
+                  ) : null}
                   <TouchableOpacity
                     onPress={onClose}
                     style={estiloCerrar}
@@ -453,7 +455,7 @@ export default function MenuPlatosSheet({
                       onChangeText={onSearchChange}
                       onFocus={onSearchFocus}
                       accessibilityLabel={searchActive ? 'Búsqueda en todos los platos' : 'Buscar plato'}
-                      accessibilityHint="Al escribir se muestran platos de todas las categorías"
+                      accessibilityHint="Escribe para filtrar. El botón + limpia el texto y deja la categoría"
                     />
                     {searchPlato.length > 0 && (
                       <TouchableOpacity
@@ -493,14 +495,14 @@ export default function MenuPlatosSheet({
                           borderRadius: chipEstilo.borderRadius,
                           minHeight: chipEstilo.minHeight,
                         },
-                        (!categoriaFiltro || searchActive) && styles.categoriaChipActive,
+                        !categoriaFiltro && styles.categoriaChipActive,
                       ]}
                       onPress={() => onSelectCategoria(null)}
                     >
                       <Text style={[
                         styles.categoriaChipText,
                         { fontSize: chipEstilo.fontSize },
-                        (!categoriaFiltro || searchActive) && styles.categoriaChipTextActive,
+                        !categoriaFiltro && styles.categoriaChipTextActive,
                       ]}>Todos</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -514,22 +516,22 @@ export default function MenuPlatosSheet({
                           minHeight: chipEstilo.minHeight,
                           gap: chipEstilo.gap,
                         },
-                        categoriaFiltro === CAT_FAVORITOS && !searchActive && styles.categoriaChipFavoritoActive,
+                        categoriaFiltro === CAT_FAVORITOS && styles.categoriaChipFavoritoActive,
                       ]}
                       onPress={() => onSelectCategoria(CAT_FAVORITOS)}
                       accessibilityRole="button"
                       accessibilityLabel="Favoritos"
                     >
                       <MaterialCommunityIcons
-                        name={categoriaFiltro === CAT_FAVORITOS && !searchActive ? 'star' : 'star-outline'}
+                        name={categoriaFiltro === CAT_FAVORITOS ? 'star' : 'star-outline'}
                         size={chipEstilo.iconSize}
-                        color={categoriaFiltro === CAT_FAVORITOS && !searchActive ? '#1A1A1A' : '#FFC107'}
+                        color={categoriaFiltro === CAT_FAVORITOS ? '#1A1A1A' : '#FFC107'}
                       />
                       <Text
                         style={[
                           styles.categoriaChipText,
                           { fontSize: chipEstilo.fontSize },
-                          categoriaFiltro === CAT_FAVORITOS && !searchActive && styles.categoriaChipFavoritoTextActive,
+                          categoriaFiltro === CAT_FAVORITOS && styles.categoriaChipFavoritoTextActive,
                         ]}
                       >
                         Favoritos
@@ -559,7 +561,7 @@ export default function MenuPlatosSheet({
                             borderRadius: chipEstilo.borderRadius,
                             minHeight: chipEstilo.minHeight,
                           },
-                          categoriaFiltro === cat && !searchActive && styles.categoriaChipActive,
+                          categoriaFiltro === cat && styles.categoriaChipActive,
                         ]}
                         onPress={() => onSelectCategoria(cat)}
                       >
@@ -568,7 +570,7 @@ export default function MenuPlatosSheet({
                             style={[
                               styles.categoriaChipText,
                               { fontSize: chipEstilo.fontSize, fontWeight: '800' },
-                              categoriaFiltro === cat && !searchActive && styles.categoriaChipTextActive,
+                              categoriaFiltro === cat && styles.categoriaChipTextActive,
                             ]}
                           >
                             {codigoCat}
@@ -585,7 +587,7 @@ export default function MenuPlatosSheet({
                         <Text style={[
                           styles.categoriaChipText,
                           { fontSize: chipEstilo.fontSize },
-                          categoriaFiltro === cat && !searchActive && styles.categoriaChipTextActive,
+                          categoriaFiltro === cat && styles.categoriaChipTextActive,
                         ]}>
                           {etiqueta}
                         </Text>
@@ -689,7 +691,7 @@ export default function MenuPlatosSheet({
                           uri={urlMediaServidor(c.imagenUrl)}
                           codigo={c.codigoMozo}
                           label={String(c.nombre || '').split('(')[0].trim()}
-                          selected={categoriaFiltro === c.nombre && !searchActive}
+                          selected={categoriaFiltro === c.nombre}
                           onPress={() => {
                             onSelectCategoria(c.nombre);
                             setFiltroCatOpen(false);

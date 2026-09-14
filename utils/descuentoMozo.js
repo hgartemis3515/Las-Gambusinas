@@ -20,6 +20,49 @@ export function brutoParaDescuento(c) {
   return 0;
 }
 
+/** Peso para prorratear (igual que comandas.html aplicarDescuentoGrupo). */
+export function pesoBrutoComanda(c) {
+  const sin = Number(c?.totalSinDescuento) || 0;
+  if (sin > 0) return sin;
+  return Math.max(
+    0,
+    (Number(c?.totalCalculado) || Number(c?.precioTotal) || 0) + (Number(c?.montoDescuento) || 0)
+  );
+}
+
+export function brutoGrupoComandas(comandas) {
+  return Number((comandas || []).reduce((s, c) => s + brutoParaDescuento(c), 0).toFixed(2));
+}
+
+export function montoDescuentoGrupo(comandas) {
+  return Number((comandas || []).reduce((s, c) => s + (Number(c?.montoDescuento) || 0), 0).toFixed(2));
+}
+
+export function repartirCentesimos(pesos, montoTotal) {
+  const vals = (pesos || []).map((p) => Math.max(0, Number(p) || 0));
+  const cents = Math.round((Number(montoTotal) || 0) * 100);
+  if (!vals.length || cents <= 0) return vals.map(() => 0);
+  const totalPesos = vals.reduce((s, p) => s + p, 0);
+  if (totalPesos <= 0) return vals.map(() => 0);
+  const raw = vals.map((p) => (p / totalPesos) * cents);
+  const floors = raw.map((x) => Math.floor(x + 1e-9));
+  let resto = cents - floors.reduce((s, x) => s + x, 0);
+  const order = raw
+    .map((x, i) => ({ i, frac: x - Math.floor(x + 1e-9) }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i);
+  for (let k = 0; k < resto; k++) floors[order[k % order.length].i] += 1;
+  return floors.map((c) => c / 100);
+}
+
+export function montosDescuentoPorComanda(comandas, monto) {
+  const list = comandas || [];
+  const pesos = list.map(pesoBrutoComanda);
+  const total = pesos.reduce((s, p) => s + p, 0);
+  const m = Math.min(Math.max(0, Number(monto) || 0), total);
+  if (!(m > 0) || !(total > 0)) return list.map(() => 0);
+  return repartirCentesimos(pesos, m);
+}
+
 export function clampMontoDescuento(monto, bruto) {
   const b = Math.max(0, Number(bruto) || 0);
   const m = Number(String(monto ?? '').replace(',', '.')) || 0;
@@ -30,6 +73,10 @@ export function clampMontoDescuento(monto, bruto) {
 export function motivoDescuentoFinal(motivo) {
   const t = String(motivo || '').trim();
   return t || MOTIVO_DESCUENTO_DEFAULT;
+}
+
+export function motivoDescuentoEsValido(motivo) {
+  return String(motivo || '').trim().length >= 2;
 }
 
 export function comandaTieneDescuentoMozo(c) {

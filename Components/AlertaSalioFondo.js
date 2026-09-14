@@ -23,3 +23,38 @@ export default function AlertaSalioFondo({ on }) {
     />
   );
 }
+
+/** Caja de mesa: el destello pinta este View nativo (no Reanimated) para no quedar en blanco. */
+export function MesaDestelloCaja({ on, colorBase, size, borderRadius = 8, children, style }) {
+  const { prefs, fase } = useAlertaSalio();
+  const destello = on && prefs?.estilo !== 'apagado';
+  const bg = destello ? fondoAlertaSalio(prefs, fase) : colorBase;
+  return (
+    <View
+      key={`mesa-destello-${bg}-${fase}`}
+      collapsable={false}
+      style={[
+        {
+          width: size,
+          height: size,
+          backgroundColor: bg,
+          borderRadius,
+          overflow: 'hidden',
+          elevation: 0,
+        },
+        style,
+      ]}
+    >
+      {destello ? (
+        <View
+          pointerEvents="none"
+          collapsable={false}
+          style={[StyleSheet.absoluteFillObject, { backgroundColor: bg, zIndex: 0 }]}
+        />
+      ) : null}
+      <View collapsable={false} style={{ flex: 1, zIndex: 1, backgroundColor: 'transparent' }}>
+        {children}
+      </View>
+    </View>
+  );
+}

@@ -24,7 +24,7 @@ import { getFallbackApiBase } from "../../../config/envDefaults";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
 import { useApodosMesa } from "../../../context/ApodosMesaContext";
-import AlertaSalioFondo, { hayPlatoSalio } from '../../../Components/AlertaSalioFondo';
+import { hayPlatoSalio, MesaDestelloCaja } from '../../../Components/AlertaSalioFondo';
 import { useAbrirMenuNuevaOrden } from "../../../context/AbrirMenuNuevaOrdenContext";
 import { themeLight } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
@@ -398,8 +398,7 @@ const MesaAnimada = React.memo(({
       { translateX: translateX.value },
     ],
     opacity: opacity.value * flashOpacity.value,
-    backgroundColor: alertaSalio ? 'transparent' : estadoColor,
-  }), [alertaSalio, estadoColor]);
+  }));
   
   // Animación del checkbox
   const checkAnimatedStyle = useAnimatedStyle(() => ({
@@ -435,22 +434,24 @@ const MesaAnimada = React.memo(({
   }
 
   return (
-    <View style={{ width: mesaSize, height: mesaSize }} collapsable={false}>
-      <AlertaSalioFondo on={alertaSalio} />
-      <GestureDetector gesture={tapGesture}>
-      <Animated.View
+    <GestureDetector gesture={tapGesture}>
+    <Animated.View style={[{ width: mesaSize, height: mesaSize }, animatedStyle]}>
+    <MesaDestelloCaja on={alertaSalio} colorBase={estadoColor} size={mesaSize} borderRadius={8}>
+      <View
         style={[
           styles.mesaCard,
           {
             width: mesaSize,
             height: mesaSize,
-            backgroundColor: alertaSalio ? 'transparent' : estadoColor,
+            backgroundColor: 'transparent',
             borderColor: getBorderColor(),
             borderWidth: isSelected ? 4 : (alertaSalio ? 3 : 1),
             overflow: 'hidden',
-            zIndex: 1,
+            elevation: 0,
+            shadowOpacity: 0,
+            shadowRadius: 0,
+            shadowOffset: { width: 0, height: 0 },
           },
-          animatedStyle,
         ]}
       >
         {/* Checkbox de selección (modo selección) */}
@@ -478,14 +479,14 @@ const MesaAnimada = React.memo(({
           </View>
         )}
         
-        <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25, marginBottom: apodo ? 0 : 4, zIndex: 1 }]}>
+        <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25, marginBottom: apodo ? 0 : 4, zIndex: 1, color: alertaSalio ? '#9A3412' : theme.colors.text.white }]}>
           {(mesa.nombreCombinado && String(mesa.nombreCombinado).trim()) ||
             (mesa.nombre && String(mesa.nombre).trim()) ||
             (mesa.nummesa != null && mesa.nummesa !== "" ? `M${mesa.nummesa}` : "Mesa")}
         </Text>
         {apodo ? (
           <Text
-            style={[styles.mesaMozo, { fontSize: mesaSize * 0.12, fontStyle: 'italic', opacity: 0.95, marginBottom: 2 }]}
+            style={[styles.mesaMozo, { fontSize: mesaSize * 0.12, fontStyle: 'italic', opacity: 0.95, marginBottom: 2, color: alertaSalio ? '#9A3412' : theme.colors.text.white }]}
             numberOfLines={1}
             ellipsizeMode="tail"
           >
@@ -494,7 +495,7 @@ const MesaAnimada = React.memo(({
         ) : null}
         {zoomLevel >= 0 && mozoLabel ? (
           <Text
-            style={[styles.mesaMozo, { fontSize: mesaSize * (zoomLevel >= 1 ? 0.15 : 0.11) }]}
+            style={[styles.mesaMozo, { fontSize: mesaSize * (zoomLevel >= 1 ? 0.15 : 0.11), color: alertaSalio ? '#9A3412' : theme.colors.text.white }]}
             numberOfLines={1}
             ellipsizeMode="tail"
           >
@@ -506,13 +507,14 @@ const MesaAnimada = React.memo(({
           <MaterialCommunityIcons 
             name="circle" 
             size={Math.max(6, mesaSize * 0.1)} 
-            color={theme.colors.text.white} 
+            color={alertaSalio ? '#9A3412' : theme.colors.text.white} 
             style={styles.mesaIcon}
           />
         )}
-      </Animated.View>
+      </View>
+    </MesaDestelloCaja>
+    </Animated.View>
     </GestureDetector>
-    </View>
   );
 });
 

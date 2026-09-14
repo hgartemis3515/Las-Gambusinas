@@ -2,9 +2,9 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { 
   View, Text, StyleSheet, ScrollView, TouchableOpacity, 
   Alert, RefreshControl, ActivityIndicator, Modal, TextInput,
-  Dimensions, FlatList, Switch
+  Dimensions, FlatList, KeyboardAvoidingView, Platform
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import axios from '../config/axiosConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -18,18 +18,15 @@ import BadgeEstadoPlato from '../Components/BadgeEstadoPlato';
 import FilaPlatoCompacta from '../Components/FilaPlatoCompacta';
 import HeaderComandaDetalle from '../Components/HeaderComandaDetalle';
 import ModalComplementos from '../Components/ModalComplementos';
-import SelectorTipoMenu from '../Components/SelectorTipoMenu';
+import MenuPlatosSheet from '../Components/MenuPlatosSheet';
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from '../hooks/useTiposPlato';
 import { resolverSlugMenuPorHora } from '../utils/horaTipoMenu';
 import { slugTipoPedido, mismoTipoPedido } from '../utils/tipoPedidoLinea';
 import useKeyboardInset from '../hooks/useKeyboardInset';
-import KeyboardAwareResults from '../Components/KeyboardAwareResults';
 
 // Contextos y configuración
 import { useTheme } from '../context/ThemeContext';
-import { useDensidadOrdenes } from '../context/DensidadOrdenesContext';
-import { estiloChipCategoria } from '../utils/densidadOrdenes';
 import { useSocket } from '../context/SocketContext';
 import { useAlertaSalio } from '../context/AlertaSalioContext';
 import { themeLight } from '../constants/theme';
@@ -42,7 +39,7 @@ import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } 
 import { mismaVariantePlato, esSeleccionVariantePlato } from '../utils/variantePlato';
 import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos, ordenarPlatosPorCodigoBusqueda, categoriasDePlato, platoEsDeCategoria } from '../utils/platoBuscador';
 import { ordenarCategoriasMozo, platoVisibleEnCarta, ordenarPlatosPorCategoriaYCodigo, cmpPlatosCategoriaYCodigo } from '../utils/ordenCategoriaMozo';
-import PlatoBuscadorCard from '../Components/PlatoBuscadorCard';
+import { CAT_FAVORITOS, loadFavoritosLocal, saveFavoritosLocal, normalizeFavoritoIds } from '../helpers/platosFavoritosMozo';
 import { calcularPrecioUnitarioConComplementos, textoOpcionComplemento, camposSnapshotComplemento } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
@@ -51,7 +48,7 @@ import { calcularSubtotalPlatosPagables } from '../utils/pagoParcialHelpers';
 import { esSeleccionSinMesa, SELECCION_SIN_MESA } from '../utils/sinMesaOrden';
 import { esLlevarColor, normalizarTipoServicioLinea } from '../utils/tipoServicio';
 import { msRestantesEntregaAutomatica, formatearCountdownEntrega, tiempoSalioRequiereAncla } from '../utils/entregaAutomatica';
-import { usuarioPuedeAplicarDescuentos, brutoParaDescuento, clampMontoDescuento, motivoDescuentoFinal, comandaTieneDescuentoMozo } from '../utils/descuentoMozo';
+import { usuarioPuedeAplicarDescuentos, brutoGrupoComandas, montoDescuentoGrupo, montosDescuentoPorComanda, clampMontoDescuento, motivoDescuentoFinal, motivoDescuentoEsValido, comandaTieneDescuentoMozo } from '../utils/descuentoMozo';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -224,9 +221,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const { theme, isDarkMode } = useTheme();
   const isDark = isDarkMode; // Alias para compatibilidad
   const themeColors = theme || themeLight;
-  const { chipCategoriaEscala } = useDensidadOrdenes();
-  const chipEstilo = estiloChipCategoria(chipCategoriaEscala);
-  const { inset: keyboardInset, listMaxHeight: platosListMaxHeight } = useKeyboardInset({ mode: 'modal', chrome: 220 });
+  const insets = useSafeAreaInsets();
+  const { inset: keyboardInset } = useKeyboardInset({ mode: 'modal', chrome: 220 });
   const { socket, connected, connectionStatus, reconnectAttempts, joinMesa, leaveMesa } = useSocket();
   
   // FASE 4.1: Estado para indicador online-active cuando recibe actualizaciones
@@ -277,6 +273,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Catálogo dinámico de tipos de plato desde el backend
   const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo, refresh: refreshTiposPlato } = useTiposPlato();
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
+  const [menuEditarVisible, setMenuEditarVisible] = useState(false);
+  const [favoritoIds, setFavoritoIds] = useState([]);
   // Tipo de servicio para los platos que se agreguen desde esta pantalla:
   // 'mesa' (default, Switch OFF) o 'para_llevar' (Switch ON).
   const [tipoServicioModal, setTipoServicioModal] = useState('mesa');
@@ -1560,26 +1558,32 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     return tipoNormalizado(p?.tipo) === target;
   };
 
-  // Filtrar platos para el modal de edición
+  // Filtrar platos para el modal de edición (misma regla que Órdenes: categoría se conserva al buscar)
   const platosFiltrados = useMemo(() => {
-    const base = platos.filter((p) => {
+    const search = String(searchPlato || '').trim();
+    let list = platos.filter((p) => {
       if (!tipoPlatoFiltro) return false;
       if (!platoEsDeTipo(p, tipoPlatoFiltro)) return false;
       const disponible = (p.stock == null || p.stock === undefined || Number(p.stock) > 0);
       if (!disponible) return false;
       if (!platoVisibleEnCarta(p, categoriasInfo, tipoPlatoFiltro)) return false;
-      if (searchPlato && !platoCoincideBusqueda(p, searchPlato)) return false;
-      if (categoriaFiltro && !platoEsDeCategoria(p, categoriaFiltro)) return false;
       return true;
     });
-    const ordenados = ordenarPlatosPorCategoriaYCodigo(base, categoriasInfo, tipoPlatoFiltro);
+    if (!search) {
+      if (categoriaFiltro === CAT_FAVORITOS) {
+        list = list.filter((p) => favoritoIds.includes(String(p._id)));
+      } else if (categoriaFiltro) {
+        list = list.filter((p) => platoEsDeCategoria(p, categoriaFiltro));
+      }
+    }
+    const ordenados = ordenarPlatosPorCategoriaYCodigo(list, categoriasInfo, tipoPlatoFiltro);
     const conAlias = expandirFilasBuscadorPlatos(ordenados);
-    const q = String(searchPlato || '').trim();
-    if (!q) return conAlias;
-    return ordenarPlatosPorCodigoBusqueda(conAlias, q, (a, b) =>
+    if (!search) return conAlias;
+    const matched = conAlias.filter((p) => platoCoincideBusqueda(p, searchPlato));
+    return ordenarPlatosPorCodigoBusqueda(matched, search, (a, b) =>
       cmpPlatosCategoriaYCodigo(a, b, categoriasInfo, tipoPlatoFiltro)
     );
-  }, [platos, tipoPlatoFiltro, categoriasInfo, searchPlato, categoriaFiltro]);
+  }, [platos, tipoPlatoFiltro, categoriasInfo, searchPlato, categoriaFiltro, favoritoIds]);
 
   const categorias = useMemo(() => {
     const names = [...new Set(
@@ -1590,8 +1594,56 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
   useEffect(() => {
     if (!categoriaFiltro) return;
+    if (categoriaFiltro === CAT_FAVORITOS) return;
     if (!categorias.includes(categoriaFiltro)) setCategoriaFiltro(null);
   }, [categorias, categoriaFiltro]);
+
+  useEffect(() => {
+    const mozoId = userInfo?._id;
+    if (!mozoId) return;
+    let cancelled = false;
+    (async () => {
+      const local = await loadFavoritosLocal(mozoId);
+      if (!cancelled && local.length) setFavoritoIds(local);
+    })();
+    return () => { cancelled = true; };
+  }, [userInfo?._id]);
+
+  const toggleFavoritoEdicion = useCallback((plato) => {
+    const id = String(plato?._id || '');
+    if (!id) return;
+    const mozoId = userInfo?._id;
+    setFavoritoIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      if (mozoId) saveFavoritosLocal(mozoId, next);
+      return next;
+    });
+  }, [userInfo?._id]);
+
+  const handleSearchChangeEdicion = useCallback((text) => {
+    setSearchPlato(text);
+  }, []);
+  const handleClearSearchEdicion = useCallback(() => {
+    setSearchPlato('');
+  }, []);
+
+  const handleSelectCategoriaEdicion = useCallback((cat) => {
+    if ((searchPlato || '').trim().length > 0) setSearchPlato('');
+    setCategoriaFiltro(cat === 'Todos' || cat === null ? null : cat);
+  }, [searchPlato]);
+
+  const platosEditadosParaMenu = useMemo(() => platosEditados.map((p) => {
+    const catalogId = String(p.plato?._id || p.plato || p.platoId || '');
+    return { ...p, _id: catalogId || idCatalogoPlato(p) || p._id };
+  }), [platosEditados]);
+
+  const cantidadesEditadas = useMemo(() => {
+    const m = {};
+    platosEditados.forEach((p) => {
+      m[p.instanceId || p._id] = p.cantidad || 1;
+    });
+    return m;
+  }, [platosEditados]);
   
   // Guardar edición
   const handleGuardarEdicion = async () => {
@@ -1684,6 +1736,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       
       Alert.alert('✅', 'Comanda actualizada exitosamente');
       setModalEditarVisible(false);
+      setMenuEditarVisible(false);
       setComandaEditando(null);
       setTipoPlatoFiltro(null);
       setEligiendoTipoMenu(false);
@@ -1716,46 +1769,70 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       return;
     }
     setDescuentoMontoInput('');
-    setMotivoDescuento(comandas[0].motivoDescuento || '');
+    setMotivoDescuento(comandas.find((c) => c.motivoDescuento)?.motivoDescuento || '');
     setModalDescuentoVisible(true);
   };
 
+  const urlDescuentoComanda = (id) => (
+    apiConfig.isConfigured
+      ? `${apiConfig.getEndpoint('/comanda')}/${id}/descuento`
+      : `${COMANDA_API}/${id}/descuento`
+  );
+
   const enviarDescuentoComanda = async ({ descuento, monto, motivo }) => {
-    const comanda = comandas[0];
-    if (!comanda?._id) {
+    const targets = (comandas || []).filter((c) => c?._id);
+    if (!targets.length) {
       Alert.alert('Error', 'No se encontró la comanda.');
       return;
     }
-    const descuentoURL = apiConfig.isConfigured
-      ? `${apiConfig.getEndpoint('/comanda')}/${comanda._id}/descuento`
-      : `${COMANDA_API}/${comanda._id}/descuento`;
+    if (!motivoDescuentoEsValido(motivo)) {
+      Alert.alert('Motivo obligatorio', 'Escribe el motivo del descuento (mínimo 2 caracteres).');
+      return;
+    }
+    const motivoFinal = String(motivo || '').trim();
+    const montos = monto > 0 ? montosDescuentoPorComanda(targets, monto) : null;
     setAplicandoDescuento(true);
     try {
-      const body = {
-        motivo: motivoDescuentoFinal(motivo),
-        usuarioId: userInfo._id,
-        usuarioRol: userInfo.rol,
-        sourceApp: 'mozos',
-      };
-      if (monto > 0) {
-        body.monto = Number(Number(monto).toFixed(2));
-        body.descuento = 0;
-      } else {
-        body.descuento = descuento;
+      let exitosos = 0;
+      let ahorro = 0;
+      let nuevoTotal = 0;
+      for (let i = 0; i < targets.length; i++) {
+        const comanda = targets[i];
+        const body = {
+          motivo: motivoFinal,
+          usuarioId: userInfo._id,
+          usuarioRol: userInfo.rol,
+          sourceApp: 'mozos',
+        };
+        if (montos) {
+          if (!(montos[i] > 0)) continue;
+          body.monto = Number(Number(montos[i]).toFixed(2));
+          body.descuento = 0;
+        } else {
+          body.descuento = descuento;
+        }
+        const response = await axios.put(urlDescuentoComanda(comanda._id), body, {
+          timeout: 10000,
+          headers: { 'Content-Type': 'application/json' },
+        });
+        ahorro += Number(response.data?.descuentoAplicado?.montoDescuento) || 0;
+        nuevoTotal += Number(response.data?.descuentoAplicado?.totalCalculado) || 0;
+        exitosos += 1;
       }
-      const response = await axios.put(descuentoURL, body, {
-        timeout: 10000,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      if (!exitosos) {
+        Alert.alert('Error', 'No se pudo aplicar el descuento.');
+        return;
+      }
       setModalDescuentoVisible(false);
       setDescuentoMontoInput('');
       setMotivoDescuento('');
       await refrescarComandas();
-      const ahorro = response.data?.descuentoAplicado?.montoDescuento || 0;
-      const nuevoTotal = response.data?.descuentoAplicado?.totalCalculado || 0;
+      const n = targets.length;
       Alert.alert(
         '✅ Descuento Aplicado',
-        `Ahorro: S/. ${ahorro.toFixed(2)}\nNuevo total: S/. ${nuevoTotal.toFixed(2)}`
+        n > 1
+          ? `Grupo: ${exitosos} comandas\nAhorro: S/. ${ahorro.toFixed(2)}\nNuevo total: S/. ${nuevoTotal.toFixed(2)}`
+          : `Ahorro: S/. ${ahorro.toFixed(2)}\nNuevo total: S/. ${nuevoTotal.toFixed(2)}`
       );
     } catch (error) {
       console.error('Error aplicando descuento:', error);
@@ -1770,10 +1847,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       Alert.alert('Error', 'No tienes permisos para aplicar descuentos.');
       return;
     }
-    const bruto = brutoParaDescuento(comandas[0]);
+    const bruto = brutoGrupoComandas(comandas);
     const m = clampMontoDescuento(descuentoMontoInput, bruto);
     if (!(m > 0)) {
       Alert.alert('Error', 'Ingresa un monto de descuento en soles.');
+      return;
+    }
+    if (!motivoDescuentoEsValido(motivoDescuento)) {
+      Alert.alert('Motivo obligatorio', 'Escribe el motivo del descuento (mínimo 2 caracteres).');
       return;
     }
     await enviarDescuentoComanda({ descuento: 0, monto: m, motivo: motivoDescuento });
@@ -1784,36 +1865,39 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       Alert.alert('Error', 'No tienes permisos para aplicar descuentos.');
       return;
     }
-    const bruto = brutoParaDescuento(comandas[0]);
+    const bruto = brutoGrupoComandas(comandas);
     if (!(bruto > 0)) {
       Alert.alert('Error', 'No hay total para descontar.');
+      return;
+    }
+    if (!motivoDescuentoEsValido(motivoDescuento)) {
+      Alert.alert('Motivo obligatorio', 'Escribe el motivo del descuento (mínimo 2 caracteres).');
       return;
     }
     await enviarDescuentoComanda({ descuento: 100, monto: bruto, motivo: motivoDescuento });
   };
 
   const ejecutarQuitarDescuento = async () => {
-    const comanda = comandas[0];
-    if (!comanda?._id) return;
-    const descuentoURL = apiConfig.isConfigured
-      ? `${apiConfig.getEndpoint('/comanda')}/${comanda._id}/descuento`
-      : `${COMANDA_API}/${comanda._id}/descuento`;
+    const targets = (comandas || []).filter((c) => c?._id && comandaTieneDescuentoMozo(c));
+    if (!targets.length) return;
     setAplicandoDescuento(true);
     try {
-      await axios.delete(descuentoURL, {
-        timeout: 10000,
-        data: {
-          usuarioId: userInfo._id,
-          usuarioRol: userInfo.rol,
-          motivoEliminacion: motivoDescuentoFinal(motivoDescuento),
-          sourceApp: 'mozos',
-        },
-      });
+      for (const comanda of targets) {
+        await axios.delete(urlDescuentoComanda(comanda._id), {
+          timeout: 10000,
+          data: {
+            usuarioId: userInfo._id,
+            usuarioRol: userInfo.rol,
+            motivoEliminacion: motivoDescuentoFinal(motivoDescuento),
+            sourceApp: 'mozos',
+          },
+        });
+      }
       setModalDescuentoVisible(false);
       setDescuentoMontoInput('');
       setMotivoDescuento('');
       await refrescarComandas();
-      Alert.alert('Listo', 'Se quitó el descuento.');
+      Alert.alert('Listo', targets.length > 1 ? 'Se quitó el descuento del grupo.' : 'Se quitó el descuento.');
     } catch (error) {
       Alert.alert('Error', error.response?.data?.message || error.message || 'No se pudo quitar el descuento');
     } finally {
@@ -1824,7 +1908,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const handleQuitarDescuento = () => {
     Alert.alert(
       'Quitar descuento',
-      '¿Eliminar el descuento de esta comanda?',
+      comandas.length > 1
+        ? '¿Eliminar el descuento de todas las comandas del grupo?'
+        : '¿Eliminar el descuento de esta comanda?',
       [
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Quitar', style: 'destructive', onPress: ejecutarQuitarDescuento },
@@ -1871,6 +1957,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     setEligiendoTipoMenu(false);
     setSearchPlato('');
     setCategoriaFiltro(null);
+    setMenuEditarVisible(false);
     
     // Preparar platos editados (solo editables) con datos completos
     const platosEditadosPreparados = editablesFiltrados.map(e => {
@@ -2786,10 +2873,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Key extractor - usar _id (único por instancia) para diferenciar platos idénticos con diferentes complementos
   const keyExtractor = (item, index) => item._id || `${item.comandaId}-${item.platoId}-${item.index}`;
 
-  const brutoDescuento = brutoParaDescuento(comandas[0]);
+  const brutoDescuento = brutoGrupoComandas(comandas);
   const montoDescuentoPreview = clampMontoDescuento(descuentoMontoInput, brutoDescuento);
   const totalDescuentoPreview = Number(Math.max(0, brutoDescuento - montoDescuentoPreview).toFixed(2));
-  const hayDescuentoActual = comandaTieneDescuentoMozo(comandas[0]);
+  const hayDescuentoActual = (comandas || []).some((c) => comandaTieneDescuentoMozo(c));
+  const motivoDescuentoOk = motivoDescuentoEsValido(motivoDescuento);
+  const esGrupoDescuento = (comandas || []).length > 1;
+  const montoDescuentoActualGrupo = montoDescuentoGrupo(comandas);
   
   return (
         <View style={[styles.container, { backgroundColor: themeColors.colors?.background || themeColors.background || '#FFFFFF' }]}>
@@ -3130,7 +3220,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         animationType="slide"
         onRequestClose={() => setModalEliminarVisible(false)}
       >
-        <View style={[styles.modalOverlay, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.85)' : 'rgba(0, 0, 0, 0.5)' }]}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={[styles.modalOverlay, {
+          backgroundColor: isDark ? 'rgba(0, 0, 0, 0.85)' : 'rgba(0, 0, 0, 0.5)',
+          paddingTop: insets.top + 12,
+          paddingBottom: Math.max(insets.bottom, 12),
+        }]}>
           <View style={[
             styles.modalContent, 
             { 
@@ -3383,6 +3478,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             </View>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
       
       {/* Modal Editar Comanda */}
@@ -3392,6 +3488,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         animationType="slide"
         onRequestClose={() => {
           setModalEditarVisible(false);
+          setMenuEditarVisible(false);
           setComandaEditando(null);
           setTipoPlatoFiltro(null);
           setEligiendoTipoMenu(false);
@@ -3412,24 +3509,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             }
           ]}>
             <View style={styles.modalHeader}>
-              {tipoPlatoFiltro ? (
-                <TouchableOpacity
-                  onPress={() => {
-                    setTipoPlatoFiltro(null);
-                    setEligiendoTipoMenu(false);
-                    setSearchPlato('');
-                    setCategoriaFiltro(null);
-                  }}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <MaterialCommunityIcons name="arrow-left" size={24} color={isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937')} />
-                </TouchableOpacity>
-              ) : null}
               <Text style={[styles.modalTitle, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937'), flex: 1 }]}>
-                {tipoPlatoFiltro ? (labelForTipo(tipoPlatoFiltro) || 'Menú') : `Editar Comanda #${comandaEditando?.comandaNumber || 'N/A'}`}
+                Editar Comanda #{comandaEditando?.comandaNumber || 'N/A'}
               </Text>
               <TouchableOpacity onPress={() => {
                 setModalEditarVisible(false);
+                setMenuEditarVisible(false);
                 setComandaEditando(null);
                 setTipoPlatoFiltro(null);
                 setEligiendoTipoMenu(false);
@@ -3440,170 +3525,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               </TouchableOpacity>
             </View>
 
-            {tipoPlatoFiltro ? (
-              <>
-                <View style={[
-                  styles.tipoServicioRow,
-                  {
-                    backgroundColor: isDark ? '#374151' : (themeColors.colors?.surface || '#FFFFFF'),
-                    borderColor: isDark ? '#4B5563' : (themeColors.colors?.border || '#E5E7EB'),
-                  }
-                ]}>
-                  <Text style={[
-                    styles.tipoServicioTipoMenu,
-                    { color: isDark ? '#F9FAFB' : (themeColors.colors?.text?.primary || '#1F2937') }
-                  ]}>
-                    {labelForTipo(tipoPlatoFiltro) || 'Tipo'}
-                  </Text>
-                  <View style={styles.tipoServicioToggle}>
-                    <Text style={[
-                      styles.tipoServicioLabel,
-                      tipoServicioModal === 'mesa' && styles.tipoServicioLabelActive,
-                      { color: tipoServicioModal === 'mesa'
-                          ? '#F59E0B'
-                          : (isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || '#6B7280')) }
-                    ]}>
-                      Mesa
-                    </Text>
-                    <Switch
-                      value={tipoServicioModal === 'para_llevar'}
-                      onValueChange={(v) => {
-                        if (esSeleccionSinMesa(mesa)) return;
-                        setTipoServicioModal(v ? 'para_llevar' : 'mesa');
-                      }}
-                      disabled={esSeleccionSinMesa(mesa)}
-                      trackColor={{ false: '#F59E0B', true: '#8B5CF6' }}
-                      thumbColor="#FFFFFF"
-                      accessibilityLabel="Tipo de servicio: Mesa o Para llevar"
-                      accessibilityHint="Cambia el destino de los platos que agregues a continuación"
-                    />
-                    <Text style={[
-                      styles.tipoServicioLabel,
-                      tipoServicioModal === 'para_llevar' && styles.tipoServicioLabelActive,
-                      { color: tipoServicioModal === 'para_llevar'
-                          ? '#8B5CF6'
-                          : (isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || '#6B7280')) }
-                    ]}>
-                      Para llevar
-                    </Text>
-                  </View>
-                </View>
-                <KeyboardAwareResults
-                  listMaxHeight={platosListMaxHeight}
-                  search={
-                    <TextInput
-                      style={[
-                        styles.searchInput,
-                        {
-                          backgroundColor: isDark ? '#374151' : (themeColors.colors?.surface || '#FFFFFF'),
-                          borderColor: isDark ? '#4B5563' : (themeColors.colors?.border || '#E5E7EB'),
-                          color: isDark ? '#F9FAFB' : (themeColors.colors?.text?.primary || '#1F2937'),
-                        }
-                      ]}
-                      placeholder="Buscar plato..."
-                      placeholderTextColor={isDark ? '#9CA3AF' : (themeColors.colors?.text?.secondary || '#6B7280')}
-                      value={searchPlato}
-                      onChangeText={setSearchPlato}
-                    />
-                  }
-                  filters={
-                    <ScrollView horizontal style={styles.categoriasContainer} showsHorizontalScrollIndicator={false}>
-                      <TouchableOpacity
-                        style={[
-                          styles.categoriaChip,
-                          {
-                            backgroundColor: !categoriaFiltro
-                              ? '#3B82F6'
-                              : (themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB')),
-                            borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
-                            paddingHorizontal: chipEstilo.paddingHorizontal,
-                            paddingVertical: chipEstilo.paddingVertical,
-                            borderRadius: chipEstilo.borderRadius,
-                            minHeight: chipEstilo.minHeight,
-                          },
-                          !categoriaFiltro && styles.categoriaChipActive
-                        ]}
-                        onPress={() => setCategoriaFiltro(null)}
-                      >
-                        <Text style={[
-                          styles.categoriaChipText,
-                          {
-                            fontSize: chipEstilo.fontSize,
-                            color: !categoriaFiltro
-                              ? '#FFFFFF'
-                              : (themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937'))
-                          }
-                        ]}>
-                          Todos
-                        </Text>
-                      </TouchableOpacity>
-                      {categorias.map((cat) => (
-                        <TouchableOpacity
-                          key={cat}
-                          style={[
-                            styles.categoriaChip,
-                            {
-                              backgroundColor: categoriaFiltro === cat
-                                ? '#3B82F6'
-                                : (themeColors.colors?.card || themeColors.card || (isDark ? '#1F2937' : '#F9FAFB')),
-                              borderColor: themeColors.colors?.border || themeColors.border || '#E5E7EB',
-                              paddingHorizontal: chipEstilo.paddingHorizontal,
-                              paddingVertical: chipEstilo.paddingVertical,
-                              borderRadius: chipEstilo.borderRadius,
-                              minHeight: chipEstilo.minHeight,
-                            },
-                            categoriaFiltro === cat && styles.categoriaChipActive
-                          ]}
-                          onPress={() => setCategoriaFiltro(cat)}
-                        >
-                          <Text style={[
-                            styles.categoriaChipText,
-                            {
-                              fontSize: chipEstilo.fontSize,
-                              color: categoriaFiltro === cat
-                                ? '#FFFFFF'
-                                : (themeColors.colors?.text?.primary || themeColors.text?.primary || (isDark ? '#F9FAFB' : '#1F2937'))
-                            }
-                          ]}>
-                            {cat}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  }
-                >
-                  {platosFiltrados.length === 0 ? (
-                    <Text style={[
-                      styles.emptyPlatosText,
-                      { color: themeColors.colors?.text?.secondary || themeColors.text?.secondary || '#6B7280' }
-                    ]}>
-                      {`No hay platos disponibles en ${labelForTipo(tipoPlatoFiltro) || tipoPlatoFiltro}`}
-                    </Text>
-                  ) : (
-                    platosFiltrados.map((plato) => {
-                      const cantidadTotal = cantidadTotalDelPlato(platosEditados, plato);
-                      const cantidadMesa = cantidadTotalDelPlato(platosEditados, plato, null, 'mesa');
-                      const cantidadLlevar = cantidadTotalDelPlato(platosEditados, plato, null, 'para_llevar')
-                        + cantidadTotalDelPlato(platosEditados, plato, null, 'extra_llevar');
-                      return (
-                        <PlatoBuscadorCard
-                          key={plato._filaBuscadorKey || plato._id}
-                          plato={plato}
-                          cantidadTotal={cantidadTotal}
-                          cantidadMesa={cantidadMesa}
-                          cantidadLlevar={cantidadLlevar}
-                          esLlevar={tipoServicioModal === 'para_llevar'}
-                          onAdd={handleAgregarPlato}
-                          onDecrement={handleDecrementPlatoFromBuscador}
-                          onPressG={(p) => abrirFocoDesdeBuscador(p, 'guarniciones')}
-                          onPressV={(p) => abrirFocoDesdeBuscador(p, 'anexarNombre')}
-                        />
-                      );
-                    })
-                  )}
-                </KeyboardAwareResults>
-              </>
-            ) : (
             <>
             
             {/* Leyenda de colores */}
@@ -3859,24 +3780,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                     setTipoPlatoFiltro(autoSlug || null);
                     setSearchPlato('');
                     setCategoriaFiltro(null);
-                    setTipoServicioModal('mesa');
-                    setEligiendoTipoMenu(!autoSlug);
+                    setTipoServicioModal(esSeleccionSinMesa(mesa) ? 'para_llevar' : 'mesa');
+                    setMenuEditarVisible(true);
                   }}
                 >
                   <MaterialCommunityIcons name="plus-circle" size={20} color="#fff" />
                   <Text style={styles.addPlatoButtonText}> Agregar Plato</Text>
                 </TouchableOpacity>
-                {eligiendoTipoMenu && !tipoPlatoFiltro ? (
-                  <SelectorTipoMenu
-                    tipos={tiposPlatoCatalogo}
-                    onSelect={(slug) => {
-                      setTipoPlatoFiltro(slug);
-                      setTipoServicioModal('mesa');
-                      setEligiendoTipoMenu(false);
-                    }}
-                    onCancel={() => setEligiendoTipoMenu(false)}
-                  />
-                ) : null}
               </View>
               
               <View style={styles.editSection}>
@@ -3940,6 +3850,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 ]}
                 onPress={() => {
                   setModalEditarVisible(false);
+                  setMenuEditarVisible(false);
                   setComandaEditando(null);
                   setTipoPlatoFiltro(null);
                   setEligiendoTipoMenu(false);
@@ -3958,10 +3869,54 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               </TouchableOpacity>
             </View>
             </>
-            )}
           </View>
         </View>
       </Modal>
+
+      <MenuPlatosSheet
+        visible={menuEditarVisible}
+        onClose={() => {
+          setMenuEditarVisible(false);
+          setSearchPlato('');
+        }}
+        tiposPlatoCatalogo={tiposPlatoCatalogo}
+        tipoPlatoFiltro={tipoPlatoFiltro}
+        onSelectTipo={setTipoPlatoFiltro}
+        onClearTipo={() => {
+          setTipoPlatoFiltro(null);
+          setCategoriaFiltro(null);
+          setSearchPlato('');
+        }}
+        labelForTipo={labelForTipo}
+        tipoServicioModal={tipoServicioModal}
+        onTipoServicioChange={(v) => {
+          if (esSeleccionSinMesa(mesa)) return;
+          setTipoServicioModal(v);
+        }}
+        tipoServicioFijo={esSeleccionSinMesa(mesa)}
+        searchPlato={searchPlato}
+        onSearchChange={handleSearchChangeEdicion}
+        onSearchFocus={() => {}}
+        onClearSearch={handleClearSearchEdicion}
+        categorias={categorias}
+        categoriasInfo={categoriasInfo}
+        categoriaFiltro={categoriaFiltro}
+        onSelectCategoria={handleSelectCategoriaEdicion}
+        platosFiltrados={platosFiltrados}
+        selectedPlatos={platosEditadosParaMenu}
+        cantidades={cantidadesEditadas}
+        onDecrementPlato={handleDecrementPlatoFromBuscador}
+        onAddPlato={handleAgregarPlato}
+        onPressG={(p) => abrirFocoDesdeBuscador(p, 'guarniciones')}
+        onPressV={(p) => abrirFocoDesdeBuscador(p, 'anexarNombre')}
+        favoritoIds={favoritoIds}
+        onToggleFavorito={toggleFavoritoEdicion}
+        numeroMesa={
+          esSeleccionSinMesa(mesa)
+            ? 'Sin mesa'
+            : (mesa?.nombreCombinado || (mesa?.nummesa != null ? `Mesa ${mesa.nummesa}` : null))
+        }
+      />
       
       {/* Modal Eliminar Comanda */}
       <Modal
@@ -3970,7 +3925,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         animationType="slide"
         onRequestClose={() => setModalEliminarComandaVisible(false)}
       >
-        <View style={[styles.modalOverlay, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.85)' : 'rgba(0, 0, 0, 0.5)' }]}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={[styles.modalOverlay, {
+          backgroundColor: isDark ? 'rgba(0, 0, 0, 0.85)' : 'rgba(0, 0, 0, 0.5)',
+          paddingTop: insets.top + 12,
+          paddingBottom: Math.max(insets.bottom, 12),
+        }]}>
           <View style={[
             styles.modalContent, 
             { 
@@ -4271,6 +4231,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             </View>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
       
       {/* Modal de Descuento — permiso aplicar-descuentos; monto S/. o 100% (igual que comandas.html) */}
@@ -4280,17 +4241,20 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         animationType="fade"
         onRequestClose={() => setModalDescuentoVisible(false)}
       >
-        <View style={styles.modalOverlayCenter}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={[styles.modalOverlayCenter, { paddingTop: insets.top + 12, paddingBottom: Math.max(insets.bottom, 12) }]}>
           <View style={[styles.modalContainer, { backgroundColor: themeColors.colors?.surface || '#fff' }]}>
-            <View style={[styles.modalHeader, { backgroundColor: '#8B5CF6' }]}>
+            <View style={[styles.modalHeaderDescuento, { backgroundColor: '#8B5CF6' }]}>
               <MaterialCommunityIcons name="percent" size={24} color="#fff" />
-              <Text style={styles.modalTitle}>Aplicar Descuento</Text>
+              <Text style={styles.modalTitleDescuento}>Aplicar Descuento</Text>
             </View>
             
-            <ScrollView style={styles.modalContent} contentContainerStyle={{ paddingBottom: 8 }} keyboardShouldPersistTaps="handled">
+            <ScrollView style={styles.modalContentDescuento} contentContainerStyle={{ paddingBottom: 8 }} keyboardShouldPersistTaps="handled">
               <View style={[styles.infoBox, { backgroundColor: themeColors.colors?.background || '#f3f4f6' }]}>
                 <Text style={[styles.infoText, { color: themeColors.colors?.text?.secondary || '#6B7280' }]}>
-                  Comanda #{comandas[0]?.comandaNumber || 'N/A'}
+                  {esGrupoDescuento
+                    ? `Grupo · ${comandas.length} comandas`
+                    : `Comanda #${comandas[0]?.comandaNumber || 'N/A'}`}
                 </Text>
                 <Text style={[styles.infoTextBold, { color: themeColors.colors?.text?.primary || '#111827' }]}>
                   Total: S/. {brutoDescuento.toFixed(2)}
@@ -4302,8 +4266,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <MaterialCommunityIcons name="tag" size={16} color="#059669" />
                     <Text style={[styles.currentDiscountText, { color: '#047857' }]}>
-                      Aplicado: -S/. {Number(comandas[0]?.montoDescuento || 0).toFixed(2)}
-                      {comandas[0]?.motivoDescuento ? ` · ${comandas[0].motivoDescuento}` : ''}
+                      Aplicado: -S/. {montoDescuentoActualGrupo.toFixed(2)}
+                      {comandas.find((c) => c.motivoDescuento)?.motivoDescuento
+                        ? ` · ${comandas.find((c) => c.motivoDescuento)?.motivoDescuento}`
+                        : ''}
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -4336,24 +4302,27 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   style={[
                     styles.descuentoBtn100,
                     !(brutoDescuento > 0) && styles.buttonDisabled,
+                    !motivoDescuentoOk && styles.buttonDisabled,
                   ]}
                   onPress={handleAplicarDescuento100}
-                  disabled={aplicandoDescuento || !(brutoDescuento > 0)}
+                  disabled={aplicandoDescuento || !(brutoDescuento > 0) || !motivoDescuentoOk}
                 >
                   <Text style={styles.descuentoBtn100Text}>100%</Text>
                 </TouchableOpacity>
               </View>
 
               <Text style={[styles.labelText, { color: themeColors.colors?.text?.primary || '#111827' }]}>
-                Motivo (opcional)
+                Motivo (obligatorio)
               </Text>
               <TextInput
                 style={[styles.motivoInput, { 
                   backgroundColor: themeColors.colors?.background || '#f3f4f6',
-                  borderColor: themeColors.colors?.border || '#D1D5DB',
+                  borderColor: motivoDescuentoOk || !String(motivoDescuento || '').trim()
+                    ? (themeColors.colors?.border || '#D1D5DB')
+                    : '#DC2626',
                   color: themeColors.colors?.text?.primary || '#111827'
                 }]}
-                placeholder="Ej: Voucher promocional, Cliente VIP..."
+                placeholder="Mínimo 2 caracteres"
                 placeholderTextColor={themeColors.colors?.text?.muted || '#9CA3AF'}
                 value={motivoDescuento}
                 onChangeText={setMotivoDescuento}
@@ -4382,14 +4351,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
+                style={[styles.modalButton, styles.cancelButton, { backgroundColor: '#DC2626' }]}
                 onPress={() => {
                   setModalDescuentoVisible(false);
                   setDescuentoMontoInput('');
                   setMotivoDescuento('');
                 }}
               >
-                <Text style={styles.cancelButtonText}>Cancelar</Text>
+                <Text style={[styles.cancelButtonText, { color: '#FFFFFF' }]}>Cancelar</Text>
               </TouchableOpacity>
               
               <TouchableOpacity
@@ -4397,10 +4366,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   styles.modalButton, 
                   styles.confirmButton,
                   { backgroundColor: '#8B5CF6' },
-                  !(montoDescuentoPreview > 0) && styles.buttonDisabled
+                  (!(montoDescuentoPreview > 0) || !motivoDescuentoOk) && styles.buttonDisabled
                 ]}
                 onPress={handleAplicarDescuentoMonto}
-                disabled={aplicandoDescuento || !(montoDescuentoPreview > 0)}
+                disabled={aplicandoDescuento || !(montoDescuentoPreview > 0) || !motivoDescuentoOk}
               >
                 {aplicandoDescuento ? (
                   <ActivityIndicator color="#fff" size="small" />
@@ -4414,6 +4383,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             </View>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
       
       {/* Modal de Complementos para Edición de Comanda */}
@@ -4587,13 +4557,14 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
   },
   modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 16,
     padding: 20,
-    maxHeight: '80%',
+    maxHeight: '90%',
+    width: '100%',
   },
   modalTitle: {
     fontSize: 20,
@@ -4987,18 +4958,18 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 5,
   },
-  modalHeader: {
+  modalHeaderDescuento: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
     gap: 10,
   },
-  modalTitle: {
+  modalTitleDescuento: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#fff',
   },
-  modalContent: {
+  modalContentDescuento: {
     padding: 16,
     maxHeight: 420,
   },

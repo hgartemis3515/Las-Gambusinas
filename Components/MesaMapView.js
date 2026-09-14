@@ -17,7 +17,7 @@ import { useApodosMesa } from '../context/ApodosMesaContext';
 import { obtenerColoresEstadoAdaptados } from '../utils/comandaHelpers';
 import { themeLight } from '../constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import AlertaSalioFondo from './AlertaSalioFondo';
+import AlertaSalioFondo, { MesaDestelloCaja } from './AlertaSalioFondo';
 import axios from '../config/axiosConfig';
 import { getMesasAPI } from '../apiConfig';
 
@@ -54,36 +54,53 @@ const MesaMapItem = React.memo(({
   const isRound = config.shape === 'round';
   
   return (
+    <MesaDestelloCaja
+      on={alertaSalio}
+      colorBase={colores.backgroundColor}
+      size={itemWidth}
+      borderRadius={isRound ? itemWidth / 2 : 12}
+      style={{
+        position: 'absolute',
+        left,
+        top,
+        height: itemHeight,
+        width: itemWidth,
+      }}
+    >
     <TouchableOpacity
       onPress={() => onPress(mesa)}
       activeOpacity={0.7}
       style={[
         styles.mesaItem,
         {
-          left,
-          top,
+          left: 0,
+          top: 0,
           width: itemWidth,
           height: itemHeight,
-          backgroundColor: alertaSalio ? 'transparent' : colores.backgroundColor,
+          backgroundColor: 'transparent',
           borderColor: alertaSalio ? '#EA580C' : colores.borderColor,
           borderRadius: isRound ? itemWidth / 2 : 12,
           overflow: 'hidden',
+          elevation: 0,
+          shadowOpacity: 0,
+          shadowRadius: 0,
+          shadowOffset: { width: 0, height: 0 },
         }
       ]}
     >
-      <AlertaSalioFondo on={alertaSalio} />
-      <Text style={[styles.mesaNumber, { color: colores.textColor, zIndex: 1 }]}>
+      <Text style={[styles.mesaNumber, { color: alertaSalio ? '#9A3412' : colores.textColor, zIndex: 1 }]}>
         {mesa.nombreCombinado || `M${mesa.nummesa}`}
       </Text>
       {apodo ? (
-        <Text style={[styles.mesaEstado, { color: colores.textColor, opacity: 0.95, fontStyle: 'italic' }]} numberOfLines={1}>
+        <Text style={[styles.mesaEstado, { color: alertaSalio ? '#9A3412' : colores.textColor, opacity: 0.95, fontStyle: 'italic' }]} numberOfLines={1}>
           {apodo}
         </Text>
       ) : null}
-      <Text style={[styles.mesaEstado, { color: colores.textColor, opacity: 0.8 }]}>
+      <Text style={[styles.mesaEstado, { color: alertaSalio ? '#9A3412' : colores.textColor, opacity: 0.8 }]}>
         {estado}
       </Text>
     </TouchableOpacity>
+    </MesaDestelloCaja>
   );
 });
 

@@ -1771,13 +1771,10 @@ const OrdenesScreen = ({ route }) => {
     return conAlias;
   }, [platosPorTipoDisponibles, searchPlatoDebounced, categoriaFiltro, favoritoIds, categoriasInfo, tipoPlatoFiltro]);
 
-  // Al enfocar o escribir en búsqueda → categoría a "Todos" para búsqueda global
-  const handleSearchFocus = useCallback(() => {
-    setCategoriaFiltro(null);
-  }, []);
+  // El + y el texto de búsqueda no tocan la categoría elegida
+  const handleSearchFocus = useCallback(() => {}, []);
   const handleSearchChangeText = useCallback((text) => {
     setSearchPlato(text);
-    if ((text || "").trim().length > 0) setCategoriaFiltro(null);
   }, []);
   const handleClearSearch = useCallback(() => {
     setSearchPlato("");
