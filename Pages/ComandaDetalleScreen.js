@@ -36,7 +36,7 @@ import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../ap
 import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle } from '../utils/comandaHelpers';
 import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato, mismasGuarniciones, platoEditableEnOrdenes, resolverPartesComplementos } from '../utils/platoGuarniciones';
-import { hidratarUnidadesDesdeLineas, cantidadDeLinea } from '../utils/unidadesComplemento';
+import { hidratarUnidadesDesdeLineas, cantidadDeLinea, fusionarGuarnicionesPreseleccionadasEnLista } from '../utils/unidadesComplemento';
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
 import { mismaVariantePlato, esSeleccionVariantePlato } from '../utils/variantePlato';
 import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos, ordenarPlatosPorCodigoBusqueda, categoriasDePlato, platoEsDeCategoria } from '../utils/platoBuscador';
@@ -1653,7 +1653,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           estado: p.estado || 'pedido',
           tipoServicio: normalizarTipoServicioLinea(p.tipoServicio),
           tipoPedido: slugTipoPedido(p.tipoPedido),
-          complementosSeleccionados: p.complementosSeleccionados || [],
+          complementosSeleccionados: fusionarGuarnicionesPreseleccionadasEnLista(
+            resolverPlatoConGrupos(platoCompleto || p, platos),
+            p.complementosSeleccionados || p.complementosElegidos || []
+          ),
           notaEspecial: p.notaEspecial || '',
           nombreCocinaPedido: p.nombreCocinaPedido || '',
           variantePlato: p.variantePlato || undefined,

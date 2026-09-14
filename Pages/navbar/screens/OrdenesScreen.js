@@ -36,6 +36,7 @@ import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
 import BotonEnviarOrden from "../../../Components/BotonEnviarOrden";
 import { resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato, platoEditableEnOrdenes, resolverPartesComplementos } from "../../../utils/platoGuarniciones";
+import { fusionarGuarnicionesPreseleccionadasEnLista } from "../../../utils/unidadesComplemento";
 import { hidratarUnidadesDesdeLineas, cantidadDeLinea } from "../../../utils/unidadesComplemento";
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from "../../../utils/numeroSeriePlato";
 import { mismaVariantePlato, esSeleccionVariantePlato, nombreVisibleConVariante } from "../../../utils/variantePlato";
@@ -1334,7 +1335,10 @@ const OrdenesScreen = ({ route }) => {
         estado: "pedido",
         tipoServicio: plato.tipoServicio || tipoServicioEnvio,
         tipoPedido: slugTipoPedido(plato.tipoPedido),
-        complementosSeleccionados: plato.complementosElegidos || [],
+        complementosSeleccionados: fusionarGuarnicionesPreseleccionadasEnLista(
+          resolverPlatoConGrupos(plato, platos),
+          plato.complementosElegidos || plato.complementosSeleccionados || []
+        ),
         notaEspecial: plato.notaEspecial || "",
         nombreCocinaPedido: plato.nombreCocinaPedido || "",
         variantePlato: plato.variantePlato || undefined,
@@ -1545,13 +1549,6 @@ const OrdenesScreen = ({ route }) => {
       }
       
       setMensajeCarga(`¡Comanda #${comandaNumber} enviada!`);
-
-      const reservaParaNav = reservaActiva || reservaParam || null;
-      const mesaParaNav = mesaActualizada
-        ? { ...mesaActualizada, estado: estadoLocal }
-        : mesaActualizada;
-      const comandaParaNav = comandaCreada;
-      const estadoParaNav = estadoLocal;
       
       // Limpiar datos locales
       await AsyncStorage.removeItem("mesaSeleccionada");
@@ -1598,17 +1595,6 @@ const OrdenesScreen = ({ route }) => {
         // Continuar con el flujo de éxito (no mostrar error)
         // Esto ejecutará el código después del try/catch que maneja el éxito
         setMensajeCarga(`¡Comanda #${comandaNumber} enviada!`);
-
-        const reservaParaNav = reservaActiva || reservaParam || null;
-        const estadoParaNav = estadoMesaLocalTrasCrearComanda(
-          mesaActualizada?.estado,
-          !!reservaParaNav,
-          mesaActualizada?.estado
-        );
-        const mesaParaNav = mesaActualizada
-          ? { ...mesaActualizada, estado: estadoParaNav }
-          : mesaActualizada;
-        const comandaParaNav = comandaCreada;
         
         // Limpiar datos locales
         await AsyncStorage.removeItem("mesaSeleccionada");

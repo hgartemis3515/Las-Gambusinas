@@ -16,7 +16,7 @@ import { getFallbackApiBase } from "../config/envDefaults";
 import configuracionService from "../services/configuracionService";
 import ModalComplementos from "../Components/ModalComplementos";
 import { resolverPlatoConGrupos, guarnicionesElegidas, preseleccionComplementosDePlato, cantidadGuarnicionEfectiva, platoEditableEnOrdenes, resolverPartesComplementos } from "../utils/platoGuarniciones";
-import { hidratarUnidadesDesdeLineas, cantidadDeLinea } from "../utils/unidadesComplemento";
+import { hidratarUnidadesDesdeLineas, cantidadDeLinea, fusionarGuarnicionesPreseleccionadasEnLista } from "../utils/unidadesComplemento";
 import { numeroSerieEsValido, normalizarNumeroSerie } from "../utils/numeroSeriePlato";
 import { mismaVariantePlato, esSeleccionVariantePlato } from "../utils/variantePlato";
 import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos, ordenarPlatosMenu, categoriasDePlato, platoEsDeCategoria } from "../utils/platoBuscador";
@@ -716,7 +716,10 @@ export default function ReservaWizardScreen() {
         platos: selPlatos.map((p) => ({
           plato: p._id, cantidad: p.cantidad, tipoServicio: p.tipoServicio || "mesa",
           notaEspecial: p.notaEspecial || "",
-          complementosSeleccionados: (p.complementosElegidos || []).map((c) => ({
+          complementosSeleccionados: fusionarGuarnicionesPreseleccionadasEnLista(
+            resolverPlatoConGrupos(p, platos),
+            p.complementosElegidos || p.complementosSeleccionados || []
+          ).map((c) => ({
             grupo: c.grupo, opcion: c.opcion || c.nombre || "", cantidad: c.cantidad, precio: c.precio, pronombre: c.pronombre || "",
           })),
           precioUnitario: p.precioUnitario ?? p.precio,

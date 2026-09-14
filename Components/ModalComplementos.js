@@ -22,8 +22,8 @@ import {
   calcularPrecioUnitarioConComplementos,
 } from "../utils/precioComplementos";
 import { textosGuarnicionesTotales, grupoSeleccionFija, preseleccionComplementosFijosDePlato, preseleccionComplementosDePlato } from "../utils/platoGuarniciones";
-import { cloneUnidadEstado, hashUnidadEstado, hidratarUnidadesEstado, fusionarUnidadesComplementos, fusionarGuarnicionEnUnidadesOp, claveGrupoNombre } from "../utils/unidadesComplemento";
-import { grupoEsVariantePlato, grupoAnexaNombre, gruposVarianteDePlato, gruposAnexarNombreDePlato, grupoVarianteSumaDeshabilitada, platoVarianteSumaDeshabilitada, grupoOpCantidades, platoOpCantidades, grupoOpCantidadesDePlato, saboresPorUnidadDePlato, etiquetaNOp, textosOpDeEstado, seleccionesOpDesdeOrden, ordenOpDesdeUnidades, unidadesOpDesdeOrden } from "../utils/variantePlato";
+import { cloneUnidadEstado, hashUnidadEstado, hidratarUnidadesEstado, fusionarUnidadesComplementos, claveGrupoNombre, aplicarGuarnicionesAUnidadOp, mezclarOpEnSelecciones, fusionarGuarnicionesPreseleccionadasEnLista } from "../utils/unidadesComplemento";
+import { grupoEsVariantePlato, grupoAnexaNombre, gruposVarianteDePlato, gruposAnexarNombreDePlato, grupoVarianteSumaDeshabilitada, platoVarianteSumaDeshabilitada, grupoOpCantidades, platoOpCantidades, grupoOpCantidadesDePlato, saboresPorUnidadDePlato, etiquetaNOp, textosOpDeEstado, ordenOpDesdeUnidades, unidadesOpDesdeOrden } from "../utils/variantePlato";
 import BotonEnviarOrden from "./BotonEnviarOrden";
 import { useBotonCantidadPlato } from "../context/BotonCantidadPlatoContext";
 import { useNUnidadMozo } from "../context/NUnidadMozoContext";
@@ -165,15 +165,14 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     if (focoModo === 'anexarNombre' && sabInit <= 1 && gOpInit && gruposAnexarNombreDePlato(plato).length && !gruposVarianteDePlato(plato).length) {
       const orden = ordenOpDesdeUnidades(unidades, gOpInit.grupo);
       const nOp = Math.max(1, orden.length);
-      const mergedOp = fusionarGuarnicionEnUnidadesOp(
-        plato,
-        unidadesOpDesdeOrden(gOpInit.grupo, orden, 1, nOp, false),
-        unidades[0]
+      const opUnits = unidadesOpDesdeOrden(gOpInit.grupo, orden, 1, nOp, false);
+      unidadesRef.current = opUnits.map((u, i) =>
+        aplicarGuarnicionesAUnidadOp(plato, u, unidades[i] || unidades[0] || plantillaDefaultRef.current)
       );
-      unidadesRef.current = mergedOp;
-      const uOp = mergedOp[0] || { selecciones: {}, variaciones: {}, ordenSabores: orden };
-      setSeleccionesPorGrupo(uOp.selecciones || {});
-      setVariacionesPorGrupo(uOp.variaciones || {});
+      plantillaDefaultRef.current = cloneUnidadEstado(unidadesRef.current[0] || plantillaDefaultRef.current);
+      const u0 = unidadesRef.current[0] || { selecciones: {}, variaciones: {}, ordenSabores: [] };
+      setSeleccionesPorGrupo(u0.selecciones || {});
+      setVariacionesPorGrupo(u0.variaciones || {});
       setOrdenSabores(orden);
       setCantidadClones(nOp);
       cantidadClonesRef.current = nOp;
@@ -226,10 +225,10 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
     const n = sab <= 1
       ? Math.max(1, (Array.isArray(orden) ? orden.length : 0) || 1)
       : Math.max(1, Math.min(99, Number(nPach) || 1));
-    unidadesRef.current = fusionarGuarnicionEnUnidadesOp(
-      plato,
-      unidadesOpDesdeOrden(g.grupo, orden, sab, n, misma),
-      unidadesRef.current[0] || plantillaDefaultRef.current
+    const prevUnits = (unidadesRef.current || []).map((u) => cloneUnidadEstado(u));
+    const opUnits = unidadesOpDesdeOrden(g.grupo, orden, sab, n, misma);
+    unidadesRef.current = opUnits.map((u, i) =>
+      aplicarGuarnicionesAUnidadOp(plato, u, prevUnits[i] || prevUnits[0] || plantillaDefaultRef.current)
     );
     return n;
   }, [plato, logicaPachamanca]);
@@ -286,7 +285,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             setCantidadClones(nSync);
           }
         }
-        setSeleccionesPorGrupo(seleccionesOpDesdeOrden(grupoNombre, next));
+        setSeleccionesPorGrupo((selPrev) => mezclarOpEnSelecciones(selPrev, grupoNombre, next));
         return next;
       });
       return;
@@ -322,7 +321,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
             setCantidadClones(nSync);
           }
         }
-        setSeleccionesPorGrupo(seleccionesOpDesdeOrden(grupoNombre, next));
+        setSeleccionesPorGrupo((selPrev) => mezclarOpEnSelecciones(selPrev, grupoNombre, next));
         return next;
       });
       if (cantidadActual === 1) {
@@ -671,7 +670,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
           : ordenRaw.slice(0, maxSlots);
         setOrdenSabores(orden);
         const g = grupoOpCantidadesDePlato(plato);
-        if (g) setSeleccionesPorGrupo(seleccionesOpDesdeOrden(g.grupo, orden));
+        if (g) setSeleccionesPorGrupo((selPrev) => mezclarOpEnSelecciones(selPrev, g.grupo, orden));
         syncUnidadesOpDesdeOrden(orden, newN);
       } else {
         syncUnidadesOpDesdeOrden(ordenSaboresRef.current, newN);
@@ -804,7 +803,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
   const handleConfirmar = () => {
     if (!obligatoriosCompletos || hayErrores || hayErroresOtrasUnidades || !serieValida) return false;
 
-    if (opFlujoCantidad) {
+    if (opFlujoCantidad && grupoOpCantidadesDePlato(plato)) {
       syncUnidadesOpDesdeOrden(ordenSaboresRef.current, cantidadClonesRef.current);
     } else {
       persistirUnidadActiva();
@@ -892,7 +891,9 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
           });
         });
       }
-      return out;
+      return focoModo === 'guarniciones'
+        ? out
+        : fusionarGuarnicionesPreseleccionadasEnLista(plato, out);
     };
 
     const unidadesComps = (unidadesRef.current.length ? unidadesRef.current : [snapshotUnidadActual()])

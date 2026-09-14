@@ -41,7 +41,7 @@ const MesaMapItem = React.memo(({
   const isDark = theme?.dark || false;
   const { apodoDe } = useApodosMesa();
   const apodo = apodoDe(mesa);
-  
+
   // Obtener colores según estado
   const colores = obtenerColoresEstadoAdaptados(estado, isDark, true);
   
@@ -65,7 +65,7 @@ const MesaMapItem = React.memo(({
           width: itemWidth,
           height: itemHeight,
           backgroundColor: colores.backgroundColor,
-          borderColor: colores.borderColor,
+          borderColor: alertaSalio ? '#EA580C' : colores.borderColor,
           borderRadius: isRound ? itemWidth / 2 : 12,
           overflow: 'hidden',
         }
@@ -96,7 +96,7 @@ const MesaMapView = ({
   onMesaPress,
   style,
   reservas = [],
-  alertaSalioMesa,
+  mesaAlertaSalio = null,
 }) => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
@@ -230,7 +230,7 @@ const MesaMapView = ({
             onPress={onMesaPress}
             scale={scale}
             theme={theme}
-            alertaSalio={typeof alertaSalioMesa === 'function' ? !!alertaSalioMesa(mesa) : false}
+            alertaSalio={typeof mesaAlertaSalio === 'function' ? !!mesaAlertaSalio(mesa) : false}
           />
         ))}
       </ScrollView>

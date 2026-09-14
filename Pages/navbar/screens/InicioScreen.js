@@ -443,7 +443,7 @@ const MesaAnimada = React.memo(({
             height: mesaSize,
             backgroundColor: estadoColor,
             borderColor: getBorderColor(),
-            borderWidth: isSelected ? 4 : 1,
+            borderWidth: isSelected ? 4 : (alertaSalio ? 3 : 1),
             overflow: 'hidden',
           },
           animatedStyle,
@@ -4997,7 +4997,7 @@ const InicioScreen = () => {
     return false;
   }, [userInfo, reservas, comandas]);
 
-  const mesaAlertaSalioMia = useCallback((mesa) => {
+  const mesaAlertaSalio = useCallback((mesa) => {
     if (!mesaAtendidaPorMi(mesa)) return false;
     const cmds = [
       ...getComandasPorMesa(mesa.nummesa),
@@ -5263,7 +5263,7 @@ const InicioScreen = () => {
               reservas={reservas}
               areaId={seccionActiva === SECCION_YO ? null : (seccionActiva?._id || seccionActiva)}
               onMesaPress={handleSelectMesa}
-              alertaSalioMesa={mesaAlertaSalioMia}
+              mesaAlertaSalio={mesaAlertaSalio}
               style={{ flex: 1 }}
             />
           ) : (
@@ -5309,7 +5309,7 @@ const InicioScreen = () => {
                         mesas.find(m => m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString())?.nummesa : null
                       }
                       formatearGrupo={formatearGrupoMesas(mesa)}
-                      alertaSalio={mesaAlertaSalioMia(mesa)}
+                      alertaSalio={mesaAlertaSalio(mesa)}
                     />
                   );
                 })}
@@ -5346,7 +5346,7 @@ const InicioScreen = () => {
                         mesas.find(m => m._id === mesa.mesaPrincipalId || m._id?.toString() === mesa.mesaPrincipalId?.toString())?.nummesa : null
                       }
                       formatearGrupo={formatearGrupoMesas(mesa)}
-                      alertaSalio={mesaAlertaSalioMia(mesa)}
+                      alertaSalio={mesaAlertaSalio(mesa)}
                     />
                   );
                 })

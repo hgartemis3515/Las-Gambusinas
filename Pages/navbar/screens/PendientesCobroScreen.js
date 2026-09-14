@@ -29,8 +29,9 @@ import {
 import { agruparComandasPendientes } from "../../../utils/agruparComandasPendientes";
 import { esFilaComandaSinMesa, COLOR_PARA_LLEVAR } from "../../../utils/sinMesaOrden";
 import { comandaEsDeMozo, idEntidad } from "../../../utils/reservasMozo";
-import AlertaSalioFondo, { hayPlatoSalio } from "../../../Components/AlertaSalioFondo";
+import AlertaSalioFondo from "../../../Components/AlertaSalioFondo";
 import ModalVerComandaMozo from "../../../Components/ModalVerComandaMozo";
+import { tienePlatoEnSalio } from "../../../utils/alertaSalioPrefs";
 
 function urlPendienteCobro(mozoId, { pagadasHoy } = {}) {
   const q = `pendiente-cobro?mozoId=${encodeURIComponent(mozoId)}${pagadasHoy ? "&pagadasHoy=1" : ""}`;
@@ -91,6 +92,62 @@ function labelMesa(item) {
   if (item.mesaNombre) return String(item.mesaNombre);
   if (item.mesaNumero != null) return String(item.mesaNumero);
   return "—";
+}
+
+function FilaPendiente({
+  item,
+  esPagadas,
+  abriendoId,
+  onAbrir,
+  styles,
+  theme,
+}) {
+  const id = String(item.id || item._id);
+  const busy = abriendoId === id;
+  const estado = (esPagadas || (item.pagadaHoy && !item.seguimientoPpa))
+    ? "Pagado"
+    : labelEstadoMesaComanda(item);
+  const estadoColor = colorEstadoMesa(estado, theme);
+  const comandaTxt = item.comandaLabel
+    || (item.comandaNumber != null ? `#${item.comandaNumber}` : "—");
+  const sinMesa = esFilaComandaSinMesa(item);
+  const monto = (esPagadas || item.pagadaHoy || item.seguimientoPpa)
+    ? (item.total ?? item.pendienteCobro)
+    : item.pendienteCobro;
+  const alertaOn = !esPagadas && !item.pagadaHoy && tienePlatoEnSalio(item.platos);
+
+  return (
+    <View style={[styles.row, alertaOn && styles.rowAlerta]}>
+      <AlertaSalioFondo on={alertaOn} />
+      <Text
+        style={[styles.cell, styles.colMesa, styles.cellFront, sinMesa && styles.cellParaLlevar]}
+        numberOfLines={2}
+      >
+        {labelMesa(item)}
+      </Text>
+      <Text style={[styles.cell, styles.colComanda, styles.cellFront]} numberOfLines={1}>
+        {comandaTxt}
+      </Text>
+      <View style={[styles.colEstado, styles.estadoWrap, styles.cellFront]}>
+        <View style={[styles.estadoDot, { backgroundColor: estadoColor }]} />
+        <Text style={[styles.cell, styles.estadoText, { color: estadoColor }]} numberOfLines={2}>{estado}</Text>
+      </View>
+      <Text style={[styles.cell, styles.colTotal, styles.cellFront]} numberOfLines={1}>
+        {formatPendienteCobro(monto)}
+      </Text>
+      <TouchableOpacity
+        style={[styles.verBtn, styles.cellFront]}
+        onPress={() => onAbrir(item)}
+        disabled={!!abriendoId}
+        accessibilityRole="button"
+        accessibilityLabel={`Ver ${comandaTxt}`}
+      >
+        {busy
+          ? <ActivityIndicator size="small" color="#FFFFFF" />
+          : <Text style={styles.verBtnText}>Ver</Text>}
+      </TouchableOpacity>
+    </View>
+  );
 }
 
 const PendientesCobroScreen = () => {
@@ -258,53 +315,16 @@ const PendientesCobroScreen = () => {
 
   const styles = makeStyles(theme);
 
-  const renderItem = ({ item }) => {
-    const id = String(item.id || item._id);
-    const busy = abriendoId === id;
-    const estado = (esPagadas || (item.pagadaHoy && !item.seguimientoPpa))
-      ? "Pagado"
-      : labelEstadoMesaComanda(item);
-    const estadoColor = colorEstadoMesa(estado, theme);
-    const comandaTxt = item.comandaLabel
-      || (item.comandaNumber != null ? `#${item.comandaNumber}` : "—");
-    const sinMesa = esFilaComandaSinMesa(item);
-    const monto = (esPagadas || item.pagadaHoy || item.seguimientoPpa)
-      ? (item.total ?? item.pendienteCobro)
-      : item.pendienteCobro;
-    const haySalio = hayPlatoSalio(item.platos);
-    return (
-      <View style={styles.row}>
-        <AlertaSalioFondo on={haySalio} />
-        <Text
-          style={[styles.cell, styles.colMesa, sinMesa && styles.cellParaLlevar]}
-          numberOfLines={2}
-        >
-          {labelMesa(item)}
-        </Text>
-        <Text style={[styles.cell, styles.colComanda]} numberOfLines={1}>
-          {comandaTxt}
-        </Text>
-        <View style={[styles.colEstado, styles.estadoWrap]}>
-          <View style={[styles.estadoDot, { backgroundColor: estadoColor }]} />
-          <Text style={[styles.cell, styles.estadoText, { color: estadoColor }]} numberOfLines={2}>{estado}</Text>
-        </View>
-        <Text style={[styles.cell, styles.colTotal]} numberOfLines={1}>
-          {formatPendienteCobro(monto)}
-        </Text>
-        <TouchableOpacity
-          style={styles.verBtn}
-          onPress={() => abrirDetalle(item)}
-          disabled={!!abriendoId}
-          accessibilityRole="button"
-          accessibilityLabel={`Ver ${comandaTxt}`}
-        >
-          {busy
-            ? <ActivityIndicator size="small" color="#FFFFFF" />
-            : <Text style={styles.verBtnText}>Ver</Text>}
-        </TouchableOpacity>
-      </View>
-    );
-  };
+  const renderItem = ({ item }) => (
+    <FilaPendiente
+      item={item}
+      esPagadas={esPagadas}
+      abriendoId={abriendoId}
+      onAbrir={abrirDetalle}
+      styles={styles}
+      theme={theme}
+    />
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={[]}>
@@ -509,6 +529,13 @@ const makeStyles = (theme) => StyleSheet.create({
     borderBottomColor: theme.colors.border || "#333",
     overflow: "hidden",
     position: "relative",
+  },
+  rowAlerta: {
+    borderLeftWidth: 4,
+    borderLeftColor: "#EA580C",
+  },
+  cellFront: {
+    zIndex: 1,
   },
   cell: {
     fontSize: 15,

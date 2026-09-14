@@ -12,6 +12,7 @@ import {
   saboresPorUnidadDePlato,
   expandirSlotsOp,
   chunkSlotsOp,
+  seleccionesOpDesdeOrden,
 } from './variantePlato';
 
 export function claveGrupoNombre(v) {
@@ -77,6 +78,104 @@ function extrasYGuarniciones(plato, fuente) {
     else garnishes.push({ ...c });
   });
   return { garnishes, extras };
+}
+
+function grupoEsNombreCocinaKey(plato, grupoNombre) {
+  const k = claveGrupoNombre(grupoNombre);
+  return (plato?.complementos || []).some(
+    (g) => grupoEsNombreCocina(g) && claveGrupoNombre(g.grupo) === k
+  );
+}
+
+function seleccionesGrupoConCantidad(ops) {
+  return Object.values(ops || {}).some((q) => Number(q) > 0);
+}
+
+function extraerGuarnicionesEstado(plato, estado) {
+  const selecciones = {};
+  const variaciones = {};
+  Object.entries(estado?.selecciones || {}).forEach(([g, ops]) => {
+    if (grupoEsNombreCocinaKey(plato, g)) return;
+    if (!seleccionesGrupoConCantidad(ops)) return;
+    selecciones[g] = { ...ops };
+  });
+  Object.entries(estado?.variaciones || {}).forEach(([g, vars]) => {
+    if (grupoEsNombreCocinaKey(plato, g)) return;
+    variaciones[g] = { ...vars };
+  });
+  return { selecciones, variaciones };
+}
+
+function estadoGuarnicionesDefault(plato) {
+  const grupoOp = grupoOpCantidadesDePlato(plato);
+  return extraerGuarnicionesEstado(
+    plato,
+    estadoDesdeComplementos(preseleccionComplementosDePlato(plato), grupoOp?.grupo)
+  );
+}
+
+/**
+ * OP/MIX reconstruye unidades sin guarniciones. Copia las de la unidad previa
+ * o, si el grupo no está, las marcadas en el catálogo (platos.html).
+ */
+export function aplicarGuarnicionesAUnidadOp(plato, unidadOp, unidadPrev) {
+  const merged = cloneUnidadEstado(unidadOp);
+  const defG = estadoGuarnicionesDefault(plato);
+  const prevG = extraerGuarnicionesEstado(plato, unidadPrev);
+  const grupos = new Set([
+    ...Object.keys(defG.selecciones || {}),
+    ...Object.keys(prevG.selecciones || {}),
+  ]);
+  grupos.forEach((g) => {
+    if (seleccionesGrupoConCantidad(prevG.selecciones[g])) {
+      merged.selecciones[g] = { ...prevG.selecciones[g] };
+      if (prevG.variaciones[g]) merged.variaciones[g] = { ...prevG.variaciones[g] };
+      return;
+    }
+    if (defG.selecciones[g]) {
+      merged.selecciones[g] = { ...defG.selecciones[g] };
+      if (defG.variaciones[g]) merged.variaciones[g] = { ...defG.variaciones[g] };
+    }
+  });
+  return merged;
+}
+
+/** Al elegir Pie/Pec no borrar Papa/Arroz/Ensalada del estado del modal. */
+export function mezclarOpEnSelecciones(prevSelecciones, grupoOpNombre, orden) {
+  const next = {};
+  const skip = claveGrupoNombre(grupoOpNombre);
+  Object.entries(prevSelecciones || {}).forEach(([g, ops]) => {
+    if (claveGrupoNombre(g) !== skip) next[g] = ops;
+  });
+  Object.assign(next, seleccionesOpDesdeOrden(grupoOpNombre, orden));
+  return next;
+}
+
+/** Completa grupos de guarnición marcados en el catálogo que no vinieron en el pedido. */
+export function fusionarGuarnicionesPreseleccionadasEnLista(plato, comps) {
+  const actuales = Array.isArray(comps) ? comps.filter(Boolean) : [];
+  const { garnishes: defs } = extrasYGuarniciones(plato, preseleccionComplementosDePlato(plato));
+  if (!defs.length) return actuales;
+  const gruposPresentes = new Set(
+    extrasYGuarniciones(plato, actuales).garnishes.map((c) => claveGrupoNombre(c.grupo))
+  );
+  const extra = defs.filter((d) => !gruposPresentes.has(claveGrupoNombre(d.grupo)));
+  if (!extra.length) return actuales;
+  return [...actuales, ...extra.map((c) => ({ ...c }))];
+}
+
+function completarGuarnicionesFaltantes(plato, garnishes, defsFuente) {
+  const defsGarn = extrasYGuarniciones(plato, defsFuente).garnishes;
+  if (!defsGarn.length) return garnishes;
+  const grupos = new Set(garnishes.map((c) => claveGrupoNombre(c.grupo)));
+  const out = garnishes.map((c) => ({ ...c }));
+  defsGarn.forEach((d) => {
+    const k = claveGrupoNombre(d.grupo);
+    if (grupos.has(k)) return;
+    out.push({ ...d });
+    grupos.add(k);
+  });
+  return out;
 }
 
 function guarnicionesPorUnidad(garnishes, n) {
@@ -155,10 +254,8 @@ export function complementosPorUnidadDesdeLinea(plato, iniciales, nPlatos) {
   const n = Math.max(1, Math.min(99, Number(nPlatos) || 1));
   const defs = preseleccionComplementosDePlato(plato);
   const fuente = Array.isArray(iniciales) ? iniciales : defs;
-  const { garnishes: rawG, extras } = extrasYGuarniciones(plato, fuente);
-  const { garnishes: defG } = extrasYGuarniciones(plato, defs);
-  const grupos = new Set(rawG.map((c) => claveGrupoNombre(c.grupo)));
-  const garnishes = [...rawG, ...defG.filter((c) => !grupos.has(claveGrupoNombre(c.grupo)))];
+  const { garnishes: garnRaw, extras } = extrasYGuarniciones(plato, fuente);
+  const garnishes = completarGuarnicionesFaltantes(plato, garnRaw, defs);
   const garnUnit = guarnicionesPorUnidad(garnishes, n);
   const grupoOp = grupoOpCantidadesDePlato(plato);
   const gruposMix = gruposVarianteDePlato(plato);
