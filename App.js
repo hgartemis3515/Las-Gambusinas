@@ -22,6 +22,7 @@ import { NUnidadMozoProvider } from './context/NUnidadMozoContext';
 import { AlertaSalioProvider } from './context/AlertaSalioContext';
 import { ApodosMesaProvider } from './context/ApodosMesaContext';
 import { OrdenesAccionesProvider } from './context/OrdenesAccionesContext';
+import { RedireccionEnvioProvider } from './context/RedireccionEnvioContext';
 import SplashScreen from './Pages/Splash/SplashScreen';
 import Login from './Pages/Login/Login';
 import Navbar from './Pages/navbar/navbar';
@@ -98,6 +99,7 @@ export default function App() {
           <AlertaSalioProvider>
           <ApodosMesaProvider>
           <OrdenesAccionesProvider>
+          <RedireccionEnvioProvider>
           <SocketProvider>
             <>
               <AlertaOverlayMozos />
@@ -159,6 +161,7 @@ export default function App() {
             </NavigationContainer>
             </>
           </SocketProvider>
+          </RedireccionEnvioProvider>
           </OrdenesAccionesProvider>
           </ApodosMesaProvider>
           </AlertaSalioProvider>

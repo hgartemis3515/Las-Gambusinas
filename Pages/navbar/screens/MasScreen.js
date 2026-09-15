@@ -24,6 +24,7 @@ import SettingsModal from "../../../Components/SettingsModal";
 import PersonalizarIconoOnlineModal from "../../../Components/PersonalizarIconoOnlineModal";
 import PersonalizarAlertaSalioModal from "../../../Components/PersonalizarAlertaSalioModal";
 import PersonalizarMesasModal from "../../../Components/PersonalizarMesasModal";
+import PersonalizarRedireccionEnvioModal from "../../../Components/PersonalizarRedireccionEnvioModal";
 import axios from "../../../config/axiosConfig";
 import { apiConfig } from "../../../apiConfig";
 import {
@@ -78,6 +79,7 @@ const MasScreen = () => {
   const [iconoOnlineOpen, setIconoOnlineOpen] = useState(false);
   const [alertaSalioOpen, setAlertaSalioOpen] = useState(false);
   const [mesasApodoOpen, setMesasApodoOpen] = useState(false);
+  const [redireccionEnvioOpen, setRedireccionEnvioOpen] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(true);
   const [profileSyncing, setProfileSyncing] = useState(false);
   const [serverOk, setServerOk] = useState(null);
@@ -295,6 +297,10 @@ const MasScreen = () => {
       <PersonalizarMesasModal
         visible={mesasApodoOpen}
         onClose={() => setMesasApodoOpen(false)}
+      />
+      <PersonalizarRedireccionEnvioModal
+        visible={redireccionEnvioOpen}
+        onClose={() => setRedireccionEnvioOpen(false)}
       />
       <ScrollView style={styles.scrollView}>
         <View style={styles.header}>
@@ -533,6 +539,24 @@ const MasScreen = () => {
             <View style={{ flex: 1, paddingRight: 8 }}>
               <Text style={styles.menuItemText}>Alerta platos Salió</Text>
               <Text style={styles.pushHint}>Animación del recuadro mientras corre el cronómetro</Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.light} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setRedireccionEnvioOpen(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuIconContainer, { backgroundColor: (theme.colors.primary || "#C41E3A") + "20" }]}>
+              <MaterialCommunityIcons name="page-next-outline" size={24} color={theme.colors.primary} />
+            </View>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={styles.menuItemText}>Redirección tras enviar orden</Text>
+              <Text style={styles.pushHint}>Elegir entre Pendientes o Comanda detalle</Text>
             </View>
             <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.light} />
           </TouchableOpacity>

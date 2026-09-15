@@ -22,6 +22,7 @@ import { useBotonCantidadPlato } from "../../../context/BotonCantidadPlatoContex
 import { useBotonesMenuOrden } from "../../../context/BotonesMenuOrdenContext";
 import { useDensidadOrdenes } from "../../../context/DensidadOrdenesContext";
 import { useOrdenesAcciones } from "../../../context/OrdenesAccionesContext";
+import { useRedireccionEnvio } from "../../../context/RedireccionEnvioContext";
 import { lerpDensidad, COMPACTO_DEFAULT } from "../../../utils/densidadOrdenes";
 import { resolverSlugMenuPorHora } from "../../../utils/horaTipoMenu";
 import { clampAccionesEscala, ACCIONES_ESCALA_DEFAULT } from "../../../utils/ordenesAccionesPrefs";
@@ -200,7 +201,31 @@ const persistTipoServicioOrdenes = (tipo) => {
   return v;
 };
 
-const irAPendientesTrasEnvio = (navigation) => {
+const irAPendientesTrasEnvio = (navigation, opts = {}) => {
+  const { destino = 'pendientes', comanda = null, mesa = null } = opts;
+  if (destino === 'comanda' && comanda?._id && mesa?._id) {
+    const irAComanda = (nav) => {
+      if (!nav?.navigate) return;
+      nav.navigate("ComandaDetalle", {
+        mesa,
+        comandas: [comanda],
+      });
+    };
+    irAComanda(navigation);
+    irAComanda(navigation?.getParent?.());
+    if (navigationRef.isReady()) {
+      navigationRef.dispatch(
+        CommonActions.reset({
+          index: 1,
+          routes: [
+            { name: "Navbar", params: { screen: "Inicio" } },
+            { name: "ComandaDetalle", params: { mesa, comandas: [comanda] } },
+          ],
+        })
+      );
+    }
+    return;
+  }
   const irAPendientes = (nav) => {
     if (!nav?.navigate) return;
     nav.navigate("Navbar", { screen: "Pendientes" });
@@ -225,6 +250,7 @@ const OrdenesScreen = ({ route }) => {
   const { estilo: estiloQty, iconSize: iconSizeQty } = useBotonCantidadPlato();
   const { cambiarVisible, estiloCambiar } = useBotonesMenuOrden();
   const { compacto } = useDensidadOrdenes();
+  const { destino: destinoRedireccion } = useRedireccionEnvio();
   const {
     agregarColor,
     enviarColor: colorEnviarOrden,
@@ -631,7 +657,7 @@ const OrdenesScreen = ({ route }) => {
       setComplementosInicialesModal(null);
       setNotaInicialModal("");
       setCantidadInicialModal(n);
-      setPlatoParaComplementar(plato);
+        setPlatoParaComplementar(plato);
       return;
     }
     if (platoRequiereModalOp(plato)) {
@@ -1162,7 +1188,7 @@ const OrdenesScreen = ({ route }) => {
     const platosEnvio = selectedPlatosRef.current;
     const cantidadesEnvio = cantidadesRef.current;
     try {
-  setIsSendingComanda(true);
+      setIsSendingComanda(true);
 
       if (!userInfo || !userInfo._id) {
         Alert.alert("Error", "No hay usuario logueado");
@@ -1601,11 +1627,15 @@ const OrdenesScreen = ({ route }) => {
       // 🔥 CRÍTICO: Resetear estado ANTES de navegar
       setIsSendingComanda(false);
       setMostrarOverlayCarga(false);
-
+      
       if (modoExtraLlevar) {
         navigation.setParams({ modoExtraLlevar: false });
       }
-      irAPendientesTrasEnvio(navigation);
+      irAPendientesTrasEnvio(navigation, {
+        destino: destinoRedireccion,
+        comanda: comandaCreada,
+        mesa: mesaActualizada,
+      });
     } catch (error) {
       // 🔥 MEJORADO: Verificación exhaustiva antes de mostrar cualquier error
       console.warn("⚠️ Error capturado, verificando si comanda se creó:", error.message);
@@ -1644,11 +1674,15 @@ const OrdenesScreen = ({ route }) => {
         // 🔥 CRÍTICO: Resetear estado ANTES de navegar
         setIsSendingComanda(false);
         setMostrarOverlayCarga(false);
-
+        
         if (modoExtraLlevar) {
         navigation.setParams({ modoExtraLlevar: false });
       }
-      irAPendientesTrasEnvio(navigation);
+      irAPendientesTrasEnvio(navigation, {
+        destino: destinoRedireccion,
+        comanda: comandaCreada,
+        mesa: mesaActualizada,
+      });
         return; // Salir sin mostrar error
       }
       
@@ -1909,12 +1943,12 @@ const OrdenesScreen = ({ route }) => {
         <View style={[styles.section, orientation.isLandscape && styles.sectionLandscape]}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionHeaderLeft}>
-              <Text style={styles.sectionTitle}>
-                Platos Seleccionados
-              </Text>
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{selectedPlatos.length}</Text>
-              </View>
+            <Text style={styles.sectionTitle}>
+              Platos Seleccionados
+            </Text>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{selectedPlatos.length}</Text>
+            </View>
             </View>
             {selectedPlatos.length > 0 && (
               <View style={styles.sectionHeaderActions}>
@@ -2021,11 +2055,11 @@ const OrdenesScreen = ({ route }) => {
                     >
                       <MaterialCommunityIcons name="delete-outline" size={20} color={theme.colors.primary} />
                     </TouchableOpacity>
-                  </View>
+                    </View>
                   </View>
                   <View style={styles.platoActions}>
                     {cambiarVisible ? (
-                      <TouchableOpacity
+                    <TouchableOpacity
                         style={estiloCambiar}
                         onPress={() => handleCambiarPlato(plato)}
                         accessibilityLabel="Cambiar, abrir este plato en el menú"
@@ -2063,13 +2097,13 @@ const OrdenesScreen = ({ route }) => {
                       <MaterialCommunityIcons name="plus" size={iconSizeQty} color={theme.colors.text.white} />
                     </TouchableOpacity>
                     {platoRequiereModalAlSumar(plato, platos) && (
-                      <TouchableOpacity
+                    <TouchableOpacity
                         style={styles.cloneButton}
                         onPress={() => handleClonarPlato(plato)}
                         accessibilityLabel="Sumar plato MIX"
-                      >
+                    >
                         <MaterialCommunityIcons name="plus-box-multiple" size={20} color={theme.colors.primary} />
-                      </TouchableOpacity>
+                    </TouchableOpacity>
                     )}
                   </View>
                 </View>
@@ -2236,9 +2270,9 @@ const OrdenesScreen = ({ route }) => {
         tipoPlatoFiltro={tipoPlatoFiltro}
         onSelectTipo={setTipoPlatoFiltro}
         onClearTipo={() => {
-          setTipoPlatoFiltro(null);
-          setCategoriaFiltro(null);
-          setSearchPlato("");
+                      setTipoPlatoFiltro(null);
+                      setCategoriaFiltro(null);
+                      setSearchPlato("");
         }}
         labelForTipo={labelForTipo}
         tipoServicioModal={tipoServicioModal}
