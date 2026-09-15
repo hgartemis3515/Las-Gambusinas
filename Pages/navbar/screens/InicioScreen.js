@@ -79,6 +79,11 @@ function extraerComandaDeEventoSocket(data) {
   return null;
 }
 
+function mismoId(a, b) {
+  if (a == null || b == null) return false;
+  return String(a) === String(b);
+}
+
 // Componente de Loading con Verificaciones Paso a Paso
 const LoadingVerificacionEliminar = ({ visible, mensaje, pasos = [] }) => {
   const themeContext = useTheme();
@@ -1152,7 +1157,7 @@ const InicioScreen = () => {
     
     // Actualizar la comanda en el estado local (usar datos del servidor directamente)
     setComandas(prev => {
-      const index = prev.findIndex(c => c._id === comanda._id);
+      const index = prev.findIndex(c => mismoId(c._id, comanda._id));
       if (index !== -1) {
         const nuevas = [...prev];
         nuevas[index] = comanda; // Usar comanda completa del servidor
@@ -1170,7 +1175,7 @@ const InicioScreen = () => {
       const comandasStorage = await AsyncStorage.getItem(comandasKey);
       if (comandasStorage) {
         const comandasArray = JSON.parse(comandasStorage);
-        const index = comandasArray.findIndex(c => c._id === comanda._id);
+        const index = comandasArray.findIndex(c => mismoId(c._id, comanda._id));
         if (index !== -1) {
           comandasArray[index] = comanda;
         } else {
@@ -1278,15 +1283,19 @@ const InicioScreen = () => {
   }, [ordenarMesasPorNumero, handleMesaActualizada]);
 
   const handleNuevaComanda = useCallback(async (comanda) => {
+    if (!comanda?._id) {
+      obtenerComandasHoyRef.current?.();
+      fetchPendienteCobroRef.current?.();
+      return;
+    }
     console.log('📥 [MOZOS] Nueva comanda vía WebSocket:', comanda.comandaNumber);
     
-    // Actualizar estado local
     setComandas(prev => {
-      const existe = prev.find(c => c._id === comanda._id);
+      const existe = prev.find(c => mismoId(c._id, comanda._id));
       if (!existe) {
         return [comanda, ...prev];
       }
-      return prev.map(c => c._id === comanda._id ? comanda : c);
+      return prev.map(c => mismoId(c._id, comanda._id) ? comanda : c);
     });
     
     // Actualizar AsyncStorage
@@ -1295,9 +1304,9 @@ const InicioScreen = () => {
       const comandasKey = `comandas_${currentDate}`;
       const comandasStorage = await AsyncStorage.getItem(comandasKey);
       const comandasArray = comandasStorage ? JSON.parse(comandasStorage) : [];
-      const existe = comandasArray.find(c => c._id === comanda._id);
+      const existe = comandasArray.find(c => mismoId(c._id, comanda._id));
       if (existe) {
-        const index = comandasArray.findIndex(c => c._id === comanda._id);
+        const index = comandasArray.findIndex(c => mismoId(c._id, comanda._id));
         comandasArray[index] = comanda;
       } else {
         comandasArray.unshift(comanda);
@@ -1447,54 +1456,54 @@ const InicioScreen = () => {
     };
   }, [mostrarMensajePago, postPagoMesaId, joinMesa, obtenerMesas, obtenerComandasHoy, navigation, ordenarMesasPorNumero]);
 
-  // Suscribirse a eventos WebSocket y cargar datos cuando la pantalla está enfocada (sin deps que cambien cada render)
+  // Socket vivo mientras el tab está montado (lazy: al volver de Ordenes/Pendientes
+  // no se pierde nueva-comanda ni entrega). HTTP solo al enfocar.
+  useEffect(() => {
+    const unsubSocket = subscribeToEvents({
+      onMesaActualizada: (mesa) => {
+        handleMesaActualizada(mesa);
+        obtenerReservasActivas();
+      },
+      onComandaActualizada: handleComandaActualizada,
+      onNuevaComanda: handleNuevaComanda,
+      onReservaCambio: (data) => {
+        const reserva = data?.reserva;
+        if (reserva?._id) {
+          setReservas((prev) => {
+            const id = reserva._id.toString();
+            const idx = prev.findIndex((r) => (r._id?.toString() || r._id) === id);
+            if (idx === -1) return [...prev, reserva];
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...reserva };
+            return next;
+          });
+        }
+        obtenerReservasActivas();
+        fetchPendienteCobroRef.current?.();
+      },
+      onMesasJuntadas: (data) => {
+        console.log('🔗 [INICIO] Evento mesas-juntadas recibido:', data);
+        obtenerMesas();
+      },
+      onMesasSeparadas: (data) => {
+        console.log('🔗 [INICIO] Evento mesas-separadas recibido:', data);
+        obtenerMesas();
+      }
+    });
+    return () => {
+      if (typeof unsubSocket === 'function') unsubSocket();
+    };
+  }, [subscribeToEvents, handleMesaActualizada, handleComandaActualizada, handleNuevaComanda, obtenerMesas, obtenerReservasActivas]);
+
   useFocusEffect(
     useCallback(() => {
-      const unsubSocket = subscribeToEvents({
-        onMesaActualizada: (mesa) => {
-          handleMesaActualizada(mesa);
-          obtenerReservasActivas();
-        },
-        onComandaActualizada: handleComandaActualizada,
-        onNuevaComanda: handleNuevaComanda,
-        onReservaCambio: (data) => {
-          const reserva = data?.reserva;
-          if (reserva?._id) {
-            setReservas((prev) => {
-              const id = reserva._id.toString();
-              const idx = prev.findIndex((r) => (r._id?.toString() || r._id) === id);
-              if (idx === -1) return [...prev, reserva];
-              const next = [...prev];
-              next[idx] = { ...next[idx], ...reserva };
-              return next;
-            });
-          }
-          obtenerReservasActivas();
-          fetchPendienteCobroRef.current?.();
-        },
-        onMesasJuntadas: (data) => {
-          console.log('🔗 [INICIO] Evento mesas-juntadas recibido:', data);
-          // Recargar mesas para obtener estado actualizado
-          obtenerMesas();
-        },
-        onMesasSeparadas: (data) => {
-          console.log('🔗 [INICIO] Evento mesas-separadas recibido:', data);
-          // Recargar mesas para obtener estado actualizado
-          obtenerMesas();
-        }
-      });
-      // Refresh solo si no viene del flujo post-pago (ese useEffect ya hace el refresh)
       if (!routeParamsRef.current?.mostrarMensajePago) {
         obtenerMesas();
         obtenerComandasHoy();
         obtenerReservasActivas();
       }
-      // Recargar preferencias de configuración (incluye vistaInicio)
       loadConfig();
-      return () => {
-        if (typeof unsubSocket === 'function') unsubSocket();
-      };
-    }, [subscribeToEvents, handleMesaActualizada, handleComandaActualizada, handleNuevaComanda, obtenerMesas, obtenerComandasHoy, obtenerReservasActivas])
+    }, [obtenerMesas, obtenerComandasHoy, obtenerReservasActivas])
   );
 
   // Actualizar hora cada segundo
@@ -1672,7 +1681,7 @@ const InicioScreen = () => {
         setComandas(prev => {
           const nuevasComandas = [...prev];
           response.data.comandas.forEach(comanda => {
-            const existe = nuevasComandas.find(c => c._id === comanda._id);
+            const existe = nuevasComandas.find(c => mismoId(c._id, comanda._id));
             if (!existe) {
               nuevasComandas.unshift(comanda);
             }

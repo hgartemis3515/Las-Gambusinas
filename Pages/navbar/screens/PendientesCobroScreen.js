@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -231,29 +231,32 @@ const PendientesCobroScreen = () => {
     }, 350);
   }, []);
 
+  useEffect(() => {
+    const unsubPendientes = subscribeToEvents({
+      onComandaActualizada: refetchDebounced,
+      onNuevaComanda: refetchDebounced,
+      onMesaActualizada: refetchDebounced,
+      onReservaCambio: refetchDebounced,
+    });
+    const onPago = () => refetchDebounced();
+    socket?.on("comanda-aprobada", onPago);
+    socket?.on("ticket-ppa-creado", onPago);
+    socket?.on("ticket-ppa-aprobado", onPago);
+    socket?.on("plato-entregado", onPago);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (typeof unsubPendientes === 'function') unsubPendientes();
+      socket?.off("comanda-aprobada", onPago);
+      socket?.off("ticket-ppa-creado", onPago);
+      socket?.off("ticket-ppa-aprobado", onPago);
+      socket?.off("plato-entregado", onPago);
+    };
+  }, [subscribeToEvents, socket, refetchDebounced]);
+
   useFocusEffect(
     useCallback(() => {
       cargarRef.current?.();
-      const unsubPendientes = subscribeToEvents({
-        onComandaActualizada: refetchDebounced,
-        onNuevaComanda: refetchDebounced,
-        onMesaActualizada: refetchDebounced,
-        onReservaCambio: refetchDebounced,
-      });
-      const onPago = () => refetchDebounced();
-      socket?.on("comanda-aprobada", onPago);
-      socket?.on("ticket-ppa-creado", onPago);
-      socket?.on("ticket-ppa-aprobado", onPago);
-      socket?.on("plato-entregado", onPago);
-      return () => {
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        if (typeof unsubPendientes === 'function') unsubPendientes();
-        socket?.off("comanda-aprobada", onPago);
-        socket?.off("ticket-ppa-creado", onPago);
-        socket?.off("ticket-ppa-aprobado", onPago);
-        socket?.off("plato-entregado", onPago);
-      };
-    }, [subscribeToEvents, socket, refetchDebounced])
+    }, [])
   );
 
   const abrirDetalle = useCallback(async (item) => {
