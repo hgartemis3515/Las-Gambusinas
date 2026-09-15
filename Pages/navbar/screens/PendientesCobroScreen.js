@@ -234,7 +234,7 @@ const PendientesCobroScreen = () => {
   useFocusEffect(
     useCallback(() => {
       cargarRef.current?.();
-      subscribeToEvents({
+      const unsubPendientes = subscribeToEvents({
         onComandaActualizada: refetchDebounced,
         onNuevaComanda: refetchDebounced,
         onMesaActualizada: refetchDebounced,
@@ -244,17 +244,14 @@ const PendientesCobroScreen = () => {
       socket?.on("comanda-aprobada", onPago);
       socket?.on("ticket-ppa-creado", onPago);
       socket?.on("ticket-ppa-aprobado", onPago);
+      socket?.on("plato-entregado", onPago);
       return () => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        subscribeToEvents({
-          onComandaActualizada: null,
-          onNuevaComanda: null,
-          onMesaActualizada: null,
-          onReservaCambio: null,
-        });
+        if (typeof unsubPendientes === 'function') unsubPendientes();
         socket?.off("comanda-aprobada", onPago);
         socket?.off("ticket-ppa-creado", onPago);
         socket?.off("ticket-ppa-aprobado", onPago);
+        socket?.off("plato-entregado", onPago);
       };
     }, [subscribeToEvents, socket, refetchDebounced])
   );

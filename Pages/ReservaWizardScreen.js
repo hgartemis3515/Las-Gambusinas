@@ -339,7 +339,7 @@ export default function ReservaWizardScreen() {
         if (String(mesa._id) !== String(e.mesaId)) return;
         if ((mesa.estado || "").toLowerCase() === "reservado") marcarAprobado(null);
       };
-      subscribeToEvents({ onReservaCambio: onCambio, onMesaActualizada: onMesa });
+      const unsubReserva = subscribeToEvents({ onReservaCambio: onCambio, onMesaActualizada: onMesa });
       const poll = setInterval(async () => {
         if (aprobadoRef.current || rechazadoRef.current || !exitoRef.current?.reservaId) return;
         try {
@@ -351,7 +351,7 @@ export default function ReservaWizardScreen() {
         } catch (err) {}
       }, 4000);
       return () => {
-        subscribeToEvents({ onReservaCambio: null, onMesaActualizada: null });
+        if (typeof unsubReserva === 'function') unsubReserva();
         clearInterval(poll);
         if (navTimerRef.current) clearTimeout(navTimerRef.current);
       };

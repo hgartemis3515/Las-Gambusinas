@@ -72,6 +72,13 @@ function mergeMesaServidorPatch(mesaAnterior, mesaServidor) {
   return { ...mesaAnterior, ...patch };
 }
 
+function extraerComandaDeEventoSocket(data) {
+  if (!data || typeof data !== 'object') return null;
+  if (data.comanda && (data.comanda._id || data.comanda.id)) return data.comanda;
+  if (data._id && (Array.isArray(data.platos) || data.status)) return data;
+  return null;
+}
+
 // Componente de Loading con Verificaciones Paso a Paso
 const LoadingVerificacionEliminar = ({ visible, mensaje, pasos = [] }) => {
   const themeContext = useTheme();
@@ -1128,9 +1135,17 @@ const InicioScreen = () => {
     }
   }, [ordenarMesasPorNumero]);
 
-  const handleComandaActualizada = useCallback(async (comanda) => {
-    if (String(comanda?._id) === 'refresh') {
+  const handleComandaActualizada = useCallback(async (data) => {
+    if (String(data?._id) === 'refresh') {
       obtenerComandasHoyRef.current?.();
+      return;
+    }
+    const comanda = extraerComandaDeEventoSocket(data);
+    if (!comanda?._id) {
+      if (data?.comandaId || data?._id) {
+        obtenerComandasHoyRef.current?.();
+        fetchPendienteCobroRef.current?.();
+      }
       return;
     }
     console.log('📥 [MOZOS] Comanda actualizada vía WebSocket:', comanda._id, 'Status:', comanda.status);
@@ -1172,6 +1187,11 @@ const InicioScreen = () => {
     // IMPORTANTE: La mesa debe estar en "preparado" cuando los platos están en "recoger"
     // y en "pedido" cuando hay platos pendientes
     if (comanda.mesas) {
+      const mesaObj = typeof comanda.mesas === 'object' ? comanda.mesas : null;
+      const estMesaSrv = String(mesaObj?.estado || '').toLowerCase();
+      if (mesaObj && (estMesaSrv === 'pagado' || estMesaSrv === 'libre' || estMesaSrv === 'pagando')) {
+        handleMesaActualizada(mesaObj);
+      } else {
       const mesaId = comanda.mesas._id || comanda.mesas;
       const mesaNum = comanda.mesas.nummesa;
       
@@ -1241,9 +1261,8 @@ const InicioScreen = () => {
             const mesaAnterior = nuevas[index];
             const estadoAnterior = mesaAnterior.estado;
             
-            // Solo actualizar si el estado es diferente y no es un estado especial (pagado, pagando, reservado, pendiente_pago)
-            // pendiente_pago: PPA registrado — no debe ser sobrescrito por comanda-actualizada hasta que cocina apruebe/rechace
-            const estadosEspeciales = ['pagado', 'pagando', 'reservado', 'pendiente_pago', 'pendiente_aprobar'];
+            // No bloquear pagado/libre: el socket de mesa/comanda debe reflejar cobro confirmado.
+            const estadosEspeciales = ['pagando', 'reservado', 'pendiente_pago', 'pendiente_aprobar'];
             if (nuevoEstadoMesa && estadoAnterior?.toLowerCase() !== nuevoEstadoMesa && !estadosEspeciales.includes(estadoAnterior?.toLowerCase())) {
               console.log(`🎨 [ANIMACION] Mesa ${mesaNum} cambiará de "${estadoAnterior}" a "${nuevoEstadoMesa}"`);
               nuevas[index] = { ...mesaAnterior, estado: nuevoEstadoMesa };
@@ -1253,9 +1272,10 @@ const InicioScreen = () => {
           return prev;
         });
       }
+      }
     }
     fetchPendienteCobroRef.current?.();
-  }, [ordenarMesasPorNumero]);
+  }, [ordenarMesasPorNumero, handleMesaActualizada]);
 
   const handleNuevaComanda = useCallback(async (comanda) => {
     console.log('📥 [MOZOS] Nueva comanda vía WebSocket:', comanda.comandaNumber);
@@ -1430,7 +1450,7 @@ const InicioScreen = () => {
   // Suscribirse a eventos WebSocket y cargar datos cuando la pantalla está enfocada (sin deps que cambien cada render)
   useFocusEffect(
     useCallback(() => {
-      subscribeToEvents({
+      const unsubSocket = subscribeToEvents({
         onMesaActualizada: (mesa) => {
           handleMesaActualizada(mesa);
           obtenerReservasActivas();
@@ -1472,14 +1492,7 @@ const InicioScreen = () => {
       // Recargar preferencias de configuración (incluye vistaInicio)
       loadConfig();
       return () => {
-        subscribeToEvents({
-          onMesaActualizada: null,
-          onComandaActualizada: null,
-          onNuevaComanda: null,
-          onMesasJuntadas: null,
-          onMesasSeparadas: null,
-          onReservaCambio: null
-        });
+        if (typeof unsubSocket === 'function') unsubSocket();
       };
     }, [subscribeToEvents, handleMesaActualizada, handleComandaActualizada, handleNuevaComanda, obtenerMesas, obtenerComandasHoy, obtenerReservasActivas])
   );
@@ -1762,7 +1775,7 @@ const InicioScreen = () => {
   // Admin (areas.html / mesas.html): refetch catálogo vía Socket; mapa editor vía mapa-actualizado
   useFocusEffect(
     useCallback(() => {
-      subscribeToEvents({
+      const unsubCatalogo = subscribeToEvents({
         onCatalogoMesasAreas: () => {
           Promise.all([obtenerMesas(), obtenerAreas()]).catch((err) =>
             console.warn('[INICIO] catalogo mesas/áreas refetch:', err?.message)
@@ -1775,10 +1788,7 @@ const InicioScreen = () => {
         },
       });
       return () => {
-        subscribeToEvents({
-          onCatalogoMesasAreas: null,
-          onMapaActualizado: null,
-        });
+        if (typeof unsubCatalogo === 'function') unsubCatalogo();
       };
     }, [subscribeToEvents, obtenerMesas, obtenerAreas])
   );
@@ -1925,6 +1935,7 @@ const InicioScreen = () => {
     // Defensivamente: si hay comandas activas con TODOS sus platos entregados (status 'entregado'),
     // forzamos "Entregado" aunque el backend diga "libre".
     const comandasMesaParaFix = getComandasPorMesa(mesa.nummesa);
+    const estadoMesaSrv = (mesa.estado || '').toLowerCase();
     const hayComandasEntregadasFix = comandasMesaParaFix.some(c => {
       if (!c || c.IsActive === false) return false;
       const status = (c.status || '').toLowerCase();
@@ -1933,8 +1944,7 @@ const InicioScreen = () => {
       const activos = c.platos.filter(p => p.eliminado !== true && p.anulado !== true);
       return activos.length > 0 && activos.every(p => (p.estado || '').toLowerCase() === 'entregado');
     });
-    if (hayComandasEntregadasFix) {
-      // Verificación adicional: que la comanda no esté cerrada/pagada
+    if (estadoMesaSrv !== 'libre' && estadoMesaSrv !== 'pagado' && estadoMesaSrv !== 'pagando' && hayComandasEntregadasFix) {
       const algunaActiva = comandasMesaParaFix.some(c => {
         const status = (c.status || '').toLowerCase();
         return c.IsActive !== false && !['pagado', 'completado', 'cancelado', 'cerrado'].includes(status);

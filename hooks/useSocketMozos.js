@@ -444,6 +444,7 @@ const useSocketMozos = ({
           platos: data.platos,
           mesaId: data.mesaId,
           timestamp: data.timestamp,
+          comanda: data.comanda || null,
         });
       }
     });
@@ -506,9 +507,7 @@ const useSocketMozos = ({
         notifyPlatoSalioLocal(data);
       }
 
-      // Pasar el evento al handler si existe (para actualización granular)
       if (onComandaActualizada) {
-        // Pasar datos granulares para actualización selectiva
         onComandaActualizada({
           tipo: 'plato-actualizado-granular',
           comandaId: data.comandaId,
@@ -516,8 +515,26 @@ const useSocketMozos = ({
           nuevoEstado: data.nuevoEstado,
           estadoAnterior: data.estadoAnterior,
           mesaId: data.mesaId,
-          timestamp: data.timestamp
+          timestamp: data.timestamp,
+          comanda: data.comanda || null,
         });
+      }
+    });
+
+    socket.on('plato-entregado', (data) => {
+      if (onComandaActualizada) {
+        onComandaActualizada({
+          tipo: 'plato-entregado',
+          comandaId: data.comandaId,
+          platoId: data.platoId,
+          nuevoEstado: data.estadoNuevo || 'entregado',
+          mesaId: data.mesaId,
+          timestamp: data.timestamp,
+          comanda: data.comanda || null,
+        });
+      }
+      if (onMesaActualizada && data.mesa) {
+        onMesaActualizada(data.mesa);
       }
     });
 

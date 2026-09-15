@@ -20,25 +20,16 @@ export const SocketProvider = ({ children }) => {
   const [configReady, setConfigReady] = useState(false);
   const [reconnectNonce, setReconnectNonce] = useState(0);
   
-  // Callbacks globales para eventos WebSocket
-  const [eventHandlers, setEventHandlers] = useState({
-    onMesaActualizada: null,
-    onComandaActualizada: null,
-    onNuevaComanda: null,
-    onMesasJuntadas: null,
-    onMesasSeparadas: null,
-    onMapaActualizado: null,
-    onCatalogoMesasAreas: null,
-    onReservaCambio: null
-  });
+  // Varias pantallas (Inicio, Pendientes, Pagos) pueden escuchar a la vez.
+  // El último subscribe ya no pisa ni anula a las demás al hacer blur.
+  const subscribersRef = useRef([]);
 
-  // Wrapper para manejar múltiples suscriptores
-  // Usar useRef para evitar recrear callbacks y causar desconexiones
-  const eventHandlersRef = useRef(eventHandlers);
-  
-  useEffect(() => {
-    eventHandlersRef.current = eventHandlers;
-  }, [eventHandlers]);
+  const dispatchSocketEvent = useCallback((key, payload) => {
+    for (const handlers of subscribersRef.current) {
+      const fn = handlers?.[key];
+      if (typeof fn === 'function') fn(payload);
+    }
+  }, []);
 
   // Obtener token de AsyncStorage al iniciar
   useEffect(() => {
@@ -107,52 +98,36 @@ export const SocketProvider = ({ children }) => {
   }, []);
 
   const handleMesaActualizada = useCallback((mesa) => {
-    if (eventHandlersRef.current.onMesaActualizada) {
-      eventHandlersRef.current.onMesaActualizada(mesa);
-    }
-  }, []);
+    dispatchSocketEvent('onMesaActualizada', mesa);
+  }, [dispatchSocketEvent]);
 
   const handleComandaActualizada = useCallback((comanda) => {
-    if (eventHandlersRef.current.onComandaActualizada) {
-      eventHandlersRef.current.onComandaActualizada(comanda);
-    }
-  }, []);
+    dispatchSocketEvent('onComandaActualizada', comanda);
+  }, [dispatchSocketEvent]);
 
   const handleNuevaComanda = useCallback((comanda) => {
-    if (eventHandlersRef.current.onNuevaComanda) {
-      eventHandlersRef.current.onNuevaComanda(comanda);
-    }
-  }, []);
+    dispatchSocketEvent('onNuevaComanda', comanda);
+  }, [dispatchSocketEvent]);
 
   const handleMesasJuntadas = useCallback((data) => {
-    if (eventHandlersRef.current.onMesasJuntadas) {
-      eventHandlersRef.current.onMesasJuntadas(data);
-    }
-  }, []);
+    dispatchSocketEvent('onMesasJuntadas', data);
+  }, [dispatchSocketEvent]);
 
   const handleMesasSeparadas = useCallback((data) => {
-    if (eventHandlersRef.current.onMesasSeparadas) {
-      eventHandlersRef.current.onMesasSeparadas(data);
-    }
-  }, []);
+    dispatchSocketEvent('onMesasSeparadas', data);
+  }, [dispatchSocketEvent]);
 
   const handleMapaActualizado = useCallback((data) => {
-    if (eventHandlersRef.current.onMapaActualizado) {
-      eventHandlersRef.current.onMapaActualizado(data);
-    }
-  }, []);
+    dispatchSocketEvent('onMapaActualizado', data);
+  }, [dispatchSocketEvent]);
 
   const handleCatalogoMesasAreas = useCallback((data) => {
-    if (eventHandlersRef.current.onCatalogoMesasAreas) {
-      eventHandlersRef.current.onCatalogoMesasAreas(data);
-    }
-  }, []);
+    dispatchSocketEvent('onCatalogoMesasAreas', data);
+  }, [dispatchSocketEvent]);
 
   const handleReservaCambio = useCallback((data) => {
-    if (eventHandlersRef.current.onReservaCambio) {
-      eventHandlersRef.current.onReservaCambio(data);
-    }
-  }, []);
+    dispatchSocketEvent('onReservaCambio', data);
+  }, [dispatchSocketEvent]);
 
   const handleSocketStatus = useCallback((status) => {
     setSocketStatus(status);
@@ -195,12 +170,12 @@ export const SocketProvider = ({ children }) => {
   
   const { connected, connectionStatus, reconnectAttempts, socket, trackRoom, untrackRoom, authError } = socketHookResult;
 
-  // Función para suscribirse a eventos desde cualquier pantalla
   const subscribeToEvents = useCallback((handlers) => {
-    setEventHandlers(prev => ({
-      ...prev,
-      ...handlers
-    }));
+    if (!handlers || typeof handlers !== 'object') return () => {};
+    subscribersRef.current = [...subscribersRef.current, handlers];
+    return () => {
+      subscribersRef.current = subscribersRef.current.filter((h) => h !== handlers);
+    };
   }, []);
 
   // 🔥 ESTÁNDAR INDUSTRIA: Join/Leave rooms por mesa con tracking

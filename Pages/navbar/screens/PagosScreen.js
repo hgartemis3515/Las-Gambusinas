@@ -875,17 +875,14 @@ const PagosScreen = () => {
         })();
       }
 
-      subscribeToEvents({
+      const unsubPagos = subscribeToEvents({
         onComandaActualizada: handleComandaActualizada,
         onNuevaComanda: handleNuevaComanda
       });
 
       return () => {
         syncCancelled = true;
-        subscribeToEvents({
-          onComandaActualizada: null,
-          onNuevaComanda: null
-        });
+        if (typeof unsubPagos === 'function') unsubPagos();
       };
     }, [cargarPlantillaVoucher, cargarConfigMoneda, cargarBouchersParcialesMesa, handleComandaActualizada, handleNuevaComanda, subscribeToEvents, route.params])
   );
