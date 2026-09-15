@@ -28,7 +28,6 @@ import useKeyboardInset from '../hooks/useKeyboardInset';
 // Contextos y configuración
 import { useTheme } from '../context/ThemeContext';
 import { useSocket } from '../context/SocketContext';
-import { useAlertaSalio } from '../context/AlertaSalioContext';
 import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
@@ -247,7 +246,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [permitirEditarEliminarTomadas, setPermitirEditarEliminarTomadas] = useState(false);
   const [minutosEntregaAuto, setMinutosEntregaAuto] = useState(15);
   const [tickEntrega, setTickEntrega] = useState(0);
-  const { fase: faseAlertaSalio } = useAlertaSalio();
   
   // Estados para modales
   const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
@@ -781,9 +779,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     };
 
     const aplicarEstadosPlatoLocal = (data) => {
-      setLocalConnectionStatus('online-active');
-      setTimeout(() => setLocalConnectionStatus(connectionStatus || 'conectado'), 2000);
-
       const esNuestraMesa = data.mesaId && mesaId && (
         data.mesaId.toString() === mesaId.toString() || data.mesaId === mesaId
       );
@@ -861,18 +856,21 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     socket.on('plato-actualizado', aplicarEstadosPlatoLocal);
     socket.on('plato-actualizado-batch', aplicarEstadosPlatoLocal);
 
-    socket.on('plato-agregado', (data) => {
+    const onPlatoAgregado = (data) => {
       if (eventoDeEstaPantalla(data)) refrescarComandasRef.current?.();
-    });
+    };
+    socket.on('plato-agregado', onPlatoAgregado);
 
-    socket.on('plato-entregado', () => {
+    const onPlatoEntregado = () => {
       refrescarComandasRef.current?.();
-    });
+    };
+    socket.on('plato-entregado', onPlatoEntregado);
 
-    socket.on('comanda-actualizada', (data) => {
+    const onComandaActualizadaLocal = (data) => {
       if (data?.comandaId) invalidarCacheComandasVerificadas(data.comandaId);
       aplicarCobroForzadoYRefrescar(data);
-    });
+    };
+    socket.on('comanda-actualizada', onComandaActualizadaLocal);
 
     socket.on('comanda-aprobada', aplicarCobroForzadoYRefrescar);
 
@@ -887,13 +885,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     socket.on('ticket-ppa-aprobado', refrescarSiReservaOTicket);
     socket.on('ticket-ppa-creado', refrescarSiReservaOTicket);
     socket.on('reserva-actualizada', refrescarSiReservaOTicket);
-    socket.on('mesa-actualizada', (data) => {
+    const onMesaActualizadaLocal = (data) => {
       const mid = data?.mesaId || data?.mesa?._id;
       if (!mid || !mesaId || String(mid) !== String(mesaId)) return;
       const est = data.mesa?.estado || data.estado;
       if (est) setMesaEstadoOverride(est);
       refrescarComandasRef.current?.();
-    });
+    };
+    socket.on('mesa-actualizada', onMesaActualizadaLocal);
 
     const refrescarSiNuestraComanda = (data) => {
       const comandasActuales = comandasRef.current;
@@ -910,7 +909,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     socket.on('comanda-procesando', refrescarSiNuestraComanda);
     socket.on('comanda-liberada', refrescarSiNuestraComanda);
 
-    socket.on('comanda-eliminada', (data) => {
+    const onComandaEliminada = (data) => {
       const comandasActuales = comandasRef.current;
       const esNuestraMesa = data.mesaId && mesaId && (data.mesaId.toString() === mesaId.toString() || data.mesaId === mesaId);
       const esNuestraComanda = data.comandaId && comandasActuales.some(c => (c._id || c._id?.toString()) === (data.comandaId?.toString?.() || data.comandaId));
@@ -922,10 +921,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           }
         });
       }
-    });
+    };
+    socket.on('comanda-eliminada', onComandaEliminada);
 
-    // 🔥 NUEVO: Evento de plato anulado por cocina
-    socket.on('plato-anulado', (data) => {
+    const onPlatoAnulado = (data) => {
       console.log('❌ [Mozos] Plato anulado por cocina:', data.platoAnulado?.nombre, 'Comanda:', data.comandaId);
       
       const comandasActuales = comandasRef.current;
@@ -945,10 +944,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         // Vibración para llamar la atención
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       }
-    });
+    };
+    socket.on('plato-anulado', onPlatoAnulado);
 
-    // 🔥 NUEVO: Evento de comanda completamente anulada por cocina
-    socket.on('comanda-anulada', (data) => {
+    const onComandaAnulada = (data) => {
       console.log('❌ [Mozos] Comanda anulada por cocina:', data.comandaNumber, 'Total anulado:', data.totalAnulado);
       
       const comandasActuales = comandasRef.current;
@@ -983,32 +982,33 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         // Vibración para llamar la atención
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
-    });
+    };
+    socket.on('comanda-anulada', onComandaAnulada);
 
     return () => {
       if (mesaId) {
       if (leaveMesa) leaveMesa(mesaId);
       else socket.emit('leave-mesa', mesaId);
       }
-      socket.off('plato-actualizado');
-      socket.off('plato-actualizado-batch');
-      socket.off('plato-agregado');
-      socket.off('plato-entregado');
-      socket.off('comanda-actualizada');
+      socket.off('plato-actualizado', aplicarEstadosPlatoLocal);
+      socket.off('plato-actualizado-batch', aplicarEstadosPlatoLocal);
+      socket.off('plato-agregado', onPlatoAgregado);
+      socket.off('plato-entregado', onPlatoEntregado);
+      socket.off('comanda-actualizada', onComandaActualizadaLocal);
       socket.off('comanda-aprobada', aplicarCobroForzadoYRefrescar);
-      socket.off('ticket-ppa-aprobado');
-      socket.off('ticket-ppa-creado');
-      socket.off('reserva-actualizada');
-      socket.off('mesa-actualizada');
-      socket.off('plato-procesando');
-      socket.off('plato-liberado');
-      socket.off('comanda-procesando');
-      socket.off('comanda-liberada');
-      socket.off('comanda-eliminada');
-      socket.off('plato-anulado');
-      socket.off('comanda-anulada');
+      socket.off('ticket-ppa-aprobado', refrescarSiReservaOTicket);
+      socket.off('ticket-ppa-creado', refrescarSiReservaOTicket);
+      socket.off('reserva-actualizada', refrescarSiReservaOTicket);
+      socket.off('mesa-actualizada', onMesaActualizadaLocal);
+      socket.off('plato-procesando', refrescarSiNuestraComanda);
+      socket.off('plato-liberado', refrescarSiNuestraComanda);
+      socket.off('comanda-procesando', refrescarSiNuestraComanda);
+      socket.off('comanda-liberada', refrescarSiNuestraComanda);
+      socket.off('comanda-eliminada', onComandaEliminada);
+      socket.off('plato-anulado', onPlatoAnulado);
+      socket.off('comanda-anulada', onComandaAnulada);
     };
-  }, [socket, connected, mesaId, joinMesa, leaveMesa, connectionStatus, navigation]);
+  }, [socket, connected, mesaId, joinMesa, leaveMesa, navigation]);
 
   useFocusEffect(
     useCallback(() => {
@@ -2971,7 +2971,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 }
                 style={styles.platosList}
                 contentContainerStyle={styles.platosListContent}
-                extraData={`${tickEntrega}-${platosSeleccionadosEntregar.length}-${faseAlertaSalio}`}
+                extraData={`${tickEntrega}-${platosSeleccionadosEntregar.length}`}
                 removeClippedSubviews={false}
               />
               

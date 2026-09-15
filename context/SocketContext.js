@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import useSocketMozos from '../hooks/useSocketMozos';
@@ -130,9 +130,12 @@ export const SocketProvider = ({ children }) => {
   }, [dispatchSocketEvent]);
 
   const handleSocketStatus = useCallback((status) => {
-    setSocketStatus(status);
+    if (!status || status.status === 'online-active') return;
+    setSocketStatus((prev) => {
+      if (prev.connected === status.connected && prev.status === status.status) return prev;
+      return status;
+    });
 
-    // Si se reconectó, procesar queue offline solo si wsURL usa IP/host válida (no demo)
     if (status.connected && status.status === 'conectado') {
       import('../apiConfig').then(({ isWsUrlValidForOfflineQueue }) => {
         if (!isWsUrlValidForOfflineQueue()) return;
@@ -255,25 +258,44 @@ export const SocketProvider = ({ children }) => {
     return () => clearTimeout(t);
   }, [authToken, connected, isLoadingToken, configReady]);
 
+  const contextValue = useMemo(() => ({
+    connected,
+    connectionStatus,
+    reconnectAttempts,
+    socket,
+    socketStatus,
+    subscribeToEvents,
+    joinMesa,
+    leaveMesa,
+    authError,
+    updateToken,
+    reconnectSocket,
+    authToken,
+    isLoadingToken,
+    handleMesasJuntadas,
+    handleMesasSeparadas,
+    handleMapaActualizado
+  }), [
+    connected,
+    connectionStatus,
+    reconnectAttempts,
+    socket,
+    socketStatus,
+    subscribeToEvents,
+    joinMesa,
+    leaveMesa,
+    authError,
+    updateToken,
+    reconnectSocket,
+    authToken,
+    isLoadingToken,
+    handleMesasJuntadas,
+    handleMesasSeparadas,
+    handleMapaActualizado
+  ]);
+
   return (
-    <SocketContext.Provider value={{
-      connected,
-      connectionStatus,
-      reconnectAttempts,
-      socket,
-      socketStatus,
-      subscribeToEvents,
-      joinMesa,
-      leaveMesa,
-      authError,
-      updateToken,
-      reconnectSocket,
-      authToken,
-      isLoadingToken,
-      handleMesasJuntadas,
-      handleMesasSeparadas,
-      handleMapaActualizado
-    }}>
+    <SocketContext.Provider value={contextValue}>
       {children}
     </SocketContext.Provider>
   );

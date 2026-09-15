@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -29,10 +29,16 @@ import {
 import { agruparComandasPendientes } from "../../../utils/agruparComandasPendientes";
 import { esFilaComandaSinMesa, COLOR_PARA_LLEVAR } from "../../../utils/sinMesaOrden";
 import { comandaEsDeMozo, idEntidad } from "../../../utils/reservasMozo";
-import AlertaSalioFondo from "../../../Components/AlertaSalioFondo";
+import { FilaDestelloCaja } from "../../../Components/AlertaSalioFondo";
 import ModalVerComandaMozo from "../../../Components/ModalVerComandaMozo";
-import { useAlertaSalio } from "../../../context/AlertaSalioContext";
-import { fondoAlertaSalio, tienePlatoEnSalio } from "../../../utils/alertaSalioPrefs";
+import { useAlertaSalioPrefs } from "../../../context/AlertaSalioContext";
+import { ALERTA_SALIO_COLORES, tienePlatoEnSalio } from "../../../utils/alertaSalioPrefs";
+import {
+  aplicarEventoComandaLiviano,
+  upsertNuevaComandaLiviano,
+  eventoTocaCobroPendientes,
+  eventoTocaAlertaSalio,
+} from "../../../utils/socketComandaPatch";
 
 function urlPendienteCobro(mozoId, { pagadasHoy } = {}) {
   const q = `pendiente-cobro?mozoId=${encodeURIComponent(mozoId)}${pagadasHoy ? "&pagadasHoy=1" : ""}`;
@@ -115,15 +121,17 @@ function FilaPendiente({
   const monto = (esPagadas || item.pagadaHoy || item.seguimientoPpa)
     ? (item.total ?? item.pendienteCobro)
     : item.pendienteCobro;
-  const { prefs, fase } = useAlertaSalio();
-  const alertaOn = !esPagadas && !item.pagadaHoy && tienePlatoEnSalio(item.platos);
-  const fondoAlerta = alertaOn && prefs?.estilo !== 'apagado'
-    ? fondoAlertaSalio(prefs, fase)
-    : null;
+  const { prefs } = useAlertaSalioPrefs();
+  const pal = ALERTA_SALIO_COLORES[prefs?.color] || ALERTA_SALIO_COLORES.naranja;
+  const alertaOn = !esPagadas && !item.pagadaHoy && tienePlatoEnSalio(item.platos)
+    && prefs?.estilo !== 'apagado';
 
   return (
-    <View style={[styles.row, alertaOn && styles.rowAlerta, fondoAlerta ? { backgroundColor: fondoAlerta } : null]}>
-      <AlertaSalioFondo on={alertaOn} />
+    <FilaDestelloCaja
+      on={alertaOn}
+      style={[styles.row, alertaOn && { borderLeftWidth: 4, borderLeftColor: pal.chip }]}
+    >
+      <View style={styles.rowContent} collapsable={false}>
       <Text
         style={[styles.cell, styles.colMesa, styles.cellFront, sinMesa && styles.cellParaLlevar]}
         numberOfLines={2}
@@ -151,7 +159,8 @@ function FilaPendiente({
           ? <ActivityIndicator size="small" color="#FFFFFF" />
           : <Text style={styles.verBtnText}>Ver</Text>}
       </TouchableOpacity>
-    </View>
+      </View>
+    </FilaDestelloCaja>
   );
 }
 
@@ -160,7 +169,6 @@ const PendientesCobroScreen = () => {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
   const { subscribeToEvents, socket } = useSocket();
-  const { fase: faseAlertaSalio } = useAlertaSalio();
 
   const [comandas, setComandas] = useState([]);
   const [total, setTotal] = useState(0);
@@ -231,32 +239,46 @@ const PendientesCobroScreen = () => {
     }, 350);
   }, []);
 
-  useEffect(() => {
-    const unsubPendientes = subscribeToEvents({
-      onComandaActualizada: refetchDebounced,
-      onNuevaComanda: refetchDebounced,
-      onMesaActualizada: refetchDebounced,
-      onReservaCambio: refetchDebounced,
+  const onComandaSocket = useCallback((data) => {
+    let patched = false;
+    setComandas((prev) => {
+      const next = aplicarEventoComandaLiviano(prev, data);
+      patched = next !== prev;
+      return next;
     });
-    const onPago = () => refetchDebounced();
-    socket?.on("comanda-aprobada", onPago);
-    socket?.on("ticket-ppa-creado", onPago);
-    socket?.on("ticket-ppa-aprobado", onPago);
-    socket?.on("plato-entregado", onPago);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      if (typeof unsubPendientes === 'function') unsubPendientes();
-      socket?.off("comanda-aprobada", onPago);
-      socket?.off("ticket-ppa-creado", onPago);
-      socket?.off("ticket-ppa-aprobado", onPago);
-      socket?.off("plato-entregado", onPago);
-    };
-  }, [subscribeToEvents, socket, refetchDebounced]);
+    if (String(data?._id) === 'refresh' || eventoTocaCobroPendientes(data) || (!patched && eventoTocaAlertaSalio(data))) {
+      refetchDebounced();
+    }
+  }, [refetchDebounced]);
+
+  const onNuevaComandaSocket = useCallback((comanda) => {
+    if (!comanda?._id) {
+      refetchDebounced();
+      return;
+    }
+    setComandas((prev) => upsertNuevaComandaLiviano(prev, comanda));
+    refetchDebounced();
+  }, [refetchDebounced]);
 
   useFocusEffect(
     useCallback(() => {
       cargarRef.current?.();
-    }, [])
+      const unsubPendientes = subscribeToEvents({
+        onComandaActualizada: onComandaSocket,
+        onNuevaComanda: onNuevaComandaSocket,
+      });
+      const onPago = () => refetchDebounced();
+      socket?.on("comanda-aprobada", onPago);
+      socket?.on("ticket-ppa-creado", onPago);
+      socket?.on("ticket-ppa-aprobado", onPago);
+      return () => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        if (typeof unsubPendientes === 'function') unsubPendientes();
+        socket?.off("comanda-aprobada", onPago);
+        socket?.off("ticket-ppa-creado", onPago);
+        socket?.off("ticket-ppa-aprobado", onPago);
+      };
+    }, [subscribeToEvents, socket, refetchDebounced, onComandaSocket, onNuevaComandaSocket])
   );
 
   const abrirDetalle = useCallback(async (item) => {
@@ -394,7 +416,7 @@ const PendientesCobroScreen = () => {
           data={filas}
           keyExtractor={(item) => String(item.id || item._id)}
           renderItem={renderItem}
-          extraData={faseAlertaSalio}
+          extraData={`${abriendoId}-${esPagadas}-${filas.map((f) => (tienePlatoEnSalio(f.platos) ? '1' : '0')).join('')}`}
           removeClippedSubviews={false}
           refreshControl={(
             <RefreshControl
@@ -538,9 +560,11 @@ const makeStyles = (theme) => StyleSheet.create({
     overflow: "hidden",
     position: "relative",
   },
-  rowAlerta: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#EA580C",
+  rowContent: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    zIndex: 1,
   },
   cellFront: {
     zIndex: 1,

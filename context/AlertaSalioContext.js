@@ -7,12 +7,12 @@ import {
   parseAlertaSalioPrefs,
 } from '../utils/alertaSalioPrefs';
 
-const AlertaSalioContext = createContext({
+const AlertaSalioPrefsContext = createContext({
   prefs: ALERTA_SALIO_DEFAULTS,
-  fase: 0,
   setPrefs: () => {},
   reset: () => {},
 });
+const AlertaSalioFaseContext = createContext(0);
 
 export function AlertaSalioProvider({ children }) {
   const [prefs, setPrefsState] = useState(ALERTA_SALIO_DEFAULTS);
@@ -63,14 +63,26 @@ export function AlertaSalioProvider({ children }) {
     persist({ ...ALERTA_SALIO_DEFAULTS });
   }, [persist]);
 
-  const value = useMemo(() => ({ prefs, fase, setPrefs, reset }), [prefs, fase, setPrefs, reset]);
+  const prefsValue = useMemo(() => ({ prefs, setPrefs, reset }), [prefs, setPrefs, reset]);
   return (
-    <AlertaSalioContext.Provider value={value}>
-      {children}
-    </AlertaSalioContext.Provider>
+    <AlertaSalioPrefsContext.Provider value={prefsValue}>
+      <AlertaSalioFaseContext.Provider value={fase}>
+        {children}
+      </AlertaSalioFaseContext.Provider>
+    </AlertaSalioPrefsContext.Provider>
   );
 }
 
+export function useAlertaSalioPrefs() {
+  return useContext(AlertaSalioPrefsContext);
+}
+
+export function useAlertaSalioFase() {
+  return useContext(AlertaSalioFaseContext);
+}
+
 export function useAlertaSalio() {
-  return useContext(AlertaSalioContext);
+  const { prefs, setPrefs, reset } = useAlertaSalioPrefs();
+  const fase = useAlertaSalioFase();
+  return { prefs, fase, setPrefs, reset };
 }

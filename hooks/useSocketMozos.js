@@ -69,7 +69,6 @@ const useSocketMozos = ({
       const user = JSON.parse(userRaw);
       const mozoId = user?._id?.toString();
       if (!mozoId || !sock?.connected) return;
-      if (mozoPersonalRoomRef.current === mozoId) return;
       sock.emit('join-mozo-personal', mozoId);
       mozoPersonalRoomRef.current = mozoId;
       console.log(`📌 [MOZOS] Room personal mozo-${mozoId}`);
@@ -251,6 +250,7 @@ const useSocketMozos = ({
         heartbeatIntervalRef.current = null;
       }
       
+      mozoPersonalRoomRef.current = null;
       setConnected(false);
       setConnectionStatus(reason === 'io client disconnect' ? 'desconectado' : 'reconectando');
       
@@ -411,17 +411,6 @@ const useSocketMozos = ({
 
     // FASE 5: Evento batch de platos actualizados (múltiples platos en un solo evento)
     socket.on('plato-actualizado-batch', (data) => {
-      console.log('📥 FASE5: [MOZOS] Batch de platos actualizados recibido:', data.comandaId, 'Platos:', data.platos?.length);
-
-      if (onSocketStatus) {
-        setConnectionStatus('online-active');
-        onSocketStatus({ connected: true, status: 'online-active' });
-        setTimeout(() => {
-          setConnectionStatus('conectado');
-          onSocketStatus({ connected: true, status: 'conectado' });
-        }, 2000);
-      }
-
       // Local si cocina manda varios platos a recoger/salio en un batch (Honor no recibe FCM)
       if (Array.isArray(data.platos)) {
         for (const p of data.platos) {
@@ -477,27 +466,6 @@ const useSocketMozos = ({
 
     // FASE 4: Evento granular de plato actualizado (solo datos mínimos)
     socket.on('plato-actualizado', (data) => {
-      console.log('📥 FASE4: [MOZOS] Plato actualizado granular recibido:', {
-        comandaId: data.comandaId,
-        platoId: data.platoId,
-        nuevoEstado: data.nuevoEstado,
-        estadoAnterior: data.estadoAnterior,
-        mesaId: data.mesaId
-      });
-      
-      // FASE 4: Notificar cambio de estado para parpadeo del indicador
-      if (onSocketStatus) {
-        // Cambiar temporalmente a 'online-active' para parpadeo
-        setConnectionStatus('online-active');
-        onSocketStatus({ connected: true, status: 'online-active' });
-        
-        // Volver a 'conectado' después de 2 segundos
-        setTimeout(() => {
-          setConnectionStatus('conectado');
-          onSocketStatus({ connected: true, status: 'conectado' });
-        }, 2000);
-      }
-
       // Local siempre: Honor/Huawei no entrega FCM de forma fiable. También en ComandaDetalle.
       if (data.nuevoEstado === 'recoger') {
         notifyPlatoListoLocal(data);
@@ -542,18 +510,7 @@ const useSocketMozos = ({
     socket.on('plato-anulado', (data) => {
       console.log('❌ [MOZOS] Plato anulado por cocina:', data.platoAnulado?.nombre, 'Comanda:', data.comandaId);
       
-      // Notificar cambio de estado para parpadeo del indicador
-      if (onSocketStatus) {
-        setConnectionStatus('online-active');
-        onSocketStatus({ connected: true, status: 'online-active' });
-        
-        setTimeout(() => {
-          setConnectionStatus('conectado');
-          onSocketStatus({ connected: true, status: 'conectado' });
-        }, 2000);
-      }
-      
-      // Pasar el evento al handler
+// Pasar el evento al handler
       if (onComandaActualizada && data.comanda) {
         onComandaActualizada({
           tipo: 'plato-anulado',
@@ -570,18 +527,7 @@ const useSocketMozos = ({
     socket.on('comanda-anulada', (data) => {
       console.log('❌ [MOZOS] Comanda anulada por cocina:', data.comandaNumber, 'Total:', data.totalAnulado);
       
-      // Notificar cambio de estado
-      if (onSocketStatus) {
-        setConnectionStatus('online-active');
-        onSocketStatus({ connected: true, status: 'online-active' });
-        
-        setTimeout(() => {
-          setConnectionStatus('conectado');
-          onSocketStatus({ connected: true, status: 'conectado' });
-        }, 2000);
-      }
-      
-      // Actualizar comanda
+// Actualizar comanda
       if (onComandaActualizada && data.comanda) {
         onComandaActualizada({
           tipo: 'comanda-anulada',
@@ -631,18 +577,7 @@ const useSocketMozos = ({
         mozoId: data.mozoId
       });
       
-      // Notificar cambio de estado para parpadeo del indicador
-      if (onSocketStatus) {
-        setConnectionStatus('online-active');
-        onSocketStatus({ connected: true, status: 'online-active' });
-        
-        setTimeout(() => {
-          setConnectionStatus('conectado');
-          onSocketStatus({ connected: true, status: 'conectado' });
-        }, 2000);
-      }
-      
-      // Actualizar la mesa principal si el handler existe
+// Actualizar la mesa principal si el handler existe
       if (onMesaActualizada && data.mesaPrincipal) {
         onMesaActualizada(data.mesaPrincipal);
       }
@@ -663,18 +598,7 @@ const useSocketMozos = ({
         mozoId: data.mozoId
       });
       
-      // Notificar cambio de estado
-      if (onSocketStatus) {
-        setConnectionStatus('online-active');
-        onSocketStatus({ connected: true, status: 'online-active' });
-        
-        setTimeout(() => {
-          setConnectionStatus('conectado');
-          onSocketStatus({ connected: true, status: 'conectado' });
-        }, 2000);
-      }
-      
-      // Actualizar todas las mesas afectadas
+// Actualizar todas las mesas afectadas
       if (onMesaActualizada && data.mesaPrincipal) {
         onMesaActualizada(data.mesaPrincipal);
       }
@@ -694,15 +618,7 @@ const useSocketMozos = ({
       if (onCatalogoMesasAreas) {
         onCatalogoMesasAreas(data);
       }
-      if (onSocketStatus) {
-        setConnectionStatus('online-active');
-        onSocketStatus({ connected: true, status: 'online-active' });
-        setTimeout(() => {
-          setConnectionStatus('conectado');
-          onSocketStatus({ connected: true, status: 'conectado' });
-        }, 2000);
-      }
-    });
+});
 
     socket.on('configuracion-moneda-actualizada', (data) => {
       const igv = data?.configuracion?.igvPorcentaje;
@@ -737,15 +653,7 @@ const useSocketMozos = ({
         // Refrescar mesas para que InicioScreen muestre verde claro
         onMesaActualizada({ _id: data.mesaId, estado: 'pendiente_aprobar', nummesa: data.numMesa });
       }
-      if (onSocketStatus) {
-        setConnectionStatus('online-active');
-        onSocketStatus({ connected: true, status: 'online-active' });
-        setTimeout(() => {
-          setConnectionStatus('conectado');
-          onSocketStatus({ connected: true, status: 'conectado' });
-        }, 2000);
-      }
-    });
+});
 
     // Evento: Comanda aprobada por cocina (mesa pasa a pagado, verde oscuro)
     socket.on('comanda-aprobada', (data) => {
@@ -760,15 +668,7 @@ const useSocketMozos = ({
       if (onComandaActualizada) {
         onComandaActualizada({ _id: 'refresh', status: estadoMesa });
       }
-      if (onSocketStatus) {
-        setConnectionStatus('online-active');
-        onSocketStatus({ connected: true, status: 'online-active' });
-        setTimeout(() => {
-          setConnectionStatus('conectado');
-          onSocketStatus({ connected: true, status: 'conectado' });
-        }, 2000);
-      }
-    });
+});
 
     // Evento: Mesa reportada por cocina (mesa en rojo)
     socket.on('mesa-reportada', (data) => {
@@ -783,15 +683,7 @@ const useSocketMozos = ({
           motivoReporte: data.motivo,
         });
       }
-      if (onSocketStatus) {
-        setConnectionStatus('online-active');
-        onSocketStatus({ connected: true, status: 'online-active' });
-        setTimeout(() => {
-          setConnectionStatus('conectado');
-          onSocketStatus({ connected: true, status: 'conectado' });
-        }, 2000);
-      }
-    });
+});
 
     socket.on('ticket-ppa-creado', (data) => {
       if (data?.origen === 'reserva') {
@@ -901,17 +793,7 @@ const useSocketMozos = ({
         onMapaActualizado(data);
       }
       
-      // Notificar cambio de estado visual
-      if (onSocketStatus) {
-        setConnectionStatus('online-active');
-        onSocketStatus({ connected: true, status: 'online-active' });
-        
-        setTimeout(() => {
-          setConnectionStatus('conectado');
-          onSocketStatus({ connected: true, status: 'conectado' });
-        }, 2000);
-      }
-    });
+});
 
     // ========== FIN EVENTO MAPA ==========
 

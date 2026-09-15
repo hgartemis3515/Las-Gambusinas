@@ -5,8 +5,9 @@ import { cantidadGuarnicionEfectiva } from '../utils/platoGuarniciones';
 import { textoOpcionComplemento } from '../utils/precioComplementos';
 import { esSeleccionVariantePlato, nombreVisibleConVariante } from '../utils/variantePlato';
 import { esLlevarColor, etiquetaLlevarMozo } from '../utils/tipoServicio';
-import { useAlertaSalio } from '../context/AlertaSalioContext';
-import { ALERTA_SALIO_COLORES, fondoAlertaSalio } from '../utils/alertaSalioPrefs';
+import { useAlertaSalioPrefs } from '../context/AlertaSalioContext';
+import { ALERTA_SALIO_COLORES } from '../utils/alertaSalioPrefs';
+import AlertaSalioFondo from './AlertaSalioFondo';
 
 /**
  * Componente para renderizar una fila compacta de plato en la tabla
@@ -52,10 +53,9 @@ const FilaPlatoCompacta = ({
     }
   };
   
-  const { prefs, fase } = useAlertaSalio();
+  const { prefs } = useAlertaSalioPrefs();
   const pal = ALERTA_SALIO_COLORES[prefs?.color] || ALERTA_SALIO_COLORES.naranja;
   const alertaOn = esSalio && !esAnulado && prefs?.estilo !== 'apagado';
-  const fondoAlerta = alertaOn ? fondoAlertaSalio(prefs, fase) : estilosAplicar?.fondo;
   const bordeAlerta = alertaOn ? pal.chip : estilosAplicar.borde;
 
   return (
@@ -64,21 +64,14 @@ const FilaPlatoCompacta = ({
       style={[
         styles.fila,
         {
-          backgroundColor: alertaOn ? fondoAlerta : estilosAplicar.fondo,
+          backgroundColor: estilosAplicar.fondo,
           borderLeftWidth: 4,
           borderLeftColor: bordeAlerta,
           opacity: esAnulado ? 0.6 : 1,
         }
       ]}
     >
-      {alertaOn ? (
-        <View
-          key={`alerta-bg-${fondoAlerta}-${fase}`}
-          pointerEvents="none"
-          collapsable={false}
-          style={[StyleSheet.absoluteFillObject, { backgroundColor: fondoAlerta, zIndex: 0 }]}
-        />
-      ) : null}
+      <AlertaSalioFondo on={alertaOn} />
       <View style={styles.filaContenido} collapsable={false}>
       {/* Nombre del plato (40%) */}
       <View style={styles.columnaNombre}>

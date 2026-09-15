@@ -15,6 +15,17 @@ import { useTheme } from "../../context/ThemeContext";
 import { useSocket } from "../../context/SocketContext";
 import SocketStatus from "../../Components/SocketStatus";
 
+function NavbarSocketBanner() {
+  const { connected, connectionStatus, reconnectAttempts } = useSocket();
+  return (
+    <SocketStatus
+      isConnected={connected}
+      connectionStatus={connectionStatus}
+      reconnectAttempts={reconnectAttempts}
+    />
+  );
+}
+
 const Tab = createMaterialBottomTabNavigator();
 
 const PERMISO_PANEL = "ver-panel-gestion-mozos";
@@ -40,7 +51,6 @@ const NavbarContent = () => {
   const [showPanel, setShowPanel] = useState(false);
   const [permisoListo, setPermisoListo] = useState(false);
   const { isDarkMode } = useTheme();
-  const { connected, connectionStatus, reconnectAttempts } = useSocket();
 
   // Color rojo según dark mode (igual que en BottomNavBar)
   const navBgColor = isDarkMode ? "#A11228" : "#C41E3A";
@@ -93,12 +103,7 @@ const NavbarContent = () => {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Indicador de estado WebSocket - SIEMPRE VISIBLE en todas las pantallas */}
-      <SocketStatus
-        isConnected={connected}
-        connectionStatus={connectionStatus}
-        reconnectAttempts={reconnectAttempts}
-      />
+      <NavbarSocketBanner />
 
       {/* Screens encima */}
       <View style={{ flex: 1 }}>
