@@ -2102,7 +2102,7 @@ const PagosScreen = () => {
     }
 
     // ✅ Mostrar confirmación antes de procesar el pago
-    const tituloConfirmacion = esPagoAdelantado ? "Confirmar Pago Adelantado" : "Confirmar Pago";
+    const tituloConfirmacion = esPagoAdelantado ? "Solicitar Pago Adelantado" : "Solicitar Pago";
     const mensajeConfirmacion = esPagoAdelantado
       ? `¿Deseas confirmar el pago adelantado para el cliente ${cliente.nombre || "Cliente"}?\n\n` +
         `Total: ${simbolo} ${totalFormateado}` +
@@ -2873,7 +2873,7 @@ const PagosScreen = () => {
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 * escala }}>
                 <MaterialCommunityIcons name="cash-multiple" size={28 * escala} color="#FFFFFF" />
                 <Text style={{ color: '#FFFFFF', fontSize: 16 * escala, fontWeight: '700', includeFontPadding: false, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 2 }} numberOfLines={1}>
-                  {esPagoAdelantado ? 'Confirmar Pago Adelantado' : `Confirmar Pago${platosSeleccionadosPago.length > 0 ? ` (${platosSeleccionadosPago.length})` : ''}`}
+                  {esPagoAdelantado ? 'Solicitar Pago Adelantado' : `Solicitar Pago${platosSeleccionadosPago.length > 0 ? ` (${platosSeleccionadosPago.length})` : ''}`}
                 </Text>
               </View>
             </View>

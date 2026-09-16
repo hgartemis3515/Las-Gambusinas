@@ -7,7 +7,7 @@ import { esSeleccionVariantePlato, nombreVisibleConVariante } from '../utils/var
 import { esLlevarColor, etiquetaLlevarMozo } from '../utils/tipoServicio';
 import { useAlertaSalioPrefs } from '../context/AlertaSalioContext';
 import { ALERTA_SALIO_COLORES } from '../utils/alertaSalioPrefs';
-import AlertaSalioFondo from './AlertaSalioFondo';
+import { FilaDestelloCaja } from './AlertaSalioFondo';
 
 /**
  * Componente para renderizar una fila compacta de plato en la tabla
@@ -57,10 +57,11 @@ const FilaPlatoCompacta = ({
   const pal = ALERTA_SALIO_COLORES[prefs?.color] || ALERTA_SALIO_COLORES.naranja;
   const alertaOn = esSalio && !esAnulado && prefs?.estilo !== 'apagado';
   const bordeAlerta = alertaOn ? pal.chip : estilosAplicar.borde;
+  const esEntregaAuto = estilosAplicar.textoEstado === 'ENTREGADO AUTOMATICAMENTE';
 
   return (
-    <View
-      collapsable={false}
+    <FilaDestelloCaja
+      on={alertaOn}
       style={[
         styles.fila,
         {
@@ -71,7 +72,6 @@ const FilaPlatoCompacta = ({
         }
       ]}
     >
-      <AlertaSalioFondo on={alertaOn} />
       <View style={styles.filaContenido} collapsable={false}>
       {/* Nombre del plato (40%) */}
       <View style={styles.columnaNombre}>
@@ -121,7 +121,7 @@ const FilaPlatoCompacta = ({
         <Text style={[
           styles.cantidad,
           esAnulado && styles.textoTachado,
-          !esAnulado && estilosAplicar.textoEstado === 'ENTREGADO' && styles.cantidadEntregado,
+          !esAnulado && String(estilosAplicar.textoEstado || '').startsWith('ENTREGADO') && styles.cantidadEntregado,
         ]}>
           x{plato.cantidad || 1}
         </Text>
@@ -184,9 +184,9 @@ const FilaPlatoCompacta = ({
           </View>
         ) : plato.estado === 'entregado' ? (
           <View style={styles.entregadoContainer}>
-            <MaterialCommunityIcons name="check-circle" size={18} color="#047857" />
-            <View style={[styles.badge, { backgroundColor: estilosAplicar.badgeFondo }]}>
-              <Text style={[styles.badgeText, { color: estilosAplicar.badgeTexto }]}>
+            <MaterialCommunityIcons name="check-circle" size={18} color={esEntregaAuto ? '#FFFFFF' : '#047857'} />
+            <View style={[styles.badge, { backgroundColor: estilosAplicar.badgeFondo, maxWidth: '100%' }]}>
+              <Text style={[styles.badgeText, { color: estilosAplicar.badgeTexto, fontSize: esEntregaAuto ? 8 : 10 }]} numberOfLines={2}>
                 {estilosAplicar.textoEstado}
               </Text>
             </View>
@@ -200,7 +200,7 @@ const FilaPlatoCompacta = ({
         )}
       </View>
       </View>
-    </View>
+    </FilaDestelloCaja>
   );
 };
 

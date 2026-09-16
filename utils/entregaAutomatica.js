@@ -57,3 +57,12 @@ export function formatearCountdownEntrega(ms) {
   const s = total % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
 }
+
+/** Tiempo transcurrido desde salió (00:00 → N min). La entrega auto ocurre al llegar a N. */
+export function msTranscurridosEntregaAutomatica(plato, minutos, now = Date.now()) {
+  const mins = Number(minutos);
+  if (!Number.isFinite(mins) || mins <= 0) return 0;
+  const duration = Math.min(180, Math.floor(mins)) * 60 * 1000;
+  const rest = msRestantesEntregaAutomatica(plato, minutos, now);
+  return Math.max(0, Math.min(duration, duration - rest));
+}

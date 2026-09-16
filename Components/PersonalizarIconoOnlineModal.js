@@ -374,7 +374,7 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
             Confirmación de pago
           </Text>
           <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
-            Tras Continuar en Información de pago sale «Confirmar Pago» (NO / SÍ). Actívalo para cobrar al tocar Continuar, sin ese paso extra.
+            Tras Continuar en Información de pago sale «Solicitar Pago» (NO / SÍ). Actívalo para cobrar al tocar Continuar, sin ese paso extra.
           </Text>
           <View style={styles.switchRow}>
             <View style={{ flex: 1, paddingRight: 12 }}>

@@ -183,7 +183,13 @@ const obtenerEstilosPorEstado = (estado, opciones = {}) => {
       badgeTexto: '#FFFFFF',
       textoEstado: 'SALIÓ'
     },
-    entregado: {
+    entregado: opciones.entregaAutomatica ? {
+      fondo: '#DC2626',
+      borde: '#991B1B',
+      badgeFondo: '#B91C1C',
+      badgeTexto: '#FFFFFF',
+      textoEstado: 'ENTREGADO AUTOMATICAMENTE'
+    } : {
       fondo: '#047857',
       borde: '#065F46',
       badgeFondo: '#065F46',
@@ -685,7 +691,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           const endpoint = apiConfig.isConfigured
             ? `${apiConfig.getEndpoint('/comanda')}/${plato.comandaId}/plato/${platoIdentifier}/estado`
             : `${getFallbackApiBase()}/comanda/${plato.comandaId}/plato/${platoIdentifier}/estado`;
-          await axios.put(endpoint, { nuevoEstado: 'entregado' });
+          await axios.put(endpoint, { nuevoEstado: 'entregado', entregaAutomatica: true });
           hizoCambio = true;
         } catch (error) {
           const msg = String(error.response?.data?.error || error.response?.data?.message || error.message || '');
@@ -2843,6 +2849,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     const estilos = obtenerEstilosPorEstado(estadoPlato, {
       mesaPagada: mesaEstado === 'pagado' || mesaEstado === 'pagando',
       tieneTiempoPagado: !!plato.tiempos?.pagado,
+      entregaAutomatica: plato.entregaAutomatica === true,
     });
     // 🔥 CRÍTICO: Usar _id del subdocumento (único por instancia) para distinguir platos duplicados
     const platoKey = plato._id || `${plato.platoId}-${plato.index}`;
@@ -2860,7 +2867,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         puedeMarcarEntregado={minutosEntregaAuto > 0}
         countdownEntrega={
           minutosEntregaAuto > 0 && String(plato.estado || '').toLowerCase() === 'salio'
-            ? formatearCountdownEntrega(msRestantesPlatoEntrega(plato))
+            ? formatearCountdownEntrega(
+              Math.max(0, Math.min(180, Math.floor(minutosEntregaAuto)) * 60 * 1000 - msRestantesPlatoEntrega(plato))
+            )
             : null
         }
       />
@@ -3080,7 +3089,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               disabled={!puedeNuevaComanda}
             >
               <MaterialCommunityIcons name="plus-circle" size={20} color="#fff" />
-              <Text style={styles.actionButtonText}>Añadir Comanda</Text>
+              <Text style={styles.actionButtonText}>Nueva comanda</Text>
             </TouchableOpacity>
 
             {puedeExtraLlevar && (
