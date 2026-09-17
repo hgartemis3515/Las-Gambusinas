@@ -53,6 +53,13 @@ import { colorEstadoMesa, etiquetaEstadoMesa } from "../../../utils/estadoMesaMo
 import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 import { slugTipoPedido, mismoTipoPedido } from "../../../utils/tipoPedidoLinea";
 import { esSeleccionSinMesa, SELECCION_SIN_MESA, COLOR_PARA_LLEVAR } from "../../../utils/sinMesaOrden";
+import {
+  asegurarT0Armado,
+  borrarDraftArmado,
+  leerDraftArmado,
+  mesaKeyArmado,
+  segundosArmadoDesdeT0,
+} from "../../../utils/tiempoArmadoOrden";
 import { esLlevarColor, etiquetaLlevarMozo, TIPO_EXTRA_LLEVAR, TIPO_PARA_LLEVAR, TIPO_MESA } from "../../../utils/tipoServicio";
 import {
   CAT_FAVORITOS,
@@ -307,6 +314,7 @@ const OrdenesScreen = ({ route }) => {
   const tipoServicioAlComplementarRef = useRef(null);
   const selectedPlatosRef = useRef([]);
   const cantidadesRef = useRef({});
+  const armadoIniciadoEnRef = useRef(null);
   selectedPlatosRef.current = selectedPlatos;
   cantidadesRef.current = cantidades;
   // Overlay in-tree: complementos (Modal) se abre encima del menú sin cerrarlo
@@ -466,6 +474,17 @@ const OrdenesScreen = ({ route }) => {
       setIsSendingComanda(false);
       setMostrarOverlayCarga(false);
       configuracionService.obtenerConfigMoneda(true).then(setConfigMoneda).catch(() => {});
+      leerDraftArmado().then((draft) => {
+        if (draft?.iniciadoEn != null && Number.isFinite(Number(draft.iniciadoEn))) {
+          armadoIniciadoEnRef.current = Number(draft.iniciadoEn);
+        }
+      }).catch(() => {});
+      return () => {
+        if (!selectedPlatosRef.current.length) {
+          armadoIniciadoEnRef.current = null;
+          borrarDraftArmado();
+        }
+      };
     }, [])
   );
 
@@ -569,6 +588,14 @@ const OrdenesScreen = ({ route }) => {
       if (stored) {
         const parsed = JSON.parse(stored);
         setSelectedPlatos(parsed);
+        if (Array.isArray(parsed) && parsed.length) {
+          const draft = await leerDraftArmado();
+          if (draft?.iniciadoEn != null && Number.isFinite(Number(draft.iniciadoEn))) {
+            armadoIniciadoEnRef.current = Number(draft.iniciadoEn);
+          } else if (!armadoIniciadoEnRef.current) {
+            armadoIniciadoEnRef.current = Date.now();
+          }
+        }
       }
       
       if (storedCantidades) {
@@ -793,8 +820,22 @@ const OrdenesScreen = ({ route }) => {
     setSearchPlato("");
   }, []);
 
+  const marcarInicioArmado = () => {
+    if (!armadoIniciadoEnRef.current) {
+      armadoIniciadoEnRef.current = Date.now();
+    }
+    asegurarT0Armado({
+      mozoId: userInfoRef.current?._id,
+      mesaId: mesaKeyArmado(selectedMesa),
+      now: armadoIniciadoEnRef.current,
+    }).then((t0) => {
+      armadoIniciadoEnRef.current = t0;
+    }).catch(() => {});
+  };
+
   // Función para agregar un plato sin complementos (comportamiento original)
   const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = "", precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null, metaVariante = null) => {
+    marcarInicioArmado();
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
     const tipoServicio = esSeleccionSinMesa(selectedMesa)
       ? TIPO_PARA_LLEVAR
@@ -1028,6 +1069,10 @@ const OrdenesScreen = ({ route }) => {
     const newCantidades = { ...cantidades };
     delete newCantidades[platoInstanceId];
     setCantidades(newCantidades);
+    if (!newPlatos.length) {
+      armadoIniciadoEnRef.current = null;
+      borrarDraftArmado();
+    }
   };
 
   const handleClearAllPlatos = () => {
@@ -1043,6 +1088,8 @@ const OrdenesScreen = ({ route }) => {
           onPress: () => {
             setSelectedPlatos([]);
             setCantidades({});
+            armadoIniciadoEnRef.current = null;
+            borrarDraftArmado();
           },
         },
       ]
@@ -1422,6 +1469,10 @@ const OrdenesScreen = ({ route }) => {
         return;
       }
 
+      if (!armadoIniciadoEnRef.current && platosEnvio.length) {
+        marcarInicioArmado();
+      }
+      const t0Armado = armadoIniciadoEnRef.current;
       const comandaData = {
         mozos: userInfo._id,
         ...(esSinMesaOrden ? { sinMesa: true } : { mesas: mesaActualizada._id }),
@@ -1430,6 +1481,12 @@ const OrdenesScreen = ({ route }) => {
         observaciones: observaciones || "",
         status: "en_espera",
         IsActive: true,
+        ...(t0Armado
+          ? {
+              armadoIniciadoEn: new Date(t0Armado).toISOString(),
+              tiempoArmadoSegundos: segundosArmadoDesdeT0(t0Armado),
+            }
+          : {}),
         ...(platosEnvio.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))
           ? { numeroSerie: normalizarNumeroSerie(platosEnvio.map((p) => p.numeroSerie).find((s) => numeroSerieEsValido(s))) }
           : {}),
@@ -1619,6 +1676,8 @@ const OrdenesScreen = ({ route }) => {
       await AsyncStorage.removeItem("selectedPlatesIds");
       await AsyncStorage.removeItem("cantidadesComanda");
       await AsyncStorage.removeItem("additionalDetails");
+      armadoIniciadoEnRef.current = null;
+      await borrarDraftArmado();
       
       setSelectedMesa(null);
       setReservaActiva(null); // Limpiar estado de reserva
@@ -1669,6 +1728,8 @@ const OrdenesScreen = ({ route }) => {
         await AsyncStorage.removeItem("selectedPlatesIds");
         await AsyncStorage.removeItem("cantidadesComanda");
         await AsyncStorage.removeItem("additionalDetails");
+        armadoIniciadoEnRef.current = null;
+        await borrarDraftArmado();
         
         setSelectedMesa(null);
         setReservaActiva(null); // Limpiar estado de reserva
@@ -1868,6 +1929,7 @@ const OrdenesScreen = ({ route }) => {
   const getMesaEstado = (mesa) => etiquetaEstadoMesa(mesa?.estado || "libre");
 
   const abrirMenuPlatos = async () => {
+    marcarInicioArmado();
     loadPlatosData();
     const autoSlug = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
     setTipoPlatoFiltro(autoSlug || null);
