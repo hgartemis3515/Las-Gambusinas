@@ -403,8 +403,13 @@ const OrdenesScreen = ({ route }) => {
       setSelectedMesa(mesaParam);
       // También guardar en AsyncStorage para persistencia
       AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesaParam));
+      if (esSeleccionSinMesa(mesaParam)) {
+        setReservaActiva(null);
+        AsyncStorage.removeItem("reservaActiva");
+        setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
+      }
     }
-    if (reservaParam) {
+    if (reservaParam && !esSeleccionSinMesa(mesaParam)) {
       console.log("📅 Reserva recibida desde parámetros:", reservaParam._id);
       setReservaActiva(reservaParam);
       AsyncStorage.setItem("reservaActiva", JSON.stringify(reservaParam));

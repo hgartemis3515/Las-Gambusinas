@@ -2435,6 +2435,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     });
   };
 
+  const handleNuevaComandaSinMesa = () => {
+    AsyncStorage.setItem('mesaSeleccionada', JSON.stringify(SELECCION_SIN_MESA));
+    AsyncStorage.removeItem('reservaActiva');
+    navigation.navigate('Ordenes', {
+      mesa: SELECCION_SIN_MESA,
+      origen: 'ComandaDetalle',
+      reserva: null,
+      modoExtraLlevar: false,
+    });
+  };
+
   const handleExtraLlevar = () => {
     if (!puedeNuevaComanda || esSeleccionSinMesa(mesa) || !mesa?._id) {
       Alert.alert('Error', 'No se puede agregar extra llevar en esta mesa.');
@@ -3087,6 +3098,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               ]}
               onPress={handleNuevaComanda}
               disabled={!puedeNuevaComanda}
+            >
+              <MaterialCommunityIcons name="plus-circle" size={20} color="#fff" />
+              <Text style={styles.actionButtonText}>Agregar Comanda</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                { backgroundColor: '#0D9488' },
+              ]}
+              onPress={handleNuevaComandaSinMesa}
             >
               <MaterialCommunityIcons name="plus-circle" size={20} color="#fff" />
               <Text style={styles.actionButtonText}>Nueva comanda</Text>
