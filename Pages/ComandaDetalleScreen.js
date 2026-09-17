@@ -188,7 +188,7 @@ const obtenerEstilosPorEstado = (estado, opciones = {}) => {
       borde: '#991B1B',
       badgeFondo: '#B91C1C',
       badgeTexto: '#FFFFFF',
-      textoEstado: 'ENTREGADO AUTOMATICAMENTE'
+      textoEstado: 'ENTREGA AUTO'
     } : {
       fondo: '#047857',
       borde: '#065F46',
@@ -424,6 +424,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           variantePlato: platoItem.variantePlato || null,
           procesandoPor: platoItem.procesandoPor || null,
           tiempos: platoItem.tiempos || {},
+          entregaAutomatica: platoItem.entregaAutomatica === true,
           // PPA: preservar info de pago adelantado para mostrar estado "PENDIENTE" (naranja)
           pagoAdelantado: platoItem.pagoAdelantado || null
         };
@@ -605,27 +606,27 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       );
       return;
     }
+    
+            try {
+              setLoading(true);
+              
+              const platoIdentifier = platoObj._id || platoObj.platoId || platoObj.plato?._id;
+              
+              const endpoint = apiConfig.isConfigured
+                ? `${apiConfig.getEndpoint('/comanda')}/${platoObj.comandaId}/plato/${platoIdentifier}/estado`
+                : `${getFallbackApiBase()}/comanda/${platoObj.comandaId}/plato/${platoIdentifier}/estado`;
+              
+              await axios.put(endpoint, { nuevoEstado: 'entregado' });
+              await refrescarComandas();
 
-    try {
-      setLoading(true);
-
-      const platoIdentifier = platoObj._id || platoObj.platoId || platoObj.plato?._id;
-
-      const endpoint = apiConfig.isConfigured
-        ? `${apiConfig.getEndpoint('/comanda')}/${platoObj.comandaId}/plato/${platoIdentifier}/estado`
-        : `${getFallbackApiBase()}/comanda/${platoObj.comandaId}/plato/${platoIdentifier}/estado`;
-
-      await axios.put(endpoint, { nuevoEstado: 'entregado' });
-      await refrescarComandas();
-
-      verificarYActualizarEstadoComanda(platoObj.comandaId, axios).catch(() => {});
-    } catch (error) {
-      console.error('Error al marcar plato como entregado:', error);
-      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message;
-      Alert.alert('Error', `No se pudo confirmar la entrega: ${errorMsg}`);
-    } finally {
-      setLoading(false);
-    }
+              verificarYActualizarEstadoComanda(platoObj.comandaId, axios).catch(() => {});
+            } catch (error) {
+              console.error('Error al marcar plato como entregado:', error);
+              const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message;
+              Alert.alert('Error', `No se pudo confirmar la entrega: ${errorMsg}`);
+            } finally {
+              setLoading(false);
+            }
   };
   
   // FASE 4: Integración WebSocket con manejo mejorado de rooms
@@ -677,30 +678,61 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       String(p.estado || '').toLowerCase() === 'salio' && !p.anulado && !p.eliminado
     );
     if (pendientes.length === 0) return;
+    // Sin cronómetro (0 min) cocina ya encadena a Entregado verde. No marcar auto aquí.
+    if (!(Number(minutosEntregaAuto) > 0)) return;
     let cancelled = false;
     (async () => {
-      let hizoCambio = false;
       for (const plato of pendientes) {
         const rest = msRestantesPlatoEntrega(plato);
         if (rest > 0) continue;
-        const key = `${plato.comandaId}-${plato._id || plato.platoId}`;
+        const platoIdentifier = plato._id;
+        if (!platoIdentifier) continue;
+        const key = `${plato.comandaId}-${platoIdentifier}`;
         if (autoEntregaSalioRef.current.has(key)) continue;
         autoEntregaSalioRef.current.add(key);
         try {
-          const platoIdentifier = plato._id || plato.platoId || plato.plato?._id;
           const endpoint = apiConfig.isConfigured
             ? `${apiConfig.getEndpoint('/comanda')}/${plato.comandaId}/plato/${platoIdentifier}/estado`
             : `${getFallbackApiBase()}/comanda/${plato.comandaId}/plato/${platoIdentifier}/estado`;
           await axios.put(endpoint, { nuevoEstado: 'entregado', entregaAutomatica: true });
-          hizoCambio = true;
+          setComandasState((prev) => prev.map((c) => {
+            if (!sameId(c._id, plato.comandaId)) return c;
+            return {
+              ...c,
+              platos: (c.platos || []).map((p) => {
+                if (!sameId(p._id, platoIdentifier)) return p;
+                return {
+                  ...p,
+                  estado: 'entregado',
+                  entregaAutomatica: true,
+                  tiempos: { ...(p.tiempos || {}), entregado: new Date().toISOString() },
+                };
+              }),
+            };
+          }));
         } catch (error) {
           const msg = String(error.response?.data?.error || error.response?.data?.message || error.message || '');
           const yaCerrado = /pagado|ya está entregado|ya esta entregado/i.test(msg);
           if (!yaCerrado) autoEntregaSalioRef.current.delete(key);
+          else {
+            setComandasState((prev) => prev.map((c) => {
+              if (!sameId(c._id, plato.comandaId)) return c;
+              return {
+                ...c,
+                platos: (c.platos || []).map((p) => {
+                  if (!sameId(p._id, platoIdentifier)) return p;
+                  return {
+                    ...p,
+                    estado: p.estado === 'salio' ? 'entregado' : p.estado,
+                    entregaAutomatica: p.entregaAutomatica === true || String(p.estado || '').toLowerCase() === 'salio',
+                  };
+                }),
+              };
+            }));
+          }
         }
         if (cancelled) return;
       }
-      if (!cancelled && hizoCambio) await refrescarComandasRef.current?.();
     })();
     return () => { cancelled = true; };
   }, [todosLosPlatos, minutosEntregaAuto, tickEntrega]);
@@ -776,10 +808,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       if (Array.isArray(data?.platos) && data.platos.length) {
         return data.platos
           .filter((p) => p?.platoId && p?.nuevoEstado)
-          .map((p) => ({ platoId: p.platoId, nuevoEstado: p.nuevoEstado, pagoAdelantado: p.pagoAdelantado }));
+          .map((p) => ({ platoId: p.platoId, nuevoEstado: p.nuevoEstado, pagoAdelantado: p.pagoAdelantado, entregaAutomatica: p.entregaAutomatica }));
       }
       if (data?.platoId && data?.nuevoEstado) {
-        return [{ platoId: data.platoId, nuevoEstado: data.nuevoEstado, pagoAdelantado: data.pagoAdelantado }];
+        return [{ platoId: data.platoId, nuevoEstado: data.nuevoEstado, pagoAdelantado: data.pagoAdelantado, entregaAutomatica: data.entregaAutomatica }];
       }
       return [];
     };
@@ -794,7 +826,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         const dataComandaId = data.comandaId?.toString ? data.comandaId.toString() : data.comandaId;
         return cId === dataComandaId;
       });
-
+      
       if (comandaIndex === -1 && !esNuestraMesa) return;
 
       const items = itemsEstadoPlatoDesdeEvento(data);
@@ -830,14 +862,19 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               faltaMatch = true;
               continue;
             }
-            const platoActualizado = { ...nuevosPlatos[platoIndex] };
+          const platoActualizado = { ...nuevosPlatos[platoIndex] };
             platoActualizado.estado = item.nuevoEstado;
             if (item.pagoAdelantado !== undefined) {
               platoActualizado.pagoAdelantado = item.pagoAdelantado;
             }
-            if (!platoActualizado.tiempos) platoActualizado.tiempos = {};
+            if (item.entregaAutomatica === true) {
+              platoActualizado.entregaAutomatica = true;
+            } else if (item.nuevoEstado === 'entregado' && item.entregaAutomatica === false) {
+              platoActualizado.entregaAutomatica = false;
+            }
+          if (!platoActualizado.tiempos) platoActualizado.tiempos = {};
             platoActualizado.tiempos[item.nuevoEstado] = ts;
-            nuevosPlatos[platoIndex] = platoActualizado;
+          nuevosPlatos[platoIndex] = platoActualizado;
             alguno = true;
           }
           if (faltaMatch) setTimeout(() => refrescarComandasRef.current?.(), 100);
@@ -1568,13 +1605,13 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const platosFiltrados = useMemo(() => {
     const search = String(searchPlato || '').trim();
     let list = platos.filter((p) => {
-      if (!tipoPlatoFiltro) return false;
-      if (!platoEsDeTipo(p, tipoPlatoFiltro)) return false;
-      const disponible = (p.stock == null || p.stock === undefined || Number(p.stock) > 0);
-      if (!disponible) return false;
+    if (!tipoPlatoFiltro) return false;
+    if (!platoEsDeTipo(p, tipoPlatoFiltro)) return false;
+    const disponible = (p.stock == null || p.stock === undefined || Number(p.stock) > 0);
+    if (!disponible) return false;
       if (!platoVisibleEnCarta(p, categoriasInfo, tipoPlatoFiltro)) return false;
-      return true;
-    });
+    return true;
+  });
     if (!search) {
       if (categoriaFiltro === CAT_FAVORITOS) {
         list = list.filter((p) => favoritoIds.includes(String(p._id)));
@@ -1764,7 +1801,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // ==================== FUNCIÓN DE DESCUENTO (permiso aplicar-descuentos) ====================
   
   const puedeAplicarDescuento = usuarioPuedeAplicarDescuentos(userInfo);
-
+  
   const handleAbrirDescuento = () => {
     if (!puedeAplicarDescuento) {
       Alert.alert('Acceso Denegado', 'No tienes permiso para aplicar descuentos.');
@@ -1886,11 +1923,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const ejecutarQuitarDescuento = async () => {
     const targets = (comandas || []).filter((c) => c?._id && comandaTieneDescuentoMozo(c));
     if (!targets.length) return;
-    setAplicandoDescuento(true);
+      setAplicandoDescuento(true);
     try {
       for (const comanda of targets) {
         await axios.delete(urlDescuentoComanda(comanda._id), {
-          timeout: 10000,
+        timeout: 10000,
           data: {
             usuarioId: userInfo._id,
             usuarioRol: userInfo.rol,
@@ -2817,7 +2854,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       try {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch (_) {}
-
+      
       if (errores.length > 0) {
         if (exitosos > 0) {
         const listaErrores = errores.map(e => `• ${e.plato}: ${e.error}`).join('\n');
@@ -2825,7 +2862,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           'Entrega Parcial',
           `${exitosos} plato(s) entregado(s) correctamente.\n\nErrores:\n${listaErrores}`
         );
-        } else {
+      } else {
         const listaErrores = errores.map(e => `• ${e.plato}: ${e.error}`).join('\n');
         Alert.alert(
           'Error en Entrega',
@@ -3102,10 +3139,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               <MaterialCommunityIcons name="plus-circle" size={20} color="#fff" />
               <Text style={styles.actionButtonText}>Agregar Comanda</Text>
             </TouchableOpacity>
-
+            
             <TouchableOpacity
               style={[
-                styles.actionButton,
+                styles.actionButton, 
                 { backgroundColor: '#0D9488' },
               ]}
               onPress={handleNuevaComandaSinMesa}
@@ -4291,7 +4328,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   Total: S/. {brutoDescuento.toFixed(2)}
                 </Text>
               </View>
-
+              
               {hayDescuentoActual && (
                 <View style={[styles.currentDiscount, { backgroundColor: '#ECFDF5', marginBottom: 12, flexDirection: 'column', alignItems: 'stretch' }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -4329,8 +4366,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   onChangeText={setDescuentoMontoInput}
                   keyboardType="decimal-pad"
                 />
-                <TouchableOpacity
-                  style={[
+                  <TouchableOpacity
+                    style={[
                     styles.descuentoBtn100,
                     !(brutoDescuento > 0) && styles.buttonDisabled,
                     !motivoDescuentoOk && styles.buttonDisabled,
@@ -4339,9 +4376,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                   disabled={aplicandoDescuento || !(brutoDescuento > 0) || !motivoDescuentoOk}
                 >
                   <Text style={styles.descuentoBtn100Text}>100%</Text>
-                </TouchableOpacity>
+                  </TouchableOpacity>
               </View>
-
+              
               <Text style={[styles.labelText, { color: themeColors.colors?.text?.primary || '#111827' }]}>
                 Motivo (obligatorio)
               </Text>
@@ -4361,22 +4398,22 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 numberOfLines={2}
                 maxLength={200}
               />
-
-              <View style={[styles.ahorroPreview, { backgroundColor: '#ECFDF5' }]}>
-                <MaterialCommunityIcons name="tag" size={20} color="#059669" />
-                <View style={styles.ahorroTextContainer}>
+              
+                <View style={[styles.ahorroPreview, { backgroundColor: '#ECFDF5' }]}>
+                  <MaterialCommunityIcons name="tag" size={20} color="#059669" />
+                  <View style={styles.ahorroTextContainer}>
                   <Text style={styles.ahorroLabel}>Descuento</Text>
                   <Text style={styles.ahorroValue}>-S/. {montoDescuentoPreview.toFixed(2)}</Text>
-                  <Text style={styles.ahorroTotal}>
+                    <Text style={styles.ahorroTotal}>
                     Total final: S/. {totalDescuentoPreview.toFixed(2)}
-                  </Text>
+                    </Text>
+                  </View>
                 </View>
-              </View>
 
               {comandas[0]?.status === 'pagado' && (
                 <Text style={{ fontSize: 12, color: '#6B7280', marginBottom: 8 }}>
                   Comanda pagada: el descuento ajusta el total y los tickets.
-                </Text>
+                  </Text>
               )}
             </ScrollView>
             

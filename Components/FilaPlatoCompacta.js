@@ -57,7 +57,7 @@ const FilaPlatoCompacta = ({
   const pal = ALERTA_SALIO_COLORES[prefs?.color] || ALERTA_SALIO_COLORES.naranja;
   const alertaOn = esSalio && !esAnulado && prefs?.estilo !== 'apagado';
   const bordeAlerta = alertaOn ? pal.chip : estilosAplicar.borde;
-  const esEntregaAuto = estilosAplicar.textoEstado === 'ENTREGADO AUTOMATICAMENTE';
+  const esEntregaAuto = estilosAplicar.textoEstado === 'ENTREGA AUTO';
 
   return (
     <FilaDestelloCaja
