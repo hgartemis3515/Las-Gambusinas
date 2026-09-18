@@ -14,6 +14,7 @@ import { useTheme } from "../context/ThemeContext";
 import { themeLight } from "../constants/theme";
 import { textoOpcionComplemento } from "../utils/precioComplementos";
 import { esFilaComandaSinMesa } from "../utils/sinMesaOrden";
+import { formatPendienteCobro } from "../helpers/pendienteCobroMozo";
 
 const ZONA = "America/Lima";
 
