@@ -14,6 +14,7 @@ import {
 import configuracionService from '../services/configuracionService';
 import { logoutForInvalidToken, isSocketTokenAuthFailure } from '../utils/authSession';
 import { EVT_TIPOS_PLATO_ACTUALIZADOS } from './useTiposPlato';
+import { EVT_PLATO_MENU_ACTUALIZADO, EVT_CATALOGO_PLATOS_RECONNECT } from '../context/CatalogoPlatosContext';
 
 /**
  * Hook personalizado para manejar conexión Socket.io con namespace /mozos
@@ -222,6 +223,7 @@ const useSocketMozos = ({
       if (onSocketStatus) {
         onSocketStatus({ connected: true, status: 'conectado' });
       }
+      DeviceEventEmitter.emit(EVT_CATALOGO_PLATOS_RECONNECT);
     });
 
     // Evento: Desconexión
@@ -318,6 +320,7 @@ const useSocketMozos = ({
       if (onSocketStatus) {
         onSocketStatus({ connected: true, status: 'conectado' });
       }
+      DeviceEventEmitter.emit(EVT_CATALOGO_PLATOS_RECONNECT);
     });
 
     // Evento: Error de conexión
@@ -630,6 +633,10 @@ const useSocketMozos = ({
 
     socket.on('tipos-plato-reglas-actualizadas', (data) => {
       DeviceEventEmitter.emit(EVT_TIPOS_PLATO_ACTUALIZADOS, data || {});
+    });
+
+    socket.on('plato-menu-actualizado', (data) => {
+      DeviceEventEmitter.emit(EVT_PLATO_MENU_ACTUALIZADO, data || {});
     });
 
     // ========== PLAN_PLANTILLA_COMANDAS: Eventos de aprobación y reporte ==========

@@ -48,6 +48,7 @@ import {
   LAST_REMEMBER_ME_KEY,
 } from "../../utils/authSession";
 import { EVT_MOZO_SESSION } from "../../context/DensidadOrdenesContext";
+import { useCatalogoPlatos } from "../../context/CatalogoPlatosContext";
 
 // Componente de partículas flotantes
 const FloatingParticle = ({ delay = 0, screenHeight, screenWidth }) => {
@@ -397,6 +398,7 @@ const AnimatedInput = ({ label, icon, placeholder, value, onChangeText, error, d
 const Login = () => {
   const navigation = useNavigation();
   const { updateToken } = useSocket();
+  const { warm: warmCatalogoPlatos } = useCatalogoPlatos();
   const { width, height } = useWindowDimensions();
   const { isLandscape, isTablet: isTabletOrientation } = useOrientation();
   const isTablet = width > 500;
@@ -439,6 +441,7 @@ const Login = () => {
           if (user?._id && user?.name) {
             didNavigate = true;
             updateToken(token);
+            warmCatalogoPlatos();
             navigation.replace("Navbar", { username: user.name });
             return;
           }
@@ -548,6 +551,7 @@ const Login = () => {
       DeviceEventEmitter.emit(EVT_MOZO_SESSION);
       console.log("💾 Usuario y token guardados en AsyncStorage", rememberMe ? "(7d)" : "(12h)");
       updateToken(token);
+      warmCatalogoPlatos();
 
       registerPushAfterLogin(userData._id).catch(() => {});
 

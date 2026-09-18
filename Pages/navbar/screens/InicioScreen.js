@@ -19,7 +19,7 @@ import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/nativ
 // 🔥 Usar axios configurado globalmente (timeout 10s, anti-bloqueo)
 import axios from "../../../config/axiosConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, DISHES_API, AREAS_API, MESAS_API_UPDATE, apiConfig } from "../../../apiConfig";
+import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, AREAS_API, MESAS_API_UPDATE, apiConfig } from "../../../apiConfig";
 import { getFallbackApiBase } from "../../../config/envDefaults";
 import moment from "moment-timezone";
 import { useTheme } from "../../../context/ThemeContext";
@@ -33,6 +33,7 @@ import { usuarioPuedeCrearReservas, elegirReservaDeMesa, elegirReservaEspera, re
 import { calcularPendienteCobroComandas, formatPendienteCobro } from "../../../helpers/pendienteCobroMozo";
 import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 import { useSocket } from "../../../context/SocketContext";
+import { useCatalogoPlatos } from "../../../context/CatalogoPlatosContext";
 import {
   extraerComandaDeEventoSocket,
   aplicarEventoComandaLiviano,
@@ -542,6 +543,7 @@ const InicioScreen = () => {
   const { chipCategoriaEscala } = useDensidadOrdenes();
   const chipEstilo = estiloChipCategoria(chipCategoriaEscala);
   const { abrirMenuNuevaOrden } = useAbrirMenuNuevaOrden();
+  const { platos, refresh: refreshCatalogo } = useCatalogoPlatos();
   const { width, height } = useWindowDimensions();
   const [mesas, setMesas] = useState([]);
   // PLAN_PLANTILLA_COMANDAS: imprimir comanda deshabilitado por defecto.
@@ -565,7 +567,6 @@ const InicioScreen = () => {
   const [modalOpcionesMesaVisible, setModalOpcionesMesaVisible] = useState(false);
   const [mesaOpciones, setMesaOpciones] = useState(null);
   const [comandasOpciones, setComandasOpciones] = useState([]);
-  const [platos, setPlatos] = useState([]);
   const [areas, setAreas] = useState([]);
   const [userInfo, setUserInfo] = useState(null);
   const [pendienteCobroApi, setPendienteCobroApi] = useState(null);
@@ -828,16 +829,10 @@ const InicioScreen = () => {
         setMensajeCargaVerificacion("🔧 Corrigiendo platos faltantes...");
         
         // Obtener todos los platos del servidor para corregir
-        let platosDisponibles = [];
-        try {
-          const platosURL = apiConfig.isConfigured 
-            ? apiConfig.getEndpoint('/platos')
-            : DISHES_API;
-          const platosResponse = await axios.get(platosURL, { timeout: 5000 });
-          platosDisponibles = platosResponse.data || [];
-          console.log(`✅ [INICIO] ${platosDisponibles.length} plato(s) obtenido(s) para corrección`);
-        } catch (error) {
-          console.error("⚠️ [INICIO] Error obteniendo platos:", error);
+        let platosDisponibles = platos || [];
+        if (!platosDisponibles.length) {
+          const packed = await refreshCatalogo({ force: false });
+          platosDisponibles = packed?.platos || [];
         }
         
         // Corregir platos en cada comanda
@@ -1537,15 +1532,7 @@ const InicioScreen = () => {
   }, []);
 
   const obtenerPlatos = async () => {
-    try {
-      const platosURL = apiConfig.isConfigured 
-        ? apiConfig.getEndpoint('/platos')
-        : DISHES_API;
-      const response = await axios.get(platosURL, { timeout: 5000 });
-      setPlatos(response.data);
-    } catch (error) {
-      console.error("Error cargando platos:", error);
-    }
+    return refreshCatalogo({ force: false });
   };
 
   const obtenerAreas = useCallback(async () => {
@@ -2841,8 +2828,9 @@ const InicioScreen = () => {
       return;
     }
 
-    await obtenerPlatos();
-    
+    const packed = await obtenerPlatos();
+    const listaCatalogo = packed?.platos || platos || [];
+
     const platosEditados = comanda.platos.map((p, index) => {
       let platoData = null;
       const platoId = p.plato?._id || p.plato;
@@ -2850,7 +2838,7 @@ const InicioScreen = () => {
       if (p.plato && typeof p.plato === 'object' && p.plato.nombre) {
         platoData = p.plato;
       } else if (platoId) {
-        platoData = platos.find(pl => pl._id === platoId || pl._id === platoId.toString());
+        platoData = listaCatalogo.find(pl => pl._id === platoId || pl._id === platoId.toString());
       }
       
       return {

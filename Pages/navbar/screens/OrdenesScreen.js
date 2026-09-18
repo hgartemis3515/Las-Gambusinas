@@ -15,7 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 // 🔥 Usar axios configurado globalmente (timeout 10s, anti-bloqueo)
 import axios from "../../../config/axiosConfig";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API, COMANDASEARCH_API_GET, apiConfig } from "../../../apiConfig";
+import { COMANDA_API, SELECTABLE_API_GET, MESAS_API_UPDATE, AREAS_API, COMANDASEARCH_API_GET, apiConfig } from "../../../apiConfig";
 import { getFallbackApiBase } from "../../../config/envDefaults";
 import { useTheme } from "../../../context/ThemeContext";
 import { useBotonCantidadPlato } from "../../../context/BotonCantidadPlatoContext";
@@ -23,6 +23,7 @@ import { useBotonesMenuOrden } from "../../../context/BotonesMenuOrdenContext";
 import { useDensidadOrdenes } from "../../../context/DensidadOrdenesContext";
 import { useOrdenesAcciones } from "../../../context/OrdenesAccionesContext";
 import { useRedireccionEnvio } from "../../../context/RedireccionEnvioContext";
+import { useCatalogoPlatos } from "../../../context/CatalogoPlatosContext";
 import { lerpDensidad, COMPACTO_DEFAULT } from "../../../utils/densidadOrdenes";
 import { resolverSlugMenuPorHora } from "../../../utils/horaTipoMenu";
 import { clampAccionesEscala, ACCIONES_ESCALA_DEFAULT } from "../../../utils/ordenesAccionesPrefs";
@@ -259,6 +260,15 @@ const OrdenesScreen = ({ route }) => {
   const { compacto } = useDensidadOrdenes();
   const { destino: destinoRedireccion } = useRedireccionEnvio();
   const {
+    platos,
+    categoriasInfo,
+    loaded: cartaLoaded,
+    refreshing: cartaRefreshing,
+    error: cartaError,
+    refresh: refreshCatalogo,
+    getPlatoById,
+  } = useCatalogoPlatos();
+  const {
     agregarColor,
     enviarColor: colorEnviarOrden,
     ubicacion: ubicacionAcciones,
@@ -278,13 +288,11 @@ const OrdenesScreen = ({ route }) => {
   const [mesas, setMesas] = useState([]);
   const [modalMesasVisible, setModalMesasVisible] = useState(false);
   const [modalPlatosVisible, setModalPlatosVisible] = useState(false);
-  const [platos, setPlatos] = useState([]);
   const [selectedPlatos, setSelectedPlatos] = useState([]);
   const [cantidades, setCantidades] = useState({});
   const [observaciones, setObservaciones] = useState("");
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
-  const [categoriasInfo, setCategoriasInfo] = useState([]);
   const [favoritoIds, setFavoritoIds] = useState([]);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   // Catálogo dinámico de tipos de plato desde el backend
@@ -317,6 +325,28 @@ const OrdenesScreen = ({ route }) => {
   const armadoIniciadoEnRef = useRef(null);
   selectedPlatosRef.current = selectedPlatos;
   cantidadesRef.current = cantidades;
+
+  useEffect(() => {
+    if (!platoParaComplementar?._id) return;
+    const next = getPlatoById(platoParaComplementar._id);
+    if (!next) return;
+    setPlatoParaComplementar((prev) => {
+      if (!prev) return prev;
+      if (
+        prev.precio === next.precio
+        && prev.nombre === next.nombre
+        && prev.complementos === next.complementos
+        && prev.updatedAt === next.updatedAt
+        && prev.codigoMozo === next.codigoMozo
+      ) return prev;
+      return {
+        ...prev,
+        ...next,
+        numeroSerie: prev.numeroSerie,
+        nombreMostrado: prev.nombreMostrado || next.nombreMostrado,
+      };
+    });
+  }, [platos, getPlatoById]);
   // Overlay in-tree: complementos (Modal) se abre encima del menú sin cerrarlo
   const platosListScrollRef = useRef(null);
   const favoritosDirtyRef = useRef(false);
@@ -399,7 +429,7 @@ const OrdenesScreen = ({ route }) => {
 
   useEffect(() => {
     loadUserData();
-    loadPlatosData();
+    refreshCatalogo({ force: false });
     loadSelectedPlatos();
     obtenerAreas();
   }, []);
@@ -429,7 +459,7 @@ const OrdenesScreen = ({ route }) => {
     let cancelled = false;
     (async () => {
       if (mesaParam) setSelectedMesa(mesaParam);
-      loadPlatosData();
+      refreshCatalogo({ force: false });
       let slug = tipoMenuHoraParam || null;
       if (!slug) {
         slug = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
@@ -542,40 +572,6 @@ const OrdenesScreen = ({ route }) => {
       }
     } catch (error) {
       console.error("Error cargando mesa:", error);
-    }
-  };
-
-  const loadPlatosData = async () => {
-    try {
-      const platosURL = apiConfig.isConfigured 
-        ? apiConfig.getEndpoint('/platos')
-        : DISHES_API;
-      const response = await axios.get(platosURL, { timeout: 5000 });
-      setPlatos(response.data);
-      try {
-        const primary = apiConfig.isConfigured
-          ? apiConfig.getEndpoint('/platos/categorias?ligero=1')
-          : `${getFallbackApiBase()}/platos/categorias?ligero=1`;
-        const catRes = await axios.get(primary, { timeout: 5000 });
-        if (Array.isArray(catRes.data)) {
-          setCategoriasInfo(catRes.data);
-        } else {
-          setCategoriasInfo([]);
-        }
-      } catch (e) {
-        try {
-          const fallback = apiConfig.isConfigured
-            ? apiConfig.getEndpoint('/categorias-plato?ligero=1')
-            : `${getFallbackApiBase()}/categorias-plato?ligero=1`;
-          const catRes = await axios.get(fallback, { timeout: 5000 });
-          setCategoriasInfo(Array.isArray(catRes.data) ? catRes.data : []);
-        } catch (_) {
-          setCategoriasInfo([]);
-        }
-      }
-    } catch (error) {
-      console.error("Error cargando platos:", error);
-      Alert.alert("Error", "No se pudieron cargar los platos");
     }
   };
 
@@ -1890,7 +1886,7 @@ const OrdenesScreen = ({ route }) => {
         return next;
       });
     }
-    loadPlatosData();
+    refreshCatalogo({ force: false });
     const catalogo = platos.find((p) => String(p._id) === String(platoLinea?._id));
     const slugLinea = slugTipoPedido(platoLinea?.tipoPedido);
     const slugCatalogo = (tiposPlatoCatalogo || []).find((t) => catalogo && platoEsDeTipo(catalogo, t.slug))?.slug;
@@ -1907,7 +1903,7 @@ const OrdenesScreen = ({ route }) => {
       setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
     }
     setModalPlatosVisible(true);
-  }, [platos, tiposPlatoCatalogo, selectedMesa]);
+  }, [platos, tiposPlatoCatalogo, selectedMesa, refreshCatalogo]);
   // Al elegir categoría: si hay búsqueda activa, limpiar texto y aplicar categoría
   const handleCategorySelect = useCallback((cat) => {
     if ((searchPlato || "").trim().length > 0) {
@@ -1930,15 +1926,16 @@ const OrdenesScreen = ({ route }) => {
 
   const abrirMenuPlatos = async () => {
     marcarInicioArmado();
-    loadPlatosData();
-    const autoSlug = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
-    setTipoPlatoFiltro(autoSlug || null);
+    setTipoPlatoFiltro(null);
     setCategoriaFiltro(null);
     setSearchPlato("");
     if (esSeleccionSinMesa(selectedMesa)) {
       setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
     }
     setModalPlatosVisible(true);
+    refreshCatalogo({ force: false });
+    const autoSlug = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
+    setTipoPlatoFiltro(autoSlug || null);
   };
 
   const botonesAccionOrden = (
@@ -2374,6 +2371,9 @@ const OrdenesScreen = ({ route }) => {
         }
         onEnviarOrden={handleEnviarComanda}
         enviandoOrden={isSendingComanda}
+        cartaLoaded={cartaLoaded}
+        cartaRefreshing={cartaRefreshing}
+        cartaError={cartaError}
       />
 
       {/* Overlay de Carga Animado */}

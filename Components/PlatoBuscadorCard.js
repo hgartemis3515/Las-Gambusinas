@@ -11,7 +11,26 @@ import { ESTILO_CANTIDAD_AGREGAR } from '../utils/botonCantidadPlato';
 /**
  * Cuadro de plato en buscadores de mozos: SUMAR es - # +, G guarniciones, OP opciones de nombre.
  */
-export default function PlatoBuscadorCard({
+function platoBuscadorCardPropsIguales(prev, next) {
+  return prev.plato?._id === next.plato?._id
+    && prev.plato?.nombreMostrado === next.plato?.nombreMostrado
+    && prev.plato?.nombre === next.plato?.nombre
+    && prev.plato?.precio === next.plato?.precio
+    && prev.plato?.codigoMozo === next.plato?.codigoMozo
+    && prev.plato?.complementos === next.plato?.complementos
+    && prev.cantidadTotal === next.cantidadTotal
+    && prev.cantidadMesa === next.cantidadMesa
+    && prev.cantidadLlevar === next.cantidadLlevar
+    && prev.esLlevar === next.esLlevar
+    && prev.esFav === next.esFav
+    && prev.onToggleFavorito === next.onToggleFavorito
+    && prev.onAdd === next.onAdd
+    && prev.onDecrement === next.onDecrement
+    && prev.onPressG === next.onPressG
+    && prev.onPressV === next.onPressV;
+}
+
+function PlatoBuscadorCard({
   plato,
   cantidadTotal = 0,
   cantidadMesa = 0,
@@ -331,3 +350,5 @@ const makeStyles = (theme) => StyleSheet.create({
     marginLeft: 2,
   },
 });
+
+export default React.memo(PlatoBuscadorCard, platoBuscadorCardPropsIguales);

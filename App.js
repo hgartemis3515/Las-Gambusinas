@@ -7,6 +7,7 @@ import AppErrorBoundary from './Components/AppErrorBoundary';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { ThemeProvider } from './context/ThemeContext';
+import { CatalogoPlatosProvider } from './context/CatalogoPlatosContext';
 import { SocketProvider } from './context/SocketContext';
 import { OnlineBadgeProvider } from './context/OnlineBadgeContext';
 import { AvisoPlatoAgregadoProvider } from './context/AvisoPlatoAgregadoContext';
@@ -100,6 +101,7 @@ export default function App() {
           <ApodosMesaProvider>
           <OrdenesAccionesProvider>
           <RedireccionEnvioProvider>
+          <CatalogoPlatosProvider>
           <SocketProvider>
             <>
               <AlertaOverlayMozos />
@@ -161,6 +163,7 @@ export default function App() {
             </NavigationContainer>
             </>
           </SocketProvider>
+          </CatalogoPlatosProvider>
           </RedireccionEnvioProvider>
           </OrdenesAccionesProvider>
           </ApodosMesaProvider>

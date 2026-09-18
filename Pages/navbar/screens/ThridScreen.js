@@ -14,23 +14,24 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { COMANDASEARCH_API_GET, COMANDA_API_SEARCH_BY_DATE, COMANDA_API, SELECTABLE_API_GET, DISHES_API, AREAS_API, apiConfig } from "../../../apiConfig";
+import { COMANDASEARCH_API_GET, COMANDA_API_SEARCH_BY_DATE, COMANDA_API, SELECTABLE_API_GET, AREAS_API, apiConfig } from "../../../apiConfig";
 import moment from "moment-timezone";
 import { editarEliminarTomadasPorCocinaHabilitadoMozos } from "../../../services/configuracionService";
 import { comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from "../../../utils/comandaHelpers";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
+import { useCatalogoPlatos } from "../../../context/CatalogoPlatosContext";
 import { resolverSlugMenuPorHora } from "../../../utils/horaTipoMenu";
 import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 
 const ThirdScreen = () => {
+  const { platos, refresh: refreshCatalogo } = useCatalogoPlatos();
   const [comandas, setComandas] = useState([]);
   const [userInfo, setUserInfo] = useState(null);
   const [fecha, setFecha] = useState(moment().tz("America/Lima").format("YYYY-MM-DD"));
   const [modalEditVisible, setModalEditVisible] = useState(false);
   const [comandaEditando, setComandaEditando] = useState(null);
   const [mesas, setMesas] = useState([]);
-  const [platos, setPlatos] = useState([]);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
   // Catálogo dinámico de tipos de plato desde el backend
   const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo, refresh: refreshTiposPlato } = useTiposPlato();
@@ -115,16 +116,7 @@ const ThirdScreen = () => {
   };
 
   const fetchPlatos = async () => {
-    try {
-      const platosURL = apiConfig.isConfigured 
-        ? apiConfig.getEndpoint('/platos')
-        : DISHES_API;
-      const response = await axios.get(platosURL, { timeout: 5000 });
-      setPlatos(response.data);
-      console.log("🍽️ Platos cargados:", response.data.length);
-    } catch (error) {
-      console.error("Error cargando platos:", error);
-    }
+    return refreshCatalogo({ force: false });
   };
 
   const handleEditarComanda = async (comanda) => {
@@ -146,8 +138,9 @@ const ThirdScreen = () => {
     console.log("🍽️ Platos en comanda:", comanda.platos);
     
     // Cargar platos primero para poder buscar los datos completos si no están populados
-    await fetchPlatos();
-    
+    const packed = await fetchPlatos();
+    const listaCatalogo = packed?.platos || platos || [];
+
     // Mapear platos con manejo mejorado
     const platosEditados = comanda.platos.map((p, index) => {
       let platoData = null;
@@ -159,12 +152,12 @@ const ThirdScreen = () => {
         platoData = p.plato;
       } else if (platoId) {
         // Si no está populado, buscar en la lista de platos cargados por _id
-        platoData = platos.find(pl => pl._id === platoId || pl._id === platoId.toString());
+        platoData = listaCatalogo.find(pl => pl._id === platoId || pl._id === platoId.toString());
       }
       
       // Si no se encontró por _id, buscar por id numérico
       if (!platoData && platoNumId) {
-        platoData = platos.find(pl => pl.id === platoNumId);
+        platoData = listaCatalogo.find(pl => pl.id === platoNumId);
         console.log(`🔍 Buscando plato por id numérico ${platoNumId}:`, platoData?.nombre || 'No encontrado');
       }
       

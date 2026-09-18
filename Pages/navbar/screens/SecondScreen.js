@@ -14,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { COMANDA_API, SELECTABLE_API_GET, DISHES_API, MESAS_API_UPDATE, AREAS_API, COMANDASEARCH_API_GET, apiConfig } from "../../../apiConfig";
+import { COMANDA_API, SELECTABLE_API_GET, MESAS_API_UPDATE, AREAS_API, COMANDASEARCH_API_GET, apiConfig } from "../../../apiConfig";
 import moment from "moment-timezone";
 // Animaciones Premium 60fps
 import Animated, {
@@ -36,6 +36,7 @@ import * as Haptics from 'expo-haptics';
 import { slideInUpCart, fadeInDownPlato, springConfig, moneyEasing } from "../../../constants/animations";
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
+import { useCatalogoPlatos } from "../../../context/CatalogoPlatosContext";
 import { resolverSlugMenuPorHora } from "../../../utils/horaTipoMenu";
 import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 
@@ -49,12 +50,12 @@ function _iconForTipo(slug) {
 }
 
 const SecondScreen = () => {
+  const { platos, refresh: refreshCatalogo } = useCatalogoPlatos();
   const [userInfo, setUserInfo] = useState(null);
   const [selectedMesa, setSelectedMesa] = useState(null);
   const [mesas, setMesas] = useState([]);
   const [modalMesasVisible, setModalMesasVisible] = useState(false);
   const [modalPlatosVisible, setModalPlatosVisible] = useState(false);
-  const [platos, setPlatos] = useState([]);
   const [selectedPlatos, setSelectedPlatos] = useState([]);
   const [cantidades, setCantidades] = useState({});
   const [observaciones, setObservaciones] = useState("");
@@ -70,7 +71,7 @@ const SecondScreen = () => {
   useEffect(() => {
     loadUserData();
     loadMesaData();
-    loadPlatosData();
+    refreshCatalogo({ force: false });
     loadSelectedPlatos();
     obtenerAreas();
   }, []);
@@ -110,20 +111,6 @@ const SecondScreen = () => {
       }
     } catch (error) {
       console.error("Error cargando mesa:", error);
-    }
-  };
-
-  const loadPlatosData = async () => {
-    try {
-      const platosURL = apiConfig.isConfigured 
-        ? apiConfig.getEndpoint('/platos')
-        : DISHES_API;
-      const response = await axios.get(platosURL, { timeout: 5000 });
-      setPlatos(response.data);
-      console.log("🍽️ Platos cargados:", response.data.length);
-    } catch (error) {
-      console.error("Error cargando platos:", error);
-      Alert.alert("Error", "No se pudieron cargar los platos");
     }
   };
 
@@ -643,7 +630,7 @@ const SecondScreen = () => {
           <MotiPressable
             onPress={async () => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              loadPlatosData();
+              refreshCatalogo({ force: false });
               const autoSlug = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
               setTipoPlatoFiltro(autoSlug || null);
               setCategoriaFiltro(null);

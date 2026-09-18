@@ -28,8 +28,9 @@ import useKeyboardInset from '../hooks/useKeyboardInset';
 // Contextos y configuración
 import { useTheme } from '../context/ThemeContext';
 import { useSocket } from '../context/SocketContext';
+import { useCatalogoPlatos } from '../context/CatalogoPlatosContext';
 import { themeLight } from '../constants/theme';
-import { COMANDASEARCH_API_GET, COMANDA_API, DISHES_API, apiConfig } from '../apiConfig';
+import { COMANDASEARCH_API_GET, COMANDA_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle } from '../utils/comandaHelpers';
 import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato, mismasGuarniciones, platoEditableEnOrdenes, resolverPartesComplementos } from '../utils/platoGuarniciones';
@@ -229,6 +230,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const insets = useSafeAreaInsets();
   const { inset: keyboardInset } = useKeyboardInset({ mode: 'modal', chrome: 220 });
   const { socket, connected, connectionStatus, reconnectAttempts, joinMesa, leaveMesa } = useSocket();
+  const {
+    platos,
+    categoriasInfo,
+    loaded: cartaLoaded,
+    refreshing: cartaRefreshing,
+    error: cartaError,
+    refresh: refreshCatalogo,
+  } = useCatalogoPlatos();
   
   // FASE 4.1: Estado para indicador online-active cuando recibe actualizaciones
   const [localConnectionStatus, setLocalConnectionStatus] = React.useState(connectionStatus || 'desconectado');
@@ -245,8 +254,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // Estados para todos los platos (ordenados)
   const [todosLosPlatos, setTodosLosPlatos] = useState([]);
-  
-  // Estado para configuración de moneda
   const [configMoneda, setConfigMoneda] = useState(null);
   // Regla cocina: por defecto bloqueo activo (config desmarcada)
   const [permitirEditarEliminarTomadas, setPermitirEditarEliminarTomadas] = useState(false);
@@ -267,8 +274,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Estados para modal de edición
   const [modalEditarVisible, setModalEditarVisible] = useState(false);
   const [comandaEditando, setComandaEditando] = useState(null);
-  const [platos, setPlatos] = useState([]);
-  const [categoriasInfo, setCategoriasInfo] = useState([]);
   const [platosEditables, setPlatosEditables] = useState([]);
   const [platosNoEditables, setPlatosNoEditables] = useState([]);
   const [searchPlato, setSearchPlato] = useState('');
@@ -1175,32 +1180,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // Obtener platos disponibles
   const obtenerPlatos = async () => {
-    try {
-      const platosURL = apiConfig.isConfigured 
-        ? apiConfig.getEndpoint('/platos')
-        : DISHES_API;
-      const response = await axios.get(platosURL, { timeout: 5000 });
-      setPlatos(response.data || []);
-      try {
-        const primary = apiConfig.isConfigured
-          ? apiConfig.getEndpoint('/platos/categorias?ligero=1')
-          : `${getFallbackApiBase()}/platos/categorias?ligero=1`;
-        const catRes = await axios.get(primary, { timeout: 5000 });
-        setCategoriasInfo(Array.isArray(catRes.data) ? catRes.data : []);
-      } catch (_) {
-        try {
-          const fallback = apiConfig.isConfigured
-            ? apiConfig.getEndpoint('/categorias-plato?ligero=1')
-            : `${getFallbackApiBase()}/categorias-plato?ligero=1`;
-          const catRes = await axios.get(fallback, { timeout: 5000 });
-          setCategoriasInfo(Array.isArray(catRes.data) ? catRes.data : []);
-        } catch {
-          setCategoriasInfo([]);
-        }
-      }
-    } catch (error) {
-      console.error('Error al obtener platos:', error);
-    }
+    return refreshCatalogo({ force: false });
   };
   
   // Estado para observaciones editadas
@@ -3984,6 +3964,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             ? 'Sin mesa'
             : (mesa?.nombreCombinado || (mesa?.nummesa != null ? `Mesa ${mesa.nummesa}` : null))
         }
+        cartaLoaded={cartaLoaded}
+        cartaRefreshing={cartaRefreshing}
+        cartaError={cartaError}
       />
       
       {/* Modal Eliminar Comanda */}

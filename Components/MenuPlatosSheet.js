@@ -14,6 +14,8 @@ import {
   StyleSheet,
   useWindowDimensions,
   Image,
+  InteractionManager,
+  ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -191,6 +193,9 @@ export default function MenuPlatosSheet({
   numeroMesa = null,
   onEnviarOrden = null,
   enviandoOrden = false,
+  cartaLoaded = true,
+  cartaRefreshing = false,
+  cartaError = null,
 }) {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
@@ -205,6 +210,41 @@ export default function MenuPlatosSheet({
   const [gridW, setGridW] = useState(0);
   const [filtroCatOpen, setFiltroCatOpen] = useState(false);
   const [filtroCatQ, setFiltroCatQ] = useState('');
+
+  useEffect(() => {
+    if (!visible || !Array.isArray(categoriasInfo) || !categoriasInfo.length) return undefined;
+    const task = InteractionManager.runAfterInteractions(() => {
+      categoriasInfo.forEach((c) => {
+        const uri = urlMediaServidor(c.imagenUrl);
+        if (uri) Image.prefetch(uri).catch(() => {});
+      });
+    });
+    return () => {
+      if (task && typeof task.cancel === 'function') task.cancel();
+    };
+  }, [visible, categoriasInfo]);
+
+  const qtyById = useMemo(() => {
+    const m = Object.create(null);
+    (selectedPlatos || []).forEach((p) => {
+      const id = String(p._id);
+      const q = cantidades[p.instanceId || p._id] || 1;
+      if (!m[id]) m[id] = { total: 0, mesa: 0, llevar: 0 };
+      m[id].total += q;
+      const ts = p.tipoServicio || 'mesa';
+      if (ts === 'para_llevar' || ts === 'extra_llevar') m[id].llevar += q;
+      else m[id].mesa += q;
+    });
+    return m;
+  }, [selectedPlatos, cantidades]);
+
+  const extraListData = useMemo(() => {
+    const qtyKey = Object.keys(qtyById).sort().map((id) => {
+      const q = qtyById[id];
+      return `${id}:${q.total}:${q.mesa}:${q.llevar}`;
+    }).join('|');
+    return `${tipoServicioModal}:${cartaLoaded}:${(favoritoIds || []).join(',')}:${qtyKey}`;
+  }, [qtyById, tipoServicioModal, favoritoIds, cartaLoaded]);
 
   const catsFiltro = useMemo(() => {
     const names = ordenarCategoriasMozo(categorias || [], categoriasInfo, tipoPlatoFiltro);
@@ -271,21 +311,15 @@ export default function MenuPlatosSheet({
   }, []);
 
   const renderPlato = useCallback(({ item: plato }) => {
-    const cantidadTotal = selectedPlatos
-      .filter((p) => p._id === plato._id)
-      .reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
-    const instanciasMesa = selectedPlatos.filter((p) => p._id === plato._id && (p.tipoServicio || 'mesa') === 'mesa');
-    const instanciasLlevar = selectedPlatos.filter((p) => p._id === plato._id && (p.tipoServicio === 'para_llevar' || p.tipoServicio === 'extra_llevar'));
-    const cantidadMesa = instanciasMesa.reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
-    const cantidadLlevar = instanciasLlevar.reduce((sum, p) => sum + (cantidades[p.instanceId || p._id] || 1), 0);
+    const q = qtyById[String(plato._id)] || { total: 0, mesa: 0, llevar: 0 };
     const esFav = favoritoIds.includes(String(plato._id));
 
     return (
       <PlatoBuscadorCard
         plato={plato}
-        cantidadTotal={cantidadTotal}
-        cantidadMesa={cantidadMesa}
-        cantidadLlevar={cantidadLlevar}
+        cantidadTotal={q.total}
+        cantidadMesa={q.mesa}
+        cantidadLlevar={q.llevar}
         esLlevar={tipoServicioModal === 'para_llevar' || tipoServicioModal === 'extra_llevar'}
         esFav={esFav}
         onToggleFavorito={onToggleFavorito}
@@ -295,7 +329,7 @@ export default function MenuPlatosSheet({
         onPressV={onPressV}
       />
     );
-  }, [selectedPlatos, cantidades, onDecrementPlato, onAddPlato, onPressG, onPressV, onToggleFavorito, favoritoIds, tipoServicioModal]);
+  }, [qtyById, onDecrementPlato, onAddPlato, onPressG, onPressV, onToggleFavorito, favoritoIds, tipoServicioModal]);
 
   const searchActive = (searchPlato || '').trim().length > 0;
 
@@ -711,19 +745,36 @@ export default function MenuPlatosSheet({
                 data={platosFiltrados}
                 keyExtractor={(item) => String(item._filaBuscadorKey || item._id)}
                 renderItem={renderPlato}
-                extraData={{ selectedPlatos, cantidades, tipoServicioModal, favoritoIds }}
+                extraData={extraListData}
                 style={{ height: listH }}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="on-drag"
                 onScroll={onListScroll}
                 scrollEventThrottle={16}
+                initialNumToRender={10}
+                maxToRenderPerBatch={8}
+                windowSize={7}
+                updateCellsBatchingPeriod={50}
+                removeClippedSubviews={Platform.OS === 'android'}
                 ListEmptyComponent={
                   <View style={styles.emptyPlatosContainer}>
-                    <Text style={styles.emptyPlatosText}>
-                      {categoriaFiltro === CAT_FAVORITOS && !searchActive
-                        ? 'No tienes platos favoritos. Toca la estrella debajo del nombre.'
-                        : 'No hay platos disponibles'}
-                    </Text>
+                    {!cartaLoaded ? (
+                      <>
+                        <ActivityIndicator color={theme.colors.primary} />
+                        <Text style={styles.emptyPlatosText}>Cargando carta…</Text>
+                      </>
+                    ) : (
+                      <Text style={styles.emptyPlatosText}>
+                        {cartaError
+                          ? 'Sin carta / reintenta'
+                          : (categoriaFiltro === CAT_FAVORITOS && !searchActive
+                            ? 'No tienes platos favoritos. Toca la estrella debajo del nombre.'
+                            : 'No hay platos disponibles')}
+                      </Text>
+                    )}
+                    {cartaRefreshing && cartaLoaded ? (
+                      <Text style={styles.emptyPlatosText}>Actualizando…</Text>
+                    ) : null}
                   </View>
                 }
               />

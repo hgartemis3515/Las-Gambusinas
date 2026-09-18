@@ -8,6 +8,7 @@ import axios from "axios";
 import moment from "moment-timezone";
 import { useTheme } from "../context/ThemeContext";
 import { useSocket } from "../context/SocketContext";
+import { useCatalogoPlatos } from "../context/CatalogoPlatosContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { MotiView, AnimatePresence } from "moti";
 import * as Haptics from "expo-haptics";
@@ -73,6 +74,7 @@ export default function ReservaWizardScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { subscribeToEvents } = useSocket();
+  const { platos, refresh: refreshCatalogo } = useCatalogoPlatos();
   const tc = useTheme();
   const theme = tc?.theme || { colors: { background: "#F8F9FA", surface: "#FFFFFF", primary: "#C41E3A", border: "#E0E0E0", secondary: "#00C851", warning: "#FF9500", text: { primary: "#1A1A1A", secondary: "#666666" }, mesaEstado: { reservado: "#9C27B0" } } };
   const cText = theme.colors.text?.primary ?? "#1A1A1A";
@@ -89,7 +91,6 @@ export default function ReservaWizardScreen() {
   const [paso, setPaso] = useState(0);
   const [userInfo, setUserInfo] = useState(null);
   const [mesas, setMesas] = useState([]);
-  const [platos, setPlatos] = useState([]);
   const [cocineros, setCocineros] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -259,8 +260,7 @@ export default function ReservaWizardScreen() {
         const mr = await axios.get(getApiUrl(`/reservas/mesas-disponibles-para?fechaReserva=${encodeURIComponent(fechaReserva)}`), { timeout: 5000, headers });
         setMesas(mr.data || []);
         if (route.params?.mesa?._id && !(mr.data || []).find((m) => idsIguales(m, route.params.mesa))) setMesaPreNoDisponible(true);
-        const pr = await axios.get(getApiUrl("/platos"), { timeout: 5000, headers });
-        setPlatos((pr.data || []).filter((p) => p.isActive !== false));
+        await refreshCatalogo({ force: false });
         const ur = await axios.get(getApiUrl("/mozos"), { timeout: 5000, headers }).catch(() => null);
         if (ur) setCocineros((ur.data || []).filter((x) => x.rol === "cocinero" || x.rol === "supervisor"));
         try {
