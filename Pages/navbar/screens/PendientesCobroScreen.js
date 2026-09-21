@@ -26,6 +26,7 @@ import {
   aplicarPedidoSinVaciar,
   rutasComandasSegunEstadoMesa,
 } from "../../../utils/comandaHelpers";
+import { reducirRespuestasCicloMesa } from "../../../utils/cicloComandasMesa";
 import { agruparComandasPendientes } from "../../../utils/agruparComandasPendientes";
 import { esFilaComandaSinMesa, COLOR_PARA_LLEVAR } from "../../../utils/sinMesaOrden";
 import { comandaEsDeMozo, idEntidad } from "../../../utils/reservasMozo";
@@ -66,22 +67,17 @@ async function fetchCicloMesa(mesa) {
   if (!mesa?._id) return [];
   const base = comandaBaseUrl();
   const rutas = rutasComandasSegunEstadoMesa(mesa.estado);
-  let lista = [];
-  let pedidoId = null;
+  const respuestas = [];
   for (const ruta of rutas) {
     try {
       const res = await axios.get(`${base}/mesa/${mesa._id}/${ruta}`, { timeout: 10000 });
-      if (res.data?.pedidoId) pedidoId = res.data.pedidoId;
-      const batch = res.data?.comandas || [];
-      if (batch.length > 0) {
-        lista = batch;
-        break;
-      }
+      respuestas.push({ ruta, data: res.data });
     } catch (_) {
       /* siguiente ruta */
     }
   }
-  return acotarComandasAlCicloActual(aplicarPedidoSinVaciar(lista, pedidoId));
+  const reducido = reducirRespuestasCicloMesa(respuestas, mesa.estado);
+  return acotarComandasAlCicloActual(aplicarPedidoSinVaciar(reducido.comandas, reducido.pedidoId));
 }
 
 async function fetchComandaPorId(comandaId) {

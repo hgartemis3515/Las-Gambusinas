@@ -33,6 +33,8 @@ import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle } from '../utils/comandaHelpers';
+import { reducirRespuestasCicloMesa } from '../utils/cicloComandasMesa';
+import { extraerComandaDeEventoSocket } from '../utils/socketComandaPatch';
 import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato, mismasGuarniciones, platoEditableEnOrdenes, resolverPartesComplementos } from '../utils/platoGuarniciones';
 import { hidratarUnidadesDesdeLineas, cantidadDeLinea, fusionarGuarnicionesPreseleccionadasEnLista } from '../utils/unidadesComplemento';
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
@@ -512,19 +514,21 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       let pedidoIdCiclo = null;
       if (mesaIdRef) {
         const rutas = rutasComandasSegunEstadoMesa(mesaEstado);
+        const respuestas = [];
         for (const ruta of rutas) {
           try {
             const res = await axios.get(`${comandaBase}/mesa/${mesaIdRef}/${ruta}`, { timeout: 10000 });
-            if (res.data?.pedidoId) pedidoIdCiclo = res.data.pedidoId;
-            if (res.data?.success && Array.isArray(res.data.comandas) && res.data.comandas.length > 0) {
-              comandasMesa = acotarComandasAlCicloActual(
-                aplicarPedidoSinVaciar(res.data.comandas, pedidoIdCiclo)
-              );
-              break;
-          }
-        } catch (e) {
+            respuestas.push({ ruta, data: res.data });
+          } catch (e) {
             if (__DEV__) console.warn(`[ComandaDetalle] /mesa/${ruta}:`, e?.message);
           }
+        }
+        const reducido = reducirRespuestasCicloMesa(respuestas, mesaEstado);
+        if (reducido.pedidoId) pedidoIdCiclo = reducido.pedidoId;
+        if (reducido.comandas.length > 0) {
+          comandasMesa = acotarComandasAlCicloActual(
+            aplicarPedidoSinVaciar(reducido.comandas, pedidoIdCiclo)
+          );
         }
       }
 
@@ -782,12 +786,16 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     };
 
     const aplicarPayloadComanda = (data) => {
-      const incoming = data?.comanda;
+      const incoming = extraerComandaDeEventoSocket(data) || data?.comanda;
       if (!incoming?._id) return;
       setComandasState((prev) => {
         const idN = String(incoming._id);
         const idx = prev.findIndex((c) => String(c._id) === idN);
-        if (idx === -1) return prev;
+        if (idx === -1) {
+          const mesaIncoming = extraerMesaIdEvento({ ...data, comanda: incoming }) || valorId(incoming.mesas);
+          if (!mesaId || !mesaIncoming || String(mesaIncoming) !== String(mesaId)) return prev;
+          return acotarComandasAlCicloActual([...prev, incoming]);
+        }
         const next = [...prev];
         const existing = prev[idx];
         next[idx] = {
@@ -920,6 +928,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     };
     socket.on('comanda-actualizada', onComandaActualizadaLocal);
 
+    const onNuevaComanda = (data) => {
+      const incoming = extraerComandaDeEventoSocket(data) || (data?._id ? data : null);
+      if (!incoming?._id) return;
+      aplicarPayloadComanda({ comanda: incoming, mesaId: extraerMesaIdEvento({ comanda: incoming, mesaId: data?.mesaId }) });
+      const mesaIncoming = extraerMesaIdEvento({ comanda: incoming, mesaId: data?.mesaId }) || valorId(incoming.mesas);
+      if (mesaId && mesaIncoming && String(mesaIncoming) === String(mesaId)) {
+        refrescarComandasRef.current?.();
+      }
+    };
+    socket.on('nueva-comanda', onNuevaComanda);
+
     socket.on('comanda-aprobada', aplicarCobroForzadoYRefrescar);
 
     const refrescarSiReservaOTicket = (data) => {
@@ -1043,6 +1062,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       socket.off('plato-agregado', onPlatoAgregado);
       socket.off('plato-entregado', onPlatoEntregado);
       socket.off('comanda-actualizada', onComandaActualizadaLocal);
+      socket.off('nueva-comanda', onNuevaComanda);
       socket.off('comanda-aprobada', aplicarCobroForzadoYRefrescar);
       socket.off('ticket-ppa-aprobado', refrescarSiReservaOTicket);
       socket.off('ticket-ppa-creado', refrescarSiReservaOTicket);

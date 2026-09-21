@@ -61,6 +61,7 @@ import * as Haptics from 'expo-haptics';
 import { springConfig } from "../../../constants/animations";
 import { LinearGradient } from 'expo-linear-gradient';
 import { filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../../../utils/comandaHelpers';
+import { reducirRespuestasCicloMesa } from '../../../utils/cicloComandasMesa';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
@@ -1487,22 +1488,17 @@ const InicioScreen = () => {
         ? apiConfig.getEndpoint('/comanda')
         : COMANDASEARCH_API_GET;
       const rutas = rutasComandasSegunEstadoMesa(st);
-      let lista = [];
-      let pedidoId = null;
+      const respuestas = [];
       for (const ruta of rutas) {
         try {
           const res = await axios.get(`${comandaBase}/mesa/${mesa._id}/${ruta}`, { timeout: 10000 });
-          const batch = res.data?.comandas || [];
-          if (res.data?.pedidoId) pedidoId = res.data.pedidoId;
-          if (batch.length > 0) {
-            lista = batch;
-            break;
-          }
+          respuestas.push({ ruta, data: res.data });
         } catch (inner) {
           console.warn(`⚠️ [ciclo mesa ${mesa.nummesa}] /${ruta}:`, inner.message);
         }
       }
-      lista = aplicarPedidoSinVaciar(lista, pedidoId);
+      const reducido = reducirRespuestasCicloMesa(respuestas, st);
+      const lista = aplicarPedidoSinVaciar(reducido.comandas, reducido.pedidoId);
       return acotarComandasAlCicloActual(lista);
     } catch (error) {
       console.error(`❌ Error obteniendo ciclo de mesa ${mesa.nummesa}:`, error.message);

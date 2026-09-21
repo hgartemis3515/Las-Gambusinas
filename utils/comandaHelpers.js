@@ -116,6 +116,8 @@ export const filtrarComandasPorPedido = (comandas, pedidoId) => {
  * Endpoints de ciclo según estado de mesa.
  * pendiente_aprobar / pendiente_pago: para-pagos (parciales) y fallbacks;
  * no usar solo /pagadas (tickets aprobados de otra visita vacían Ver pedido).
+ * El cliente DEBE fusionar para-pagos+activas (ver cicloComandasMesa.js):
+ * para-pagos omite comandas nuevas solo en pedido.
  */
 export const rutasComandasSegunEstadoMesa = (estadoMesa) => {
   const st = (estadoMesa || '').toLowerCase();
