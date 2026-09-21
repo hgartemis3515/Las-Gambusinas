@@ -92,8 +92,8 @@ android {
         applicationId 'com.carlos121.appmozo'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 26
-        versionName "1.7.1v"
+        versionCode 27
+        versionName "2.0.4v"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

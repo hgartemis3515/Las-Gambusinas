@@ -279,9 +279,12 @@ const OrdenesScreen = ({ route }) => {
   const accionIconSize = Math.max(16, Math.round(24 * (clampAccionesEscala(accionesEscala) / 100)));
   
   // Obtener parámetros de navegación (mesa y reserva desde ComandaDetalle)
-  const { mesa: mesaParam, reserva: reservaParam, modoExtraLlevar: modoExtraParam, origen: origenParam, abrirMenu: abrirMenuParam, tipoMenuHora: tipoMenuHoraParam } = route?.params || {};
+  const { mesa: mesaParam, reserva: reservaParam, modoExtraLlevar: modoExtraParam, origen: origenParam, abrirMenu: abrirMenuParam, tipoMenuHora: tipoMenuHoraParam, abrirSelectorMesa: abrirSelectorMesaParam } = route?.params || {};
   const modoExtraLlevar = modoExtraParam === true;
   const agruparConMesa = origenParam === 'ComandaDetalle' || modoExtraLlevar === true;
+  const abrirSelectorMesaRef = useRef(false);
+  const cargaMesaGenRef = useRef(0);
+  abrirSelectorMesaRef.current = abrirSelectorMesaParam === true;
   
   const [userInfo, setUserInfo] = useState(null);
   const [selectedMesa, setSelectedMesa] = useState(null);
@@ -436,6 +439,7 @@ const OrdenesScreen = ({ route }) => {
 
   // Manejar parámetros de navegación (mesa y reserva desde ComandaDetalle)
   useEffect(() => {
+    if (abrirSelectorMesaRef.current) return;
     if (mesaParam) {
       console.log("📋 Mesa recibida desde parámetros:", mesaParam);
       setSelectedMesa(mesaParam);
@@ -453,6 +457,22 @@ const OrdenesScreen = ({ route }) => {
       AsyncStorage.setItem("reservaActiva", JSON.stringify(reservaParam));
     }
   }, [mesaParam, reservaParam]);
+
+  useEffect(() => {
+    if (abrirSelectorMesaParam !== true) return;
+    const gen = ++cargaMesaGenRef.current;
+    let cancelled = false;
+    (async () => {
+      await AsyncStorage.multiRemove(['mesaSeleccionada', 'reservaActiva']);
+      if (cancelled || gen !== cargaMesaGenRef.current) return;
+      setSelectedMesa(null);
+      setReservaActiva(null);
+      setTipoServicioModal(persistTipoServicioOrdenes('mesa'));
+      setModalMesasVisible(true);
+      navigation.setParams({ abrirSelectorMesa: false });
+    })();
+    return () => { cancelled = true; };
+  }, [abrirSelectorMesaParam, navigation]);
 
   useEffect(() => {
     if (!abrirMenuParam) return;
@@ -557,8 +577,11 @@ const OrdenesScreen = ({ route }) => {
   };
 
   const loadMesaData = async () => {
+    if (abrirSelectorMesaRef.current) return;
+    const gen = cargaMesaGenRef.current;
     try {
       const mesaData = await AsyncStorage.getItem("mesaSeleccionada");
+      if (abrirSelectorMesaRef.current || gen !== cargaMesaGenRef.current) return;
       if (mesaData) {
         const parsed = JSON.parse(mesaData);
         setSelectedMesa(parsed);
@@ -1211,7 +1234,9 @@ const OrdenesScreen = ({ route }) => {
           : !c.mesas;
         const coincideMozo = comandaMozoId === mozoId?.toString();
         const esReciente = minutosDiferencia <= 2; // Últimos 2 minutos
-        const coincideNumero = comandaNumber ? c.comandaNumber === comandaNumber : true;
+        const coincideNumero = comandaNumber
+          ? (c.numeroComandaDia === comandaNumber || c.comandaNumber === comandaNumber)
+          : true;
         
         return coincideMesa && coincideMozo && esReciente && coincideNumero;
       });
@@ -1515,7 +1540,7 @@ const OrdenesScreen = ({ route }) => {
         response = await axios.post(comandaURL, comandaData, { timeout: 10000 });
         
         // Extraer datos de la respuesta
-        comandaNumber = response.data?.comanda?.comandaNumber || response.data?.comandaNumber || null;
+        comandaNumber = response.data?.comanda?.numeroComandaDia || response.data?.comanda?.comandaNumber || response.data?.comandaNumber || null;
         comandaCreada = response.data?.comanda || response.data;
         
         // Verificar que la comanda se creó correctamente
@@ -1530,7 +1555,7 @@ const OrdenesScreen = ({ route }) => {
           
           if (verificacion.success) {
             comandaCreada = verificacion.comanda;
-            comandaNumber = verificacion.comanda.comandaNumber;
+            comandaNumber = verificacion.comanda.numeroComandaDia || verificacion.comanda.comandaNumber;
             console.log(`✅ Comanda verificada en backend: #${comandaNumber}`);
           } else {
             setMostrarOverlayCarga(false);
@@ -1545,7 +1570,7 @@ const OrdenesScreen = ({ route }) => {
         
         // Intentar extraer datos del error si existen
         if (postError.response?.data) {
-          comandaNumber = postError.response.data?.comanda?.comandaNumber || postError.response.data?.comandaNumber;
+          comandaNumber = postError.response.data?.comanda?.numeroComandaDia || postError.response.data?.comanda?.comandaNumber || postError.response.data?.comandaNumber;
           comandaCreada = postError.response.data?.comanda || postError.response.data;
         }
         
@@ -1560,7 +1585,7 @@ const OrdenesScreen = ({ route }) => {
           
           if (verificacion.success) {
             comandaCreada = verificacion.comanda;
-            comandaNumber = verificacion.comanda.comandaNumber;
+            comandaNumber = verificacion.comanda.numeroComandaDia || verificacion.comanda.comandaNumber;
             console.log(`✅ Comanda encontrada en backend después de error: #${comandaNumber}`);
             // Continuar con el flujo normal (no lanzar error)
           } else {
@@ -1575,7 +1600,7 @@ const OrdenesScreen = ({ route }) => {
       
       // Si llegamos aquí, la comanda se creó exitosamente
       if (!comandaNumber) {
-        comandaNumber = comandaCreada?.comandaNumber || "N/A";
+        comandaNumber = comandaCreada?.numeroComandaDia || comandaCreada?.comandaNumber || "N/A";
       }
       
       setMensajeCarga(`¡Comanda #${comandaNumber} creada!`);
@@ -1711,7 +1736,7 @@ const OrdenesScreen = ({ route }) => {
         // ¡La comanda SÍ se creó! Continuar con éxito silencioso
         console.log(`✅ Comanda encontrada en verificación final: #${verificacionFinal.comanda.comandaNumber}`);
         comandaCreada = verificacionFinal.comanda;
-        comandaNumber = verificacionFinal.comanda.comandaNumber;
+        comandaNumber = verificacionFinal.comanda.numeroComandaDia || verificacionFinal.comanda.comandaNumber;
         
         // Continuar con el flujo de éxito (no mostrar error)
         // Esto ejecutará el código después del try/catch que maneja el éxito

@@ -60,7 +60,7 @@ import { MotiPressable } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { springConfig } from "../../../constants/animations";
 import { LinearGradient } from 'expo-linear-gradient';
-import { filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina } from '../../../utils/comandaHelpers';
+import { filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, numeroComandaVisible } from '../../../utils/comandaHelpers';
 import { reducirRespuestasCicloMesa } from '../../../utils/cicloComandasMesa';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
 // Hook catálogo de tipos de plato (dinámico desde backend)
@@ -4456,7 +4456,7 @@ const InicioScreen = () => {
 
     Alert.alert(
       "⚠️ Eliminar Última Comanda",
-      `¿Estás seguro de que deseas eliminar la última comanda #${ultimaComanda.comandaNumber || ultimaComanda._id?.slice(-4) || 'N/A'} de la mesa ${mesa?.nummesa || 'N/A'}?\n\nEsta acción no se puede deshacer.`,
+      `¿Estás seguro de que deseas eliminar la última comanda #${numeroComandaVisible(ultimaComanda) || ultimaComanda._id?.slice(-4) || 'N/A'} de la mesa ${mesa?.nummesa || 'N/A'}?\n\nEsta acción no se puede deshacer.`,
       [
         {
           text: "Cancelar",
@@ -4602,7 +4602,7 @@ const InicioScreen = () => {
     // Para otros estados, usar Alert simple (compatibilidad)
     Alert.alert(
       "⚠️ Confirmar Eliminación",
-      `¿Estás seguro de que deseas eliminar la comanda #${comanda.comandaNumber || comanda._id?.slice(-4) || 'N/A'} de la mesa ${mesa?.nummesa || 'N/A'}?\n\nEsta acción no se puede deshacer.`,
+      `¿Estás seguro de que deseas eliminar la comanda #${numeroComandaVisible(comanda) || comanda._id?.slice(-4) || 'N/A'} de la mesa ${mesa?.nummesa || 'N/A'}?\n\nEsta acción no se puede deshacer.`,
       [
         {
           text: "Cancelar",
@@ -5687,7 +5687,7 @@ const InicioScreen = () => {
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                Editar Comanda #{comandaEditando?.comandaNumber || comandaEditando?._id.slice(-4)}
+                Editar Comanda #{numeroComandaVisible(comandaEditando) || comandaEditando?._id.slice(-4)}
               </Text>
               <TouchableOpacity onPress={() => {
                 setModalEditVisible(false);
@@ -6109,7 +6109,7 @@ const InicioScreen = () => {
           <View style={styles.modalContainer}>
             <View style={[styles.modalHeader, { backgroundColor: colors.danger, padding: theme.spacing.md, borderRadius: theme.borderRadius.md, marginBottom: 0 }]}>
               <Text style={[styles.modalTitle, { color: theme.colors.text.white, flex: 1 }]}>
-                🗑️ Eliminar Última Comanda #{comandaAEliminar?.comandaNumber || comandaAEliminar?._id?.slice(-4) || 'N/A'}
+                🗑️ Eliminar Última Comanda #{numeroComandaVisible(comandaAEliminar) || comandaAEliminar?._id?.slice(-4) || 'N/A'}
               </Text>
               <TouchableOpacity onPress={() => {
                 setModalEliminarUltimaVisible(false);
@@ -6299,7 +6299,7 @@ const InicioScreen = () => {
                     return (
                       <View key={`comanda-${comandaIndex}`} style={{ marginBottom: theme.spacing.md }}>
                         <Text style={[styles.editLabel, { color: colors.danger, fontSize: 14, marginBottom: 8 }]}>
-                          Comanda #{comanda.comandaNumber || comanda._id?.slice(-4) || comandaIndex + 1}:
+                          Comanda #{numeroComandaVisible(comanda) || comanda._id?.slice(-4) || comandaIndex + 1}:
                         </Text>
                         
                         {platosComanda.map((platoItem, index) => {
@@ -6625,7 +6625,7 @@ const InicioScreen = () => {
           <View style={styles.modalContainer}>
             <View style={[styles.modalHeader, { backgroundColor: colors.danger, padding: theme.spacing.md, borderRadius: theme.borderRadius.md, marginBottom: 0 }]}>
               <Text style={[styles.modalTitle, { color: theme.colors.text.white, flex: 1 }]}>
-                🗑️ Eliminar platos Comanda #{comandaEliminarPlatos?.comandaNumber || comandaEliminarPlatos?._id?.slice(-4) || 'N/A'}
+                🗑️ Eliminar platos Comanda #{numeroComandaVisible(comandaEliminarPlatos) || comandaEliminarPlatos?._id?.slice(-4) || 'N/A'}
               </Text>
               <TouchableOpacity onPress={() => {
                 setModalEliminarPlatosVisible(false);

@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import moment from 'moment-timezone';
 import BadgeEstadoPlato from './BadgeEstadoPlato';
 import { useApodosMesa } from '../context/ApodosMesaContext';
+import { numeroComandaVisible } from '../utils/comandaHelpers';
 import { textoMesaConApodo } from '../utils/apodosMesa';
 
 /**
@@ -96,9 +97,7 @@ const HeaderComandaDetalle = ({ mesa, comanda, onSync, navigation, connectionSta
           >
             <MaterialCommunityIcons name="refresh" size={28} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            Comanda #{comanda?.comandaNumber || 'N/A'}
-          </Text>
+          <View style={{ flex: 1 }} />
           <Animated.View 
             style={[
               styles.statusIndicator, 
@@ -114,7 +113,10 @@ const HeaderComandaDetalle = ({ mesa, comanda, onSync, navigation, connectionSta
             </Text>
           </Animated.View>
         </View>
-        <View style={styles.headerRow}>
+        <Text style={styles.numeroGrande}>
+          #{numeroComandaVisible(comanda) ?? 'N/A'}
+        </Text>
+        <View style={[styles.headerRow, { justifyContent: 'center' }]}>
           <Text style={styles.headerText}>Mozo: {mozoNombre}</Text>
           <Text style={styles.headerText}> • </Text>
           <Text style={styles.headerText}>Mesa: {etiquetaMesa}</Text>
@@ -163,6 +165,14 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     marginRight: 8,
+  },
+  numeroGrande: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 4,
+    letterSpacing: 0.5,
   },
   // FASE 4.1: Estilos para indicador de estado
   statusIndicator: {

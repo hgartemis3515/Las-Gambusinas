@@ -74,7 +74,7 @@ const ComandaSearch = () => {
       <View style={{ borderColor: "orange", borderWidth: 4, borderRadius: 30, marginBottom: 20 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-around", marginTop: 20, marginBottom: 20 }}>
           <Text>
-            Nro: {item.comandaNumber}
+            Nro: {item.numeroComandaDia ?? item.comandaNumber}
           </Text>
           <Text>
             Mesa: {item.mesas?.nombreCombinado || item.mesas?.nummesa || 'N/A'}

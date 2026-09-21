@@ -150,7 +150,7 @@ export function generarXmlBoucher({
     boucher?.observaciones ||
     comandas
       .filter((c) => c.observaciones)
-      .map((c) => `C#${c.comandaNumber || c._id?.slice?.(-6)}: ${c.observaciones}`)
+      .map((c) => `C#${c.numeroComandaDia ?? c.comandaNumber ?? c._id?.slice?.(-6)}: ${c.observaciones}`)
       .join('. ') ||
     '';
 

@@ -32,7 +32,7 @@ import { useCatalogoPlatos } from '../context/CatalogoPlatosContext';
 import { themeLight } from '../constants/theme';
 import { COMANDASEARCH_API_GET, COMANDA_API, apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
-import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle } from '../utils/comandaHelpers';
+import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle, numeroComandaVisible } from '../utils/comandaHelpers';
 import { reducirRespuestasCicloMesa } from '../utils/cicloComandasMesa';
 import { extraerComandaDeEventoSocket } from '../utils/socketComandaPatch';
 import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato, mismasGuarniciones, platoEditableEnOrdenes, resolverPartesComplementos } from '../utils/platoGuarniciones';
@@ -1027,7 +1027,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           if (Array.isArray(actualizadas) && actualizadas.length === 0) {
             Alert.alert(
               'Comanda Anulada por Cocina',
-              `La comanda #${data.comandaNumber} fue anulada completamente.\n\nMotivo: ${data.motivoGeneral || 'No especificado'}\n\nTotal anulado: S/. ${data.totalAnulado?.toFixed(2) || '0.00'}`,
+              `La comanda #${numeroComandaVisible(data.comanda) ?? data.numeroComandaDia ?? data.comandaNumber} fue anulada completamente.\n\nMotivo: ${data.motivoGeneral || 'No especificado'}\n\nTotal anulado: S/. ${data.totalAnulado?.toFixed(2) || '0.00'}`,
               [{ 
                 text: 'Volver al Inicio', 
                 style: 'default',
@@ -1040,7 +1040,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           } else {
             Alert.alert(
               'Comanda Anulada por Cocina',
-              `La comanda #${data.comandaNumber} fue anulada.\n\nMotivo: ${data.motivoGeneral || 'No especificado'}\n\nPlatos anulados: ${data.platosAnulados?.length || 0}\nTotal anulado: S/. ${data.totalAnulado?.toFixed(2) || '0.00'}`,
+              `La comanda #${numeroComandaVisible(data.comanda) ?? data.numeroComandaDia ?? data.comandaNumber} fue anulada.\n\nMotivo: ${data.motivoGeneral || 'No especificado'}\n\nPlatos anulados: ${data.platosAnulados?.length || 0}\nTotal anulado: S/. ${data.totalAnulado?.toFixed(2) || '0.00'}`,
               [{ text: 'Entendido', style: 'default' }]
             );
           }
@@ -2469,17 +2469,18 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       origen: 'ComandaDetalle',
       reserva: reservaEfectiva || reserva || null,
       modoExtraLlevar: false,
+      abrirSelectorMesa: false,
     });
   };
 
-  const handleNuevaComandaSinMesa = () => {
-    AsyncStorage.setItem('mesaSeleccionada', JSON.stringify(SELECCION_SIN_MESA));
-    AsyncStorage.removeItem('reservaActiva');
+  const handleNuevaComandaSinMesa = async () => {
+    await AsyncStorage.multiRemove(['mesaSeleccionada', 'reservaActiva']);
     navigation.navigate('Ordenes', {
-      mesa: SELECCION_SIN_MESA,
-      origen: 'ComandaDetalle',
+      mesa: null,
+      origen: null,
       reserva: null,
       modoExtraLlevar: false,
+      abrirSelectorMesa: true,
     });
   };
 
@@ -2497,6 +2498,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       origen: 'ComandaDetalle',
       reserva: reservaEfectiva || reserva || null,
       modoExtraLlevar: true,
+      abrirSelectorMesa: false,
     });
   };
   
@@ -3137,7 +3139,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               disabled={!puedeNuevaComanda}
             >
               <MaterialCommunityIcons name="plus-circle" size={20} color="#fff" />
-              <Text style={styles.actionButtonText}>Agregar Comanda</Text>
+              <Text style={styles.actionButtonText}>Añadir comanda</Text>
             </TouchableOpacity>
             
             <TouchableOpacity
@@ -3578,7 +3580,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           ]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: isDark ? '#FFFFFF' : (themeColors.colors?.text?.primary || themeColors.text?.primary || '#1F2937'), flex: 1 }]}>
-                Editar Comanda #{comandaEditando?.comandaNumber || 'N/A'}
+                Editar Comanda #{numeroComandaVisible(comandaEditando) || 'N/A'}
               </Text>
               <TouchableOpacity onPress={() => {
                 setModalEditarVisible(false);
@@ -4024,7 +4026,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 marginBottom: 16,
               }
             ]}>
-              Esta acción eliminará la comanda #{comandaPrincipal.comandaNumber || 'N/A'} permanentemente.
+              Esta acción eliminará la comanda #{numeroComandaVisible(comandaPrincipal) || 'N/A'} permanentemente.
             </Text>
             
             {/* Advertencia si hay platos en recoger */}
@@ -4325,7 +4327,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
                 <Text style={[styles.infoText, { color: themeColors.colors?.text?.secondary || '#6B7280' }]}>
                   {esGrupoDescuento
                     ? `Grupo · ${comandas.length} comandas`
-                    : `Comanda #${comandas[0]?.comandaNumber || 'N/A'}`}
+                    : `Comanda #${numeroComandaVisible(comandas[0]) || 'N/A'}`}
                 </Text>
                 <Text style={[styles.infoTextBold, { color: themeColors.colors?.text?.primary || '#111827' }]}>
                   Total: S/. {brutoDescuento.toFixed(2)}

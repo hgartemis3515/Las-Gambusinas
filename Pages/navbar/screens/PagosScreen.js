@@ -29,7 +29,7 @@ import { useWindowDimensions } from "react-native";
 import { useSocket } from "../../../context/SocketContext";
 import logger from "../../../utils/logger";
 import configuracionService from "../../../services/configuracionService";
-import { filtrarComandasActivas, filtrarComandasPorIds } from "../../../utils/comandaHelpers";
+import { filtrarComandasActivas, filtrarComandasPorIds, numeroComandaVisible } from "../../../utils/comandaHelpers";
 import { esSeleccionSinMesa } from "../../../utils/sinMesaOrden";
 import { esLlevarColor, etiquetaLlevarMozo } from "../../../utils/tipoServicio";
 import { cantidadGuarnicionEfectiva } from "../../../utils/platoGuarniciones";
@@ -1398,7 +1398,7 @@ const PagosScreen = () => {
                   : platosActivos.length === 0
                     ? 'sin platos válidos'
                     : 'desconocida';
-          console.warn(`⚠️ [VALIDACIÓN] Comanda #${c.comandaNumber || c._id?.toString?.().slice(-6)} inválida: ${razon}`);
+          console.warn(`⚠️ [VALIDACIÓN] Comanda #${numeroComandaVisible(c) || c._id?.toString?.().slice(-6)} inválida: ${razon}`);
         }
       });
 
@@ -1429,14 +1429,14 @@ const PagosScreen = () => {
       
       if (comandasInvalidas.length > 0) {
         const razones = comandasInvalidas.map(c => {
-          if (c.eliminada === true) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} eliminada`;
+          if (c.eliminada === true) return `Comanda #${numeroComandaVisible(c) || c._id?.slice(-6)} eliminada`;
           const status = c.status?.toLowerCase();
           // 🔥 CORREGIDO: Verificar platos activos (no eliminados ni anulados)
           const platosActivos = c.platos?.filter(p => p.eliminado !== true && p.anulado !== true) || [];
           const tienePlatosValidos = platosActivos.length > 0;
-          if (status === 'pagado') return `Comanda #${c.comandaNumber || c._id?.slice(-6)} ya pagada`;
-          if (!tienePlatosValidos) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} sin platos válidos`;
-          return `Comanda #${c.comandaNumber || c._id?.slice(-6)} inválida`;
+          if (status === 'pagado') return `Comanda #${numeroComandaVisible(c) || c._id?.slice(-6)} ya pagada`;
+          if (!tienePlatosValidos) return `Comanda #${numeroComandaVisible(c) || c._id?.slice(-6)} sin platos válidos`;
+          return `Comanda #${numeroComandaVisible(c) || c._id?.slice(-6)} inválida`;
         });
         console.warn(`⚠️ [VALIDACIÓN] Comandas inválidas:`, razones);
       }
@@ -1824,10 +1824,10 @@ const PagosScreen = () => {
                 mensajeError += `\n\nPor favor, verifica las comandas en la pantalla de inicio.`;
               } else if (comandasInvalidasDelError.length > 0) {
                 const detalles = comandasInvalidasDelError.map(c => {
-                  if (c.eliminada === true) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} eliminada`;
-                  if (c.status?.toLowerCase() === 'pagado') return `Comanda #${c.comandaNumber || c._id?.slice(-6)} ya pagada`;
-                  if (!c.platos || c.platos.length === 0) return `Comanda #${c.comandaNumber || c._id?.slice(-6)} sin platos`;
-                  return `Comanda #${c.comandaNumber || c._id?.slice(-6)} inválida`;
+                  if (c.eliminada === true) return `Comanda #${numeroComandaVisible(c) || c._id?.slice(-6)} eliminada`;
+                  if (c.status?.toLowerCase() === 'pagado') return `Comanda #${numeroComandaVisible(c) || c._id?.slice(-6)} ya pagada`;
+                  if (!c.platos || c.platos.length === 0) return `Comanda #${numeroComandaVisible(c) || c._id?.slice(-6)} sin platos`;
+                  return `Comanda #${numeroComandaVisible(c) || c._id?.slice(-6)} inválida`;
                 }).join('\n');
                 mensajeError += `\n\n${detalles}`;
               }
@@ -2335,7 +2335,7 @@ const PagosScreen = () => {
                  const paramsParaInfo = route.params || {};
                  const comandasDeParamsParaInfo = paramsParaInfo.comandasParaPagar || [];
                  const comandasParaMostrar = comandas.length > 0 ? comandas : comandasDeParamsParaInfo;
-                 return comandasParaMostrar.map(c => `#${c.comandaNumber || c._id?.slice(-6) || 'N/A'}`).join(', ') || 'N/A';
+                 return comandasParaMostrar.map(c => `#${numeroComandaVisible(c) || c._id?.slice(-6) || 'N/A'}`).join(', ') || 'N/A';
                })()}
             </Text>
           </View>
@@ -2687,7 +2687,7 @@ const PagosScreen = () => {
               ) : (
                 comandasParaObservaciones.filter(c => c.observaciones).map((c, idx) => (
                   <Text key={idx} style={styles.observacionesText}>
-                    C#{c.comandaNumber || c._id?.slice(-6) || idx + 1}: {c.observaciones}
+                    C#{numeroComandaVisible(c) || c._id?.slice(-6) || idx + 1}: {c.observaciones}
                   </Text>
                 ))
               )}

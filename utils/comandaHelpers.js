@@ -16,6 +16,15 @@ const ESTADOS_COMANDA_CERRADA = ['pagado', 'completado', 'cerrado', 'cancelado',
 const ESTADOS_PLATO_PRE_COCINA = ['pedido', 'en_espera', 'pendiente'];
 const ESTADOS_PLATO_YA_PREPARADOS = ['recoger', 'salio', 'entregado', 'pagado'];
 
+/** Número del día (desde las 04:00). Si aún no existe, cae al histórico. */
+export const numeroComandaVisible = (comanda) => {
+  if (!comanda) return null;
+  const n = comanda.numeroComandaDia;
+  if (n != null && n !== '' && Number.isFinite(Number(n))) return Number(n);
+  if (comanda.comandaNumber != null && comanda.comandaNumber !== '') return comanda.comandaNumber;
+  return null;
+};
+
 export const esEstadoPlatoPreCocina = (estado) =>
   ESTADOS_PLATO_PRE_COCINA.includes(String(estado || 'pedido').toLowerCase());
 

@@ -16,7 +16,7 @@ import Constants from 'expo-constants';
 import { colors } from '../../constants/colors';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const APP_VERSION = Constants.expoConfig?.version || '2.0.1v';
+const APP_VERSION = Constants.expoConfig?.version || '2.0.4v';
 
 // Partículas flotantes de fondo
 const FloatingParticle = ({ delay, startY }) => {

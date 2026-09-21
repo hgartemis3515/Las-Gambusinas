@@ -205,7 +205,7 @@ const ThirdScreen = () => {
 
     Alert.alert(
       "⚠️ Eliminar Comanda",
-      `¿Estás seguro de eliminar la comanda #${comanda.comandaNumber || comanda._id.slice(-4)}?`,
+      `¿Estás seguro de eliminar la comanda #${comanda.numeroComandaDia ?? comanda.comandaNumber ?? comanda._id.slice(-4)}?`,
       [
         { text: "Cancelar", style: "cancel" },
         {
@@ -431,7 +431,7 @@ const ThirdScreen = () => {
         <TouchableOpacity
           onPress={() => {
             Alert.alert(
-              `Comanda #${item.comandaNumber || item._id.slice(-4)}`,
+              `Comanda #${item.numeroComandaDia ?? item.comandaNumber ?? item._id.slice(-4)}`,
               `Mesa: ${nombreMesa}\nHora: ${formatTime(item.createdAt || item.fecha)}\nEstado: ${item.status || "N/A"}`,
               [{ text: "OK" }]
             );
@@ -439,7 +439,7 @@ const ThirdScreen = () => {
         >
           <View style={styles.comandaHeader}>
             <Text style={styles.comandaNumber}>
-              #{item.comandaNumber || item._id.slice(-4)}
+              #{item.numeroComandaDia ?? item.comandaNumber ?? item._id.slice(-4)}
             </Text>
             <Text style={styles.comandaMesa}>
               {nombreMesa}

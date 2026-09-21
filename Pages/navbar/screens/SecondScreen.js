@@ -373,7 +373,7 @@ const SecondScreen = () => {
       
       console.log("✅ Comanda enviada:", response.data);
       
-      const comandaNumber = response.data.comanda?.comandaNumber || response.data.comandaNumber || "N/A";
+      const comandaNumber = response.data.comanda?.numeroComandaDia || response.data.comanda?.comandaNumber || response.data.comandaNumber || "N/A";
       // El backend actualiza automáticamente la mesa a "pedido" al crear la comanda
       // Si la mesa estaba en "preparado", ahora está en "pedido" con la nueva comanda
       const mensaje = estadoMesa === 'preparado' 

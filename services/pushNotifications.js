@@ -174,7 +174,11 @@ export async function notifyPlatoListoLocal(data) {
   const mesaNumero =
     data.mesaNumero ?? data.comanda?.mesas?.nummesa ?? data.comanda?.mesas?.numero ?? null;
   const comandaNumber =
-    data.comandaNumber ?? data.comanda?.comandaNumber ?? null;
+    data.numeroComandaDia
+    ?? data.comanda?.numeroComandaDia
+    ?? data.comandaNumber
+    ?? data.comanda?.comandaNumber
+    ?? null;
   const nombrePlato =
     data.platoNombre ||
     findNombrePlatoEnComanda(data.comanda, platoId) ||

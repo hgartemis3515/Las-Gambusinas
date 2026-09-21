@@ -75,9 +75,10 @@ export async function mostrarOpcionesComanda(opts, { onStart, onEnd } = {}) {
     let datos = mapComandasATicket(fuenteComandas, boucher, configMoneda);
 
     // Enriquecer con números agrupados del boucher si hay varias comandas
-    const comandasNumbers = boucher?.comandasNumbers
-      || comandas.map(c => c.comandaNumber).filter(n => n != null)
-      || (datos.comandaNumero ? [datos.comandaNumero] : []);
+    const comandasNumbers = comandas.length
+      ? comandas.map((c) => c.numeroComandaDia ?? c.comandaNumber).filter((n) => n != null)
+      : (boucher?.comandasNumbers
+        || (datos.comandaNumero ? [datos.comandaNumero] : []));
     datos = aplicarComandaNumeroDisplay({ ...datos, comandasNumbers });
 
     const serverOrigin = apiConfig.getDefaultBaseURL?.() || 'http://localhost:3000';

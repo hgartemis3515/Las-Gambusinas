@@ -388,7 +388,7 @@ const useSocketMozos = ({
         shouldNotifyMozoAsignado({ comanda: data.comanda }).then((ok) => {
           if (!ok) return;
           const mesaNumero = data.comanda?.mesas?.nummesa || data.comanda?.mesas?.numero || data.mesaNumero || '';
-          const comandaNumber = data.comanda?.comandaNumber || '?';
+          const comandaNumber = data.comanda?.numeroComandaDia || data.comanda?.comandaNumber || '?';
           showLocalPush(
             '✅ Comanda Lista',
             `Comanda #${comandaNumber}${mesaNumero ? ` de Mesa ${mesaNumero}` : ''} completa para recoger.`,

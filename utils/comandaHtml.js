@@ -450,7 +450,7 @@ export function mapComandasATicket(comandas, boucherOpcional, config = {}) {
     : lista.flatMap((c) => productosDeComanda(c));
   const comandasNumbers = boucherOpcional?.comandasNumbers?.length
     ? boucherOpcional.comandasNumbers
-    : lista.map((c) => c.comandaNumber ?? c.numComanda).filter((n) => n != null);
+    : lista.map((c) => c.numeroComandaDia ?? c.comandaNumber ?? c.numComanda).filter((n) => n != null);
   const sumaPlatos = productos.reduce((s, p) => s + (Number(p.subtotal) || 0), 0);
   const montoDescLista = lista.reduce((s, c) => s + (Number(c.montoDescuento) || 0), 0);
   const tieneDesc = montoDescLista > 0 || lista.some((c) => Number(c.descuento) > 0)
@@ -472,7 +472,7 @@ export function mapComandasATicket(comandas, boucherOpcional, config = {}) {
     ? (montoDescLista > 0 ? montoDescLista : (Number(boucherOpcional?.montoDescuento) || 0))
     : (Number(boucherOpcional?.montoDescuento) || 0);
   return {
-    comandaNumero: primera.comandaNumber ?? primera.numComanda ?? null,
+    comandaNumero: primera.numeroComandaDia ?? primera.comandaNumber ?? primera.numComanda ?? null,
     comandasNumbers,
     fechaPedido: primera.createdAt || primera.fechaPedido || boucherOpcional?.fechaPedido || new Date(),
     mesa: primera.mesaNumero || primera.mesas?.nummesa || primera.mesa?.nummesa

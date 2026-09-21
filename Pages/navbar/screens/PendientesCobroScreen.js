@@ -112,7 +112,7 @@ function FilaPendiente({
     : labelEstadoMesaComanda(item);
   const estadoColor = colorEstadoMesa(estado, theme);
   const comandaTxt = item.comandaLabel
-    || (item.comandaNumber != null ? `#${item.comandaNumber}` : "—");
+    || (item.numeroComandaDia != null ? `#${item.numeroComandaDia}` : (item.comandaNumber != null ? `#${item.comandaNumber}` : "—"));
   const sinMesa = esFilaComandaSinMesa(item);
   const monto = (esPagadas || item.pagadaHoy || item.seguimientoPpa)
     ? (item.total ?? item.pendienteCobro)

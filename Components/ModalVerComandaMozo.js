@@ -15,6 +15,7 @@ import { themeLight } from "../constants/theme";
 import { textoOpcionComplemento } from "../utils/precioComplementos";
 import { esFilaComandaSinMesa } from "../utils/sinMesaOrden";
 import { formatPendienteCobro } from "../helpers/pendienteCobroMozo";
+import { numeroComandaVisible } from "../utils/comandaHelpers";
 
 const ZONA = "America/Lima";
 
@@ -128,9 +129,12 @@ function BloqueComanda({ comanda, styles, theme }) {
   return (
     <View style={styles.bloque}>
       <View style={styles.bloqueHeader}>
-        <Text style={styles.bloqueTitle}>
-          Comanda #{comanda.comandaNumber ?? String(comanda._id || "").slice(-4)}
-        </Text>
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          <Text style={{ fontSize: 11, color: theme.colors.textSecondary || '#888', fontWeight: '700' }}>NÚMERO DE COMANDA</Text>
+          <Text style={[styles.bloqueTitle, { fontSize: 32, textAlign: 'center' }]}>
+            #{numeroComandaVisible(comanda) ?? String(comanda._id || "").slice(-4)}
+          </Text>
+        </View>
         <View style={[styles.statusChip, { backgroundColor: `${chipColor}22` }]}>
           <Text style={[styles.statusChipText, { color: chipColor }]}>{status}</Text>
         </View>
