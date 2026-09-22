@@ -49,7 +49,7 @@ import { calcularPrecioUnitarioConComplementos, textoOpcionComplemento, camposSn
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
 import configuracionService from "../../../services/configuracionService";
-import { reservaEsDeMozo, estadoMesaConfirmadoTrasCrearComanda, estadoMesaLocalTrasCrearComanda } from "../../../utils/reservasMozo";
+import { estadoMesaLocalTrasCrearComanda } from "../../../utils/reservasMozo";
 import { colorEstadoMesa, etiquetaEstadoMesa } from "../../../utils/estadoMesaMozo";
 import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 import { slugTipoPedido, mismoTipoPedido } from "../../../utils/tipoPedidoLinea";
@@ -99,7 +99,7 @@ const AnimatedOverlay = ({ mensaje }) => {
   useEffect(() => {
     // Fade in inicial
     fadeAnim.value = withTiming(1, {
-      duration: 300,
+      duration: 80,
       easing: Easing.out(Easing.ease),
     });
 
@@ -149,7 +149,7 @@ const AnimatedOverlay = ({ mensaje }) => {
   }));
 
   return (
-    <Modal visible transparent animationType="fade" statusBarTranslucent>
+    <Modal visible transparent animationType="none" statusBarTranslucent>
     <Animated.View style={[{
       flex: 1,
       backgroundColor: 'rgba(0, 0, 0, 0.85)',
@@ -190,11 +190,6 @@ const AnimatedOverlay = ({ mensaje }) => {
           textAlign: 'center',
           marginBottom: 8,
         }}>{mensaje}</Text>
-        <Text style={{
-          fontSize: 14,
-          color: theme.colors?.text?.secondary || '#666666',
-          textAlign: 'center',
-        }}>Por favor espera...</Text>
       </View>
     </Animated.View>
     </Modal>
@@ -1209,45 +1204,29 @@ const OrdenesScreen = ({ route }) => {
 
   // 🔥 Función para verificar si la comanda se creó en el backend
   const verificarComandaEnBackend = async (mesaId, mozoId, comandaNumber = null) => {
+    if (!mesaId) return { success: false };
     try {
-      setMensajeCarga("Verificando comanda en el servidor...");
-      
-      // Obtener comandas del día actual
-      const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-      const comandasURL = apiConfig.isConfigured 
-        ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
-        : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
-      
-      const response = await axios.get(comandasURL, { timeout: 8000 });
-      const comandas = response.data || [];
-      
-      // Filtrar comandas recientes (últimos 2 minutos) de esta mesa y mozo
+      setMensajeCarga("Verificando comanda...");
+      const comandasURL = apiConfig.isConfigured
+        ? apiConfig.getEndpoint(`/comanda/mesa/${mesaId}/activas`)
+        : `${COMANDASEARCH_API_GET}/mesa/${mesaId}/activas`;
+      const response = await axios.get(comandasURL, { timeout: 5000 });
+      const comandas = Array.isArray(response.data?.comandas) ? response.data.comandas : [];
       const ahora = moment().tz("America/Lima");
-      const comandasRecientes = comandas.filter(c => {
-        const comandaMesaId = c.mesas?._id?.toString() || c.mesas?.toString() || c.mesas;
+      const recientes = comandas.filter((c) => {
         const comandaMozoId = c.mozos?._id?.toString() || c.mozos?.toString() || c.mozos;
         const fechaCreacion = moment(c.fechaCreacion || c.createdAt).tz("America/Lima");
-        const minutosDiferencia = ahora.diff(fechaCreacion, 'minutes');
-        
-        const coincideMesa = mesaId
-          ? comandaMesaId === mesaId?.toString()
-          : !c.mesas;
-        const coincideMozo = comandaMozoId === mozoId?.toString();
-        const esReciente = minutosDiferencia <= 2; // Últimos 2 minutos
+        const mismoMozo = !mozoId || String(comandaMozoId) === String(mozoId);
+        const esReciente = ahora.diff(fechaCreacion, "minutes") <= 2;
         const coincideNumero = comandaNumber
           ? (c.numeroComandaDia === comandaNumber || c.comandaNumber === comandaNumber)
           : true;
-        
-        return coincideMesa && coincideMozo && esReciente && coincideNumero;
+        return mismoMozo && esReciente && coincideNumero;
       });
-      
-      if (comandasRecientes.length > 0) {
-        const comandaEncontrada = comandasRecientes[0];
-        console.log(`✅ [VERIFICACIÓN] Comanda encontrada en backend: #${comandaEncontrada.comandaNumber}`);
-        return { success: true, comanda: comandaEncontrada };
+      recientes.sort((a, b) => new Date(b.createdAt || b.fechaCreacion || 0) - new Date(a.createdAt || a.fechaCreacion || 0));
+      if (recientes[0]) {
+        return { success: true, comanda: recientes[0] };
       }
-      
-      console.log(`⚠️ [VERIFICACIÓN] No se encontró comanda reciente en backend`);
       return { success: false };
     } catch (error) {
       console.error("❌ [VERIFICACIÓN] Error verificando comanda en backend:", error);
@@ -1260,6 +1239,54 @@ const OrdenesScreen = ({ route }) => {
     let mesaActualizada = selectedMesa;
     const platosEnvio = selectedPlatosRef.current;
     const cantidadesEnvio = cantidadesRef.current;
+    const finalizarEnvioExitoso = async (creada) => {
+      const esEnvioReserva = !!(reservaActiva || creada?.origenReserva);
+      if (!esSinMesaOrden && mesaActualizada?._id) {
+        const estadoLocal = estadoMesaLocalTrasCrearComanda(
+          mesaActualizada.estado,
+          esEnvioReserva,
+          mesaActualizada.estado
+        );
+        try {
+          setSelectedMesa({ ...mesaActualizada, estado: estadoLocal });
+          setMesas((prev) => {
+            const index = prev.findIndex((m) => String(m._id) === String(mesaActualizada._id));
+            if (index === -1) return prev;
+            const nuevas = [...prev];
+            nuevas[index] = { ...nuevas[index], estado: estadoLocal };
+            return nuevas;
+          });
+        } catch (errorLocal) {
+          console.error('Error actualizando estado local de mesa:', errorLocal);
+        }
+      }
+      armadoIniciadoEnRef.current = null;
+      await Promise.all([
+        AsyncStorage.removeItem('mesaSeleccionada'),
+        AsyncStorage.removeItem('reservaActiva'),
+        AsyncStorage.removeItem('selectedPlates'),
+        AsyncStorage.removeItem('selectedPlatesIds'),
+        AsyncStorage.removeItem('cantidadesComanda'),
+        AsyncStorage.removeItem('additionalDetails'),
+        Promise.resolve(borrarDraftArmado()),
+      ]);
+      setSelectedMesa(null);
+      setReservaActiva(null);
+      setSelectedPlatos([]);
+      setCantidades({});
+      setObservaciones('');
+      setIsSendingComanda(false);
+      setMostrarOverlayCarga(false);
+      if (modoExtraLlevar) {
+        navigation.setParams({ modoExtraLlevar: false });
+      }
+      irAPendientesTrasEnvio(navigation, {
+        destino: destinoRedireccion,
+        comanda: creada,
+        mesa: mesaActualizada,
+      });
+    };
+
     try {
       setIsSendingComanda(true);
 
@@ -1281,177 +1308,8 @@ const OrdenesScreen = ({ route }) => {
         return;
       }
 
-      // IMPORTANTE: Obtener el estado actualizado de la mesa desde el servidor
-      // para evitar problemas cuando se elimina una comanda y la mesa cambia a "libre"
-      if (!esSinMesaOrden) {
-      try {
-        const mesasURL = apiConfig.isConfigured 
-          ? apiConfig.getEndpoint('/mesas')
-          : SELECTABLE_API_GET;
-        const mesasResponse = await axios.get(mesasURL, { timeout: 5000 });
-        const mesaEncontrada = mesasResponse.data.find(m => m._id === selectedMesa._id);
-        if (mesaEncontrada) {
-          mesaActualizada = mesaEncontrada;
-          // Actualizar selectedMesa con el estado más reciente
-          setSelectedMesa(mesaActualizada);
-          console.log(`✅ Estado actualizado de la mesa ${mesaActualizada.nummesa}: ${mesaActualizada.estado}`);
-        } else {
-          console.warn(`⚠️ No se encontró la mesa ${selectedMesa._id} en el servidor`);
-        }
-      } catch (error) {
-        console.error("⚠️ Error al obtener estado actualizado de la mesa:", error);
-        // Continuar con el estado local si falla la petición
-      }
-      }
-      
-      // Validar estado de la mesa antes de crear la comanda (usando estado actualizado)
-      if (!esSinMesaOrden) {
-      const estadoMesa = (mesaActualizada.estado || 'libre').toLowerCase();
-      
-      // Si la mesa NO está libre, verificar que sea el mismo mozo que creó la comanda
-      if (estadoMesa !== 'libre') {
-        // Si la mesa está reservada, verificar si hay reserva activa y si el mozo está autorizado
-        if (estadoMesa === 'reservado') {
-          // Verificar si hay una reserva activa y si el mozo actual está autorizado
-          try {
-            const reservaURL = apiConfig.isConfigured 
-              ? apiConfig.getEndpoint(`/reservas/mesa/${mesaActualizada._id}/activa`)
-              : `${getFallbackApiBase()}/reservas/mesa/${mesaActualizada._id}/activa`;
-            
-            const reservaResponse = await axios.get(reservaURL, {
-              timeout: 5000,
-              params: userInfo._id ? { mozoId: userInfo._id } : undefined,
-            });
-            
-            if (reservaResponse.data.tieneReservaActiva && reservaResponse.data.reserva) {
-              const reserva = reservaResponse.data.reserva;
-              const mozoActualId = userInfo._id;
-              
-              if (mozoActualId && !reservaEsDeMozo(reserva, mozoActualId)) {
-                Alert.alert(
-                  "Acceso Denegado",
-                  `Esta mesa está reservada. Solo el mozo asignado puede atenderla.`,
-                  [{ text: "OK" }]
-                );
-                setIsSendingComanda(false);
-                return;
-              }
-              
-              // Mozo autorizado o sin mozo asignado: permitir crear comanda
-              console.log(`✅ Mozo autorizado para mesa reservada ${mesaActualizada.nummesa}`);
-              // Guardar referencia a la reserva para asociarla a la comanda
-              if (!reservaActiva) {
-                setReservaActiva(reserva);
-              }
-              // IMPORTANTE: Continuar directamente a crear la comanda sin verificar comandas existentes
-              // porque una mesa reservada puede no tener comandas previas y el mozo está autorizado
-            } else {
-              // No hay reserva activa, pero la mesa está en estado reservado
-              // Permitir crear comanda (el backend corregirá el estado)
-              console.log(`⚠️ Mesa ${mesaActualizada.nummesa} en estado 'reservado' sin reserva activa. Permitiendo crear comanda.`);
-            }
-          } catch (error) {
-            console.error("Error al verificar reserva:", error);
-            // Si hay error, permitir crear comanda (el backend validará)
-            console.log(`⚠️ Error al verificar reserva, permitiendo crear comanda.`);
-          }
-          // IMPORTANTE: Saltar la validación de comandas existentes para mesas reservadas
-          // El backend ya validará la autorización del mozo
-        } else if (estadoMesa !== 'libre') {
-          // Para otros estados (pedido, preparado, pagado, esperando), verificar que sea el mismo mozo
-          try {
-            // Obtener comandas de la mesa para verificar el mozo
-            const currentDate = moment().tz("America/Lima").format("YYYY-MM-DD");
-            const comandasURL = apiConfig.isConfigured 
-              ? `${apiConfig.getEndpoint('/comanda')}/fecha/${currentDate}`
-              : `${COMANDASEARCH_API_GET}/fecha/${currentDate}`;
-            
-            const response = await axios.get(comandasURL, { 
-              timeout: 10000, // Aumentado de 5000 a 10000ms para conexiones lentas
-              validateStatus: (status) => status < 500 // Aceptar errores 4xx sin lanzar excepción
-            });
-            
-            const comandasMesa = response.data?.filter ? response.data.filter(
-              (c) => c.mesas?.nummesa === mesaActualizada.nummesa && 
-                     c.status?.toLowerCase() !== "pagado" && 
-                     c.status?.toLowerCase() !== "completado"
-            ) : [];
-            
-            if (comandasMesa.length > 0) {
-              const primeraComanda = comandasMesa[0];
-              const mozoComandaId = primeraComanda.mozos?._id || primeraComanda.mozos;
-              const mozoActualId = userInfo._id;
-              
-              if (mozoComandaId && mozoActualId && mozoComandaId.toString() !== mozoActualId.toString()) {
-                Alert.alert(
-                  "Acceso Denegado",
-                  `Solo el mozo que creó la comanda original puede agregar más comandas a esta mesa cuando está en estado '${estadoMesa}'.`,
-                  [{ text: "OK" }]
-                );
-                setIsSendingComanda(false);
-                return;
-              }
-              // Si es el mismo mozo, permitir crear nueva comanda
-              // Si la mesa está en "preparado", se creará la nueva comanda y la mesa pasará a "pedido"
-              if (estadoMesa === 'preparado' || estadoMesa === 'entregado') {
-                console.log(`✅ Creando nueva comanda en mesa ${mesaActualizada.nummesa} (estado: ${estadoMesa}) - Mismo mozo`);
-              }
-            } else {
-              // Si no hay comandas activas pero la mesa está en "preparado", permitir crear comanda
-              // (puede ser un estado inconsistente o la comanda ya fue pagada)
-              if (estadoMesa === 'preparado' || estadoMesa === 'entregado' || estadoMesa === 'pagado' || estadoMesa === 'pedido') {
-                console.log(`✅ Creando nueva comanda en mesa ${mesaActualizada.nummesa} (estado: ${estadoMesa}) - Sin comandas activas`);
-              } else {
-                // Para otros estados sin comandas activas, rechazar
-                Alert.alert(
-                  "Mesa No Disponible",
-                  `La mesa está en estado "${estadoMesa}". Solo se pueden crear comandas en mesas libres o cuando eres el mozo que creó la comanda original.`,
-                  [{ text: "OK" }]
-                );
-                setIsSendingComanda(false);
-                return;
-              }
-            }
-          } catch (error) {
-            // Manejo mejorado de errores de red
-            const isNetworkError = error.code === 'ECONNABORTED' || 
-                                   error.message?.includes('Network Error') ||
-                                   error.message?.includes('timeout') ||
-                                   !error.response;
-            
-            if (isNetworkError) {
-              console.warn("⚠️ Error de red al verificar comandas:", error.message);
-              
-              // Si la mesa está en "preparado", permitir crear comanda aunque falle la verificación
-              // (el backend validará y actualizará el estado correctamente)
-              if (estadoMesa === 'preparado' || estadoMesa === 'entregado' || estadoMesa === 'pagado') {
-                console.log(`⚠️ [ORDENES] Error de red, pero permitiendo crear comanda en mesa ${mesaActualizada.nummesa} (estado: ${estadoMesa})`);
-                // Continuar con la creación de la comanda - NO retornar aquí
-              } else {
-                // Para otros estados, mostrar error pero más informativo
-                Alert.alert(
-                  "Error de Conexión",
-                  `No se pudo verificar las comandas de la mesa debido a un error de red. Por favor, verifica tu conexión e intenta nuevamente.\n\nEstado de la mesa: ${estadoMesa}`,
-                  [{ text: "OK" }]
-                );
-                setIsSendingComanda(false);
-                return;
-              }
-            } else {
-              // Error del servidor (no de red)
-              console.error("Error verificando comandas de la mesa:", error);
-              Alert.alert(
-                "Error del Servidor",
-                `No se pudo verificar las comandas de la mesa. Error: ${error.response?.data?.message || error.message}`,
-                [{ text: "OK" }]
-              );
-              setIsSendingComanda(false);
-              return;
-            }
-          }
-        }
-      }
-      }
+      setMostrarOverlayCarga(true);
+      setMensajeCarga("Enviando...");
 
       const tipoServicioEnvio = esSinMesaOrden
         ? TIPO_PARA_LLEVAR
@@ -1523,10 +1381,6 @@ const OrdenesScreen = ({ route }) => {
         origenReserva: comandaData.origenReserva || null
       });
 
-      // Mostrar overlay de carga
-      setMostrarOverlayCarga(true);
-      setMensajeCarga("Creando comanda...");
-      
       const comandaURL = apiConfig.isConfigured 
         ? apiConfig.getEndpoint('/comanda')
         : COMANDA_API;
@@ -1548,7 +1402,7 @@ const OrdenesScreen = ({ route }) => {
           // Si no hay comanda en la respuesta, verificar en backend
           console.warn("⚠️ No se encontró comanda en respuesta, verificando en backend...");
           const verificacion = await verificarComandaEnBackend(
-            mesaActualizada._id,
+            esSinMesaOrden ? null : mesaActualizada?._id,
             userInfo._id,
             comandaNumber
           );
@@ -1565,7 +1419,8 @@ const OrdenesScreen = ({ route }) => {
           }
         }
       } catch (postError) {
-        // 🔥 MEJORADO: Si hay error en POST, verificar si la comanda se creó de todas formas
+        const statusPost = postError.response?.status;
+        if (statusPost >= 400 && statusPost < 500) throw postError;
         console.warn("⚠️ Error en POST comanda, verificando si se creó:", postError.message);
         
         // Intentar extraer datos del error si existen
@@ -1578,7 +1433,7 @@ const OrdenesScreen = ({ route }) => {
         if (!comandaCreada || !comandaCreada._id) {
           setMensajeCarga("Verificando si la comanda se creó...");
           const verificacion = await verificarComandaEnBackend(
-            mesaActualizada._id,
+            esSinMesaOrden ? null : mesaActualizada?._id,
             userInfo._id,
             comandaNumber
           );
@@ -1598,179 +1453,22 @@ const OrdenesScreen = ({ route }) => {
         }
       }
       
-      // Si llegamos aquí, la comanda se creó exitosamente
-      if (!comandaNumber) {
-        comandaNumber = comandaCreada?.numeroComandaDia || comandaCreada?.comandaNumber || "N/A";
-      }
-      
-      setMensajeCarga(`¡Comanda #${comandaNumber} creada!`);
-      console.log(`✅ Comanda #${comandaNumber} creada correctamente`);
-      
-      // Verificar estado de mesa (pedido, o reservado si es extra sobre reserva)
-      const esEnvioReserva = !!(reservaActiva || comandaData.origenReserva);
-      let estadoLocal = estadoMesaLocalTrasCrearComanda(
-        mesaActualizada?.estado,
-        esEnvioReserva,
-        mesaActualizada?.estado
-      );
-      if (!esSinMesaOrden && mesaActualizada?._id) {
-      setMensajeCarga("Verificando estado de la mesa...");
-      const mesaId = mesaActualizada._id;
-      const mesaNum = mesaActualizada.nummesa;
-      
-      let mesaVerificada = false;
-      let intentos = 0;
-      const maxIntentos = 10; // Máximo 10 intentos (5 segundos)
-      let estadoMesaServidor = mesaActualizada.estado;
-      
-      while (!mesaVerificada && intentos < maxIntentos) {
-        try {
-          await new Promise(resolve => setTimeout(resolve, 500)); // Esperar 500ms entre intentos
-          
-          const mesasURL = apiConfig.isConfigured 
-          ? apiConfig.getEndpoint('/mesas')
-          : SELECTABLE_API_GET;
-        const mesasResponse = await axios.get(mesasURL, { timeout: 5000 });
-          const mesaEncontrada = mesasResponse.data.find(m => {
-            const mId = m._id?.toString ? m._id.toString() : m._id;
-            const mesaIdStr = mesaId?.toString ? mesaId.toString() : mesaId;
-            return mId === mesaIdStr || m.nummesa === mesaNum;
-          });
-          
-          if (mesaEncontrada) {
-            const estadoMesaVerificado = (mesaEncontrada.estado || '').toLowerCase();
-            estadoMesaServidor = estadoMesaVerificado;
-            console.log(`🔄 Intento ${intentos + 1}/${maxIntentos}: Mesa ${mesaNum} en estado "${estadoMesaVerificado}"`);
-            
-            if (estadoMesaConfirmadoTrasCrearComanda(estadoMesaVerificado, esEnvioReserva)) {
-              mesaVerificada = true;
-              console.log(`✅ Mesa ${mesaNum} confirmada en estado "${estadoMesaVerificado}"`);
-              break;
-            }
-          }
-          
-          intentos++;
-        } catch (error) {
-          console.error(`⚠️ Error verificando mesa (intento ${intentos + 1}):`, error);
-          intentos++;
-        }
-      }
-      
-      if (!mesaVerificada) {
-        console.warn(`⚠️ No se pudo verificar el estado de la mesa después de ${maxIntentos} intentos`);
-        // Continuar de todas formas, el backend debería haber actualizado la mesa
-      }
-      
-      estadoLocal = estadoMesaLocalTrasCrearComanda(
-        estadoMesaServidor,
-        esEnvioReserva,
-        mesaActualizada.estado
-      );
-      
-      // Actualizar estado local de la mesa
-      try {
-        if (mesaActualizada) {
-          const mesaActualizadaLocal = { ...mesaActualizada, estado: estadoLocal };
-          setSelectedMesa(mesaActualizadaLocal);
-        }
-        
-        setMesas(prev => {
-          const index = prev.findIndex(m => m._id === mesaActualizada._id);
-          if (index !== -1) {
-            const nuevas = [...prev];
-            nuevas[index] = { ...nuevas[index], estado: estadoLocal };
-            return nuevas;
-          }
-          return prev;
-        });
-      } catch (error) {
-        console.error("⚠️ Error actualizando estado local de mesa:", error);
-      }
-      }
-      
-      setMensajeCarga(`¡Comanda #${comandaNumber} enviada!`);
-      
-      // Limpiar datos locales
-      await AsyncStorage.removeItem("mesaSeleccionada");
-      await AsyncStorage.removeItem("reservaActiva"); // Limpiar reserva activa
-      await AsyncStorage.removeItem("selectedPlates");
-      await AsyncStorage.removeItem("selectedPlatesIds");
-      await AsyncStorage.removeItem("cantidadesComanda");
-      await AsyncStorage.removeItem("additionalDetails");
-      armadoIniciadoEnRef.current = null;
-      await borrarDraftArmado();
-      
-      setSelectedMesa(null);
-      setReservaActiva(null); // Limpiar estado de reserva
-      setSelectedPlatos([]);
-      setCantidades({});
-      setObservaciones("");
-      
-      // Esperar un momento antes de navegar para que el usuario vea el mensaje de éxito
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // 🔥 CRÍTICO: Resetear estado ANTES de navegar
-      setIsSendingComanda(false);
-      setMostrarOverlayCarga(false);
-      
-      if (modoExtraLlevar) {
-        navigation.setParams({ modoExtraLlevar: false });
-      }
-      irAPendientesTrasEnvio(navigation, {
-        destino: destinoRedireccion,
-        comanda: comandaCreada,
-        mesa: mesaActualizada,
-      });
+      await finalizarEnvioExitoso(comandaCreada);
     } catch (error) {
       // 🔥 MEJORADO: Verificación exhaustiva antes de mostrar cualquier error
       console.warn("⚠️ Error capturado, verificando si comanda se creó:", error.message);
       
-      // Última verificación: buscar comanda en backend
-      setMensajeCarga("Verificando última vez...");
-      const verificacionFinal = await verificarComandaEnBackend(
-        mesaActualizada?._id,
-        userInfo._id
-      );
-      
-      if (verificacionFinal.success) {
-        // ¡La comanda SÍ se creó! Continuar con éxito silencioso
-        console.log(`✅ Comanda encontrada en verificación final: #${verificacionFinal.comanda.comandaNumber}`);
-        comandaCreada = verificacionFinal.comanda;
-        comandaNumber = verificacionFinal.comanda.numeroComandaDia || verificacionFinal.comanda.comandaNumber;
-        
-        // Continuar con el flujo de éxito (no mostrar error)
-        // Esto ejecutará el código después del try/catch que maneja el éxito
-        setMensajeCarga(`¡Comanda #${comandaNumber} enviada!`);
-        
-        // Limpiar datos locales
-        await AsyncStorage.removeItem("mesaSeleccionada");
-        await AsyncStorage.removeItem("reservaActiva"); // Limpiar reserva activa
-        await AsyncStorage.removeItem("selectedPlates");
-        await AsyncStorage.removeItem("selectedPlatesIds");
-        await AsyncStorage.removeItem("cantidadesComanda");
-        await AsyncStorage.removeItem("additionalDetails");
-        armadoIniciadoEnRef.current = null;
-        await borrarDraftArmado();
-        
-        setSelectedMesa(null);
-        setReservaActiva(null); // Limpiar estado de reserva
-        setSelectedPlatos([]);
-        setCantidades({});
-        setObservaciones("");
-        
-        // 🔥 CRÍTICO: Resetear estado ANTES de navegar
-        setIsSendingComanda(false);
-        setMostrarOverlayCarga(false);
-        
-        if (modoExtraLlevar) {
-        navigation.setParams({ modoExtraLlevar: false });
-      }
-      irAPendientesTrasEnvio(navigation, {
-        destino: destinoRedireccion,
-        comanda: comandaCreada,
-        mesa: mesaActualizada,
-      });
-        return; // Salir sin mostrar error
+      const status = error.response?.status;
+      const es4xx = status >= 400 && status < 500;
+      if (!es4xx) {
+        const verificacionFinal = await verificarComandaEnBackend(
+          esSinMesaOrden ? null : mesaActualizada?._id,
+          userInfo?._id
+        );
+        if (verificacionFinal.success) {
+          await finalizarEnvioExitoso(verificacionFinal.comanda);
+          return;
+        }
       }
       
       // Si llegamos aquí, realmente falló - mostrar error apropiado
