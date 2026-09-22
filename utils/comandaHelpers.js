@@ -25,6 +25,38 @@ export const numeroComandaVisible = (comanda) => {
   return null;
 };
 
+/** 1ª revisión: a; 2ª: B; 3ª: C … Z; luego AA. */
+export const letraRevisionTicket = (n) => {
+  const k = Math.floor(Number(n) || 0);
+  if (k < 1) return '';
+  if (k === 1) return 'a';
+  let x = k;
+  let s = '';
+  while (x > 0) {
+    const r = (x - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    x = Math.floor((x - 1) / 26);
+  }
+  return s;
+};
+
+/** Letrero del papel: #10+#11a, #10B. */
+export const numeroTicketImpresion = (comandas) => {
+  const byN = new Map();
+  for (const c of comandas || []) {
+    const n = numeroComandaVisible(c);
+    if (n == null || n === '') continue;
+    const num = Number(n);
+    if (!Number.isFinite(num)) continue;
+    const rev = Math.max(0, Math.floor(Number(c.revisionTicket) || 0));
+    const prev = byN.get(num);
+    if (prev == null || rev > prev) byN.set(num, rev);
+  }
+  const nums = [...byN.keys()].sort((a, b) => a - b);
+  if (!nums.length) return '';
+  return nums.map((n) => `#${n}${letraRevisionTicket(byN.get(n))}`).join('+');
+};
+
 export const esEstadoPlatoPreCocina = (estado) =>
   ESTADOS_PLATO_PRE_COCINA.includes(String(estado || 'pedido').toLowerCase());
 

@@ -51,6 +51,8 @@ import { esSeleccionSinMesa, SELECCION_SIN_MESA } from '../utils/sinMesaOrden';
 import { esLlevarColor, normalizarTipoServicioLinea } from '../utils/tipoServicio';
 import { msRestantesEntregaAutomatica, formatearCountdownEntrega, tiempoSalioRequiereAncla } from '../utils/entregaAutomatica';
 import { usuarioPuedeAplicarDescuentos, brutoGrupoComandas, montoDescuentoGrupo, montosDescuentoPorComanda, clampMontoDescuento, motivoDescuentoFinal, motivoDescuentoEsValido, comandaTieneDescuentoMozo } from '../utils/descuentoMozo';
+import { generarXmlTicketsMozoYCocina } from '../utils/comandaMozoEposXml';
+import { imprimirBoucherTmAssistant } from '../utils/boucherTmPrint';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -2939,6 +2941,42 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const motivoDescuentoOk = motivoDescuentoEsValido(motivoDescuento);
   const esGrupoDescuento = (comandas || []).length > 1;
   const montoDescuentoActualGrupo = montoDescuentoGrupo(comandas);
+  const hayPlatosPagadosTicket = platosPagados.length > 0;
+
+  const enviarTicketsMozoYCocina = async (incluirPagados) => {
+    const { xml, impresos } = generarXmlTicketsMozoYCocina({
+      comandas,
+      platos: todosLosPlatos,
+      mesa,
+      incluirPagados,
+      configMoneda,
+    });
+    if (!impresos) {
+      Alert.alert('Sin platos', 'No hay platos para imprimir con el filtro elegido.');
+      return;
+    }
+    await imprimirBoucherTmAssistant(xml);
+  };
+
+  const handleImprimirDetalle = () => {
+    if (!todosLosPlatos.length) {
+      Alert.alert('Sin platos', 'No hay platos para imprimir.');
+      return;
+    }
+    if (!hayPlatosPagadosTicket) {
+      enviarTicketsMozoYCocina(false);
+      return;
+    }
+    Alert.alert(
+      'Platos pagados',
+      'Hay platos pagados en esta comanda. ¿Los incluyes en el ticket?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Sin pagados', onPress: () => enviarTicketsMozoYCocina(false) },
+        { text: 'Con pagados', onPress: () => enviarTicketsMozoYCocina(true) },
+      ]
+    );
+  };
   
   return (
         <View style={[styles.container, { backgroundColor: themeColors.colors?.background || themeColors.background || '#FFFFFF' }]}>
@@ -2947,6 +2985,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         mesa={mesa}
         comanda={comandaPrincipal}
         onSync={refrescarComandas}
+        onImprimir={handleImprimirDetalle}
         navigation={navigation}
         connectionStatus={localConnectionStatus}
         isConnected={connected}

@@ -13,7 +13,7 @@ import { textoMesaConApodo } from '../utils/apodosMesa';
  * FASE 4.1: Incluye indicador de estado online/offline
  * Elimina el espacio negro del header del Stack Navigator
  */
-const HeaderComandaDetalle = ({ mesa, comanda, onSync, navigation, connectionStatus = 'desconectado', isConnected = false, reconnectAttempts = 0 }) => {
+const HeaderComandaDetalle = ({ mesa, comanda, onSync, onImprimir, navigation, connectionStatus = 'desconectado', isConnected = false, reconnectAttempts = 0 }) => {
   const { apodoDe } = useApodosMesa();
   const etiquetaMesa = mesa?.sinMesa ? 'Sin mesa' : textoMesaConApodo(mesa, apodoDe(mesa));
   const mozoNombre = comanda?.mozos?.name || 'Desconocido';
@@ -97,6 +97,17 @@ const HeaderComandaDetalle = ({ mesa, comanda, onSync, navigation, connectionSta
           >
             <MaterialCommunityIcons name="refresh" size={28} color="#fff" />
           </TouchableOpacity>
+          {typeof onImprimir === 'function' && (
+            <TouchableOpacity
+              onPress={onImprimir}
+              style={styles.syncButton}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Imprimir tickets mozo y cocina"
+            >
+              <MaterialCommunityIcons name="printer" size={28} color="#fff" />
+            </TouchableOpacity>
+          )}
           <View style={{ flex: 1 }} />
           <Animated.View 
             style={[
