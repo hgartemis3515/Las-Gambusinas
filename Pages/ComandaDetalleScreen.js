@@ -51,8 +51,9 @@ import { esSeleccionSinMesa, SELECCION_SIN_MESA } from '../utils/sinMesaOrden';
 import { esLlevarColor, normalizarTipoServicioLinea } from '../utils/tipoServicio';
 import { msRestantesEntregaAutomatica, formatearCountdownEntrega, tiempoSalioRequiereAncla } from '../utils/entregaAutomatica';
 import { usuarioPuedeAplicarDescuentos, brutoGrupoComandas, montoDescuentoGrupo, montosDescuentoPorComanda, clampMontoDescuento, motivoDescuentoFinal, motivoDescuentoEsValido, comandaTieneDescuentoMozo } from '../utils/descuentoMozo';
-import { generarXmlTicketsMozoYCocina } from '../utils/comandaMozoEposXml';
-import { imprimirBoucherTmAssistant } from '../utils/boucherTmPrint';
+import { datosImpresionTicket } from '../utils/comandaMozoEposXml';
+import RasterTicketCocina, { xmlImagenEpos, xmlDosImagenesEpos } from '../utils/ticketRasterCocina';
+import { imprimirBoucherTmAssistant, buildTmPrintAssistantUrl } from '../utils/boucherTmPrint';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -314,6 +315,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [confirmandoEntrega, setConfirmandoEntrega] = useState(false); // 🔥 PARA LLEVAR: pantalla de carga al confirmar entrega
   
   // Estados para descuento (solo admin/supervisor)
+  const rasterTicketRef = useRef(null);
+  const [modalElegirImpresion, setModalElegirImpresion] = useState(false);
+  const [idsImpresion, setIdsImpresion] = useState([]);
   const [modalDescuentoVisible, setModalDescuentoVisible] = useState(false);
   const [descuentoMontoInput, setDescuentoMontoInput] = useState('');
   const [motivoDescuento, setMotivoDescuento] = useState('');
@@ -1136,7 +1140,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const hayBloqueoCocinaEnComandas = !permitirEditarEliminarTomadas && comandas.some(c => comandaBloqueadaPorCocina(c, false));
   const platosEnRecoger = todosLosPlatos.filter(p => p.estado === 'recoger');
   const platosEntregados = todosLosPlatos.filter(p => p.estado === 'entregado');
-  const platosPagados = todosLosPlatos.filter(p => p.estado === 'pagado');
   
   const puedeEditar = platosEnPedidoSinBloqueoCocina.length > 0;
   const puedeEliminarPlatos = platosEnPedidoSinBloqueoCocina.length > 0;
@@ -2941,21 +2944,59 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const motivoDescuentoOk = motivoDescuentoEsValido(motivoDescuento);
   const esGrupoDescuento = (comandas || []).length > 1;
   const montoDescuentoActualGrupo = montoDescuentoGrupo(comandas);
-  const hayPlatosPagadosTicket = platosPagados.length > 0;
-
-  const enviarTicketsMozoYCocina = async (incluirPagados) => {
-    const { xml, impresos } = generarXmlTicketsMozoYCocina({
-      comandas,
+  const enviarTicketsMozoYCocina = async (incluirPagados, listaComandas) => {
+    const datos = datosImpresionTicket({
+      comandas: listaComandas,
       platos: todosLosPlatos,
       mesa,
       incluirPagados,
       configMoneda,
     });
-    if (!impresos) {
+    if (!datos.ok) {
       Alert.alert('Sin platos', 'No hay platos para imprimir con el filtro elegido.');
       return;
     }
-    await imprimirBoucherTmAssistant(xml);
+    if (!rasterTicketRef.current) {
+      Alert.alert('Error', 'No se pudo preparar la impresión.');
+      return;
+    }
+    try {
+      const mozo = await rasterTicketRef.current.rasterizar({ ...datos, cocina: false });
+      const cocina = await rasterTicketRef.current.rasterizar({ ...datos, cocina: true });
+      const junto = xmlDosImagenesEpos(mozo, cocina);
+      if (buildTmPrintAssistantUrl(junto).length <= 190 * 1024) {
+        await imprimirBoucherTmAssistant(junto);
+        return;
+      }
+      await imprimirBoucherTmAssistant(xmlImagenEpos(mozo));
+      await new Promise((r) => setTimeout(r, 700));
+      await imprimirBoucherTmAssistant(xmlImagenEpos(cocina));
+    } catch (err) {
+      Alert.alert('Error', 'No se pudo armar el ticket con el mismo formato de cocina.');
+    }
+  };
+
+  const continuarImpresion = (lista) => {
+    const ids = new Set((lista || []).map((c) => String(c._id)));
+    const hayPagados = (todosLosPlatos || []).some((p) => {
+      if (p.eliminado || p.anulado) return false;
+      if (String(p.estado || '').toLowerCase() !== 'pagado') return false;
+      if (p.comandaId != null && !ids.has(String(p.comandaId))) return false;
+      return true;
+    });
+    if (!hayPagados) {
+      enviarTicketsMozoYCocina(false, lista);
+      return;
+    }
+    Alert.alert(
+      'Platos pagados',
+      'Hay platos pagados. ¿Los incluyes en el ticket?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Sin pagados', onPress: () => enviarTicketsMozoYCocina(false, lista) },
+        { text: 'Con pagados', onPress: () => enviarTicketsMozoYCocina(true, lista) },
+      ]
+    );
   };
 
   const handleImprimirDetalle = () => {
@@ -2963,23 +3004,27 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       Alert.alert('Sin platos', 'No hay platos para imprimir.');
       return;
     }
-    if (!hayPlatosPagadosTicket) {
-      enviarTicketsMozoYCocina(false);
+    if ((comandas || []).length > 1) {
+      setIdsImpresion((comandas || []).map((c) => String(c._id)));
+      setModalElegirImpresion(true);
       return;
     }
-    Alert.alert(
-      'Platos pagados',
-      'Hay platos pagados en esta comanda. ¿Los incluyes en el ticket?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Sin pagados', onPress: () => enviarTicketsMozoYCocina(false) },
-        { text: 'Con pagados', onPress: () => enviarTicketsMozoYCocina(true) },
-      ]
-    );
+    continuarImpresion(comandas);
+  };
+
+  const confirmarImpresionElegida = () => {
+    const lista = (comandas || []).filter((c) => idsImpresion.includes(String(c._id)));
+    if (!lista.length) {
+      Alert.alert('Elige una comanda', 'Marca al menos una comanda para imprimir.');
+      return;
+    }
+    setModalElegirImpresion(false);
+    continuarImpresion(lista);
   };
   
   return (
         <View style={[styles.container, { backgroundColor: themeColors.colors?.background || themeColors.background || '#FFFFFF' }]}>
+      <RasterTicketCocina ref={rasterTicketRef} />
       {/* Header Personalizado - FASE 4.1: Con indicador online/offline */}
       <HeaderComandaDetalle
         mesa={mesa}
@@ -2991,6 +3036,46 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         isConnected={connected}
         reconnectAttempts={reconnectAttempts}
       />
+
+      <Modal visible={modalElegirImpresion} transparent animationType="fade" onRequestClose={() => setModalElegirImpresion(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: themeColors.colors?.surface || '#fff', borderRadius: 16, padding: 16, maxHeight: '80%' }}>
+            <Text style={{ fontSize: 17, fontWeight: '800', color: themeColors.colors?.text?.primary || '#111', marginBottom: 4 }}>
+              ¿Qué comanda imprimes?
+            </Text>
+            <Text style={{ fontSize: 12, color: themeColors.colors?.text?.secondary || '#666', marginBottom: 12 }}>
+              Sale un ticket de mozo y uno de cocina, con los platos y el total de lo marcado.
+            </Text>
+            <ScrollView style={{ maxHeight: 320 }}>
+              {(comandas || []).map((c) => {
+                const id = String(c._id);
+                const on = idsImpresion.includes(id);
+                const num = numeroComandaVisible(c);
+                return (
+                  <TouchableOpacity
+                    key={id}
+                    onPress={() => setIdsImpresion((prev) => (on ? prev.filter((x) => x !== id) : [...prev, id]))}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.06)' }}
+                  >
+                    <MaterialCommunityIcons name={on ? 'checkbox-marked' : 'checkbox-blank-outline'} size={22} color={themeColors.colors?.primary || '#C41E3A'} />
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: themeColors.colors?.text?.primary || '#111' }}>
+                      {num != null ? `#${num}` : 'Comanda'}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
+              <TouchableOpacity onPress={() => setModalElegirImpresion(false)} style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
+                <Text style={{ color: themeColors.colors?.text?.secondary || '#666', fontWeight: '700' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmarImpresionElegida} style={{ backgroundColor: themeColors.colors?.primary || '#C41E3A', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14 }}>
+                <Text style={{ color: '#fff', fontWeight: '800' }}>Imprimir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Reserva: título + horario atención + envío KDS + seña/saldo */}
       {esReservaFlow && (
