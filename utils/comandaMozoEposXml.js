@@ -5,7 +5,7 @@
  * Cocina: idéntico, con un cuadrado a la izquierda de cada plato para marcar.
  */
 import moment from 'moment-timezone';
-import { numeroTicketImpresion } from './comandaHelpers';
+import { numeroTicketImpresion, etiquetaMozosComandas } from './comandaHelpers';
 
 const EPOS_NS = 'http://www.epson-pos.com/schemas/2011/03/epos-print';
 
@@ -215,6 +215,7 @@ export function datosImpresionTicket({
     ok: true,
     letrero,
     ...meta,
+    mozo: etiquetaMozosComandas(elegidas) || meta.mozo,
     fecha: fechaIgualCocina(base.createdAt),
     simbolo: configMoneda?.simboloMoneda || 'S/.',
     decimales,

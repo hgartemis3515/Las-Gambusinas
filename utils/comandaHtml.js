@@ -9,6 +9,7 @@
  * total simple, moneda, tipo de pago, cliente, DNI, observaciones.
  */
 import { resolveLogoUrl } from './logoPlantilla';
+import { etiquetaMozosComandas } from './comandaHelpers';
 import { envolverHtmlBoucherTicket } from './boucherPrint';
 
 const ETIQUETAS_DEFAULT_COMANDA = {
@@ -51,20 +52,27 @@ export function aplicarOpcionesImpresionProductos(productos, plantilla) {
 /**
  * Formatea números de comanda para el campo visible del ticket.
  * Una comanda  → "#81"
- * Varias       → "#81+#82"   (orden ascendente, sin duplicados)
+ * Varias       → "#82+#81"   (la última primero, luego descendente)
  *
  * @param {Array<number|string|null|undefined>} comandasNumbers
  * @returns {string} ej. "#81+#82" o "" si no hay números válidos
  */
 export function formatComandasNumbersLabel(comandasNumbers) {
-  const nums = [...new Set(
-    (comandasNumbers || [])
-      .map((n) => (n != null && n !== '' ? Number(n) : NaN))
-      .filter((n) => !Number.isNaN(n))
-  )].sort((a, b) => a - b);
+  const vistos = new Set();
+  const nums = [];
+  for (const raw of comandasNumbers || []) {
+    if (raw == null || raw === '') continue;
+    const n = Number(raw);
+    if (Number.isNaN(n) || vistos.has(n)) continue;
+    vistos.add(n);
+    nums.push(n);
+  }
+  const maximo = nums.length ? Math.max.apply(null, nums) : null;
+  const resto = nums.filter((n) => n !== maximo).sort((a, b) => b - a);
+  const orden = nums.length <= 1 ? nums : [maximo].concat(resto);
 
-  if (nums.length === 0) return '';
-  return nums.map((n) => `#${n}`).join('+');
+  if (orden.length === 0) return '';
+  return orden.map((n) => `#${n}`).join('+');
 }
 
 /**
@@ -478,7 +486,8 @@ export function mapComandasATicket(comandas, boucherOpcional, config = {}) {
     mesa: primera.mesaNumero || primera.mesas?.nummesa || primera.mesa?.nummesa
       || (typeof primera.mesa === 'object' ? primera.mesa?.nummesa : primera.mesa)
       || boucherOpcional?.numMesa || null,
-    mozo: primera.mozoNombre || primera.mozos?.name || primera.mozo
+    mozo: etiquetaMozosComandas(lista)
+      || primera.mozoNombre || primera.mozos?.name || primera.mozo
       || (typeof primera.mozo === 'object' ? primera.mozo?.name : primera.mozo)
       || boucherOpcional?.nombreMozo || null,
     area: primera.areaNombre || primera.mesas?.area?.nombre || primera.mesa?.area || null,

@@ -19,13 +19,15 @@ function normalizeId(val) {
 function formatGrupoComandasLabel(comandas) {
   const nums = [...new Set(
     (comandas || [])
-      .map((c) => c.comandaNumber ?? c.numComanda)
+      .map((c) => c.numeroComandaDia ?? c.numComanda ?? c.comandaNumber)
       .filter((n) => n != null && n !== '')
       .map((n) => Number(n))
       .filter((n) => !Number.isNaN(n))
-  )].sort((a, b) => a - b);
+  )];
   if (nums.length === 0) return '—';
-  return nums.map((n) => `#${n}`).join('+');
+  const max = Math.max(...nums);
+  const orden = nums.length === 1 ? nums : [max, ...nums.filter((n) => n !== max).sort((a, b) => b - a)];
+  return orden.map((n) => `#${n}`).join('+');
 }
 
 const PRIORIDAD_ESTADO = {

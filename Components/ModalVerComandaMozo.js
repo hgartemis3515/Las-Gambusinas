@@ -74,12 +74,13 @@ function nombreMesa(c) {
 
 function nombreMozo(c) {
   const m = c?.mozos;
-  if (Array.isArray(m)) {
-    const n = m.map((x) => x?.name).filter(Boolean).join(", ");
-    if (n) return n;
-  }
-  if (m?.name) return m.name;
-  return c?.mozoNombre || "—";
+  let base = "";
+  if (Array.isArray(m)) base = m.map((x) => x?.name).filter(Boolean).join(", ");
+  else if (m?.name) base = m.name;
+  else base = c?.mozoNombre || "";
+  if (!base) return "—";
+  const n = Number(c?.numeroComandaMozo);
+  return Number.isFinite(n) && n > 0 ? `${n} ${base}` : base;
 }
 
 function nombrePlato(p) {

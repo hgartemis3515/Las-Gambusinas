@@ -29,7 +29,7 @@ import { useWindowDimensions } from "react-native";
 import { useSocket } from "../../../context/SocketContext";
 import logger from "../../../utils/logger";
 import configuracionService from "../../../services/configuracionService";
-import { filtrarComandasActivas, filtrarComandasPorIds, numeroComandaVisible } from "../../../utils/comandaHelpers";
+import { filtrarComandasActivas, filtrarComandasPorIds, numeroComandaVisible, etiquetaMozosComandas } from "../../../utils/comandaHelpers";
 import { esSeleccionSinMesa } from "../../../utils/sinMesaOrden";
 import { esLlevarColor, etiquetaLlevarMozo } from "../../../utils/tipoServicio";
 import { cantidadGuarnicionEfectiva } from "../../../utils/platoGuarniciones";
@@ -2358,13 +2358,13 @@ const PagosScreen = () => {
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Mozo:</Text>
             <Text style={styles.infoValue}>
-              {(boucherData || boucherFromParams)?.nombreMozo || 
-               (() => {
-                 // Leer route.params directamente
+              {(() => {
                  const paramsParaMozo = route.params || {};
                  const comandasDeParamsParaMozo = paramsParaMozo.comandasParaPagar || [];
                  const comandasParaMostrar = comandas.length > 0 ? comandas : comandasDeParamsParaMozo;
-                 return comandasParaMostrar[0]?.mozos?.name || "N/A";
+                 return etiquetaMozosComandas(comandasParaMostrar)
+                   || (boucherData || boucherFromParams)?.nombreMozo
+                   || "N/A";
                })()}
             </Text>
           </View>

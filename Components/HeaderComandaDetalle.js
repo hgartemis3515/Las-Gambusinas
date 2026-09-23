@@ -5,7 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import moment from 'moment-timezone';
 import BadgeEstadoPlato from './BadgeEstadoPlato';
 import { useApodosMesa } from '../context/ApodosMesaContext';
-import { numeroComandaVisible } from '../utils/comandaHelpers';
+import { numeroComandaVisible, numeroTicketImpresion, etiquetaMozosComandas } from '../utils/comandaHelpers';
 import { textoMesaConApodo } from '../utils/apodosMesa';
 
 /**
@@ -13,10 +13,12 @@ import { textoMesaConApodo } from '../utils/apodosMesa';
  * FASE 4.1: Incluye indicador de estado online/offline
  * Elimina el espacio negro del header del Stack Navigator
  */
-const HeaderComandaDetalle = ({ mesa, comanda, onSync, onImprimir, navigation, connectionStatus = 'desconectado', isConnected = false, reconnectAttempts = 0 }) => {
+const HeaderComandaDetalle = ({ mesa, comanda, comandas, onSync, onImprimir, navigation, connectionStatus = 'desconectado', isConnected = false, reconnectAttempts = 0 }) => {
   const { apodoDe } = useApodosMesa();
   const etiquetaMesa = mesa?.sinMesa ? 'Sin mesa' : textoMesaConApodo(mesa, apodoDe(mesa));
-  const mozoNombre = comanda?.mozos?.name || 'Desconocido';
+  const listaNumeros = (comandas && comandas.length) ? comandas : [comanda];
+  const letrero = numeroTicketImpresion(listaNumeros) || `#${numeroComandaVisible(comanda) ?? 'N/A'}`;
+  const mozoNombre = etiquetaMozosComandas(listaNumeros) || comanda?.mozos?.name || 'Desconocido';
   const fechaComanda = comanda?.createdAt 
     ? moment(comanda.createdAt).tz("America/Lima").format("DD/MM/YYYY, h:mm:ss a")
     : 'Fecha no disponible';
@@ -125,7 +127,7 @@ const HeaderComandaDetalle = ({ mesa, comanda, onSync, onImprimir, navigation, c
           </Animated.View>
         </View>
         <Text style={styles.numeroGrande}>
-          #{numeroComandaVisible(comanda) ?? 'N/A'}
+          {letrero}
         </Text>
         <View style={[styles.headerRow, { justifyContent: 'center' }]}>
           <Text style={styles.headerText}>Mozo: {mozoNombre}</Text>

@@ -4,6 +4,7 @@
  */
 import moment from 'moment-timezone';
 import { textoOpcionComplemento } from './precioComplementos';
+import { etiquetaMozosComandas } from './comandaHelpers';
 
 const EPOS_NS = 'http://www.epson-pos.com/schemas/2011/03/epos-print';
 const CHARS_LINEA = 32;
@@ -142,7 +143,7 @@ export function generarXmlBoucher({
   const boucherNumber = boucher?.boucherNumber || 'N/A';
   const numMesa =
     mesa?.nombreCombinado || boucher?.numMesa || mesa?.nummesa || comandas[0]?.mesas?.nummesa || 'N/A';
-  const nombreMozo = boucher?.nombreMozo || comandas[0]?.mozos?.name || 'N/A';
+  const nombreMozo = etiquetaMozosComandas(comandas) || boucher?.nombreMozo || comandas[0]?.mozos?.name || 'N/A';
   const nombreCliente =
     boucher?.cliente?.nombre || clienteSeleccionado?.nombre || 'CLIENTE GENERAL';
   const dniCliente = boucher?.cliente?.dni || clienteSeleccionado?.dni || '00000000';

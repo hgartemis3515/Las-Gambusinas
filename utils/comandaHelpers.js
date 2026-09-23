@@ -40,7 +40,15 @@ export const letraRevisionTicket = (n) => {
   return s;
 };
 
-/** Letrero del papel: #10+#11a, #10B. */
+/** Última comanda (mayor número del día) primero; el resto hacia atrás. */
+export const ordenarNumerosLetrero = (nums) => {
+  const list = [...nums].filter((n) => Number.isFinite(n));
+  if (list.length <= 1) return list;
+  const max = Math.max(...list);
+  return [max, ...list.filter((n) => n !== max).sort((a, b) => b - a)];
+};
+
+/** Letrero del papel: #15+#14+#13a. */
 export const numeroTicketImpresion = (comandas) => {
   const byN = new Map();
   for (const c of comandas || []) {
@@ -52,9 +60,31 @@ export const numeroTicketImpresion = (comandas) => {
     const prev = byN.get(num);
     if (prev == null || rev > prev) byN.set(num, rev);
   }
-  const nums = [...byN.keys()].sort((a, b) => a - b);
+  const nums = ordenarNumerosLetrero([...byN.keys()]);
   if (!nums.length) return '';
   return nums.map((n) => `#${n}${letraRevisionTicket(byN.get(n))}`).join('+');
+};
+
+/** `1 Jose` o `1+2 Jose · 3 Ana`. Sin número, solo el nombre. */
+export const etiquetaMozosComandas = (comandas) => {
+  const ordenadas = [...(comandas || [])].sort(
+    (a, b) => (Number(numeroComandaVisible(b)) || 0) - (Number(numeroComandaVisible(a)) || 0)
+  );
+  const grupos = new Map();
+  for (const c of ordenadas) {
+    const nombre = c?.mozos?.name
+      || c?.mozoNombre
+      || (typeof c?.mozo === 'string' ? c.mozo : c?.mozo?.name)
+      || '';
+    const limpio = String(nombre || '').trim();
+    if (!limpio || limpio === 'Sin asignar' || limpio === 'Desconocido') continue;
+    if (!grupos.has(limpio)) grupos.set(limpio, []);
+    const n = Number(c?.numeroComandaMozo);
+    if (Number.isFinite(n) && n > 0) grupos.get(limpio).push(n);
+  }
+  return [...grupos.entries()]
+    .map(([nombre, nums]) => (nums.length ? `${nums.join('+')} ${nombre}` : nombre))
+    .join(' · ');
 };
 
 export const esEstadoPlatoPreCocina = (estado) =>

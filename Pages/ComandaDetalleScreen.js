@@ -3029,6 +3029,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       <HeaderComandaDetalle
         mesa={mesa}
         comanda={comandaPrincipal}
+        comandas={comandas}
         onSync={refrescarComandas}
         onImprimir={handleImprimirDetalle}
         navigation={navigation}

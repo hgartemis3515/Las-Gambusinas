@@ -8,6 +8,7 @@ import moment from 'moment-timezone';
 import { PUNTOS_ANCHO } from './boucherPrint';
 import { loadLogoBytes } from './logoPlantilla';
 import { textoOpcionComplemento } from './precioComplementos';
+import { etiquetaMozosComandas } from './comandaHelpers';
 
 const MARGIN_X = 6;
 const CONTENT_W = PUNTOS_ANCHO - MARGIN_X * 2;
@@ -164,7 +165,7 @@ export async function generarPdfBoucherNativo(opts) {
   const boucherNumber = boucher?.boucherNumber || 'N/A';
   const numMesa =
     mesa?.nombreCombinado || boucher?.numMesa || mesa?.nummesa || comandas[0]?.mesas?.nummesa || 'N/A';
-  const nombreMozo = boucher?.nombreMozo || comandas[0]?.mozos?.name || 'N/A';
+  const nombreMozo = etiquetaMozosComandas(comandas) || boucher?.nombreMozo || comandas[0]?.mozos?.name || 'N/A';
   const nombreCliente =
     boucher?.cliente?.nombre || clienteSeleccionado?.nombre || 'CLIENTE GENERAL';
   const dniCliente = boucher?.cliente?.dni || clienteSeleccionado?.dni || '00000000';
