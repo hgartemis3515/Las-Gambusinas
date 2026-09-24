@@ -335,8 +335,21 @@ const PagosScreen = () => {
   const escala = width < 390 ? 0.9 : 1;
   const { omitirConfirmacionPago } = useOmitirConfirmacionPago();
   const { ocultarPropina } = useOcultarPropina();
+  const [rolUsuario, setRolUsuario] = useState(null);
+  const esCobroDirectoCaja = rolUsuario === 'cajero' || rolUsuario === 'admin';
   
   // ✅ NUEVO FLUJO: Usar SOLO route.params - Backend = FUENTE ÚNICA DE VERDAD
+  useEffect(() => {
+    AsyncStorage.getItem('user').then((raw) => {
+      try {
+        const u = raw ? JSON.parse(raw) : null;
+        setRolUsuario(u?.rol || null);
+      } catch {
+        setRolUsuario(null);
+      }
+    }).catch(() => setRolUsuario(null));
+  }, []);
+
   // IMPORTANTE: Leer route.params directamente en cada render para Tab Navigator
   const routeParams = route.params || {};
   const { mesa: mesaParam, comandasParaPagar, totalPendiente: _totalPendiente, boucher: boucherFromParams } = routeParams;
@@ -371,6 +384,7 @@ const PagosScreen = () => {
   const [hayPendienteTrasPago, setHayPendienteTrasPago] = useState(false);
   // BUG_PAGOS_PARCIALES_APROBACION_COCINA (Fase 5): flags para el modal post-pago
   const [ultimoPagoFueParcial, setUltimoPagoFueParcial] = useState(false);
+  const [ultimoCobroDirecto, setUltimoCobroDirecto] = useState(false);
   const [ultimoCobroCompleto, setUltimoCobroCompleto] = useState(false);
   /** Bouchers individuales de cada pago parcial (para imprimir por separado). */
   const [bouchersParciales, setBouchersParciales] = useState([]);
@@ -1662,6 +1676,7 @@ const PagosScreen = () => {
           vuelto: pagoDatos.vuelto,
         }),
         ...(esPagoAdelantado && { esPagoAdelantado: true }),
+        ...(esCobroDirectoCaja && { cobroDirectoCaja: true }),
         ...((esSeleccionSinMesa(mesaFinal) || !mesaIdFinal) && { sinMesa: true }),
         ...(abonoReserva > 0 && { abonoReserva, reservaOrigenId: reservaOrigenId || null }),
       };
@@ -1676,6 +1691,7 @@ const PagosScreen = () => {
       // ✅ POST con timeout y manejo de errores específico
       let boucherCreado;
       let resumenPago = null;
+      let ticketEstadoCobro = null;
       try {
         const headers = await getHeadersAuth();
         const boucherResponse = await axios.post(boucherURL, boucherData, { 
@@ -1692,6 +1708,10 @@ const PagosScreen = () => {
         
         boucherCreado = parseBoucherResponse(boucherResponse.data).boucher;
         resumenPago = parseBoucherResponse(boucherResponse.data).resumen;
+        ticketEstadoCobro = boucherResponse.data?.ticketAprobacion?.estado
+          || boucherResponse.data?.ticket?.estado
+          || resumenPago?.estadoTicket
+          || null;
         
         if (!boucherCreado || !boucherCreado._id) {
           throw new Error("El backend no retornó un boucher válido");
@@ -1767,6 +1787,10 @@ const PagosScreen = () => {
                   const parsedRetry = parseBoucherResponse(retryResponse.data);
                   boucherCreado = parsedRetry.boucher;
                   resumenPago = parsedRetry.resumen;
+                  ticketEstadoCobro = retryResponse.data?.ticketAprobacion?.estado
+                    || retryResponse.data?.ticket?.estado
+                    || resumenPago?.estadoTicket
+                    || ticketEstadoCobro;
                   
                   if (!boucherCreado || !boucherCreado._id) {
                     throw new Error("El backend no retornó un boucher válido");
@@ -1810,6 +1834,10 @@ const PagosScreen = () => {
                 const parsedRetry2 = parseBoucherResponse(retryResponse.data);
                 boucherCreado = parsedRetry2.boucher;
                 resumenPago = parsedRetry2.resumen;
+                ticketEstadoCobro = retryResponse.data?.ticketAprobacion?.estado
+                  || retryResponse.data?.ticket?.estado
+                  || resumenPago?.estadoTicket
+                  || ticketEstadoCobro;
                 
                 if (!boucherCreado || !boucherCreado._id) {
                   throw new Error("El backend no retornó un boucher válido");
@@ -2053,6 +2081,7 @@ const PagosScreen = () => {
       // (aunque falten aprobaciones de cocina) para mostrar el mensaje/botón correctos.
       setUltimoPagoFueParcial(Boolean(boucherCreado?.esPagoParcial));
       setUltimoCobroCompleto(Boolean(resumenPago?.cobroCompleto ?? resumenPago?.mesaPagadaCompletamente));
+      setUltimoCobroDirecto(ticketEstadoCobro === 'aprobado');
       setModalPagoExitosoVisible(true);
       
     } catch (error) {
@@ -2138,8 +2167,16 @@ const PagosScreen = () => {
     }
 
     // ✅ Mostrar confirmación antes de procesar el pago
-    const tituloConfirmacion = esPagoAdelantado ? "Solicitar Pago Adelantado" : "Solicitar Pago";
-    const mensajeConfirmacion = esPagoAdelantado
+    const tituloConfirmacion = esCobroDirectoCaja
+      ? (esPagoAdelantado ? "Cobrar adelantado" : "Cobrar")
+      : (esPagoAdelantado ? "Solicitar Pago Adelantado" : "Solicitar Pago");
+    const mensajeConfirmacion = esCobroDirectoCaja
+      ? `¿Deseas cobrar al cliente ${cliente.nombre || "Cliente"}?\n\n` +
+        `Total: ${simbolo} ${totalFormateado}` +
+        (metodoLabel ? `\nMétodo: ${metodoLabel}` : '') +
+        vueltoLinea +
+        `\n\nEl cobro se aprueba automáticamente.`
+      : esPagoAdelantado
       ? `¿Deseas confirmar el pago adelantado para el cliente ${cliente.nombre || "Cliente"}?\n\n` +
         `Total: ${simbolo} ${totalFormateado}` +
         (metodoLabel ? `\nMétodo: ${metodoLabel}` : '') +
@@ -2922,7 +2959,9 @@ const PagosScreen = () => {
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 * escala }}>
                 <MaterialCommunityIcons name="cash-multiple" size={28 * escala} color="#FFFFFF" />
                 <Text style={{ color: '#FFFFFF', fontSize: 16 * escala, fontWeight: '700', includeFontPadding: false, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 2 }} numberOfLines={1}>
-                  {esPagoAdelantado ? 'Solicitar Pago Adelantado' : `Solicitar Pago${platosSeleccionadosPago.length > 0 ? ` (${platosSeleccionadosPago.length})` : ''}`}
+                  {esCobroDirectoCaja
+                    ? (esPagoAdelantado ? 'Cobrar adelantado' : `Cobrar${platosSeleccionadosPago.length > 0 ? ` (${platosSeleccionadosPago.length})` : ''}`)
+                    : (esPagoAdelantado ? 'Solicitar Pago Adelantado' : `Solicitar Pago${platosSeleccionadosPago.length > 0 ? ` (${platosSeleccionadosPago.length})` : ''}`)}
                 </Text>
               </View>
             </View>
@@ -3002,6 +3041,7 @@ const PagosScreen = () => {
         visible={modalPagoExitosoVisible}
         esPagoParcial={ultimoPagoFueParcial}
         cobroCompleto={ultimoCobroCompleto}
+        cobroDirecto={ultimoCobroDirecto}
         onSeguirCobrando={() => {
           // BUG_PAGOS_PARCIALES_APROBACION_COCINA (Fase 5):
           // Permanecer en PagosScreen para seguir cobrando el resto.

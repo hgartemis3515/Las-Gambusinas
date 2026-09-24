@@ -3307,6 +3307,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
             >
               <MaterialCommunityIcons name="cash" size={20} color="#fff" />
               <Text style={styles.actionButtonText}>Pagar</Text>
+              {(userInfo?.rol === 'cajero' || userInfo?.rol === 'admin') && (
+                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '600' }}>Cobro directo (caja)</Text>
+              )}
             </TouchableOpacity>
             )}
 

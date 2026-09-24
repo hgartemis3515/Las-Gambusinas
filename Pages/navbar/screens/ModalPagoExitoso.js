@@ -46,6 +46,7 @@ const ModalPagoExitoso = ({
   esPagoParcial = false,
   // cobroCompleto = true cuando ya no quedan platos por cobrar (pero faltan aprobaciones).
   cobroCompleto = false,
+  cobroDirecto = false,
   onSeguirCobrando,
 }) => {
   const themeContext = useTheme();
@@ -204,10 +205,14 @@ const ModalPagoExitoso = ({
   const totalBoucher = boucherData?.total || boucherData?.totalConDescuento || 0;
 
   // BUG_PAGOS_PARCIALES_APROBACION_COCINA (Fase 5): título y subtítulo según tipo de cobro
-  const tituloModal = esPagoParcial
+  const tituloModal = cobroDirecto
+    ? "Cobro aprobado"
+    : esPagoParcial
     ? (cobroCompleto ? "Cobro Completado" : "Pago Parcial Registrado")
     : "¡Pago Exitoso!";
-  const subtituloModal = esPagoParcial
+  const subtituloModal = cobroDirecto
+    ? "El cobro quedó aprobado."
+    : esPagoParcial
     ? (cobroCompleto
         ? "Se cobró todo el pedido. Esperando aprobación de cocina de los envíos restantes para liberar la mesa."
         : "Los platos seleccionados fueron enviados a cocina. Puede seguir cobrando el resto cuando quiera.")

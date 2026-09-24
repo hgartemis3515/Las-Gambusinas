@@ -306,6 +306,12 @@ export function generarHtmlComanda({ datos, plantilla, serverOrigin }) {
     </div>`;
   }
 
+  for (const linea of datos.clientesParaLlevar || []) {
+    const valor = linea.nombre || (linea.numero != null ? `#${linea.numero}` : '');
+    if (!valor) continue;
+    html += `<div style="margin-bottom:2px;font-size:${fontSize}px;"><strong>Cliente:</strong> ${escapeHtml(valor)}</div>`;
+  }
+
   // === PIE ===
   if (mensajes.pie) {
     html += `<div style="text-align:center;font-size:${fontSize - 2}px;color:#999;margin-top:6px;">${escapeHtml(mensajes.pie)}</div>`;
@@ -427,6 +433,25 @@ function mapLineaProductoImpresion(p, comanda, index) {
   };
 }
 
+function esComandaParaLlevarTicket(c) {
+  if (!c) return false;
+  if (c.sinMesa === true) return true;
+  if (c.numeroTicketCliente != null || String(c.clienteNombreParaLlevar || '').trim()) return true;
+  const platos = c.platos || c.items || [];
+  return platos.some((p) => p && !p.eliminado && !p.anulado && (p.tipoServicio === 'para_llevar' || p.tipoServicio === 'extra_llevar'));
+}
+
+function lineasClienteParaLlevar(lista) {
+  return (lista || []).filter(esComandaParaLlevarTicket).map((c) => {
+    const nombre = String(c.clienteNombreParaLlevar || '').trim();
+    const numero = Number(c.numeroTicketCliente);
+    return {
+      nombre: nombre || null,
+      numero: Number.isFinite(numero) && numero > 0 ? numero : null,
+    };
+  }).filter((l) => l.nombre || l.numero != null);
+}
+
 function productosDeComanda(comanda) {
   const lineas = comanda?.platos || comanda?.items || [];
   return lineas
@@ -494,6 +519,7 @@ export function mapComandasATicket(comandas, boucherOpcional, config = {}) {
     moneda: boucherOpcional?.moneda || config.moneda || 'PEN',
     tipoPago: boucherOpcional?.metodoPagoLabel || boucherOpcional?.metodoPago || 'Pendiente',
     observaciones: primera.observaciones || boucherOpcional?.observaciones || '',
+    clientesParaLlevar: lineasClienteParaLlevar(lista),
     productos,
     subtotal: sumaPlatos > 0 ? sumaPlatos : (subtotalFuente > 0 ? subtotalFuente : 0),
     totalSinDescuento: sumaPlatos > 0 ? sumaPlatos : (subtotalFuente || 0),

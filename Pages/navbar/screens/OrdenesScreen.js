@@ -289,6 +289,7 @@ const OrdenesScreen = ({ route }) => {
   const [selectedPlatos, setSelectedPlatos] = useState([]);
   const [cantidades, setCantidades] = useState({});
   const [observaciones, setObservaciones] = useState("");
+  const [nombreClienteParaLlevar, setNombreClienteParaLlevar] = useState("");
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [favoritoIds, setFavoritoIds] = useState([]);
@@ -1275,6 +1276,7 @@ const OrdenesScreen = ({ route }) => {
       setSelectedPlatos([]);
       setCantidades({});
       setObservaciones('');
+      setNombreClienteParaLlevar('');
       setIsSendingComanda(false);
       setMostrarOverlayCarga(false);
       if (modoExtraLlevar) {
@@ -1358,6 +1360,9 @@ const OrdenesScreen = ({ route }) => {
         platos: platosData,
         cantidades: cantidadesArray,
         observaciones: observaciones || "",
+        ...( (tipoServicioEnvio === TIPO_PARA_LLEVAR || tipoServicioEnvio === TIPO_EXTRA_LLEVAR || esSinMesaOrden)
+          ? { clienteNombreParaLlevar: (nombreClienteParaLlevar || '').trim() || null }
+          : {}),
         status: "en_espera",
         IsActive: true,
         ...(t0Armado
@@ -1898,6 +1903,25 @@ const OrdenesScreen = ({ route }) => {
             })
           )}
         </View>
+
+        {/* Cliente para llevar, encima de observaciones */}
+        {(modoExtraLlevar || tipoServicioModal === TIPO_PARA_LLEVAR || tipoServicioModal === TIPO_EXTRA_LLEVAR || esSeleccionSinMesa(selectedMesa)) && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Cliente</Text>
+            <TextInput
+              style={styles.observacionesInput}
+              placeholder="Nombre del cliente (opcional)"
+              placeholderTextColor={theme.colors.text.light}
+              value={nombreClienteParaLlevar}
+              onChangeText={setNombreClienteParaLlevar}
+            />
+            <Text style={styles.ticketClienteHint}>
+              {nombreClienteParaLlevar.trim()
+                ? `Ticket de cliente: ${nombreClienteParaLlevar.trim()}`
+                : 'Ticket de cliente: se asigna al enviar'}
+            </Text>
+          </View>
+        )}
 
         {/* Observaciones y Total - Layout adaptado para horizontal */}
         {orientation.isLandscape ? (
@@ -2446,6 +2470,11 @@ const OrdenesScreenStyles = (theme, orientation, compacto = COMPACTO_DEFAULT, ac
     textAlignVertical: "top",
     fontSize: 14,
     color: theme.colors.text.primary,
+  },
+  ticketClienteHint: {
+    marginTop: 6,
+    fontSize: 12,
+    color: theme.colors.text.secondary,
   },
   totalSection: {
     backgroundColor: theme.colors.primary,
