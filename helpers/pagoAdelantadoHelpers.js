@@ -139,11 +139,13 @@ export function getReglasBotonesComandaDetalle(todosLosPlatos) {
   const platosElegibles = obtenerPlatosElegiblesPPA(platosActivos);
 
   // Pagar: solo si composición NO es solo_para_llevar Y todos están entregados/pagados
-  const todosEntregadosOPagados = todosLosPlatos.length > 0
-    && todosLosPlatos.every(p => {
+  const todosEntregadosOPagados = platosActivos.length > 0
+    && platosActivos.every(p => {
       const e = (p.estado || '').toLowerCase();
+      if (platoCobradoViaPPA(p)) return true;
       return e === 'entregado' || e === 'pagado';
-    });
+    })
+    && platosActivos.some((p) => !platoCobradoViaPPA(p));
 
   const costoCero = esCostoCeroPlatos(todosLosPlatos);
   const mostrarPagar = composicion !== 'solo_para_llevar' && !costoCero;
