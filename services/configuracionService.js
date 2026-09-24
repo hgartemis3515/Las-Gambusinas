@@ -116,7 +116,8 @@ export const obtenerConfigMoneda = async (forceRefresh = false) => {
         preciosIncluyenIGV: config.preciosIncluyenIGV || false,
         nombreImpuestoPrincipal: config.nombreImpuestoPrincipal || 'IGV',
         politicaRedondeo: config.politicaRedondeo || 'total',
-        redondearA: config.redondearA || 0.01
+        redondearA: config.redondearA || 0.01,
+        cobroPorCantidad: config.cobroPorCantidad !== false,
     };
 };
 

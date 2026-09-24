@@ -736,6 +736,7 @@ const PagosScreen = () => {
   // 🔥 Tipo de cambio USD y permiso desde la configuración del sistema
   const tipoCambioUsd = configMoneda?.tipoCambioUsd ?? null;
   const permitirUsd = configMoneda?.permitirUsd === true;
+  const cobroPorCantidad = configMoneda?.cobroPorCantidad !== false;
 
   // 🔥 Datos de pago seleccionados en el modal (método, moneda, monto, vuelto)
   const [datosPagoSeleccionado, setDatosPagoSeleccionado] = useState(null);
@@ -1098,17 +1099,30 @@ const PagosScreen = () => {
   useEffect(() => {
     if (montoEditandoRef.current) return;
     const decs = configMoneda?.decimales ?? 2;
+    if (cobroPorCantidad) {
+      const cuenta = Number(totalesMaxPago?.total) || 0;
+      const tope = totalRestante != null && totalRestante > 0 ? Math.min(cuenta, Number(totalRestante)) : cuenta;
+      setMontoPagoStr(tope > 0 ? tope.toFixed(decs) : '');
+      return;
+    }
     if (platosSeleccionadosPago.length === 0) {
       setMontoPagoStr('');
       return;
     }
     const t = Number(totalesPagoActual?.total) || 0;
     setMontoPagoStr(t.toFixed(decs));
-  }, [totalesPagoActual?.total, platosSeleccionadosPago.length, configMoneda?.decimales]);
+  }, [totalesPagoActual?.total, platosSeleccionadosPago.length, configMoneda?.decimales, cobroPorCantidad, totalesMaxPago?.total, totalRestante]);
 
   const aplicarMontoPago = useCallback((raw) => {
     const parsed = parseMonto(raw);
     const maxTotal = Number(totalesMaxPago?.total) || 0;
+    if (cobroPorCantidad) {
+      const decs = configMoneda?.decimales ?? 2;
+      const tope = totalRestante != null && totalRestante > 0 ? Math.min(maxTotal, Number(totalRestante)) : maxTotal;
+      const target = tope > 0 ? Math.min(parsed > 0 ? parsed : tope, tope) : parsed;
+      setMontoPagoStr(target > 0 ? target.toFixed(decs) : '');
+      return;
+    }
     if (!(parsed > 0) || platosPagables.length === 0) {
       const decs = configMoneda?.decimales ?? 2;
       const t = Number(totalesPagoActual?.total) || 0;
@@ -1140,6 +1154,8 @@ const PagosScreen = () => {
     configMoneda,
     totalesPagoActual?.total,
     platosSeleccionadosPago.length,
+    cobroPorCantidad,
+    totalRestante,
   ]);
 
   const ajustarCantidadPlato = (item, delta) => {
@@ -1184,6 +1200,13 @@ const PagosScreen = () => {
   // Total a cobrar en la moneda base (PEN) que se pasará al modal.
   // Prioriza el total de los platos seleccionados (pago parcial / PPA).
   const totalBaseCobro = useMemo(() => {
+    if (cobroPorCantidad) {
+      const cuenta = Number(totalesMaxPago?.total) || 0;
+      const tope = totalRestante != null && totalRestante > 0 ? Math.min(cuenta, Number(totalRestante)) : cuenta;
+      const parsed = parseMonto(montoPagoStr);
+      if (parsed > 0) return tope > 0 ? Math.min(parsed, tope) : parsed;
+      return tope;
+    }
     if (platosSeleccionadosPago.length > 0) {
       return totalesPagoActual?.total ?? 0;
     }
@@ -1192,11 +1215,17 @@ const PagosScreen = () => {
     const igvPorcentaje = configMoneda?.igvPorcentaje || 18;
     const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
     return incluyeIGV ? totalParam : totalParam * (1 + igvPorcentaje / 100);
-  }, [platosSeleccionadosPago, totalesPagoActual, route.params, total, configMoneda]);
+  }, [platosSeleccionadosPago, totalesPagoActual, route.params, total, configMoneda, cobroPorCantidad, totalesMaxPago?.total, totalRestante, montoPagoStr]);
 
   // Inicializar selección: todos los platos pagables al cargar comandas
   useEffect(() => {
-    if (usarPlatosDeBoucher) return;
+    if (usarPlatosDeBoucher || cobroPorCantidad) {
+      if (cobroPorCantidad) {
+        setPlatosSeleccionadosPago([]);
+        setCantidadesPago({});
+      }
+      return;
+    }
     if (platosPagables.length === 0) {
       setPlatosSeleccionadosPago([]);
       setCantidadesPago({});
@@ -1204,7 +1233,7 @@ const PagosScreen = () => {
     }
     setPlatosSeleccionadosPago(platosPagables.map((p) => p.key));
     setCantidadesPago(Object.fromEntries(platosPagables.map((p) => [p.key, p.cantidad])));
-  }, [platosPagables, usarPlatosDeBoucher]);
+  }, [platosPagables, usarPlatosDeBoucher, cobroPorCantidad]);
 
   useEffect(() => {
     totalAnim.value = withTiming(totalCalculado, {
@@ -1522,11 +1551,15 @@ const PagosScreen = () => {
     }
 
     // Validar selección de platos para pago parcial
-    if (platosPagables.length > 0 && platosSeleccionadosPago.length === 0) {
+    if (!cobroPorCantidad && platosPagables.length > 0 && platosSeleccionadosPago.length === 0) {
       Alert.alert(
         "Sin selección",
         "Selecciona al menos un plato para confirmar el pago."
       );
+      return;
+    }
+    if (cobroPorCantidad && !(Number(totalBaseCobro) > 0) && !tieneDescuento) {
+      Alert.alert("Monto", "Ingresa el monto a cobrar.");
       return;
     }
 
@@ -1536,7 +1569,7 @@ const PagosScreen = () => {
       const qty = Number(cantidadesPago[p.key] ?? p.cantidad) || 0;
       return qty < (Number(p.cantidad) || 1);
     });
-    const esSeleccionParcial = platosPagables.length > 0 &&
+    const esSeleccionParcial = !cobroPorCantidad && platosPagables.length > 0 &&
       platosSeleccionadosPago.length > 0 &&
       (platosSeleccionadosPago.length < platosPagables.length || hayCantidadMenor);
     if (esSeleccionParcial && !omitirConfirmacionParcial) {
@@ -1566,13 +1599,15 @@ const PagosScreen = () => {
     setMensajeCarga("Procesando pago...");
     
     try {
-      const platosPayload = buildPlatosSeleccionadosPayload(
+      const platosPayload = cobroPorCantidad
+        ? []
+        : buildPlatosSeleccionadosPayload(
         platosSeleccionadosPago,
         platosPagables,
         cantidadesPago
       );
 
-      if (platosPayload.length === 0) {
+      if (!cobroPorCantidad && platosPayload.length === 0) {
         setProcesandoPago(false);
         Alert.alert(
           "Error",
@@ -1615,6 +1650,7 @@ const PagosScreen = () => {
         mozoId: mozoId,
         clienteId: cliente._id,
         platosSeleccionados: platosPayload,
+        ...(cobroPorCantidad && { montoCobro: totalBaseCobro, cobroPorCantidad: true }),
         comandasIds: comandasFinales.map((c) => c._id).filter(Boolean).map(String),
         observaciones:
           comandasFinales.map((c) => c.observaciones).filter(Boolean).join("; ") || "",
@@ -2388,7 +2424,7 @@ const PagosScreen = () => {
         <View style={styles.platosCard}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <Text style={styles.sectionTitle}>Platos</Text>
-            {!usarPlatosDeBoucher && platosPagables.length > 0 && (
+            {!usarPlatosDeBoucher && !cobroPorCantidad && platosPagables.length > 0 && (
               <TouchableOpacity
                 onPress={() => {
                   Haptics.selectionAsync();
@@ -2518,7 +2554,18 @@ const PagosScreen = () => {
                 </View>
               );
 
-              if (yaPagado) {
+              if (cobroPorCantidad || yaPagado) {
+                if (cobroPorCantidad && !yaPagado) {
+                  return (
+                    <View key={item.key} style={styles.platoItem}>
+                      {nombreYExtras}
+                      <Text style={styles.platoCantidad}>x{item.cantidad}</Text>
+                      <Text style={styles.platoSubtotal}>
+                        {configMoneda?.simboloMoneda || 'S/.'} {Number(item.subtotal || 0).toFixed(configMoneda?.decimales ?? 2)}
+                      </Text>
+                    </View>
+                  );
+                }
                 return (
                   <View
                     key={item.key}
@@ -2624,9 +2671,11 @@ const PagosScreen = () => {
 
         {!usarPlatosDeBoucher && platosPagables.length > 0 && (
           <View style={styles.platosCard}>
-            <Text style={styles.sectionTitle}>Pago por cantidad (S/.)</Text>
+            <Text style={styles.sectionTitle}>{cobroPorCantidad ? 'Monto a cobrar' : 'Pago por cantidad (S/.)'}</Text>
             <Text style={{ fontSize: 12, color: theme.colors?.text?.secondary, marginBottom: 10 }}>
-              Si una parte paga 60 y otra 40 de un total de 100, ingresa el monto de esta parte. Se reparte en unidades de plato sin pasarse.
+              {cobroPorCantidad
+                ? 'Se cobra dinero, no platos. El monto inicia en el total. Si adelantas menos, el resto queda pendiente.'
+                : 'Si una parte paga 60 y otra 40 de un total de 100, ingresa el monto de esta parte. Se reparte en unidades de plato sin pasarse.'}
             </Text>
             <View style={styles.montoPagoRow}>
               <Text style={styles.montoPagoSimbolo}>
