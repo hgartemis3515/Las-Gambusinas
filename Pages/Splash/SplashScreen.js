@@ -12,11 +12,10 @@ import Animated, {
   cancelAnimation,
 } from 'react-native-reanimated';
 import * as Updates from 'expo-updates';
-import Constants from 'expo-constants';
+import { APP_VERSION } from '../../constants/appVersion';
 import { colors } from '../../constants/colors';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const APP_VERSION = Constants.expoConfig?.version || '2.1.1v';
 
 // Partículas flotantes de fondo
 const FloatingParticle = ({ delay, startY }) => {

@@ -11,7 +11,7 @@ import {
   Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Constants from "expo-constants";
+import { APP_VERSION } from "../../../constants/appVersion";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -88,8 +88,7 @@ const MasScreen = () => {
 
   const styles = useMemo(() => MasScreenStyles(theme), [theme]);
 
-  const appVersion =
-    Constants.expoConfig?.version || Constants.nativeAppVersion || "—";
+  const appVersion = APP_VERSION;
 
   const navigateToStack = useCallback(
     (routeName) => {

@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Constants from 'expo-constants';
+import { APP_VERSION } from '../../constants/appVersion';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
@@ -57,7 +57,7 @@ const NotificationsScreen = () => {
   const expoPushLimited = isExpoGoPushLimited();
   const oemHint = getOemPushHints();
 
-  const appVersion = Constants.expoConfig?.version || Constants.nativeAppVersion || '—';
+  const appVersion = APP_VERSION;
 
   useEffect(() => {
     (async () => {

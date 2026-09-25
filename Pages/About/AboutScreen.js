@@ -9,7 +9,7 @@ import {
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Constants from "expo-constants";
+import { APP_VERSION } from "../../constants/appVersion";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import axios from "../../config/axiosConfig";
@@ -37,10 +37,7 @@ const AboutScreen = () => {
   const [healthLoading, setHealthLoading] = useState(false);
   const [healthText, setHealthText] = useState(null);
 
-  const appVersion =
-    Constants.expoConfig?.version ||
-    Constants.nativeAppVersion ||
-    "—";
+  const appVersion = APP_VERSION;
 
   const styles = buildStyles(theme);
 
