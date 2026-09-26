@@ -143,7 +143,7 @@ export default function SplashScreen({ onFinish }) {
       setStatus('Verificando actualizaciones...');
       setProgress(45);
 
-      if (!__DEV__ && !Updates.isEmergencyLaunch) {
+      if (!__DEV__ && Updates.isEnabled && !Updates.isEmergencyLaunch) {
         try {
           const updateCheck = await Updates.checkForUpdateAsync();
           if (updateCheck.isAvailable) {

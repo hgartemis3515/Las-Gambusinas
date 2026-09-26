@@ -16,7 +16,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CommonActions, useNavigation } from '@react-navigation/native';
 import apiConfig from '../config/apiConfig';
-import { getFallbackApiBase } from '../config/envDefaults';
+import { getFallbackApiBase, normalizarUrlApi } from '../config/envDefaults';
 import { useSocket } from '../context/SocketContext';
 import { clearAuthSession, isSameServer } from '../utils/authSession';
 
@@ -100,7 +100,7 @@ const SettingsModal = ({ visible, onClose, logoutOnServerChange = false }) => {
     try {
       // Crear instancia temporal para test
       const testConfig = {
-        baseURL: config.baseURL.trim(),
+        baseURL: normalizarUrlApi(config.baseURL),
         apiVersion: config.apiVersion,
         timeout: parseInt(config.timeout) || 10000
       };
@@ -174,7 +174,7 @@ const SettingsModal = ({ visible, onClose, logoutOnServerChange = false }) => {
   const saveConfigInternal = async () => {
     try {
       const configToSave = {
-        baseURL: config.baseURL.trim(),
+        baseURL: normalizarUrlApi(config.baseURL),
         apiVersion: config.apiVersion,
         timeout: parseInt(config.timeout) || 10000
       };
@@ -325,7 +325,7 @@ const SettingsModal = ({ visible, onClose, logoutOnServerChange = false }) => {
                 keyboardType="url"
               />
               <Text style={styles.hint}>
-                Ejemplo: http://TU_IP_LAN:3000/api o https://tu-servidor.com/api
+                Ejemplo: 192.168.50.156 o http://192.168.50.156:3000/api
               </Text>
             </View>
 

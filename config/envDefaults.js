@@ -33,3 +33,19 @@ export const getFallbackServerOrigin = () => {
     return 'http://192.168.50.156:3000';
   }
 };
+
+/** Acepta IP suelta (192.168.50.156) o URL y la deja como http://host:puerto/api */
+export const normalizarUrlApi = (raw) => {
+  let s = String(raw || '').trim();
+  if (!s) return '';
+  if (!/^https?:\/\//i.test(s)) s = `http://${s}`;
+  try {
+    const u = new URL(s);
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(u.hostname) && !u.port) u.port = '3000';
+    s = `${u.protocol}//${u.host}${u.pathname}`.replace(/\/+$/, '');
+  } catch {
+    s = s.replace(/\/+$/, '');
+  }
+  if (!/\/api(?:\/|$)/i.test(s)) s = `${s}/api`;
+  return s;
+};

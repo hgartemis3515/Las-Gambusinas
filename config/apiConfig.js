@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { getFallbackApiBase, getFallbackServerOrigin } from './envDefaults';
+import { getFallbackApiBase, getFallbackServerOrigin, normalizarUrlApi } from './envDefaults';
 
 /**
  * Sistema de Configuración Dinámica de API - Patrón Singleton
@@ -146,12 +146,13 @@ class ApiConfig {
   async setConfig(config) {
     try {
       // Validar URL
-      if (!this.validateURL(config.baseURL)) {
+      const baseURL = normalizarUrlApi(config.baseURL);
+      if (!this.validateURL(baseURL)) {
         throw new Error('URL de API inválida. Debe ser una URL válida que termine en /api o contenga /api');
       }
 
-      this.baseURL = config.baseURL.trim();
-      this.wsURL = this.normalizeSocketOrigin(config.wsURL || this.generateWsURL(config.baseURL));
+      this.baseURL = baseURL;
+      this.wsURL = this.normalizeSocketOrigin(config.wsURL || this.generateWsURL(baseURL));
       this.apiVersion = config.apiVersion || 'v1';
       this.timeout = config.timeout || 10000;
       this.isConfigured = true;

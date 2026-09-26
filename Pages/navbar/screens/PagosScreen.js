@@ -1119,10 +1119,7 @@ const PagosScreen = () => {
       setMontoPagoStr(tope > 0 ? tope.toFixed(decs) : '');
       return;
     }
-    if (platosSeleccionadosPago.length === 0) {
-      setMontoPagoStr('');
-      return;
-    }
+    if (platosSeleccionadosPago.length === 0) return;
     const t = Number(totalesPagoActual?.total) || 0;
     setMontoPagoStr(t.toFixed(decs));
   }, [totalesPagoActual?.total, platosSeleccionadosPago.length, configMoneda?.decimales, cobroPorCantidad, totalesMaxPago?.total, totalRestante]);
@@ -1156,10 +1153,11 @@ const PagosScreen = () => {
       );
       const decs = configMoneda?.decimales ?? 2;
       setMontoPagoStr((Number(totalesPagoActual?.total) || 0).toFixed(decs));
-      return;
+      return false;
     }
     setPlatosSeleccionadosPago(result.keys);
     setCantidadesPago(result.cantidades);
+    return true;
   }, [
     totalesMaxPago?.total,
     platosPagables,
@@ -1211,8 +1209,6 @@ const PagosScreen = () => {
     return { monto: infoDescuentos.ahorroTotal || 0, lineas: lineasInfo };
   }, [boucherData, boucherFromParams, infoDescuentos, platosSeleccionadosPago, totalesPagoActual]);
 
-  // Total a cobrar en la moneda base (PEN) que se pasará al modal.
-  // Prioriza el total de los platos seleccionados (pago parcial / PPA).
   const totalBaseCobro = useMemo(() => {
     if (cobroPorCantidad) {
       const cuenta = Number(totalesMaxPago?.total) || 0;
@@ -1230,6 +1226,12 @@ const PagosScreen = () => {
     const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
     return incluyeIGV ? totalParam : totalParam * (1 + igvPorcentaje / 100);
   }, [platosSeleccionadosPago, totalesPagoActual, route.params, total, configMoneda, cobroPorCantidad, totalesMaxPago?.total, totalRestante, montoPagoStr]);
+
+  const puedeSolicitarPago = !isGenerating && !procesandoPago && (
+    cobroPorCantidad
+      ? (Number(totalBaseCobro) > 0 || parseMonto(montoPagoStr) > 0)
+      : (platosSeleccionadosPago.length > 0 || parseMonto(montoPagoStr) > 0 || Object.values(cantidadesPago).some((n) => Number(n) > 0))
+  );
 
   // Inicializar selección: todos los platos pagables al cargar comandas
   useEffect(() => {
@@ -1350,6 +1352,10 @@ const PagosScreen = () => {
     if (!comandas || comandas.length === 0 || !mesa) {
       Alert.alert("Error", "No hay información de comandas o mesa");
       return;
+    }
+
+    if (!cobroPorCantidad && platosSeleccionadosPago.length === 0 && parseMonto(montoPagoStr) > 0) {
+      if (aplicarMontoPago(montoPagoStr) === false) return;
     }
 
     // Mesa pagada (aprobada) o pendiente_aprobar sin platos restantes: solo imprimir.
@@ -2951,9 +2957,9 @@ const PagosScreen = () => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               handlePagar();
             }}
-            disabled={isGenerating || procesandoPago || platosSeleccionadosPago.length === 0}
+            disabled={!puedeSolicitarPago}
             activeOpacity={0.8}
-            style={{ flex: 1, opacity: isGenerating || procesandoPago || platosSeleccionadosPago.length === 0 ? 0.5 : 1 }}
+            style={{ flex: 1, opacity: puedeSolicitarPago ? 1 : 0.5 }}
           >
             <View style={[styles.buttonNew, { minHeight: 60 * escala, backgroundColor: colors.success }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 * escala }}>
