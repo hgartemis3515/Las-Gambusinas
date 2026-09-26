@@ -21,7 +21,9 @@ export function labelEstadoMesaComanda(item) {
   const status = String(item.status || '').toLowerCase();
   const platos = Array.isArray(item.platos) ? item.platos.filter((p) => p && p.eliminado !== true && p.anulado !== true) : [];
 
-  if (mesa === 'pendiente_aprobar' || status === 'pendiente_aprobar') return LABELS.pendiente_aprobar;
+  if (item.esperaAprobacion || mesa === 'pendiente_aprobar' || status === 'pendiente_aprobar' || mesa === 'pendiente_pago') {
+    return LABELS.pendiente_aprobar;
+  }
   if (mesa === 'reportado') return LABELS.reportado;
   if (mesa === 'reservado') return LABELS.reservado;
 

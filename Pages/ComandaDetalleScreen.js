@@ -2709,12 +2709,16 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         Alert.alert('Sin platos elegibles', 'No hay comandas con platos disponibles para pago adelantado.');
         return;
       }
-      // Navegar a PagosScreen con origen PPA
+      const esParaLlevar = sinMesa || comandasPPA.every((c) => {
+        const platos = (c.platos || c.items || []).filter((p) => p && !p.eliminado && !p.anulado);
+        return platos.length > 0 && platos.every((p) => p.tipoServicio === 'para_llevar' || p.tipoServicio === 'extra_llevar');
+      });
       navigation.navigate('Pagos', {
         mesa: mesaData || mesa || SELECCION_SIN_MESA,
         comandasParaPagar: comandasPPA,
         totalPendiente: calcularSubtotalPlatosPagables(comandasPPA, true),
         origen: 'PagoAdelantado',
+        ...(esParaLlevar ? { abrirInfoPago: true, abrirInfoPagoToken: Date.now() } : {}),
       });
     } catch (error) {
       console.error('Error al obtener comandas para pago adelantado:', error);

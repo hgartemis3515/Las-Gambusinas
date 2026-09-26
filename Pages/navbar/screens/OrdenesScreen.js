@@ -1262,6 +1262,34 @@ const OrdenesScreen = ({ route }) => {
         }
       }
       armadoIniciadoEnRef.current = null;
+      const limpiarBorrador = () => {
+        AsyncStorage.multiRemove([
+          'mesaSeleccionada',
+          'reservaActiva',
+          'selectedPlates',
+          'selectedPlatesIds',
+          'cantidadesComanda',
+          'additionalDetails',
+        ]).catch(() => {});
+        Promise.resolve(borrarDraftArmado()).catch(() => {});
+      };
+      if (esSinMesaOrden) {
+        setSelectedMesa(null);
+        setReservaActiva(null);
+        setSelectedPlatos([]);
+        setCantidades({});
+        setObservaciones('');
+        setNombreClienteParaLlevar('');
+        setIsSendingComanda(false);
+        setMostrarOverlayCarga(false);
+        limpiarBorrador();
+        irAPendientesTrasEnvio(navigation, {
+          destino: destinoRedireccion,
+          comanda: creada,
+          mesa: null,
+        });
+        return;
+      }
       await Promise.all([
         AsyncStorage.removeItem('mesaSeleccionada'),
         AsyncStorage.removeItem('reservaActiva'),

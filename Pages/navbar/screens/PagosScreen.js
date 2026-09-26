@@ -391,6 +391,7 @@ const PagosScreen = () => {
   const pedidoIdCicloRef = React.useRef(null);
   /** IDs de comandas del pedido actual (ancla para no mezclar visitas anteriores). */
   const comandaIdsCicloRef = React.useRef([]);
+  const infoPagoHechoRef = React.useRef(null);
   const mesaRef = React.useRef(null);
   mesaRef.current = mesa;
 
@@ -1072,6 +1073,17 @@ const PagosScreen = () => {
     () => platosEnPantalla.filter((p) => !p.yaPagado),
     [platosEnPantalla]
   );
+
+  const infoPagoToken = route.params?.abrirInfoPagoToken;
+  useEffect(() => {
+    if (!route.params?.abrirInfoPago || !infoPagoToken) return;
+    if (infoPagoHechoRef.current === infoPagoToken) return;
+    if (platosPagables.length === 0) return;
+    infoPagoHechoRef.current = infoPagoToken;
+    setPlatosSeleccionadosPago(platosPagables.map((p) => p.key));
+    setCantidadesPago(Object.fromEntries(platosPagables.map((p) => [p.key, p.cantidad])));
+    setModalClienteVisible(true);
+  }, [infoPagoToken, platosPagables, route.params?.abrirInfoPago]);
 
   // ✅ FIX BUG: decidir la fuente de platos a renderizar en la sección "Platos".
   // - Mientras hay pendiente tras pago (ciclo de pagos parciales en curso):
@@ -1944,27 +1956,12 @@ const PagosScreen = () => {
       if (esPagoAdelantado) {
         setProcesandoPago(false);
         setMensajeCarga("Procesando pago...");
-
-        // Mostrar mensaje de PPA registrado, esperando aprobación de cocina
-        Alert.alert(
-          "Pago Adelantado Registrado",
-          `El pago adelantado ${mesaFinal?.sinMesa ? 'del pedido para llevar' : `para la Mesa ${mesaFinal?.nummesa || '?'}`} ha sido registrado correctamente.\n\n` +
-          `Voucher: ${boucherCreado.voucherId || boucherCreado.boucherNumber || 'N/A'}\n` +
-          `Total: S/. ${(boucherCreado.total || 0).toFixed(2)}\n\n` +
-          `Esperando aprobación de cocina para que los platos entren a preparación.`,
-          [
-            {
-              text: "Entendido",
-              onPress: () => {
-                setComandas([]);
-                setMesa(null);
-                setBoucherData(null);
-                navigation.navigate("Inicio", { refresh: true });
-              },
-            },
-          ]
-        );
-        return; // Salir del flujo normal de pago
+        setModalClienteVisible(false);
+        setComandas([]);
+        setMesa(null);
+        setBoucherData(null);
+        navigation.navigate("Pendientes");
+        return;
       }
 
       const mesaCompletamentePagadaEarly = resumenPago?.mesaPagadaCompletamente === true;

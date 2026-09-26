@@ -64,9 +64,10 @@ const ModalClientes = ({
   const [kbPad, setKbPad] = useState(0);
 
   const revelarCampo = () => {
-    setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: true });
-    }, 80);
+    const irAlFinal = () => scrollRef.current?.scrollToEnd({ animated: true });
+    setTimeout(irAlFinal, 40);
+    setTimeout(irAlFinal, 220);
+    setTimeout(irAlFinal, 420);
   };
 
   const revelarEfectivo = () => {
@@ -335,6 +336,7 @@ const ModalClientes = ({
 
   useEffect(() => {
     if (metodoPago !== "efectivo") return undefined;
+    revelarCampo();
     revelarEfectivo();
     return undefined;
   }, [metodoPago]);
@@ -382,7 +384,7 @@ const ModalClientes = ({
               style={[styles.modalScrollView, { maxHeight: scrollMax }]}
               contentContainerStyle={[
                 styles.modalScrollContent,
-                metodoPago === "efectivo" && { paddingBottom: 40 },
+                metodoPago === "efectivo" && { paddingBottom: 220 },
               ]}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
@@ -553,14 +555,20 @@ const ModalClientes = ({
                         style={styles.input}
                         placeholder={`Con cuánto pagará (${simboloMoneda(monedaSeleccionada)})`}
                         value={montoRecibidoStr}
-                        onChangeText={setMontoRecibidoStr}
+                        onChangeText={(texto) => {
+                          setMontoRecibidoStr(texto);
+                          revelarCampo();
+                        }}
                         keyboardType="decimal-pad"
                         placeholderTextColor="#999999"
                         returnKeyType="done"
                         underlineColorAndroid="transparent"
                         importantForAutofill="no"
                         autoComplete="off"
-                        onFocus={revelarEfectivo}
+                        onFocus={() => {
+                          revelarCampo();
+                          revelarEfectivo();
+                        }}
                       />
                     </View>
                     {totalEnMoneda != null && (

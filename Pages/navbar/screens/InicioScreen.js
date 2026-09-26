@@ -66,6 +66,7 @@ import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCa
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
 import { resolverSlugMenuPorHora } from "../../../utils/horaTipoMenu";
+import { SELECCION_SIN_MESA, COLOR_PARA_LLEVAR } from "../../../utils/sinMesaOrden";
 import { useDensidadOrdenes } from "../../../context/DensidadOrdenesContext";
 import { estiloChipCategoria } from "../../../utils/densidadOrdenes";
 import MesaMapView from '../../../Components/MesaMapView';
@@ -2046,6 +2047,59 @@ const InicioScreen = () => {
         return theme.colors.mesaEstado.libre || "#9E9E9E";
     }
   };
+
+  const abrirSinMesaSoloLlevar = async () => {
+    try {
+      await AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(SELECCION_SIN_MESA));
+    } catch (_) {}
+    setMesaSeleccionada(null);
+    let tipoMenuHora = null;
+    try {
+      tipoMenuHora = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
+    } catch (_) {}
+    navigation.navigate("Ordenes", {
+      modoExtraLlevar: false,
+      mesa: SELECCION_SIN_MESA,
+      abrirMenu: true,
+      ...(tipoMenuHora ? { tipoMenuHora } : {}),
+    });
+  };
+
+  const tarjetaSinMesaSoloLlevar = (
+    <TouchableOpacity
+      key="sin-mesa-solo-llevar"
+      onPress={abrirSinMesaSoloLlevar}
+      accessibilityRole="button"
+      accessibilityLabel="Sin mesa solo llevar"
+      style={[
+        styles.mesaCard,
+        {
+          width: mesaSize,
+          height: mesaSize,
+          backgroundColor: COLOR_PARA_LLEVAR,
+          borderColor: "#5B21B6",
+          borderWidth: 2,
+          alignItems: "center",
+          justifyContent: "center",
+          paddingHorizontal: 6,
+        },
+      ]}
+    >
+      <MaterialCommunityIcons name="bag-personal" size={Math.max(18, mesaSize * 0.22)} color="#FFFFFF" />
+      <Text
+        style={{
+          color: "#FFFFFF",
+          fontWeight: "800",
+          textAlign: "center",
+          marginTop: 4,
+          fontSize: Math.max(9, mesaSize * 0.1),
+        }}
+        numberOfLines={4}
+      >
+        SIN MESA SOLO LLEVAR
+      </Text>
+    </TouchableOpacity>
+  );
 
   const handleSelectMesa = async (mesa) => {
     const estado = getEstadoMesa(mesa);
@@ -5074,6 +5128,7 @@ const InicioScreen = () => {
             >
               {seccionActiva ? (
                 <>
+                  {tarjetaSinMesaSoloLlevar}
                   {seccionActiva === SECCION_YO && getMesasPorArea(SECCION_YO).length === 0 && (
                     <Text style={{ textAlign: "center", padding: 24, opacity: 0.7, color: theme.colors?.text?.secondary || theme.colors?.text?.muted }}>
                       No tienes mesas en atención
@@ -5116,7 +5171,9 @@ const InicioScreen = () => {
                 </>
               ) : (
                 // Vista de todas las mesas (sin filtro de área) - excluye mesas secundarias
-                mesas.filter(mesa => mesa.esMesaPrincipal !== false).map((mesa, index) => {
+                <>
+                {tarjetaSinMesaSoloLlevar}
+                {mesas.filter(mesa => mesa.esMesaPrincipal !== false).map((mesa, index) => {
                   const estado = getEstadoMesa(mesa);
                   const estadoColor = getEstadoColor(estado);
                   const mozo = getMozoMesa(mesa);
@@ -5149,7 +5206,8 @@ const InicioScreen = () => {
                       alertaSalio={mesaAlertaSalio(mesa)}
                     />
                   );
-                })
+                })}
+                </>
               )}
             </ScrollView>
           )}

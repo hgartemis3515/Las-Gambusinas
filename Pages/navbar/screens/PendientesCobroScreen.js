@@ -107,14 +107,14 @@ function FilaPendiente({
 }) {
   const id = String(item.id || item._id);
   const busy = abriendoId === id;
-  const estado = (esPagadas || (item.pagadaHoy && !item.seguimientoPpa))
+  const estado = (esPagadas || (item.pagadaHoy && !item.seguimientoPpa && !item.esperaAprobacion))
     ? "Pagado"
     : labelEstadoMesaComanda(item);
   const estadoColor = colorEstadoMesa(estado, theme);
   const comandaTxt = item.comandaLabel
     || (item.numeroComandaDia != null ? `#${item.numeroComandaDia}` : (item.comandaNumber != null ? `#${item.comandaNumber}` : "—"));
   const sinMesa = esFilaComandaSinMesa(item);
-  const monto = (esPagadas || item.pagadaHoy || item.seguimientoPpa)
+  const monto = (esPagadas || item.pagadaHoy || item.seguimientoPpa || item.esperaAprobacion)
     ? (item.total ?? item.pendienteCobro)
     : item.pendienteCobro;
   const { prefs } = useAlertaSalioPrefs();
