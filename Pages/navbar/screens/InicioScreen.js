@@ -62,6 +62,7 @@ import { springConfig } from "../../../constants/animations";
 import { LinearGradient } from 'expo-linear-gradient';
 import { filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, numeroComandaVisible } from '../../../utils/comandaHelpers';
 import { reducirRespuestasCicloMesa } from '../../../utils/cicloComandasMesa';
+import { mesaOcupadaPorOtroMozo, mensajeMesaOtroMozo } from '../../../utils/accesoMesaMozo';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
@@ -2205,9 +2206,9 @@ const InicioScreen = () => {
         return;
       }
 
-      const mozoComandaId = comandaActiva.mozos?._id || comandaActiva.mozos;
       const mozoActualId = userInfo?._id;
-      if (mozoComandaId && mozoActualId && mozoComandaId.toString() !== mozoActualId.toString()) {
+      if (mesaOcupadaPorOtroMozo(comandasActivas, mozoActualId)) {
+        setMesaSeleccionada(null);
         Alert.alert(
           "Acceso Denegado",
           "Solo el mozo que creó esta comanda puede editarla.",
@@ -2244,28 +2245,16 @@ const InicioScreen = () => {
         console.log(`   ${idx + 1}. Comanda #${c.comandaNumber} - Status: ${c.status} - Cliente: ${tieneCliente} - ${c.platos?.length || 0} plato(s)`);
       });
       
-      const comandaPreparada = comandasOrdenadas.find(c => {
-        const st = c.status?.toLowerCase();
-        // SALIO: considerar recoger y salio como comanda preparada
-        return st === "recoger" || st === "salio" ||
-          (c.platos && c.platos.some(p => p.estado === "recoger" || p.estado === "salio"));
-      });
-      
-      // Obtener el mozo de la primera comanda (más reciente) para validar
       const primeraComanda = comandasOrdenadas[0];
-      
-      // 🔥 FIX: Si no hay comandas locales, buscar en backend
+
       if (!primeraComanda) {
         console.log(`⚠️ [DESYNC] Mesa ${mesa.nummesa} en estado "preparado" sin comandas locales - Buscando en backend...`);
         
         const comandasBackend = await obtenerComandasMesa(mesa._id);
         
         if (comandasBackend && comandasBackend.length > 0) {
-          const mozoComandaId = comandasBackend[0].mozos?._id || comandasBackend[0].mozos;
-          const mozoActualId = userInfo?._id;
-          const mismoMozo = mozoComandaId && mozoActualId && mozoComandaId.toString() === mozoActualId.toString();
-          
-          if (!mismoMozo) {
+          if (mesaOcupadaPorOtroMozo(comandasBackend, userInfo?._id)) {
+            setMesaSeleccionada(null);
             Alert.alert(
               "Acceso Denegado",
               "Solo el mozo que creó esta comanda puede realizar acciones en esta mesa.",
@@ -2288,21 +2277,15 @@ const InicioScreen = () => {
         return;
       }
       
-      const mozoComandaId = primeraComanda?.mozos?._id || primeraComanda?.mozos;
-      const mozoActualId = userInfo?._id;
-      const mismoMozo = mozoComandaId && mozoActualId && mozoComandaId.toString() === mozoActualId.toString();
-
-      // Mostrar modal si hay comandas activas (preparadas o no)
-      if (comandasOrdenadas.length > 0) {
-        // Si no es el mismo mozo, mostrar mensaje de acceso denegado
-        if (!mismoMozo) {
-          Alert.alert(
-            "Acceso Denegado",
-            "Solo el mozo que creó esta comanda puede realizar acciones en esta mesa cuando está en estado 'Preparado'.",
-            [{ text: "OK" }]
-          );
-          return;
-        }
+      if (mesaOcupadaPorOtroMozo(comandasOrdenadas, userInfo?._id)) {
+        setMesaSeleccionada(null);
+        Alert.alert(
+          "Acceso Denegado",
+          "Solo el mozo que creó esta comanda puede realizar acciones en esta mesa cuando está en estado 'Preparado'.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
 
         // Si es el mismo mozo, navegar al screen de detalle de comanda
         navigation.navigate('ComandaDetalle', {
@@ -2310,10 +2293,13 @@ const InicioScreen = () => {
           comandas: comandasOrdenadas
         });
         console.log(`✅ Navegando a ComandaDetalle con ${comandasOrdenadas.length} comanda(s) activa(s)`);
-      }
     } else if (estado === "Pendiente de pago" || estado?.toLowerCase() === "pendiente_pago") {
-      // Mesa con Pago Adelantado registrado - mostrar opciones de Imprimir Ticket y Ver Pedido
       const todasComandasMesa = getTodasComandasPorMesa(mesa.nummesa);
+      if (mesaOcupadaPorOtroMozo(todasComandasMesa, userInfo?._id)) {
+        setMesaSeleccionada(null);
+        Alert.alert("Acceso Denegado", mensajeMesaOtroMozo("Pendiente de pago"), [{ text: "OK" }]);
+        return;
+      }
       const comandasActivas = todasComandasMesa.filter(c =>
         c.status?.toLowerCase() === "pedido" ||
         c.status?.toLowerCase() === "en_espera" ||
@@ -2369,21 +2355,14 @@ const InicioScreen = () => {
       );
       
       // Validar que sea el mismo mozo que creó la comanda
-      if (comandasPagadas.length > 0) {
-        const primeraComanda = comandasPagadas[0];
-        const mozoComandaId = primeraComanda?.mozos?._id || primeraComanda?.mozos;
-        const mozoActualId = userInfo?._id;
-        const mismoMozo = mozoComandaId && mozoActualId && mozoComandaId.toString() === mozoActualId.toString();
-        
-        // Si no es el mismo mozo, mostrar mensaje de acceso denegado
-        if (!mismoMozo) {
-          Alert.alert(
-            "Acceso Denegado",
-            "Solo el mozo que creó esta comanda puede realizar acciones en esta mesa cuando está en estado 'Pagado'.",
-            [{ text: "OK" }]
-          );
-          return;
-        }
+      if (comandasPagadas.length > 0 && mesaOcupadaPorOtroMozo(comandasPagadas, userInfo?._id)) {
+        setMesaSeleccionada(null);
+        Alert.alert(
+          "Acceso Denegado",
+          "Solo el mozo que creó esta comanda puede realizar acciones en esta mesa cuando está en estado 'Pagado'.",
+          [{ text: "OK" }]
+        );
+        return;
       }
       
       // Filtrar comandas por cliente: si hay comandas con cliente, solo mostrar las del mismo cliente
@@ -2451,12 +2430,27 @@ const InicioScreen = () => {
         ]
       );
     } else if (estado === "Pendiente de aprobación" || estado?.toLowerCase() === "pendiente_aprobar") {
-      // PLAN_PLANTILLA_COMANDAS: mesa en verde claro esperando aprobación de cocina
+      const comandasPendiente = await fetchComandasCicloMesa(mesa);
+      if (mesaOcupadaPorOtroMozo(comandasPendiente, userInfo?._id)) {
+        setMesaSeleccionada(null);
+        Alert.alert(
+          "Acceso Denegado",
+          mensajeMesaOtroMozo("Pendiente de aprobación"),
+          [{ text: "OK" }]
+        );
+        return;
+      }
       const pendienteAprobacionButtons = [
         {
           text: "📋 Ver pedido",
           onPress: async () => {
-            const comandasMesa = await fetchComandasCicloMesa(mesa);
+            const comandasMesa = comandasPendiente.length
+              ? comandasPendiente
+              : await fetchComandasCicloMesa(mesa);
+            if (mesaOcupadaPorOtroMozo(comandasMesa, userInfo?._id)) {
+              Alert.alert("Acceso Denegado", mensajeMesaOtroMozo("Pendiente de aprobación"), [{ text: "OK" }]);
+              return;
+            }
             if (comandasMesa.length > 0) {
               navigation.navigate('ComandaDetalle', {
                 mesa,
@@ -2527,21 +2521,14 @@ const InicioScreen = () => {
       // Otros estados (Esperando, Reservado, etc.) - validar que sea el mismo mozo
       const comandasMesa = getComandasPorMesa(mesa.nummesa);
       
-      if (comandasMesa.length > 0) {
-        const primeraComanda = comandasMesa[0];
-        const mozoComandaId = primeraComanda?.mozos?._id || primeraComanda?.mozos;
-        const mozoActualId = userInfo?._id;
-        const mismoMozo = mozoComandaId && mozoActualId && mozoComandaId.toString() === mozoActualId.toString();
-        
-        // Si no es el mismo mozo, mostrar mensaje de acceso denegado
-        if (!mismoMozo) {
-          Alert.alert(
-            "Acceso Denegado",
-            `Solo el mozo que creó esta comanda puede realizar acciones en esta mesa cuando está en estado '${estado}'.`,
-            [{ text: "OK" }]
-          );
-          return;
-        }
+      if (comandasMesa.length > 0 && mesaOcupadaPorOtroMozo(comandasMesa, userInfo?._id)) {
+        setMesaSeleccionada(null);
+        Alert.alert(
+          "Acceso Denegado",
+          mensajeMesaOtroMozo(estado),
+          [{ text: "OK" }]
+        );
+        return;
       }
       
       // Si es el mismo mozo o no hay comandas, mostrar información
@@ -5276,6 +5263,19 @@ const InicioScreen = () => {
               style={styles.barraItem}
               onPress={async () => {
                 try {
+                  if (mesaSeleccionada && String(mesaSeleccionada.estado || '').toLowerCase() !== 'libre') {
+                    const delCiclo = await fetchComandasCicloMesa(mesaSeleccionada);
+                    const locales = getComandasPorMesa(mesaSeleccionada.nummesa);
+                    const lista = delCiclo.length ? delCiclo : locales;
+                    if (mesaOcupadaPorOtroMozo(lista, userInfo?._id)) {
+                      Alert.alert(
+                        "Acceso Denegado",
+                        mensajeMesaOtroMozo(getEstadoMesa(mesaSeleccionada)),
+                        [{ text: "OK" }]
+                      );
+                      return;
+                    }
+                  }
                   if (mesaSeleccionada) {
                     await AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesaSeleccionada));
                   }

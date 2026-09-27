@@ -1515,6 +1515,12 @@ const OrdenesScreen = ({ route }) => {
           error.response?.data?.message || "La mesa está ocupada con una comanda existente.",
           [{ text: "OK" }]
         );
+      } else if (error.response?.status === 403) {
+        Alert.alert(
+          "Acceso Denegado",
+          error.response?.data?.error || error.response?.data?.message || "Solo el mozo de esta mesa puede agregar comandas.",
+          [{ text: "OK" }]
+        );
       } else if (error.response?.status === 400) {
         Alert.alert(
           "Error de Validación",

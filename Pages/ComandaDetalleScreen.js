@@ -35,6 +35,7 @@ import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle, numeroComandaVisible } from '../utils/comandaHelpers';
 import { reducirRespuestasCicloMesa } from '../utils/cicloComandasMesa';
 import { extraerComandaDeEventoSocket } from '../utils/socketComandaPatch';
+import { mesaOcupadaPorOtroMozo, mensajeMesaOtroMozo } from '../utils/accesoMesaMozo';
 import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato, mismasGuarniciones, platoEditableEnOrdenes, resolverPartesComplementos } from '../utils/platoGuarniciones';
 import { hidratarUnidadesDesdeLineas, cantidadDeLinea, fusionarGuarnicionesPreseleccionadasEnLista } from '../utils/unidadesComplemento';
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
@@ -1192,11 +1193,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     'esperando', 'pendiente_aprobar', 'pendiente_pago', 'pagando', 'en_espera',
   ].includes(mesaEstadoEfectivo);
   const tieneComandaActiva = comandas.length > 0 && !comandaYaPagada;
-  const puedeNuevaComanda = esReservaFlow
+  const esOtroMozo = mesaOcupadaPorOtroMozo(comandas, userInfo?._id);
+  const puedeNuevaComanda = !esOtroMozo && (
+    esReservaFlow
     || mesaEnServicio
     || (mesaEstadoEfectivo === 'pagado' && cocinaPendienteDetalle)
     || tieneComandaActiva
-    || mostrarLiberar;
+    || mostrarLiberar
+  );
   const mostrarBotonPagar = !cobroHecho && !comandaYaPagada && reglasPPA.composicion !== 'solo_para_llevar' && !reglasPPA.esCostoCero;
   const mostrarBotonPagoAdelantado = reglasPPA.mostrarPagoAdelantado && !cobroHecho && !comandaYaPagada;
   const puedePagarNormal = puedePagar && mostrarBotonPagar && !puedeLiberarReserva && !puedeConfirmarEntrega && !puedeLiberarCostoCero;
@@ -2453,6 +2457,10 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   };
   
   const handleNuevaComanda = () => {
+    if (esOtroMozo) {
+      Alert.alert('Acceso Denegado', mensajeMesaOtroMozo(mesaEstadoEfectivo || 'Pendiente de aprobación'));
+      return;
+    }
     if (!puedeNuevaComanda) {
       Alert.alert('Error', 'No se puede crear una nueva comanda en esta mesa en su estado actual.');
       return;
