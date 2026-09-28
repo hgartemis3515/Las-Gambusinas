@@ -34,13 +34,18 @@ export function apodoDeMesa(map, mesa) {
 }
 
 export function numeroMesaLabel(mesa) {
-  if (!mesa) return 'Mesa';
+  if (!mesa) return 'Sin mesa';
   if (mesa.sinMesa) return 'Sin mesa';
-  const comb = String(mesa.nombreCombinado || '').trim();
-  if (comb) return comb;
+  if (mesa._id == null && (mesa.nummesa === 'Sin mesa' || mesa.nummesa === 'SIN_MESA')) return 'Sin mesa';
+  const combinado = String(mesa.nombreCombinado || '').trim();
+  if (combinado && combinado !== '[object Object]') return combinado;
   const nom = String(mesa.nombre || '').trim();
-  if (nom) return nom;
-  if (mesa.nummesa != null && mesa.nummesa !== '') return `M${mesa.nummesa}`;
+  if (nom && nom !== '[object Object]') return nom;
+  if (mesa.nummesa != null && mesa.nummesa !== '' && typeof mesa.nummesa !== 'object') {
+    const n = String(mesa.nummesa).trim();
+    if (n && n !== '[object Object]' && !/^sin\s*mesa$/i.test(n)) return `M${n}`;
+  }
+  if (mesa._id == null) return 'Sin mesa';
   return 'Mesa';
 }
 

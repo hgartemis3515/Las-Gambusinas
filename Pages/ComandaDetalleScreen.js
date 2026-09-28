@@ -1769,7 +1769,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       const cantidades = platosEditados.map(p => p.cantidad || 1);
       
       const updateData = {
-        mesas: mesa._id,
+        ...(esSeleccionSinMesa(mesa) || !mesa?._id
+          ? { sinMesa: true }
+          : { mesas: mesa._id }),
         platos: platosData,
         cantidades: cantidades,
         observaciones: observacionesEditadas || '',
