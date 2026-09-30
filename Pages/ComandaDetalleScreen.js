@@ -55,6 +55,8 @@ import { usuarioPuedeAplicarDescuentos, brutoGrupoComandas, montoDescuentoGrupo,
 import { datosImpresionTicket } from '../utils/comandaMozoEposXml';
 import RasterTicketCocina, { xmlImagenEpos, xmlDosImagenesEpos } from '../utils/ticketRasterCocina';
 import { imprimirBoucherTmAssistant, buildTmPrintAssistantUrl } from '../utils/boucherTmPrint';
+import { leerImpresorasTermicas } from '../config/impresorasTermicas';
+import { imprimirEposEnIp } from '../utils/eposPrintHttp';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -2980,15 +2982,39 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     }
     try {
       const mozo = await rasterTicketRef.current.rasterizar({ ...datos, cocina: false });
-      const cocina = await rasterTicketRef.current.rasterizar({ ...datos, cocina: true });
-      const junto = xmlDosImagenesEpos(mozo, cocina);
-      if (buildTmPrintAssistantUrl(junto).length <= 190 * 1024) {
-        await imprimirBoucherTmAssistant(junto);
+      const cocinaImg = await rasterTicketRef.current.rasterizar({ ...datos, cocina: true });
+      const cfg = await leerImpresorasTermicas();
+      const ipCaja = String(cfg?.caja?.ip || '').trim();
+      const ipCocina = String(cfg?.cocina?.ip || '').trim();
+      if (!ipCaja && !ipCocina) {
+        const junto = xmlDosImagenesEpos(mozo, cocinaImg);
+        if (buildTmPrintAssistantUrl(junto).length <= 190 * 1024) {
+          await imprimirBoucherTmAssistant(junto);
+          return;
+        }
+        await imprimirBoucherTmAssistant(xmlImagenEpos(mozo));
+        await new Promise((r) => setTimeout(r, 700));
+        await imprimirBoucherTmAssistant(xmlImagenEpos(cocinaImg));
         return;
       }
-      await imprimirBoucherTmAssistant(xmlImagenEpos(mozo));
-      await new Promise((r) => setTimeout(r, 700));
-      await imprimirBoucherTmAssistant(xmlImagenEpos(cocina));
+      const trabajos = [];
+      if (ipCaja) trabajos.push({ nombre: 'Caja', ip: ipCaja, xml: xmlImagenEpos(mozo) });
+      if (ipCocina) trabajos.push({ nombre: 'Cocina', ip: ipCocina, xml: xmlImagenEpos(cocinaImg) });
+      const resultados = await Promise.all(trabajos.map(async (job) => {
+        try {
+          await imprimirEposEnIp(job.ip, job.xml);
+          return { ...job, ok: true };
+        } catch (e) {
+          return { ...job, ok: false, error: e?.message || 'Error' };
+        }
+      }));
+      const lineas = [];
+      if (!ipCaja) lineas.push('Caja sin IP: no salió el ticket de precios.');
+      if (!ipCocina) lineas.push('Cocina sin IP: no salió el ticket de cocina.');
+      resultados.forEach((r) => {
+        if (!r.ok) lineas.push(`${r.nombre} (${r.ip}): ${r.error}`);
+      });
+      if (lineas.length) Alert.alert('Impresión', lineas.join('\n'));
     } catch (err) {
       Alert.alert('Error', 'No se pudo armar el ticket con el mismo formato de cocina.');
     }

@@ -196,13 +196,7 @@ const AnimatedOverlay = ({ mensaje }) => {
   );
 };
 
-const TIPO_SERVICIO_ORDENES_KEY = "tipoServicioOrdenes";
-
-const persistTipoServicioOrdenes = (tipo) => {
-  const v = tipo === "para_llevar" ? "para_llevar" : "mesa";
-  AsyncStorage.setItem(TIPO_SERVICIO_ORDENES_KEY, v).catch(() => {});
-  return v;
-};
+const tipoServicioOrdenes = (tipo) => (tipo === "para_llevar" ? "para_llevar" : "mesa");
 
 const irAPendientesTrasEnvio = (navigation, opts = {}) => {
   const { destino = 'pendientes', comanda = null, mesa = null } = opts;
@@ -444,7 +438,7 @@ const OrdenesScreen = ({ route }) => {
       if (esSeleccionSinMesa(mesaParam)) {
         setReservaActiva(null);
         AsyncStorage.removeItem("reservaActiva");
-        setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
+        setTipoServicioModal(tipoServicioOrdenes("para_llevar"));
       }
     }
     if (reservaParam && !esSeleccionSinMesa(mesaParam)) {
@@ -463,7 +457,7 @@ const OrdenesScreen = ({ route }) => {
       if (cancelled || gen !== cargaMesaGenRef.current) return;
       setSelectedMesa(null);
       setReservaActiva(null);
-      setTipoServicioModal(persistTipoServicioOrdenes('mesa'));
+      setTipoServicioModal(tipoServicioOrdenes('mesa'));
       setModalMesasVisible(true);
       navigation.setParams({ abrirSelectorMesa: false });
     })();
@@ -485,7 +479,7 @@ const OrdenesScreen = ({ route }) => {
       setCategoriaFiltro(null);
       setSearchPlato("");
       if (esSeleccionSinMesa(mesaParam)) {
-        setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
+        setTipoServicioModal(tipoServicioOrdenes("para_llevar"));
       }
       setModalPlatosVisible(true);
       navigation.setParams({ abrirMenu: undefined, tipoMenuHora: undefined });
@@ -519,6 +513,8 @@ const OrdenesScreen = ({ route }) => {
       // Esto previene que el botón quede en "Enviando..." si el usuario navega y vuelve
       setIsSendingComanda(false);
       setMostrarOverlayCarga(false);
+      setTipoServicioModal("mesa");
+      AsyncStorage.removeItem("tipoServicioOrdenes").catch(() => {});
       configuracionService.obtenerConfigMoneda(true).then(setConfigMoneda).catch(() => {});
       leerDraftArmado().then((draft) => {
         if (draft?.iniciadoEn != null && Number.isFinite(Number(draft.iniciadoEn))) {
@@ -630,10 +626,6 @@ const OrdenesScreen = ({ route }) => {
       if (storedObs) {
         setObservaciones(storedObs);
       }
-      const storedTipo = await AsyncStorage.getItem(TIPO_SERVICIO_ORDENES_KEY);
-      if (storedTipo === "para_llevar" || storedTipo === "mesa") {
-        setTipoServicioModal(storedTipo);
-      }
     } catch (error) {
       console.error("Error cargando platos seleccionados:", error);
     }
@@ -670,7 +662,7 @@ const OrdenesScreen = ({ route }) => {
     try {
       await AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(SELECCION_SIN_MESA));
       setSelectedMesa(SELECCION_SIN_MESA);
-      setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
+      setTipoServicioModal(tipoServicioOrdenes("para_llevar"));
       setSelectedPlatos((prev) => prev.map((p) => ({ ...p, tipoServicio: "para_llevar" })));
       setModalMesasVisible(false);
     } catch (error) {
@@ -1113,7 +1105,6 @@ const OrdenesScreen = ({ route }) => {
 
   const aplicarTipoServicioCarrito = (tipo) => {
     const next = tipo === TIPO_PARA_LLEVAR ? TIPO_PARA_LLEVAR : TIPO_MESA;
-    persistTipoServicioOrdenes(next);
     setTipoServicioModal(next);
     setSelectedPlatos((prev) => prev.map((p) => ({ ...p, tipoServicio: next })));
   };
@@ -1662,7 +1653,7 @@ const OrdenesScreen = ({ route }) => {
     setSearchPlato("");
     setSearchPlatoDebounced("");
     if (esSeleccionSinMesa(selectedMesa)) {
-      setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
+      setTipoServicioModal(tipoServicioOrdenes("para_llevar"));
     }
     setModalPlatosVisible(true);
   }, [platos, tiposPlatoCatalogo, selectedMesa, refreshCatalogo]);
@@ -1692,7 +1683,7 @@ const OrdenesScreen = ({ route }) => {
     setCategoriaFiltro(null);
     setSearchPlato("");
     if (esSeleccionSinMesa(selectedMesa)) {
-      setTipoServicioModal(persistTipoServicioOrdenes("para_llevar"));
+      setTipoServicioModal(tipoServicioOrdenes("para_llevar"));
     }
     setModalPlatosVisible(true);
     refreshCatalogo({ force: false });

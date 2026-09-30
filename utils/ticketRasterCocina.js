@@ -55,9 +55,10 @@ function htmlCuerpo(datos) {
   const neto = Math.max(0, bruto - desc);
   const thCuadro = cocina ? '<th style="width:18px;border-bottom:1px solid #000;"></th>' : '';
   let html = '';
+  html += `<div style="text-align:left;font-size:14px;font-weight:800;letter-spacing:1px;line-height:1.1;">${cocina ? 'COCINA' : 'CAJA'}</div>`;
   html += `<div style="text-align:center;font-size:22px;font-weight:800;letter-spacing:0.5px;line-height:1.15;padding:4px 0 6px;">${esc(d.letrero || '#—')}</div>`;
   html += `<table style="width:100%;border-collapse:collapse;margin-bottom:6px;">
-    <tr>${celdaMeta('Mozo', d.mozo)}${celdaMeta('Mesa', d.mesa)}</tr>
+    <tr>${celdaMeta('Mozo', String(d.mozo || '').toLocaleUpperCase('es-PE'))}${celdaMeta('Mesa', d.mesa)}</tr>
     <tr>${celdaMeta('Fecha', d.fecha)}${celdaMeta('Área', d.area)}</tr>
   </table>`;
   html += `<table style="width:100%;border-collapse:collapse;font-size:11px;">

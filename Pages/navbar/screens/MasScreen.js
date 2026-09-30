@@ -21,6 +21,8 @@ import { useTheme } from "../../../context/ThemeContext";
 import { useSocket } from "../../../context/SocketContext";
 import { themeLight } from "../../../constants/theme";
 import SettingsModal from "../../../Components/SettingsModal";
+import ImpresorasModal from "../../../Components/ImpresorasModal";
+import { leerImpresorasTermicas } from "../../../config/impresorasTermicas";
 import PersonalizarIconoOnlineModal from "../../../Components/PersonalizarIconoOnlineModal";
 import PersonalizarAlertaSalioModal from "../../../Components/PersonalizarAlertaSalioModal";
 import PersonalizarMesasModal from "../../../Components/PersonalizarMesasModal";
@@ -76,6 +78,8 @@ const MasScreen = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [vistaInicio, setVistaInicio] = useState("tarjetas");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [impresorasOpen, setImpresorasOpen] = useState(false);
+  const [resumenImpresoras, setResumenImpresoras] = useState("Cocina 192.168.50.228 · Caja 192.168.50.150");
   const [iconoOnlineOpen, setIconoOnlineOpen] = useState(false);
   const [alertaSalioOpen, setAlertaSalioOpen] = useState(false);
   const [mesasApodoOpen, setMesasApodoOpen] = useState(false);
@@ -168,12 +172,29 @@ const MasScreen = () => {
     }
   }, []);
 
+  const loadUserData = useCallback(async () => {
+    try {
+      const user = await AsyncStorage.getItem("user");
+      if (user) setUserInfo(JSON.parse(user));
+    } catch (error) {
+      console.error("Error cargando usuario:", error);
+    }
+  }, []);
+
+  const cargarImpresoras = useCallback(async () => {
+    const cfg = await leerImpresorasTermicas();
+    setResumenImpresoras(
+      `Cocina ${cfg.cocina.ip || "sin IP"} · Caja ${cfg.caja.ip || "sin IP"}`
+    );
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadUserData();
       checkServerReachable();
       syncProfileFromServer();
-    }, [loadUserData, checkServerReachable, syncProfileFromServer])
+      cargarImpresoras();
+    }, [loadUserData, checkServerReachable, syncProfileFromServer, cargarImpresoras])
   );
 
   const loadPushPref = async () => {
@@ -204,15 +225,6 @@ const MasScreen = () => {
       console.error("Error guardando preferencia de vista:", error);
     }
   };
-
-  const loadUserData = useCallback(async () => {
-    try {
-      const user = await AsyncStorage.getItem("user");
-      if (user) setUserInfo(JSON.parse(user));
-    } catch (error) {
-      console.error("Error cargando usuario:", error);
-    }
-  }, []);
 
   const onTogglePush = async (value) => {
     setPushEnabled(value);
@@ -285,6 +297,15 @@ const MasScreen = () => {
   return (
     <SafeAreaView style={styles.container} edges={[]}>
       <SettingsModal visible={settingsOpen} onClose={() => setSettingsOpen(false)} logoutOnServerChange />
+      <ImpresorasModal
+        visible={impresorasOpen}
+        onClose={() => setImpresorasOpen(false)}
+        onSaved={(cfg) =>
+          setResumenImpresoras(
+            `Cocina ${cfg.cocina.ip || "sin IP"} · Caja ${cfg.caja.ip || "sin IP"}`
+          )
+        }
+      />
       <PersonalizarIconoOnlineModal
         visible={iconoOnlineOpen}
         onClose={() => setIconoOnlineOpen(false)}
@@ -484,6 +505,28 @@ const MasScreen = () => {
                   },
                 ]}
               />
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.light} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setImpresorasOpen(true);
+            }}
+            activeOpacity={0.7}
+            accessibilityLabel="Impresoras"
+            accessibilityHint="Configura la IP de cocina y de caja"
+          >
+            <View style={[styles.menuIconContainer, { backgroundColor: theme.colors.primary + "20" }]}>
+              <MaterialCommunityIcons name="printer" size={24} color={theme.colors.primary} />
+            </View>
+            <View style={styles.serverRowText}>
+              <Text style={styles.serverMenuTitle}>Impresoras</Text>
+              <Text style={[styles.serverStatusLine, { fontSize: 14 }]} numberOfLines={1}>
+                {resumenImpresoras}
+              </Text>
             </View>
             <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.text.light} />
           </TouchableOpacity>
