@@ -1,5 +1,8 @@
 import { Alert } from 'react-native';
-import { obtenerConfiguracion } from '../services/configuracionService';
+import axios from 'axios';
+import { obtenerConfiguracion, getMozoAuthHeaders } from '../services/configuracionService';
+import apiConfig from '../config/apiConfig';
+import { getFallbackApiBase } from '../config/envDefaults';
 import { datosImpresionTicket } from './comandaMozoEposXml';
 import { xmlImagenEpos, xmlDosImagenesEpos } from './ticketRasterCocina';
 import { leerImpresorasTermicas } from '../config/impresorasTermicas';
@@ -56,9 +59,19 @@ export async function imprimirTicketsMozoYCocina({
   let detenerCaja = false;
   let detenerCocina = false;
   try {
-    const sistema = await obtenerConfiguracion(true);
-    detenerCaja = sistema?.cocina?.detenerImpresionCaja === true;
-    detenerCocina = sistema?.cocina?.detenerImpresionCocina === true;
+    const url = apiConfig.isConfigured && apiConfig.getEndpoint
+      ? apiConfig.getEndpoint('/configuracion/impresion-automatica')
+      : `${getFallbackApiBase()}/configuracion/impresion-automatica`;
+    const headers = await getMozoAuthHeaders();
+    const res = await axios.get(url, { timeout: 5000, headers, validateStatus: () => true });
+    if (res.status === 200 && res.data) {
+      detenerCaja = res.data.detenerImpresionCaja === true;
+      detenerCocina = res.data.detenerImpresionCocina === true;
+    } else {
+      const sistema = await obtenerConfiguracion(true);
+      detenerCaja = sistema?.cocina?.detenerImpresionCaja === true;
+      detenerCocina = sistema?.cocina?.detenerImpresionCocina === true;
+    }
   } catch {
     detenerCaja = false;
     detenerCocina = false;
