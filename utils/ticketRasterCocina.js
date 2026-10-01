@@ -6,6 +6,7 @@
  * El XML <text> no puede igualarlo: TM Print Assistant solo tiene la
  * fuente interna de la impresora (celdas fijas, mucho más grandes).
  */
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { tipoCuadroTicket } from './tipoServicio';
 import { View } from 'react-native';
 import { WebView } from 'react-native-webview';
