@@ -201,6 +201,12 @@ const AnimatedOverlay = ({ mensaje }) => {
 
 const tipoServicioOrdenes = (tipo) => (tipo === "para_llevar" ? "para_llevar" : "mesa");
 
+function conTipoParaLlevar(platos) {
+  if (!Array.isArray(platos) || platos.length === 0) return platos;
+  if (platos.every((p) => p?.tipoServicio === TIPO_PARA_LLEVAR)) return platos;
+  return platos.map((p) => ({ ...p, tipoServicio: TIPO_PARA_LLEVAR }));
+}
+
 const irAPendientesTrasEnvio = (navigation, opts = {}) => {
   const { destino = 'pendientes', comanda = null, mesa = null } = opts;
   if (destino === 'comanda' && comanda?._id && mesa?._id) {
@@ -273,6 +279,8 @@ const OrdenesScreen = ({ route }) => {
   // Obtener parámetros de navegación (mesa y reserva desde ComandaDetalle)
   const { mesa: mesaParam, reserva: reservaParam, modoExtraLlevar: modoExtraParam, origen: origenParam, abrirMenu: abrirMenuParam, tipoMenuHora: tipoMenuHoraParam, abrirSelectorMesa: abrirSelectorMesaParam } = route?.params || {};
   const modoExtraLlevar = modoExtraParam === true;
+  const modoExtraLlevarRef = useRef(false);
+  modoExtraLlevarRef.current = modoExtraLlevar;
   const [ocultarParaLlevar, setOcultarParaLlevar] = useState(false);
   const agruparConMesa = origenParam === 'ComandaDetalle' || modoExtraLlevar === true;
   const abrirSelectorMesaRef = useRef(false);
@@ -471,6 +479,11 @@ const OrdenesScreen = ({ route }) => {
 
   useEffect(() => {
     if (!abrirMenuParam) return;
+    if (esSeleccionSinMesa(mesaParam)) {
+      setSelectedMesa(mesaParam);
+      setTipoServicioModal(TIPO_PARA_LLEVAR);
+      setSelectedPlatos((prev) => conTipoParaLlevar(prev));
+    }
     let cancelled = false;
     (async () => {
       if (mesaParam) setSelectedMesa(mesaParam);
@@ -528,9 +541,17 @@ const OrdenesScreen = ({ route }) => {
     if (esSeleccionSinMesa(selectedMesa)) setSelectedMesa(null);
   }, [ocultarParaLlevar, modoExtraLlevar, selectedMesa]);
 
+  // Sin mesa (Inicio o el selector de Órdenes) es siempre para llevar, también los platos ya elegidos.
+  useEffect(() => {
+    if (modoExtraLlevar || !esSeleccionSinMesa(selectedMesa)) return;
+    setTipoServicioModal(TIPO_PARA_LLEVAR);
+    setSelectedPlatos((prev) => conTipoParaLlevar(prev));
+  }, [selectedMesa, modoExtraLlevar]);
+
   // Recargar mesa y usuario cuando se enfoca la pantalla (por si viene desde InicioScreen con mesa seleccionada)
   useFocusEffect(
     useCallback(() => {
+      let vivo = true;
       loadMesaData();
       loadUserData(); // Recargar usuario para asegurar que esté actualizado
       
@@ -538,8 +559,21 @@ const OrdenesScreen = ({ route }) => {
       // Esto previene que el botón quede en "Enviando..." si el usuario navega y vuelve
       setIsSendingComanda(false);
       setMostrarOverlayCarga(false);
-      setTipoServicioModal("mesa");
-      AsyncStorage.removeItem("tipoServicioOrdenes").catch(() => {});
+      AsyncStorage.getItem("mesaSeleccionada").then((raw) => {
+        let sinMesa = false;
+        try {
+          sinMesa = esSeleccionSinMesa(raw ? JSON.parse(raw) : null);
+        } catch (_) {}
+        if (!vivo) return;
+        if (modoExtraLlevarRef.current) return;
+        if (sinMesa) {
+          setTipoServicioModal(TIPO_PARA_LLEVAR);
+          setSelectedPlatos((prev) => conTipoParaLlevar(prev));
+          return;
+        }
+        setTipoServicioModal(TIPO_MESA);
+        AsyncStorage.removeItem("tipoServicioOrdenes").catch(() => {});
+      }).catch(() => {});
       configuracionService.obtenerConfigMoneda(true).then(setConfigMoneda).catch(() => {});
       leerDraftArmado().then((draft) => {
         if (draft?.iniciadoEn != null && Number.isFinite(Number(draft.iniciadoEn))) {
@@ -547,6 +581,7 @@ const OrdenesScreen = ({ route }) => {
         }
       }).catch(() => {});
       return () => {
+        vivo = false;
         if (!selectedPlatosRef.current.length) {
           armadoIniciadoEnRef.current = null;
           borrarDraftArmado();
@@ -1395,7 +1430,7 @@ const OrdenesScreen = ({ route }) => {
         plato: plato._id,
         platoId: plato.id || null,
         estado: "pedido",
-        tipoServicio: plato.tipoServicio || tipoServicioEnvio,
+        tipoServicio: esSinMesaOrden ? TIPO_PARA_LLEVAR : (plato.tipoServicio || tipoServicioEnvio),
         tipoPedido: slugTipoPedido(plato.tipoPedido),
         complementosSeleccionados: fusionarGuarnicionesPreseleccionadasEnLista(
           resolverPlatoConGrupos(plato, platos),
@@ -2092,14 +2127,14 @@ const OrdenesScreen = ({ route }) => {
                     Todas
                   </Text>
                 </TouchableOpacity>
-                {areas.map((area) => (
+                {areas.filter((area) => area && area._id).map((area) => (
                   <TouchableOpacity
                     key={area._id}
                     style={[styles.modalAreaFilterButton, filtroAreaMesa === area._id && styles.modalAreaFilterButtonActive]}
                     onPress={() => setFiltroAreaMesa(area._id)}
                   >
                     <Text style={[styles.modalAreaFilterButtonText, filtroAreaMesa === area._id && styles.modalAreaFilterButtonTextActive]}>
-                      {area.nombre}
+                      {area.nombre || 'Sin área'}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -2110,17 +2145,19 @@ const OrdenesScreen = ({ route }) => {
               <View style={styles.mesasGrid}>
                 {mesas
                   .filter(mesa => {
+                    if (!mesa) return false;
                     if (filtroAreaMesa === "All") return true;
-                    const mesaAreaId = mesa.area?._id || mesa.area;
+                    const mesaAreaId = (mesa.area && typeof mesa.area === 'object') ? mesa.area._id : mesa.area;
                     return mesaAreaId === filtroAreaMesa;
                   })
                   .map((mesa) => {
                     const estado = getMesaEstado(mesa);
                     const estadoColor = getEstadoColor(estado);
                     const isSelected = selectedMesa?._id === mesa._id;
-                    const mesaArea = typeof mesa.area === 'object' 
-                      ? mesa.area.nombre 
-                      : areas.find(a => a._id === mesa.area)?.nombre || 'Sin área';
+                    const areaObj = mesa.area && typeof mesa.area === 'object' ? mesa.area : null;
+                    const mesaArea = areaObj
+                      ? (areaObj.nombre || 'Sin área')
+                      : (areas.find((a) => a && a._id === mesa.area)?.nombre || 'Sin área');
                     
                     return (
                       <TouchableOpacity
@@ -2167,7 +2204,9 @@ const OrdenesScreen = ({ route }) => {
                       setSearchPlato("");
         }}
         labelForTipo={labelForTipo}
-        tipoServicioModal={tipoServicioModal}
+        tipoServicioModal={
+          esSeleccionSinMesa(selectedMesa) && !modoExtraLlevar ? TIPO_PARA_LLEVAR : tipoServicioModal
+        }
         onTipoServicioChange={(v) => {
           if (esSeleccionSinMesa(selectedMesa) || modoExtraLlevar) return;
           aplicarTipoServicioCarrito(v);
