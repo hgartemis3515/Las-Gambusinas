@@ -68,6 +68,7 @@ import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCa
 import useTiposPlato from "../../../hooks/useTiposPlato";
 import { resolverSlugMenuPorHora } from "../../../utils/horaTipoMenu";
 import { SELECCION_SIN_MESA, COLOR_PARA_LLEVAR } from "../../../utils/sinMesaOrden";
+import { leerOcultarParaLlevar } from "../../../utils/ocultarParaLlevar";
 import { useDensidadOrdenes } from "../../../context/DensidadOrdenesContext";
 import { estiloChipCategoria } from "../../../utils/densidadOrdenes";
 import MesaMapView from '../../../Components/MesaMapView';
@@ -2049,6 +2050,15 @@ const InicioScreen = () => {
     }
   };
 
+  const [ocultarParaLlevar, setOcultarParaLlevar] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      let vivo = true;
+      leerOcultarParaLlevar().then((on) => { if (vivo) setOcultarParaLlevar(on); }).catch(() => {});
+      return () => { vivo = false; };
+    }, [])
+  );
+
   const abrirSinMesaSoloLlevar = async () => {
     try {
       await AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(SELECCION_SIN_MESA));
@@ -3608,7 +3618,9 @@ const InicioScreen = () => {
         {
           platosAEliminar: platosAEliminar,
           motivo: motivoEliminarPlatos.trim(),
-          mozoId: usuarioId
+          mozoId: usuarioId,
+          usuarioId,
+          usuarioNombre: userInfo?.name || userInfo?.nombres || ''
         },
         { timeout: 15000 }
       );
@@ -3781,7 +3793,11 @@ const InicioScreen = () => {
         : `${COMANDA_API}/mesa/${mesaId}/todas`;
       
       await axios.delete(deleteURL, { 
-        data: { motivo: motivoEliminacionComanda.trim() },
+        data: {
+          motivo: motivoEliminacionComanda.trim(),
+          usuarioId: userInfo?._id || userInfo?.id,
+          usuarioNombre: userInfo?.name || userInfo?.nombres || ''
+        },
         timeout: 15000 
       });
       
@@ -4273,7 +4289,11 @@ const InicioScreen = () => {
       // Paso 1: Eliminar comanda
       setMensajeCargaEliminacion("Eliminando comanda...");
       const deleteResponse = await axios.delete(deleteURL, { 
-        data: { motivo: motivoEliminacionComanda.trim() },
+        data: {
+          motivo: motivoEliminacionComanda.trim(),
+          usuarioId: userInfo?._id || userInfo?.id,
+          usuarioNombre: userInfo?.name || userInfo?.nombres || ''
+        },
         timeout: 10000 
       });
       
@@ -5115,7 +5135,7 @@ const InicioScreen = () => {
             >
               {seccionActiva ? (
                 <>
-                  {tarjetaSinMesaSoloLlevar}
+                  {!ocultarParaLlevar && tarjetaSinMesaSoloLlevar}
                   {seccionActiva === SECCION_YO && getMesasPorArea(SECCION_YO).length === 0 && (
                     <Text style={{ textAlign: "center", padding: 24, opacity: 0.7, color: theme.colors?.text?.secondary || theme.colors?.text?.muted }}>
                       No tienes mesas en atención
@@ -5159,7 +5179,7 @@ const InicioScreen = () => {
               ) : (
                 // Vista de todas las mesas (sin filtro de área) - excluye mesas secundarias
                 <>
-                {tarjetaSinMesaSoloLlevar}
+                {!ocultarParaLlevar && tarjetaSinMesaSoloLlevar}
                 {mesas.filter(mesa => mesa.esMesaPrincipal !== false).map((mesa, index) => {
                   const estado = getEstadoMesa(mesa);
                   const estadoColor = getEstadoColor(estado);

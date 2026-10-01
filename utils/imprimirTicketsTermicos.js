@@ -1,4 +1,5 @@
 import { Alert } from 'react-native';
+import { obtenerConfiguracion } from '../services/configuracionService';
 import { datosImpresionTicket } from './comandaMozoEposXml';
 import { xmlImagenEpos, xmlDosImagenesEpos } from './ticketRasterCocina';
 import { leerImpresorasTermicas } from '../config/impresorasTermicas';
@@ -51,26 +52,39 @@ export async function imprimirTicketsMozoYCocina({
     Alert.alert('Error', 'No se pudo preparar la impresión.');
     return;
   }
+  let detenerCaja = false;
+  let detenerCocina = false;
   try {
-    const mozo = await rasterizar({ ...datos, cocina: false });
-    const cocinaImg = await rasterizar({ ...datos, cocina: true });
+    const sistema = await obtenerConfiguracion(true);
+    detenerCaja = sistema?.cocina?.detenerImpresionCaja === true;
+    detenerCocina = sistema?.cocina?.detenerImpresionCocina === true;
+  } catch {
+    detenerCaja = false;
+    detenerCocina = false;
+  }
+  if (detenerCaja && detenerCocina) return;
+  try {
+    const mozo = detenerCaja ? null : await rasterizar({ ...datos, cocina: false });
+    const cocinaImg = detenerCocina ? null : await rasterizar({ ...datos, cocina: true });
     const cfg = await leerImpresorasTermicas();
     const ipCaja = String(cfg?.caja?.ip || '').trim();
     const ipCocina = String(cfg?.cocina?.ip || '').trim();
     if (!ipCaja && !ipCocina) {
-      const junto = xmlDosImagenesEpos(mozo, cocinaImg);
-      if (buildTmPrintAssistantUrl(junto).length <= 190 * 1024) {
-        await imprimirBoucherTmAssistant(junto);
-        return;
+      if (mozo && cocinaImg) {
+        const junto = xmlDosImagenesEpos(mozo, cocinaImg);
+        if (buildTmPrintAssistantUrl(junto).length <= 190 * 1024) {
+          await imprimirBoucherTmAssistant(junto);
+          return;
+        }
       }
-      await imprimirBoucherTmAssistant(xmlImagenEpos(mozo));
-      await new Promise((r) => setTimeout(r, 700));
-      await imprimirBoucherTmAssistant(xmlImagenEpos(cocinaImg));
+      if (mozo) await imprimirBoucherTmAssistant(xmlImagenEpos(mozo));
+      if (mozo && cocinaImg) await new Promise((r) => setTimeout(r, 700));
+      if (cocinaImg) await imprimirBoucherTmAssistant(xmlImagenEpos(cocinaImg));
       return;
     }
     const trabajos = [];
-    if (ipCaja) trabajos.push({ nombre: 'Caja', ip: ipCaja, xml: xmlImagenEpos(mozo) });
-    if (ipCocina) trabajos.push({ nombre: 'Cocina', ip: ipCocina, xml: xmlImagenEpos(cocinaImg) });
+    if (ipCaja && mozo) trabajos.push({ nombre: 'Caja', ip: ipCaja, xml: xmlImagenEpos(mozo) });
+    if (ipCocina && cocinaImg) trabajos.push({ nombre: 'Cocina', ip: ipCocina, xml: xmlImagenEpos(cocinaImg) });
     const resultados = await Promise.all(trabajos.map(async (job) => {
       try {
         await imprimirEposEnIp(job.ip, job.xml);
@@ -80,8 +94,8 @@ export async function imprimirTicketsMozoYCocina({
       }
     }));
     const lineas = [];
-    if (!ipCaja) lineas.push('Caja sin IP: no salió el ticket de precios.');
-    if (!ipCocina) lineas.push('Cocina sin IP: no salió el ticket de cocina.');
+    if (!ipCaja && !detenerCaja) lineas.push('Caja sin IP: no salió el ticket de precios.');
+    if (!ipCocina && !detenerCocina) lineas.push('Cocina sin IP: no salió el ticket de cocina.');
     resultados.forEach((r) => {
       if (!r.ok) lineas.push(`${r.nombre} (${r.ip}): ${r.error}`);
     });

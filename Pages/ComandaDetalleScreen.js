@@ -49,6 +49,7 @@ import configuracionService from '../services/configuracionService';
 import { getReglasBotonesComandaDetalle, puedeLiberarMesaTrasPPA, platoCobradoViaPPA, puedeLiberarComandaCostoCero, filtrarComandasElegiblesPPA } from '../helpers/pagoAdelantadoHelpers';
 import { calcularSubtotalPlatosPagables } from '../utils/pagoParcialHelpers';
 import { esSeleccionSinMesa, SELECCION_SIN_MESA } from '../utils/sinMesaOrden';
+import { leerOcultarParaLlevar } from '../utils/ocultarParaLlevar';
 import { esLlevarColor, normalizarTipoServicioLinea } from '../utils/tipoServicio';
 import { msRestantesEntregaAutomatica, formatearCountdownEntrega, tiempoSalioRequiereAncla } from '../utils/entregaAutomatica';
 import { usuarioPuedeAplicarDescuentos, brutoGrupoComandas, montoDescuentoGrupo, montosDescuentoPorComanda, clampMontoDescuento, motivoDescuentoFinal, motivoDescuentoEsValido, comandaTieneDescuentoMozo } from '../utils/descuentoMozo';
@@ -292,6 +293,18 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Tipo de servicio para los platos que se agreguen desde esta pantalla:
   // 'mesa' (default, Switch OFF) o 'para_llevar' (Switch ON).
   const [tipoServicioModal, setTipoServicioModal] = useState('mesa');
+  const [ocultarParaLlevar, setOcultarParaLlevar] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      let vivo = true;
+      leerOcultarParaLlevar().then((on) => {
+        if (!vivo) return;
+        setOcultarParaLlevar(on);
+        if (on && !esSeleccionSinMesa(mesa)) setTipoServicioModal('mesa');
+      }).catch(() => {});
+      return () => { vivo = false; };
+    }, [mesa])
+  );
   
   // Estado para el modal de complementos (edición de comanda)
   const [platoParaComplementar, setPlatoParaComplementar] = useState(null);
@@ -2197,7 +2210,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           platosAEliminar: indices,
           motivo: motivoEliminacion.trim(),
           mozoId: userInfo._id,
-          usuarioId: userInfo._id
+          usuarioId: userInfo._id,
+          usuarioNombre: userInfo?.name || userInfo?.nombres || ''
         };
 
         console.log('🗑️ Eliminando platos:', {
@@ -2394,7 +2408,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       const dataAEnviar = {
         motivo: motivoEliminacionComanda.trim(),
         usuarioId: userInfo._id,
-        mozoId: userInfo._id
+        mozoId: userInfo._id,
+        usuarioNombre: userInfo?.name || userInfo?.nombres || ''
       };
       
       console.log('🗑️ Eliminando comanda:', {
@@ -4072,6 +4087,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           setTipoServicioModal(v);
         }}
         tipoServicioFijo={esSeleccionSinMesa(mesa)}
+        ocultarParaLlevar={ocultarParaLlevar}
         searchPlato={searchPlato}
         onSearchChange={handleSearchChangeEdicion}
         onSearchFocus={() => {}}

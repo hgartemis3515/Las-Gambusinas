@@ -170,6 +170,7 @@ export default function MenuPlatosSheet({
   tipoServicioModal,
   onTipoServicioChange,
   tipoServicioFijo = false,
+  ocultarParaLlevar = false,
   modoExtraLlevar = false,
   searchPlato,
   onSearchChange,
@@ -438,6 +439,16 @@ export default function MenuPlatosSheet({
                           ]}
                         >
                           EXTRA LLEVAR
+                        </Text>
+                      ) : ocultarParaLlevar ? (
+                        <Text
+                          style={[
+                            styles.tipoServicioLabel,
+                            styles.tipoServicioLabelActive,
+                            { color: '#F59E0B' },
+                          ]}
+                        >
+                          Mesa
                         </Text>
                       ) : (
                         <>

@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, Pressable, Switch
 } from "react-native";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
+import { leerOcultarParaLlevar } from "../utils/ocultarParaLlevar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import moment from "moment-timezone";
@@ -112,6 +113,20 @@ export default function ReservaWizardScreen() {
   const [searchDebounced, setSearchDebounced] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [tipoServicioModal, setTipoServicioModal] = useState("mesa");
+  const [ocultarParaLlevar, setOcultarParaLlevar] = useState(false);
+  useFocusEffect(useCallback(() => {
+    let vivo = true;
+    leerOcultarParaLlevar().then((on) => {
+      if (!vivo) return;
+      setOcultarParaLlevar(on);
+      if (!on) return;
+      setTipoServicioModal("mesa");
+      setSelPlatos((prev) => prev.map((p) => (
+        p.tipoServicio === "para_llevar" ? { ...p, tipoServicio: "mesa" } : p
+      )));
+    }).catch(() => {});
+    return () => { vivo = false; };
+  }, []));
   const tipoServicioAlComplementarRef = useRef(null);
   const [platoParaComplementar, setPlatoParaComplementar] = useState(null);
   const [complementosInicialesModal, setComplementosInicialesModal] = useState(null);
@@ -916,7 +931,9 @@ export default function ReservaWizardScreen() {
               <View>
                 <Text style={s.label}>Platos *</Text>
                 <View style={s.tipoServicioRow}>
-                  <Text style={[s.tipoServicioLabel, tipoServicioModal === "mesa" && s.tipoServicioLabelActive, { color: tipoServicioModal === "mesa" ? "#F59E0B" : cMuted }]}>Mesa</Text>
+                  <Text style={[s.tipoServicioLabel, (ocultarParaLlevar || tipoServicioModal === "mesa") && s.tipoServicioLabelActive, { color: (ocultarParaLlevar || tipoServicioModal === "mesa") ? "#F59E0B" : cMuted }]}>Mesa</Text>
+                  {!ocultarParaLlevar && (
+                    <>
                   <Switch
                     value={tipoServicioModal === "para_llevar"}
                     onValueChange={(v) => { setTipoServicioModal(v ? "para_llevar" : "mesa"); haptic(); }}
@@ -926,6 +943,8 @@ export default function ReservaWizardScreen() {
                     accessibilityHint="Cambia el destino de los platos que agregues a continuación"
                   />
                   <Text style={[s.tipoServicioLabel, tipoServicioModal === "para_llevar" && s.tipoServicioLabelActive, { color: tipoServicioModal === "para_llevar" ? "#8B5CF6" : cMuted }]}>Para llevar</Text>
+                    </>
+                  )}
                 </View>
                 <View style={s.searchWrap}>
                   <MaterialCommunityIcons name="magnify" size={18} color={cMuted} style={s.searchIcon} />
@@ -1007,9 +1026,11 @@ export default function ReservaWizardScreen() {
                       <Pressable onPress={() => setTipoServicioInstancia(p.instanceId, "mesa")} style={[s.tipoServicioMiniChip, (p.tipoServicio || "mesa") === "mesa" && s.tipoServicioMiniChipMesa]}>
                         <Text style={[s.tipoServicioMiniText, (p.tipoServicio || "mesa") === "mesa" && s.tipoServicioMiniTextActive]}>Mesa</Text>
                       </Pressable>
+                      {!ocultarParaLlevar && (
                       <Pressable onPress={() => setTipoServicioInstancia(p.instanceId, "para_llevar")} style={[s.tipoServicioMiniChip, p.tipoServicio === "para_llevar" && s.tipoServicioMiniChipLlevar]}>
                         <Text style={[s.tipoServicioMiniText, p.tipoServicio === "para_llevar" && s.tipoServicioMiniTextActive]}>Para llevar</Text>
                       </Pressable>
+                      )}
                     </View>
                     <TextInput style={s.notaInput} value={p.notaEspecial} onChangeText={(t) => notaInstancia(p.instanceId, t)} placeholder="Nota especial (opcional)" placeholderTextColor={cMuted} />
                     <View style={s.cantRow}>

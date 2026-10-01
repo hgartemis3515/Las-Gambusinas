@@ -64,6 +64,7 @@ import {
   segundosArmadoDesdeT0,
 } from "../../../utils/tiempoArmadoOrden";
 import { esLlevarColor, etiquetaLlevarMozo, TIPO_EXTRA_LLEVAR, TIPO_PARA_LLEVAR, TIPO_MESA } from "../../../utils/tipoServicio";
+import { leerOcultarParaLlevar } from "../../../utils/ocultarParaLlevar";
 import {
   CAT_FAVORITOS,
   loadFavoritosLocal,
@@ -272,6 +273,7 @@ const OrdenesScreen = ({ route }) => {
   // Obtener parámetros de navegación (mesa y reserva desde ComandaDetalle)
   const { mesa: mesaParam, reserva: reservaParam, modoExtraLlevar: modoExtraParam, origen: origenParam, abrirMenu: abrirMenuParam, tipoMenuHora: tipoMenuHoraParam, abrirSelectorMesa: abrirSelectorMesaParam } = route?.params || {};
   const modoExtraLlevar = modoExtraParam === true;
+  const [ocultarParaLlevar, setOcultarParaLlevar] = useState(false);
   const agruparConMesa = origenParam === 'ComandaDetalle' || modoExtraLlevar === true;
   const abrirSelectorMesaRef = useRef(false);
   const cargaMesaGenRef = useRef(0);
@@ -505,6 +507,26 @@ const OrdenesScreen = ({ route }) => {
     });
     setTipoServicioModal((prev) => (prev === TIPO_EXTRA_LLEVAR ? TIPO_MESA : prev));
   }, [modoExtraLlevar]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let vivo = true;
+      leerOcultarParaLlevar().then((on) => { if (vivo) setOcultarParaLlevar(on); }).catch(() => {});
+      return () => { vivo = false; };
+    }, [])
+  );
+
+  useEffect(() => {
+    if (!ocultarParaLlevar || modoExtraLlevar) return;
+    setTipoServicioModal((prev) => (prev === TIPO_PARA_LLEVAR ? TIPO_MESA : prev));
+    setSelectedPlatos((prev) => {
+      if (!prev.some((p) => p.tipoServicio === TIPO_PARA_LLEVAR)) return prev;
+      return prev.map((p) => (
+        p.tipoServicio === TIPO_PARA_LLEVAR ? { ...p, tipoServicio: TIPO_MESA } : p
+      ));
+    });
+    if (esSeleccionSinMesa(selectedMesa)) setSelectedMesa(null);
+  }, [ocultarParaLlevar, modoExtraLlevar, selectedMesa]);
 
   // Recargar mesa y usuario cuando se enfoca la pantalla (por si viene desde InicioScreen con mesa seleccionada)
   useFocusEffect(
@@ -1916,7 +1938,7 @@ const OrdenesScreen = ({ route }) => {
                         <Text style={styles.cambiarPlatoBtnText}>Cambiar</Text>
                       </TouchableOpacity>
                     ) : null}
-                    {!modoExtraLlevar && !esSeleccionSinMesa(selectedMesa) && (
+                    {!ocultarParaLlevar && !modoExtraLlevar && !esSeleccionSinMesa(selectedMesa) && (
                     <TouchableOpacity
                       style={[
                         styles.tipoServicioLineaBtn,
@@ -2034,6 +2056,7 @@ const OrdenesScreen = ({ route }) => {
               </TouchableOpacity>
             </View>
 
+            {!ocultarParaLlevar && (
             <TouchableOpacity
               style={[
                 styles.sinMesaOption,
@@ -2051,6 +2074,7 @@ const OrdenesScreen = ({ route }) => {
                 <MaterialCommunityIcons name="check-circle" size={22} color="#FFFFFF" />
               )}
             </TouchableOpacity>
+            )}
             
             {/* Filtro por Área en Modal */}
             <View style={styles.modalAreaFilterContainer}>
@@ -2149,6 +2173,7 @@ const OrdenesScreen = ({ route }) => {
           aplicarTipoServicioCarrito(v);
         }}
         tipoServicioFijo={esSeleccionSinMesa(selectedMesa) || modoExtraLlevar}
+        ocultarParaLlevar={ocultarParaLlevar}
         modoExtraLlevar={modoExtraLlevar}
         searchPlato={searchPlato}
         onSearchChange={handleSearchChangeText}

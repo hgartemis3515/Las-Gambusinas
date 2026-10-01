@@ -23,6 +23,7 @@ import { themeLight } from "../../../constants/theme";
 import SettingsModal from "../../../Components/SettingsModal";
 import ImpresorasModal from "../../../Components/ImpresorasModal";
 import { leerImpresorasTermicas } from "../../../config/impresorasTermicas";
+import { guardarOcultarParaLlevar, leerOcultarParaLlevar } from "../../../utils/ocultarParaLlevar";
 import PersonalizarIconoOnlineModal from "../../../Components/PersonalizarIconoOnlineModal";
 import PersonalizarAlertaSalioModal from "../../../Components/PersonalizarAlertaSalioModal";
 import PersonalizarMesasModal from "../../../Components/PersonalizarMesasModal";
@@ -77,6 +78,7 @@ const MasScreen = () => {
 
   const [userInfo, setUserInfo] = useState(null);
   const [vistaInicio, setVistaInicio] = useState("tarjetas");
+  const [ocultarParaLlevar, setOcultarParaLlevar] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [impresorasOpen, setImpresorasOpen] = useState(false);
   const [resumenImpresoras, setResumenImpresoras] = useState("Cocina 192.168.50.228 · Caja 192.168.50.150");
@@ -111,6 +113,7 @@ const MasScreen = () => {
   useEffect(() => {
     loadVistaPreference();
     loadPushPref();
+    leerOcultarParaLlevar().then(setOcultarParaLlevar).catch(() => {});
   }, []);
 
   const checkServerReachable = useCallback(async () => {
@@ -467,6 +470,28 @@ const MasScreen = () => {
               </View>
             </View>
           </TouchableOpacity>
+
+          <View style={styles.menuItem}>
+            <View style={[styles.menuIconContainer, { backgroundColor: "#8B5CF620" }]}>
+              <MaterialCommunityIcons name="eye-off-outline" size={24} color="#8B5CF6" />
+            </View>
+            <View style={styles.themeToggleContainer}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={styles.menuItemText}>Ocultar Para llevar</Text>
+                <Text style={styles.pushHint}>Oculta la mesa, el cambio y el botón en los platos. Extra llevar sigue.</Text>
+              </View>
+              <Switch
+                value={ocultarParaLlevar}
+                onValueChange={(v) => {
+                  setOcultarParaLlevar(v);
+                  guardarOcultarParaLlevar(v);
+                }}
+                trackColor={{ false: "#767577", true: "#8B5CF6" }}
+                thumbColor={ocultarParaLlevar ? "#FFFFFF" : "#f4f3f4"}
+                accessibilityLabel="Ocultar Para llevar"
+              />
+            </View>
+          </View>
 
           <TouchableOpacity
             style={styles.menuItem}
