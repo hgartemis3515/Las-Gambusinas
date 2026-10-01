@@ -6,7 +6,7 @@
  * El XML <text> no puede igualarlo: TM Print Assistant solo tiene la
  * fuente interna de la impresora (celdas fijas, mucho más grandes).
  */
-import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+import { tipoCuadroTicket } from './tipoServicio';
 import { View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
@@ -76,7 +76,7 @@ function htmlCuerpo(datos) {
   html += `<div style="text-align:center;font-size:22px;font-weight:800;letter-spacing:0.5px;line-height:1.15;padding:4px 0 6px;">${esc(d.letrero || '#—')}</div>`;
   html += `<table style="width:100%;border-collapse:collapse;margin-bottom:6px;">
     <tr>${celdaLlena(String(d.mozo || '—').toLocaleUpperCase('es-PE'))}${celdaLlena(textoMesaTicket(d.mesa).toLocaleUpperCase('es-PE'))}</tr>
-    <tr>${celdaMeta('Fecha', d.fecha)}${celdaMeta('Área', d.area)}</tr>
+    <tr>${celdaMeta('Fecha', d.fecha)}${celdaMeta('Tipo', tipoCuadroTicket(d.platos, { sinMesa: d.sinMesa === true || /^sin mesa$/i.test(String(d.mesa || '')) }))}</tr>
   </table>`;
   html += `<table style="width:100%;border-collapse:collapse;font-size:11px;">
     <thead><tr>

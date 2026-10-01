@@ -6,6 +6,7 @@
  */
 import moment from 'moment-timezone';
 import { numeroTicketImpresion, etiquetaMozosComandas } from './comandaHelpers';
+import { tipoCuadroTicket } from './tipoServicio';
 
 const EPOS_NS = 'http://www.epson-pos.com/schemas/2011/03/epos-print';
 
@@ -102,7 +103,7 @@ function cuerpoTicket({
 
   parts.push(texto(letrero || '#—', 'align="center" width="2" height="2"'));
   parts.push(...cuadros('Mozo', mozo, 'Mesa', mesa));
-  parts.push(...cuadros('Fecha', fecha, 'Área', area || '—'));
+  parts.push(...cuadros('Fecha', fecha, 'Tipo', area || '—'));
   parts.push(bordeCuadro());
 
   const cabecera = (cocina ? izq('', COL_CUADRO) : '')
@@ -224,9 +225,11 @@ export function datosImpresionTicket({
     platos: lista.map((p) => ({
       cant: Number(p.cantidad) || 1,
       nombre: nombrePlato(p),
+      tipoServicio: p.tipoServicio || 'mesa',
       unit: Number(p.precio ?? p.precioUnitario ?? p.plato?.precio) || 0,
       line: montoLinea(p),
     })),
+    sinMesa: !!(mesa?.sinMesa || elegidas.some((c) => c?.sinMesa === true)),
   };
 }
 
@@ -252,9 +255,11 @@ export function generarXmlTicketsMozoYCocina({
   const base = elegidas[0] || {};
   const desc = elegidas.reduce((s, c) => s + (Number(c.montoDescuento) || 0), 0);
   const motivo = elegidas.map((c) => c.motivoDescuento).find((m) => m) || '';
+  const sinMesa = !!(mesa?.sinMesa || elegidas.some((c) => c?.sinMesa === true));
   const opts = {
     letrero,
     ...metaDeComanda(base, mesa),
+    area: tipoCuadroTicket(lista, { sinMesa }),
     platos: lista,
     simbolo,
     decimales,

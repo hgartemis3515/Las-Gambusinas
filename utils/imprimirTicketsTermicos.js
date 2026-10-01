@@ -17,6 +17,7 @@ export function platosPlanosParaTicket(comandas) {
         nombre: platoItem.nombreCocinaPedido || plato.nombreCocina || plato.nombre || platoItem.nombre || 'Plato',
         cantidad: comanda.cantidades?.[index] || platoItem.cantidad || 1,
         estado: platoItem.estado || 'pedido',
+        tipoServicio: platoItem.tipoServicio || 'mesa',
         precio: platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (Number(plato.precio) || 0),
         comandaId: comanda._id,
         eliminado: platoItem.eliminado === true,
