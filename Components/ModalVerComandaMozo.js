@@ -80,7 +80,7 @@ function nombreMozo(c) {
   else base = c?.mozoNombre || "";
   if (!base) return "—";
   const n = Number(c?.numeroComandaMozo);
-  return Number.isFinite(n) && n > 0 ? `${n} ${base}` : base;
+  return Number.isFinite(n) && n > 0 ? `${base} ${n}` : base;
 }
 
 function nombrePlato(p) {

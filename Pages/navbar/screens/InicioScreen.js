@@ -1975,7 +1975,7 @@ const InicioScreen = () => {
       const mozoNm = nombreMozoDesdeComanda(comandaMasReciente);
       if (mozoNm) {
         const nMozo = Number(comandaMasReciente?.numeroComandaMozo);
-        return Number.isFinite(nMozo) && nMozo > 0 ? `${nMozo} ${mozoNm}` : mozoNm;
+        return Number.isFinite(nMozo) && nMozo > 0 ? `${mozoNm} ${nMozo}` : mozoNm;
       }
     }
     
@@ -2004,7 +2004,7 @@ const InicioScreen = () => {
       const mozoNm = nombreMozoDesdeComanda(comandaMasReciente);
       if (!mozoNm) return "N/A";
       const nMozo = Number(comandaMasReciente?.numeroComandaMozo);
-      return Number.isFinite(nMozo) && nMozo > 0 ? `${nMozo} ${mozoNm}` : mozoNm;
+      return Number.isFinite(nMozo) && nMozo > 0 ? `${mozoNm} ${nMozo}` : mozoNm;
     }
     
     // Mesa pedido/preparado sin comandas locales: la auto-sync en segundo plano las trae; no mostrar "sync manual"

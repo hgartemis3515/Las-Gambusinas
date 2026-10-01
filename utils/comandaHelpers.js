@@ -29,12 +29,11 @@ export const numeroComandaVisible = (comanda) => {
 export const letraRevisionTicket = (n) => {
   const k = Math.floor(Number(n) || 0);
   if (k < 1) return '';
-  if (k === 1) return 'a';
-  let x = k;
+  let x = k + 1;
   let s = '';
   while (x > 0) {
     const r = (x - 1) % 26;
-    s = String.fromCharCode(65 + r) + s;
+    s = String.fromCharCode(97 + r) + s;
     x = Math.floor((x - 1) / 26);
   }
   return s;
@@ -65,7 +64,7 @@ export const numeroTicketImpresion = (comandas) => {
   return nums.map((n) => `#${n}${letraRevisionTicket(byN.get(n))}`).join('+');
 };
 
-/** `1 Jose` o `1+2 Jose · 3 Ana`. Sin número, solo el nombre. */
+/** `Jose 1` o `Jose 1+2 · Ana 3`. Sin número, solo el nombre. */
 export const etiquetaMozosComandas = (comandas) => {
   const ordenadas = [...(comandas || [])].sort(
     (a, b) => (Number(numeroComandaVisible(b)) || 0) - (Number(numeroComandaVisible(a)) || 0)
@@ -83,7 +82,7 @@ export const etiquetaMozosComandas = (comandas) => {
     if (Number.isFinite(n) && n > 0) grupos.get(limpio).push(n);
   }
   return [...grupos.entries()]
-    .map(([nombre, nums]) => (nums.length ? `${nums.join('+')} ${nombre}` : nombre))
+    .map(([nombre, nums]) => (nums.length ? `${nombre} ${nums.join('+')}` : nombre))
     .join(' · ');
 };
 

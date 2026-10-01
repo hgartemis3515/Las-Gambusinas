@@ -52,11 +52,8 @@ import { esSeleccionSinMesa, SELECCION_SIN_MESA } from '../utils/sinMesaOrden';
 import { esLlevarColor, normalizarTipoServicioLinea } from '../utils/tipoServicio';
 import { msRestantesEntregaAutomatica, formatearCountdownEntrega, tiempoSalioRequiereAncla } from '../utils/entregaAutomatica';
 import { usuarioPuedeAplicarDescuentos, brutoGrupoComandas, montoDescuentoGrupo, montosDescuentoPorComanda, clampMontoDescuento, motivoDescuentoFinal, motivoDescuentoEsValido, comandaTieneDescuentoMozo } from '../utils/descuentoMozo';
-import { datosImpresionTicket } from '../utils/comandaMozoEposXml';
-import RasterTicketCocina, { xmlImagenEpos, xmlDosImagenesEpos } from '../utils/ticketRasterCocina';
-import { imprimirBoucherTmAssistant, buildTmPrintAssistantUrl } from '../utils/boucherTmPrint';
-import { leerImpresorasTermicas } from '../config/impresorasTermicas';
-import { imprimirEposEnIp } from '../utils/eposPrintHttp';
+import RasterTicketCocina from '../utils/ticketRasterCocina';
+import { imprimirTicketsMozoYCocina } from '../utils/imprimirTicketsTermicos';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -2964,61 +2961,14 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const motivoDescuentoOk = motivoDescuentoEsValido(motivoDescuento);
   const esGrupoDescuento = (comandas || []).length > 1;
   const montoDescuentoActualGrupo = montoDescuentoGrupo(comandas);
-  const enviarTicketsMozoYCocina = async (incluirPagados, listaComandas) => {
-    const datos = datosImpresionTicket({
-      comandas: listaComandas,
-      platos: todosLosPlatos,
-      mesa,
-      incluirPagados,
-      configMoneda,
-    });
-    if (!datos.ok) {
-      Alert.alert('Sin platos', 'No hay platos para imprimir con el filtro elegido.');
-      return;
-    }
-    if (!rasterTicketRef.current) {
-      Alert.alert('Error', 'No se pudo preparar la impresión.');
-      return;
-    }
-    try {
-      const mozo = await rasterTicketRef.current.rasterizar({ ...datos, cocina: false });
-      const cocinaImg = await rasterTicketRef.current.rasterizar({ ...datos, cocina: true });
-      const cfg = await leerImpresorasTermicas();
-      const ipCaja = String(cfg?.caja?.ip || '').trim();
-      const ipCocina = String(cfg?.cocina?.ip || '').trim();
-      if (!ipCaja && !ipCocina) {
-        const junto = xmlDosImagenesEpos(mozo, cocinaImg);
-        if (buildTmPrintAssistantUrl(junto).length <= 190 * 1024) {
-          await imprimirBoucherTmAssistant(junto);
-          return;
-        }
-        await imprimirBoucherTmAssistant(xmlImagenEpos(mozo));
-        await new Promise((r) => setTimeout(r, 700));
-        await imprimirBoucherTmAssistant(xmlImagenEpos(cocinaImg));
-        return;
-      }
-      const trabajos = [];
-      if (ipCaja) trabajos.push({ nombre: 'Caja', ip: ipCaja, xml: xmlImagenEpos(mozo) });
-      if (ipCocina) trabajos.push({ nombre: 'Cocina', ip: ipCocina, xml: xmlImagenEpos(cocinaImg) });
-      const resultados = await Promise.all(trabajos.map(async (job) => {
-        try {
-          await imprimirEposEnIp(job.ip, job.xml);
-          return { ...job, ok: true };
-        } catch (e) {
-          return { ...job, ok: false, error: e?.message || 'Error' };
-        }
-      }));
-      const lineas = [];
-      if (!ipCaja) lineas.push('Caja sin IP: no salió el ticket de precios.');
-      if (!ipCocina) lineas.push('Cocina sin IP: no salió el ticket de cocina.');
-      resultados.forEach((r) => {
-        if (!r.ok) lineas.push(`${r.nombre} (${r.ip}): ${r.error}`);
-      });
-      if (lineas.length) Alert.alert('Impresión', lineas.join('\n'));
-    } catch (err) {
-      Alert.alert('Error', 'No se pudo armar el ticket con el mismo formato de cocina.');
-    }
-  };
+  const enviarTicketsMozoYCocina = (incluirPagados, listaComandas) => imprimirTicketsMozoYCocina({
+    rasterizar: (payload) => rasterTicketRef.current?.rasterizar(payload),
+    comandas: listaComandas,
+    platos: todosLosPlatos,
+    mesa,
+    incluirPagados,
+    configMoneda,
+  });
 
   const continuarImpresion = (lista) => {
     const ids = new Set((lista || []).map((c) => String(c._id)));
@@ -3043,19 +2993,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     );
   };
 
-  const handleImprimirDetalle = () => {
-    if (!todosLosPlatos.length) {
-      Alert.alert('Sin platos', 'No hay platos para imprimir.');
-      return;
-    }
-    if ((comandas || []).length > 1) {
-      setIdsImpresion((comandas || []).map((c) => String(c._id)));
-      setModalElegirImpresion(true);
-      return;
-    }
-    continuarImpresion(comandas);
-  };
-
   const confirmarImpresionElegida = () => {
     const lista = (comandas || []).filter((c) => idsImpresion.includes(String(c._id)));
     if (!lista.length) {
@@ -3075,7 +3012,6 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         comanda={comandaPrincipal}
         comandas={comandas}
         onSync={refrescarComandas}
-        onImprimir={handleImprimirDetalle}
         navigation={navigation}
         connectionStatus={localConnectionStatus}
         isConnected={connected}

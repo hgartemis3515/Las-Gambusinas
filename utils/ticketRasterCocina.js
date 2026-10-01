@@ -31,6 +31,23 @@ function celdaMeta(label, value) {
   </td>`;
 }
 
+function textoMesaTicket(mesa) {
+  const s = String(mesa ?? '').trim();
+  if (!s || s === '—' || s === '-') return '—';
+  if (/^sin mesa$/i.test(s)) return s;
+  if (/^m/i.test(s)) return s;
+  return `M${s}`;
+}
+
+function celdaLlena(value) {
+  const texto = String(value || '—');
+  const n = texto.length;
+  const size = n <= 4 ? 32 : n <= 9 ? 24 : n <= 16 ? 18 : 14;
+  return `<td style="width:50%;height:52px;padding:0 2px;border:1px solid #000;vertical-align:middle;text-align:center;">
+    <div style="font-size:${size}px;font-weight:800;line-height:1.05;text-align:center;word-break:break-word;">${esc(texto)}</div>
+  </td>`;
+}
+
 /** Cuerpo idéntico a generarHtmlTicketCocina. cocina=false quita el cuadrado. */
 function htmlCuerpo(datos) {
   const d = datos || {};
@@ -58,7 +75,7 @@ function htmlCuerpo(datos) {
   html += `<div style="text-align:left;font-size:14px;font-weight:800;letter-spacing:1px;line-height:1.1;">${cocina ? 'COCINA' : 'CAJA'}</div>`;
   html += `<div style="text-align:center;font-size:22px;font-weight:800;letter-spacing:0.5px;line-height:1.15;padding:4px 0 6px;">${esc(d.letrero || '#—')}</div>`;
   html += `<table style="width:100%;border-collapse:collapse;margin-bottom:6px;">
-    <tr>${celdaMeta('Mozo', String(d.mozo || '').toLocaleUpperCase('es-PE'))}${celdaMeta('Mesa', d.mesa)}</tr>
+    <tr>${celdaLlena(String(d.mozo || '—').toLocaleUpperCase('es-PE'))}${celdaLlena(textoMesaTicket(d.mesa).toLocaleUpperCase('es-PE'))}</tr>
     <tr>${celdaMeta('Fecha', d.fecha)}${celdaMeta('Área', d.area)}</tr>
   </table>`;
   html += `<table style="width:100%;border-collapse:collapse;font-size:11px;">

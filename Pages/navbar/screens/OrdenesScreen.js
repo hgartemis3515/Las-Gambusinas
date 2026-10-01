@@ -49,6 +49,8 @@ import { calcularPrecioUnitarioConComplementos, textoOpcionComplemento, camposSn
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
 import configuracionService from "../../../services/configuracionService";
+import RasterTicketCocina from "../../../utils/ticketRasterCocina";
+import { imprimirTicketsMozoYCocina, platosPlanosParaTicket } from "../../../utils/imprimirTicketsTermicos";
 import { estadoMesaLocalTrasCrearComanda } from "../../../utils/reservasMozo";
 import { colorEstadoMesa, etiquetaEstadoMesa } from "../../../utils/estadoMesaMozo";
 import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
@@ -316,6 +318,7 @@ const OrdenesScreen = ({ route }) => {
   const selectedPlatosRef = useRef([]);
   const cantidadesRef = useRef({});
   const armadoIniciadoEnRef = useRef(null);
+  const rasterTicketRef = useRef(null);
   selectedPlatosRef.current = selectedPlatos;
   cantidadesRef.current = cantidades;
 
@@ -1231,7 +1234,35 @@ const OrdenesScreen = ({ route }) => {
     let mesaActualizada = selectedMesa;
     const platosEnvio = selectedPlatosRef.current;
     const cantidadesEnvio = cantidadesRef.current;
+    const imprimirTrasEnvio = async (creada) => {
+      try {
+        let doc = creada;
+        const id = doc?._id;
+        const linea = doc?.platos?.[0];
+        const tieneNombre = linea?.plato?.nombre || linea?.nombre || linea?.nombreCocinaPedido;
+        if (id && !tieneNombre) {
+          const url = apiConfig.isConfigured
+            ? apiConfig.getEndpoint(`/comanda/${id}`)
+            : `${COMANDA_API}/${id}`;
+          const res = await axios.get(url, { timeout: 8000 });
+          doc = res.data?.comanda || res.data || doc;
+        }
+        if (!doc?._id || !rasterTicketRef.current) return;
+        await imprimirTicketsMozoYCocina({
+          rasterizar: (payload) => rasterTicketRef.current.rasterizar(payload),
+          comandas: [doc],
+          platos: platosPlanosParaTicket([doc]),
+          mesa: doc.mesas || mesaActualizada,
+          incluirPagados: false,
+          configMoneda,
+        });
+      } catch (e) {
+        Alert.alert('Impresión', e?.message || 'La orden se envió, pero no se pudo imprimir.');
+      }
+    };
+
     const finalizarEnvioExitoso = async (creada) => {
+      await imprimirTrasEnvio(creada);
       const esEnvioReserva = !!(reservaActiva || creada?.origenReserva);
       if (!esSinMesaOrden && mesaActualizada?._id) {
         const estadoLocal = estadoMesaLocalTrasCrearComanda(
@@ -1716,6 +1747,7 @@ const OrdenesScreen = ({ route }) => {
 
   return (
     <SafeAreaView style={styles.container} edges={[]}>
+      <RasterTicketCocina ref={rasterTicketRef} />
       <ScrollView style={styles.scrollView} contentContainerStyle={orientation.isLandscape ? styles.scrollViewContentLandscape : null}>
         <View style={styles.header}>
           <MaterialCommunityIcons name="notebook-edit" size={orientation.isLandscape ? 28 : 32} color={theme.colors.text.white} />
