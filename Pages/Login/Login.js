@@ -479,7 +479,7 @@ const Login = () => {
       return;
     }
     const dniDigits = dni.replace(/\D/g, "");
-    if (!dni.trim() || dniDigits.length < 8) {
+    if (!/^\d{6,8}$/.test(dniDigits)) {
       setError({ nombre: false, dni: true });
       return;
     }
@@ -817,7 +817,7 @@ const Login = () => {
               <AnimatedInput
                 label="DNI"
                 icon="card-account-details"
-                placeholder="8 dígitos"
+                placeholder="DNI o clave"
                 value={dni}
                 onChangeText={(text) => {
                   setDni(text);
