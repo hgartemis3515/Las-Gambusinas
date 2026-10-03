@@ -45,6 +45,12 @@ export function mesaOcupadaPorOtroMozo(comandas, mozoId) {
   return dueno !== yo;
 }
 
+export function mozoAsignadoEnComandas(comandas, mozoId) {
+  const yo = idEntidad(mozoId);
+  if (!yo) return false;
+  return vigentes(comandas).some((c) => (idEntidad(c.mozos) || idEntidad(c.mozo)) === yo);
+}
+
 export function mensajeMesaOtroMozo(estado) {
   const etiqueta = String(estado || 'ocupada');
   return `Solo el mozo que creó esta comanda puede realizar acciones en esta mesa cuando está en estado '${etiqueta}'.`;

@@ -63,6 +63,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, numeroComandaVisible } from '../../../utils/comandaHelpers';
 import { reducirRespuestasCicloMesa } from '../../../utils/cicloComandasMesa';
 import { mesaOcupadaPorOtroMozo, mensajeMesaOtroMozo } from '../../../utils/accesoMesaMozo';
+import { etiquetaMesa, mesaSoloAdmin, mesaBloqueada, coloresBarraEspecial } from '../../../utils/mesaEspecial';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
@@ -453,6 +454,8 @@ const MesaAnimada = React.memo(({
       mozoLabel = partes[0] || t;
     }
   }
+  const tituloMesa = etiquetaMesa(mesa);
+  const nombreLargo = tituloMesa.length > 6;
 
   return (
     <GestureDetector gesture={tapGesture}>
@@ -475,6 +478,20 @@ const MesaAnimada = React.memo(({
           },
         ]}
       >
+        {mesa.especial || coloresBarraEspecial(mesa) ? (
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 8, flexDirection: 'row', zIndex: 2 }}>
+            <View style={{ flex: 1, backgroundColor: (coloresBarraEspecial(mesa) || ['#D4AF37', '#7A1F2B'])[0] }} />
+            <View style={{ flex: 1, backgroundColor: (coloresBarraEspecial(mesa) || ['#D4AF37', '#7A1F2B'])[1] }} />
+          </View>
+        ) : null}
+        {mesaBloqueada(mesa) ? (
+          <MaterialCommunityIcons
+            name="lock"
+            size={Math.max(12, mesaSize * 0.16)}
+            color={theme.colors.text.white}
+            style={{ position: 'absolute', top: 10, right: 4, zIndex: 3 }}
+          />
+        ) : null}
         {/* Checkbox de selección (modo selección) */}
         {modoSeleccion && (
           <Animated.View style={[styles.mesaCheckbox, checkAnimatedStyle]}>
@@ -500,10 +517,11 @@ const MesaAnimada = React.memo(({
           </View>
         )}
         
-        <Text style={[styles.mesaNumber, { fontSize: mesaSize * 0.25, marginBottom: apodo ? 0 : 4, zIndex: 1, color: alertaSalio ? '#9A3412' : theme.colors.text.white }]}>
-          {(mesa.nombreCombinado && String(mesa.nombreCombinado).trim()) ||
-            (mesa.nombre && String(mesa.nombre).trim()) ||
-            (mesa.nummesa != null && mesa.nummesa !== "" ? `M${mesa.nummesa}` : "Mesa")}
+        <Text
+          style={[styles.mesaNumber, { fontSize: nombreLargo ? mesaSize * 0.16 : mesaSize * 0.25, marginBottom: apodo ? 0 : 4, zIndex: 1, color: alertaSalio ? '#9A3412' : theme.colors.text.white }]}
+          numberOfLines={1}
+        >
+          {etiquetaMesa(mesa)}
         </Text>
         {apodo ? (
           <Text
@@ -556,6 +574,8 @@ const InicioScreen = () => {
   const [permitirEditarEliminarTomadas, setPermitirEditarEliminarTomadas] = useState(false);
   // PLAN_RESERVAS_MOZOS_CAJA_KDS v1.1: toggle del botón Reservar (config.reservas.permitirCrearDesdeMozos)
   const [reservasHabilitadoMozos, setReservasHabilitadoMozos] = useState(true);
+  const [mesaAutorizar, setMesaAutorizar] = useState(null);
+  const [autorizandoMesa, setAutorizandoMesa] = useState(false);
 
   // Cargar flags de configuración del sistema
   useEffect(() => {
@@ -1088,16 +1108,14 @@ const InicioScreen = () => {
       const index = prev.findIndex((m) => {
         const mId = m._id?.toString ? m._id.toString() : m._id;
         const mesaId = mesa._id?.toString ? mesa._id.toString() : mesa._id;
-        return mId === mesaId || m.nummesa === mesa.nummesa;
+        if (mId && mesaId && String(mId) === String(mesaId)) return true;
+        return mesa.nummesa != null && m.nummesa != null && m.nummesa === mesa.nummesa;
       });
       if (index === -1) {
         return ordenarMesasPorNumero([...prev, mesa]);
       }
       const mesaAnterior = prev[index];
       const nuevoEstado = mesa.estado != null ? mesa.estado : mesaAnterior.estado;
-      if (String(mesaAnterior.estado || '') === String(nuevoEstado || '')) {
-        return prev;
-      }
       const nuevas = [...prev];
       nuevas[index] = { ...mergeMesaServidorPatch(mesaAnterior, mesa), estado: nuevoEstado };
       return nuevas;
@@ -1408,8 +1426,8 @@ const InicioScreen = () => {
       if (numA !== Infinity && numB === Infinity) return -1;
       
       // Si ambos no tienen número, ordenar alfabéticamente por nombre
-      const nombreA = (a.nombre || a.nummesa || '').toString();
-      const nombreB = (b.nombre || b.nummesa || '').toString();
+      const nombreA = (a.nombreMesa || a.nombre || a.nummesa || '').toString();
+      const nombreB = (b.nombreMesa || b.nombre || b.nummesa || '').toString();
       return nombreA.localeCompare(nombreB);
     });
   }, []);
@@ -1716,7 +1734,10 @@ const InicioScreen = () => {
     // El backend podía enviar "libre" erróneamente (bloque legacy en cambiarEstadoPlato, ya corregido).
     // Defensivamente: si hay comandas activas con TODOS sus platos entregados (status 'entregado'),
     // forzamos "Entregado" aunque el backend diga "libre".
-    const comandasMesaParaFix = getComandasPorMesa(mesa.nummesa);
+    const comandasPorNumero = getComandasPorMesa(mesa.nummesa);
+    const comandasMesaParaFix = comandasPorNumero.length
+      ? comandasPorNumero
+      : getComandasActivasPorMesaId(mesa);
     const estadoMesaSrv = (mesa.estado || '').toLowerCase();
     const hayComandasEntregadasFix = comandasMesaParaFix.some(c => {
       if (!c || c.IsActive === false) return false;
@@ -1726,12 +1747,20 @@ const InicioScreen = () => {
       const activos = c.platos.filter(p => p.eliminado !== true && p.anulado !== true);
       return activos.length > 0 && activos.every(p => (p.estado || '').toLowerCase() === 'entregado');
     });
-    if (estadoMesaSrv !== 'libre' && estadoMesaSrv !== 'pagado' && estadoMesaSrv !== 'pagando' && hayComandasEntregadasFix) {
+    if (
+      estadoMesaSrv !== 'libre'
+      && estadoMesaSrv !== 'pagado'
+      && estadoMesaSrv !== 'pagando'
+      && estadoMesaSrv !== 'pendiente_aprobar'
+      && estadoMesaSrv !== 'reportado'
+      && hayComandasEntregadasFix
+    ) {
       const algunaActiva = comandasMesaParaFix.some(c => {
         const status = (c.status || '').toLowerCase();
         return c.IsActive !== false && !['pagado', 'completado', 'cancelado', 'cerrado'].includes(status);
       });
       if (algunaActiva) {
+        if (mesa.especial === true && estadoMesaSrv === 'entregado') return "Pendiente de aprobación";
         return "Entregado";
       }
     }
@@ -1787,6 +1816,7 @@ const InicioScreen = () => {
 
     // Prioridad 1.5: si la mesa está en "entregado" (todos los platos entregados, listo para cobrar)
     if (mesa.estado && mesa.estado.toLowerCase() === "entregado") {
+      if (mesa.especial === true) return "Pendiente de aprobación";
       return "Entregado";
     }
 
@@ -1864,6 +1894,7 @@ const InicioScreen = () => {
         }
         // Si hay comandas entregadas (listas para pagar), mostrar Entregado (verde) para distinguir de Preparado
         if (hayComandasEntregadas) {
+          if (mesa.especial === true && estadoLower === 'entregado') return "Pendiente de aprobación";
           return "Entregado";
         }
       }
@@ -2112,8 +2143,62 @@ const InicioScreen = () => {
     </TouchableOpacity>
   );
 
+  const autorizarMesaEspecial = async () => {
+    const mesa = mesaAutorizar;
+    if (!mesa?._id || autorizandoMesa) return;
+    setAutorizandoMesa(true);
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      const url = apiConfig.isConfigured
+        ? `${apiConfig.getEndpoint('/mesas')}/${mesa._id}/autorizar-uso`
+        : `${getFallbackApiBase()}/mesas/${mesa._id}/autorizar-uso`;
+      const res = await axios.post(url, {}, {
+        timeout: 8000,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const doc = res.data?.mesa || {};
+      const actualizada = {
+        ...mesa,
+        ...doc,
+        usoEspecial: doc.usoEspecial || { ...(mesa.usoEspecial || {}), bloqueada: false },
+      };
+      setMesas((prev) => prev.map((m) => (
+        String(m._id) === String(mesa._id) ? { ...m, ...actualizada } : m
+      )));
+      setMesaAutorizar(null);
+      setMesaSeleccionada(actualizada);
+    } catch (e) {
+      Alert.alert(
+        'No se pudo autorizar',
+        e.response?.data?.error || e.response?.data?.message || 'Intenta de nuevo'
+      );
+    } finally {
+      setAutorizandoMesa(false);
+    }
+  };
+
   const handleSelectMesa = async (mesa) => {
+    const rol = String(userInfo?.rol || '').toLowerCase();
+    const estadoCrudoBloqueo = String(mesa?.estado || '').toLowerCase();
+    const mesaLibreBloqueo = !estadoCrudoBloqueo || estadoCrudoBloqueo === 'libre' || estadoCrudoBloqueo === 'esperando';
+    if (mesaBloqueada(mesa) && mesaLibreBloqueo) {
+      if (rol !== 'admin') {
+        Alert.alert('Mesa bloqueada', 'Un administrador debe autorizar el uso de esta mesa.');
+        return;
+      }
+      setMesaAutorizar(mesa);
+      return;
+    }
+    const estadoCrudo = String(mesa?.estado || '').toLowerCase();
+    const mesaLibre = !estadoCrudo || estadoCrudo === 'libre' || estadoCrudo === 'esperando';
+    if (mesaSoloAdmin(mesa) && rol !== 'admin' && mesaLibre) {
+      Alert.alert('Mesa de administrador', 'Solo un administrador puede abrir esta mesa.');
+      return;
+    }
+
     const estado = getEstadoMesa(mesa);
+    const pagarTodoJunto = estado === "Pendiente de aprobación" && estadoCrudo === "entregado";
+    const adminMesaEspecial = mesa?.especial === true && rol === "admin";
 
     if (estado === "Espera...") {
       const reservaEspera = elegirReservaEspera(reservas, mesa, userInfo?._id);
@@ -2231,7 +2316,7 @@ const InicioScreen = () => {
         mesa: mesa,
         comandas: comandasActivas,
       });
-    } else if (estado === "Preparado" || estado === "Entregado" || estado?.toLowerCase() === "preparado" || estado?.toLowerCase() === "entregado") {
+    } else if (pagarTodoJunto || estado === "Preparado" || estado === "Entregado" || estado?.toLowerCase() === "preparado" || estado?.toLowerCase() === "entregado") {
       // Obtener TODAS las comandas activas de la mesa (no solo las preparadas)
       // Nota: "Entregado" se trata igual que "Preparado" — el mozo puede ver platos y pagar.
       let comandasMesa = await fetchComandasCicloMesa(mesa);
@@ -2263,7 +2348,7 @@ const InicioScreen = () => {
         const comandasBackend = await obtenerComandasMesa(mesa._id);
         
         if (comandasBackend && comandasBackend.length > 0) {
-          if (mesaOcupadaPorOtroMozo(comandasBackend, userInfo?._id)) {
+          if (!adminMesaEspecial && mesaOcupadaPorOtroMozo(comandasBackend, userInfo?._id)) {
             setMesaSeleccionada(null);
             Alert.alert(
               "Acceso Denegado",
@@ -2287,7 +2372,7 @@ const InicioScreen = () => {
         return;
       }
       
-      if (mesaOcupadaPorOtroMozo(comandasOrdenadas, userInfo?._id)) {
+      if (!adminMesaEspecial && mesaOcupadaPorOtroMozo(comandasOrdenadas, userInfo?._id)) {
         setMesaSeleccionada(null);
         Alert.alert(
           "Acceso Denegado",
@@ -2439,7 +2524,7 @@ const InicioScreen = () => {
           }
         ]
       );
-    } else if (estado === "Pendiente de aprobación" || estado?.toLowerCase() === "pendiente_aprobar") {
+    } else if (!pagarTodoJunto && (estado === "Pendiente de aprobación" || estado?.toLowerCase() === "pendiente_aprobar")) {
       const comandasPendiente = await fetchComandasCicloMesa(mesa);
       if (mesaOcupadaPorOtroMozo(comandasPendiente, userInfo?._id)) {
         setMesaSeleccionada(null);
@@ -6497,6 +6582,41 @@ const InicioScreen = () => {
                 }}
               >
                 <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Autorizar mesa especial */}
+      <Modal
+        animationType="fade"
+        transparent
+        visible={!!mesaAutorizar}
+        onRequestClose={() => { if (!autorizandoMesa) setMesaAutorizar(null); }}
+      >
+        <View style={styles.modalBackground}>
+          <View style={[styles.modalContainer, { minHeight: 0, maxWidth: 420, padding: 20 }]}>
+            <Text style={[styles.modalTitle, { marginBottom: 8 }]}>
+              {mesaAutorizar ? etiquetaMesa(mesaAutorizar) : 'Mesa'}
+            </Text>
+            <Text style={{ color: theme.colors?.text?.secondary || '#666', fontSize: 15, marginBottom: 20 }}>
+              Autoriza el uso de esta mesa. Se vuelve a bloquear cuando el pago total quede hecho.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity
+                style={[styles.cancelButton, { minHeight: 56 }]}
+                onPress={() => setMesaAutorizar(null)}
+                disabled={autorizandoMesa}
+              >
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveButton, { minHeight: 56, backgroundColor: '#7A1F2B' }]}
+                onPress={autorizarMesaEspecial}
+                disabled={autorizandoMesa}
+              >
+                <Text style={styles.saveButtonText}>{autorizandoMesa ? 'Autorizando…' : 'Autorizar uso'}</Text>
               </TouchableOpacity>
             </View>
           </View>

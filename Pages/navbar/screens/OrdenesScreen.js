@@ -38,6 +38,7 @@ import * as Haptics from "expo-haptics";
 import ModalComplementos from "../../../Components/ModalComplementos";
 import MenuPlatosSheet from "../../../Components/MenuPlatosSheet";
 import BotonEnviarOrden from "../../../Components/BotonEnviarOrden";
+import { esMesaEspecial, esMesaInvitados, mesaBloqueada, mesaPermiteDescuentoAdmin } from "../../../utils/mesaEspecial";
 import { resolverPlatoConGrupos, guarnicionesElegidas, cantidadGuarnicionEfectiva, mismasGuarniciones, preseleccionComplementosDePlato, platoEditableEnOrdenes, resolverPartesComplementos } from "../../../utils/platoGuarniciones";
 import { fusionarGuarnicionesPreseleccionadasEnLista } from "../../../utils/unidadesComplemento";
 import { hidratarUnidadesDesdeLineas, cantidadDeLinea } from "../../../utils/unidadesComplemento";
@@ -289,6 +290,10 @@ const OrdenesScreen = ({ route }) => {
   
   const [userInfo, setUserInfo] = useState(null);
   const [selectedMesa, setSelectedMesa] = useState(null);
+  const [mozosEspecial, setMozosEspecial] = useState([]);
+  const [mozoElegidoEspecial, setMozoElegidoEspecial] = useState(null);
+  const [mostrarMozosEspecial, setMostrarMozosEspecial] = useState(false);
+  const [descuentoEspecial, setDescuentoEspecial] = useState("");
   const [mesas, setMesas] = useState([]);
   const [modalMesasVisible, setModalMesasVisible] = useState(false);
   const [modalPlatosVisible, setModalPlatosVisible] = useState(false);
@@ -690,6 +695,33 @@ const OrdenesScreen = ({ route }) => {
       console.error("Error cargando platos seleccionados:", error);
     }
   };
+
+  useEffect(() => {
+    if (!esMesaEspecial(selectedMesa)) {
+      setMozosEspecial([]);
+      setMozoElegidoEspecial(null);
+      setDescuentoEspecial("");
+      setMostrarMozosEspecial(false);
+      return undefined;
+    }
+    let cancel = false;
+    (async () => {
+      try {
+        const url = apiConfig.isConfigured
+          ? apiConfig.getEndpoint("/mozos")
+          : `${getFallbackApiBase()}/mozos`;
+        const res = await axios.get(url, { timeout: 8000 });
+        const lista = (Array.isArray(res.data) ? res.data : []).filter((m) => {
+          const rol = String(m?.rol || "").toLowerCase();
+          return m && m.activo !== false && rol !== "cocinero";
+        });
+        if (!cancel) setMozosEspecial(lista);
+      } catch (e) {
+        if (!cancel) setMozosEspecial([]);
+      }
+    })();
+    return () => { cancel = true; };
+  }, [selectedMesa?._id, selectedMesa?.especial]);
 
   const fetchMesas = async () => {
     try {
@@ -1228,6 +1260,78 @@ const OrdenesScreen = ({ route }) => {
   const decimalesOrden = configMoneda?.decimales ?? 2;
   const igvPctOrden = configMoneda?.igvPorcentaje ?? 18;
   const nombreImpuestoOrden = configMoneda?.nombreImpuestoPrincipal || 'IGV';
+  const mesaEspecialOrden = esMesaEspecial(selectedMesa);
+  const mesaInvitados = esMesaInvitados(selectedMesa);
+  const esAdminOrden = String(userInfo?.rol || "").toLowerCase() === "admin";
+  const mostrarMozoDescuento = mesaEspecialOrden && !mesaInvitados && esAdminOrden;
+  const puedeDescuentoEspecial = mostrarMozoDescuento && mesaPermiteDescuentoAdmin(selectedMesa);
+  const montoDescuentoEspecial = puedeDescuentoEspecial
+    ? Math.min(
+      Math.max(0, Number(String(descuentoEspecial).replace(",", ".")) || 0),
+      Number(totalesOrden.total) || 0
+    )
+    : 0;
+  const totalConDescuentoEspecial = Math.max(0, (Number(totalesOrden.total) || 0) - montoDescuentoEspecial);
+  const nombreMozoEspecial = mozoElegidoEspecial?.name || "Elegir mozo";
+
+  const renderControlesMesaEspecial = () => {
+    if (!mostrarMozoDescuento) return null;
+    return (
+      <View style={styles.especialCaja}>
+        <TouchableOpacity
+          style={styles.especialFila}
+          onPress={() => setMostrarMozosEspecial(true)}
+          accessibilityLabel="Elegir mozo"
+        >
+          <Text style={styles.especialLabel}>Mozo</Text>
+          <Text style={styles.especialValor} numberOfLines={1}>{nombreMozoEspecial}</Text>
+        </TouchableOpacity>
+        {puedeDescuentoEspecial ? (
+          <View style={styles.especialFila}>
+            <Text style={styles.especialLabel}>Descuento</Text>
+            <TextInput
+              style={styles.especialInput}
+              value={descuentoEspecial}
+              onChangeText={setDescuentoEspecial}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
+              placeholderTextColor={theme.colors.text.light}
+              accessibilityLabel="Monto de descuento"
+            />
+          </View>
+        ) : null}
+        <Modal
+          visible={mostrarMozosEspecial}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setMostrarMozosEspecial(false)}
+        >
+          <View style={styles.mozoModalFondo}>
+            <View style={styles.mozoModalCaja}>
+              <Text style={styles.mozoModalTitulo}>Elegir mozo</Text>
+              <ScrollView style={{ maxHeight: 360 }}>
+                {mozosEspecial.map((m) => (
+                  <TouchableOpacity
+                    key={String(m._id)}
+                    style={styles.mozoFila}
+                    onPress={() => {
+                      setMozoElegidoEspecial(m);
+                      setMostrarMozosEspecial(false);
+                    }}
+                  >
+                    <Text style={styles.mozoFilaTexto}>{m.name || "Mozo"}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <TouchableOpacity style={styles.mozoCerrar} onPress={() => setMostrarMozosEspecial(false)}>
+                <Text style={styles.mozoCerrarTexto}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </View>
+    );
+  };
 
   const renderTotalesOrden = (landscape) => (
     <View style={[styles.totalSection, landscape && styles.totalSectionLandscape]}>
@@ -1247,7 +1351,7 @@ const OrdenesScreen = ({ route }) => {
         <View style={styles.totalBreakdownRow}>
           <Text style={styles.totalLabel}>TOTAL</Text>
           <Text style={styles.totalText}>
-            {simboloOrden} {Number(totalesOrden.total || 0).toFixed(decimalesOrden)}
+            {simboloOrden} {totalConDescuentoEspecial.toFixed(decimalesOrden)}
           </Text>
         </View>
       </View>
@@ -1420,7 +1524,9 @@ const OrdenesScreen = ({ route }) => {
       setMostrarOverlayCarga(true);
       setMensajeCarga("Enviando...");
 
-      const tipoServicioEnvio = esSinMesaOrden
+      const tipoServicioEnvio = (mesaEspecialOrden || mesaInvitados)
+        ? TIPO_MESA
+        : esSinMesaOrden
         ? TIPO_PARA_LLEVAR
         : (modoExtraLlevar || tipoServicioModal === TIPO_EXTRA_LLEVAR)
           ? TIPO_EXTRA_LLEVAR
@@ -1430,7 +1536,9 @@ const OrdenesScreen = ({ route }) => {
         plato: plato._id,
         platoId: plato.id || null,
         estado: "pedido",
-        tipoServicio: esSinMesaOrden ? TIPO_PARA_LLEVAR : (plato.tipoServicio || tipoServicioEnvio),
+        tipoServicio: (mesaEspecialOrden || mesaInvitados)
+          ? TIPO_MESA
+          : (esSinMesaOrden ? TIPO_PARA_LLEVAR : (plato.tipoServicio || tipoServicioEnvio)),
         tipoPedido: slugTipoPedido(plato.tipoPedido),
         complementosSeleccionados: fusionarGuarnicionesPreseleccionadasEnLista(
           resolverPlatoConGrupos(plato, platos),
@@ -1461,8 +1569,23 @@ const OrdenesScreen = ({ route }) => {
         marcarInicioArmado();
       }
       const t0Armado = armadoIniciadoEnRef.current;
+      if (mesaBloqueada(mesaActualizada)) {
+        setMostrarOverlayCarga(false);
+        setIsSendingComanda(false);
+        Alert.alert('Mesa bloqueada', 'Un administrador debe autorizar esta mesa antes de enviar.');
+        return;
+      }
+      if (mostrarMozoDescuento && !mozoElegidoEspecial?._id) {
+        setMostrarOverlayCarga(false);
+        setIsSendingComanda(false);
+        Alert.alert("Elige un mozo", "Selecciona el mozo de esta mesa antes de enviar.");
+        return;
+      }
+      const mozoIdEnvio = (mostrarMozoDescuento && mozoElegidoEspecial?._id)
+        ? mozoElegidoEspecial._id
+        : userInfo._id;
       const comandaData = {
-        mozos: userInfo._id,
+        mozos: mozoIdEnvio,
         ...(esSinMesaOrden ? { sinMesa: true } : { mesas: mesaActualizada._id }),
         platos: platosData,
         cantidades: cantidadesArray,
@@ -1515,7 +1638,7 @@ const OrdenesScreen = ({ route }) => {
           console.warn("⚠️ No se encontró comanda en respuesta, verificando en backend...");
           const verificacion = await verificarComandaEnBackend(
             esSinMesaOrden ? null : mesaActualizada?._id,
-            userInfo._id,
+            mozoIdEnvio,
             comandaNumber
           );
           
@@ -1546,7 +1669,7 @@ const OrdenesScreen = ({ route }) => {
           setMensajeCarga("Verificando si la comanda se creó...");
           const verificacion = await verificarComandaEnBackend(
             esSinMesaOrden ? null : mesaActualizada?._id,
-            userInfo._id,
+            mozoIdEnvio,
             comandaNumber
           );
           
@@ -1565,6 +1688,27 @@ const OrdenesScreen = ({ route }) => {
         }
       }
       
+      if (mesaEspecialOrden && montoDescuentoEspecial > 0 && comandaCreada?._id) {
+        try {
+          const descUrl = apiConfig.isConfigured
+            ? apiConfig.getEndpoint(`/comanda/${comandaCreada._id}/descuento`)
+            : `${COMANDA_API}/${comandaCreada._id}/descuento`;
+          await axios.put(descUrl, {
+            monto: Number(montoDescuentoEspecial.toFixed(2)),
+            descuento: 0,
+            motivo: "Mesa especial",
+            usuarioId: userInfo._id,
+            usuarioRol: userInfo.rol || "admin",
+            sourceApp: "mozos",
+          }, { timeout: 10000 });
+        } catch (descErr) {
+          Alert.alert(
+            "Descuento",
+            descErr.response?.data?.message || "La orden se envió, pero el descuento no se aplicó."
+          );
+        }
+      }
+
       await finalizarEnvioExitoso(comandaCreada);
     } catch (error) {
       // 🔥 MEJORADO: Verificación exhaustiva antes de mostrar cualquier error
@@ -1575,7 +1719,7 @@ const OrdenesScreen = ({ route }) => {
       if (!es4xx) {
         const verificacionFinal = await verificarComandaEnBackend(
           esSinMesaOrden ? null : mesaActualizada?._id,
-          userInfo?._id
+          (mesaEspecialOrden && mozoElegidoEspecial?._id) ? mozoElegidoEspecial._id : userInfo?._id
         );
         if (verificacionFinal.success) {
           await finalizarEnvioExitoso(verificacionFinal.comanda);
@@ -1973,7 +2117,7 @@ const OrdenesScreen = ({ route }) => {
                         <Text style={styles.cambiarPlatoBtnText}>Cambiar</Text>
                       </TouchableOpacity>
                     ) : null}
-                    {!ocultarParaLlevar && !modoExtraLlevar && !esSeleccionSinMesa(selectedMesa) && (
+                    {!ocultarParaLlevar && !modoExtraLlevar && !esSeleccionSinMesa(selectedMesa) && !(mesaEspecialOrden || mesaInvitados) && (
                     <TouchableOpacity
                       style={[
                         styles.tipoServicioLineaBtn,
@@ -2052,7 +2196,10 @@ const OrdenesScreen = ({ route }) => {
                 numberOfLines={3}
               />
             </View>
-            {renderTotalesOrden(true)}
+            <View style={{ flex: 1 }}>
+              {renderControlesMesaEspecial()}
+              {renderTotalesOrden(true)}
+            </View>
           </View>
         ) : (
           <>
@@ -2068,6 +2215,7 @@ const OrdenesScreen = ({ route }) => {
                 numberOfLines={3}
               />
             </View>
+            {renderControlesMesaEspecial()}
             {renderTotalesOrden(false)}
           </>
         )}
@@ -2212,7 +2360,7 @@ const OrdenesScreen = ({ route }) => {
           aplicarTipoServicioCarrito(v);
         }}
         tipoServicioFijo={esSeleccionSinMesa(selectedMesa) || modoExtraLlevar}
-        ocultarParaLlevar={ocultarParaLlevar}
+        ocultarParaLlevar={ocultarParaLlevar || mesaEspecialOrden || mesaInvitados}
         modoExtraLlevar={modoExtraLlevar}
         searchPlato={searchPlato}
         onSearchChange={handleSearchChangeText}
@@ -2621,6 +2769,86 @@ const OrdenesScreenStyles = (theme, orientation, compacto = COMPACTO_DEFAULT, ac
     justifyContent: "space-between",
     alignItems: "center",
     marginVertical: 2,
+  },
+  especialCaja: {
+    marginHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.sm,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  especialFila: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    minHeight: 48,
+  },
+  especialLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: theme.colors.text.primary,
+  },
+  especialValor: {
+    flex: 1,
+    marginLeft: 12,
+    textAlign: "right",
+    fontSize: 16,
+    fontWeight: "700",
+    color: theme.colors.text.primary,
+  },
+  especialInput: {
+    minWidth: 96,
+    minHeight: 48,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: theme.colors.background || "#F4F4F5",
+    color: theme.colors.text.primary,
+    fontSize: 16,
+    fontWeight: "700",
+    textAlign: "right",
+  },
+  mozoModalFondo: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  mozoModalCaja: {
+    backgroundColor: theme.colors.surface || "#fff",
+    borderRadius: 16,
+    padding: 16,
+    maxHeight: "80%",
+  },
+  mozoModalTitulo: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 8,
+    color: theme.colors.text.primary,
+  },
+  mozoFila: {
+    minHeight: 48,
+    justifyContent: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.08)",
+  },
+  mozoFilaTexto: {
+    fontSize: 16,
+    color: theme.colors.text.primary,
+  },
+  mozoCerrar: {
+    minHeight: 52,
+    marginTop: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mozoCerrarTexto: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: theme.colors.primary,
   },
   totalBreakdownLabel: {
     fontSize: 13,

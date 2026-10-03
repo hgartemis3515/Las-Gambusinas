@@ -1590,7 +1590,7 @@ const PagosScreen = () => {
       );
       return;
     }
-    if (cobroPorCantidad && !(Number(totalBaseCobro) > 0) && !tieneDescuento) {
+    if (cobroPorCantidad && !(Number(totalBaseCobro) > 0) && Number(totalesMaxPago?.total) > 0) {
       Alert.alert("Monto", "Ingresa el monto a cobrar.");
       return;
     }

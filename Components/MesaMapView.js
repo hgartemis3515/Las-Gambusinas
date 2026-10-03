@@ -20,6 +20,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AlertaSalioFondo, { MesaDestelloCaja } from './AlertaSalioFondo';
 import axios from '../config/axiosConfig';
 import { getMesasAPI } from '../apiConfig';
+import { etiquetaMesa, mesaBloqueada, coloresBarraEspecial } from '../utils/mesaEspecial';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -88,8 +89,22 @@ const MesaMapItem = React.memo(({
         }
       ]}
     >
-      <Text style={[styles.mesaNumber, { color: alertaSalio ? '#9A3412' : colores.textColor, zIndex: 1 }]}>
-        {mesa.nombreCombinado || `M${mesa.nummesa}`}
+      {(mesa.especial || coloresBarraEspecial(mesa)) ? (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 8, flexDirection: 'row', zIndex: 2 }}>
+          <View style={{ flex: 1, backgroundColor: (coloresBarraEspecial(mesa) || ['#D4AF37', '#7A1F2B'])[0] }} />
+          <View style={{ flex: 1, backgroundColor: (coloresBarraEspecial(mesa) || ['#D4AF37', '#7A1F2B'])[1] }} />
+        </View>
+      ) : null}
+      {mesaBloqueada(mesa) ? (
+        <MaterialCommunityIcons
+          name="lock"
+          size={14}
+          color={alertaSalio ? '#9A3412' : colores.textColor}
+          style={{ position: 'absolute', top: 10, right: 4, zIndex: 3 }}
+        />
+      ) : null}
+      <Text style={[styles.mesaNumber, { color: alertaSalio ? '#9A3412' : colores.textColor, zIndex: 1 }]} numberOfLines={1}>
+        {etiquetaMesa(mesa)}
       </Text>
       {apodo ? (
         <Text style={[styles.mesaEstado, { color: alertaSalio ? '#9A3412' : colores.textColor, opacity: 0.95, fontStyle: 'italic' }]} numberOfLines={1}>

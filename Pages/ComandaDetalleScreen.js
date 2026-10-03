@@ -35,7 +35,8 @@ import { getFallbackApiBase } from '../config/envDefaults';
 import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparados, validarEliminacionCompleta, obtenerColoresEstadoAdaptados, filtrarComandasActivas, acotarComandasAlCicloActual, rutasComandasSegunEstadoMesa, aplicarPedidoSinVaciar, comandaBloqueadaPorCocina, comandaTomadaPorCocina, platoBloqueadoPorCocina, mensajeBloqueoCocina, obtenerErrorBloqueoCocina, esEstadoPlatoPreCocina, esEstadoPlatoYaPreparados, estadoVisualPlatoDetalle, numeroComandaVisible } from '../utils/comandaHelpers';
 import { reducirRespuestasCicloMesa } from '../utils/cicloComandasMesa';
 import { extraerComandaDeEventoSocket } from '../utils/socketComandaPatch';
-import { mesaOcupadaPorOtroMozo, mensajeMesaOtroMozo } from '../utils/accesoMesaMozo';
+import { mesaOcupadaPorOtroMozo, mensajeMesaOtroMozo, mozoAsignadoEnComandas } from '../utils/accesoMesaMozo';
+import { esMesaEspecial, esMesaInvitados, mesaPermiteDescuentoAdmin } from '../utils/mesaEspecial';
 import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato, mismasGuarniciones, platoEditableEnOrdenes, resolverPartesComplementos } from '../utils/platoGuarniciones';
 import { hidratarUnidadesDesdeLineas, cantidadDeLinea, fusionarGuarnicionesPreseleccionadasEnLista } from '../utils/unidadesComplemento';
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
@@ -52,7 +53,7 @@ import { esSeleccionSinMesa, SELECCION_SIN_MESA } from '../utils/sinMesaOrden';
 import { leerOcultarParaLlevar } from '../utils/ocultarParaLlevar';
 import { esLlevarColor, normalizarTipoServicioLinea } from '../utils/tipoServicio';
 import { msRestantesEntregaAutomatica, formatearCountdownEntrega, tiempoSalioRequiereAncla } from '../utils/entregaAutomatica';
-import { usuarioPuedeAplicarDescuentos, brutoGrupoComandas, montoDescuentoGrupo, montosDescuentoPorComanda, clampMontoDescuento, motivoDescuentoFinal, motivoDescuentoEsValido, comandaTieneDescuentoMozo } from '../utils/descuentoMozo';
+import { brutoGrupoComandas, montoDescuentoGrupo, montosDescuentoPorComanda, clampMontoDescuento, motivoDescuentoFinal, motivoDescuentoEsValido, comandaTieneDescuentoMozo } from '../utils/descuentoMozo';
 import RasterTicketCocina from '../utils/ticketRasterCocina';
 import { imprimirTicketsMozoYCocina } from '../utils/imprimirTicketsTermicos';
 
@@ -1205,7 +1206,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     'esperando', 'pendiente_aprobar', 'pendiente_pago', 'pagando', 'en_espera',
   ].includes(mesaEstadoEfectivo);
   const tieneComandaActiva = comandas.length > 0 && !comandaYaPagada;
-  const esOtroMozo = mesaOcupadaPorOtroMozo(comandas, userInfo?._id);
+  const mesaEspecialDetalle = esMesaEspecial(mesa) || esMesaInvitados(mesa);
+  const adminEnMesaEspecial = mesaEspecialDetalle && String(userInfo?.rol || '').toLowerCase() === 'admin';
+  const esOtroMozo = !adminEnMesaEspecial
+    && !((mesaEspecialDetalle && mozoAsignadoEnComandas(comandas, userInfo?._id)))
+    && mesaOcupadaPorOtroMozo(comandas, userInfo?._id);
   const puedeNuevaComanda = !esOtroMozo && (
     esReservaFlow
     || mesaEnServicio
@@ -1376,7 +1381,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   // Función para agregar un plato sin complementos
   const agregarPlatoSinComplementos = (plato, complementosSeleccionados = [], notaEspecial = '', precioUnitarioV3 = null, extraComplementosV3 = null, cantidadPlatos = 1, tipoServicioOverride = null, metaVariante = null) => {
     const n = Math.max(1, Math.min(99, Number(cantidadPlatos) || 1));
-    const tipoServicio = esSeleccionSinMesa(mesa)
+    const tipoServicio = (esMesaEspecial(mesa) || esMesaInvitados(mesa))
+      ? 'mesa'
+      : esSeleccionSinMesa(mesa)
       ? 'para_llevar'
       : (tipoServicioOverride || (tipoServicioModal === 'para_llevar' ? 'para_llevar' : 'mesa'));
     // Generar un instanceId único para diferenciar el mismo plato con distintos complementos
@@ -1827,7 +1834,11 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // ==================== FUNCIÓN DE DESCUENTO (permiso aplicar-descuentos) ====================
   
-  const puedeAplicarDescuento = usuarioPuedeAplicarDescuentos(userInfo);
+  const puedeAplicarDescuento = String(userInfo?.rol || '').toLowerCase() === 'admin'
+    && (
+      mesaPermiteDescuentoAdmin(mesa)
+      || (comandas || []).some((c) => mesaPermiteDescuentoAdmin(c?.mesas))
+    );
   
   const handleAbrirDescuento = () => {
     if (!puedeAplicarDescuento) {
@@ -3273,7 +3284,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
               <Text style={styles.actionButtonText}>Nueva comanda</Text>
             </TouchableOpacity>
 
-            {puedeExtraLlevar && (
+            {puedeExtraLlevar && !mesaEspecialDetalle && (
             <TouchableOpacity
               style={[
                 styles.actionButton,
@@ -4087,7 +4098,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           setTipoServicioModal(v);
         }}
         tipoServicioFijo={esSeleccionSinMesa(mesa)}
-        ocultarParaLlevar={ocultarParaLlevar}
+        ocultarParaLlevar={ocultarParaLlevar || mesaEspecialDetalle}
         searchPlato={searchPlato}
         onSearchChange={handleSearchChangeEdicion}
         onSearchFocus={() => {}}
