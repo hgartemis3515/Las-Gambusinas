@@ -95,7 +95,7 @@ function htmlCuerpo(datos) {
       : '';
     filas += `<tr class="prod-item">${cuadro}
       <td style="padding:3px 2px;text-align:center;font-weight:700;width:22px;">${esc(p.cant)}</td>
-      <td style="padding:3px 2px;">${esc(p.nombre)}${htmlCambioGuarnicion(p)}</td>
+      <td style="padding:3px 2px;">${esc(p.nombre)}${cocina ? htmlCambioGuarnicion(p) : ''}</td>
       <td style="padding:3px 2px;text-align:right;white-space:nowrap;">${fmt(p.unit)}</td>
       <td style="padding:3px 2px;text-align:right;white-space:nowrap;font-weight:700;">${fmt(line)}</td>
     </tr>`;

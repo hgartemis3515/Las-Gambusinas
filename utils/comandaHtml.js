@@ -217,15 +217,6 @@ export function generarHtmlComanda({ datos, plantilla, serverOrigin }) {
           if (mostrarPrecios) html += '<td></td>';
           html += '</tr>';
         }
-        const cambioG = htmlCambioGuarnicion(prod);
-        if (cambioG) {
-          html += '<tr style="color:#111;font-size:' + (fontSize - 1) + 'px;font-weight:700;">';
-          html += `<td style="padding:0 0 0 10px;">${cambioG}</td>`;
-          html += '<td></td>';
-          if (mostrarPrecios) html += '<td></td>';
-          html += '</tr>';
-        }
-
         // v3.0: fila de resumen agregado si el plato lo activa
         if (prod.mostrarResumenComplementos) {
           const flags = prod.resumenComplementosImpresion || {};
@@ -341,23 +332,6 @@ export function generarHtmlComanda({ datos, plantilla, serverOrigin }) {
 function escapeHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function htmlCambioGuarnicion(plato) {
-  const g = plato?.guarnicionesCambio;
-  const salieron = Array.isArray(g?.salieron) ? g.salieron : [];
-  const entraron = Array.isArray(g?.entraron) ? g.entraron : [];
-  const n = Math.max(salieron.length, entraron.length);
-  const partes = [];
-  for (let i = 0; i < n; i += 1) {
-    const salio = String(salieron[i]?.opcion || salieron[i]?.nombre || '').trim();
-    const entro = String(entraron[i]?.opcion || entraron[i]?.nombre || '').trim();
-    if (!salio && !entro) continue;
-    const izq = salio ? `<s>${escapeHtml(salio)}</s>` : '';
-    const der = entro ? escapeHtml(entro) : '';
-    partes.push(`${izq}${izq && der ? ' → ' : ''}${der}`);
-  }
-  return partes.join('<br/>');
 }
 
 function resolverSubtotalPlatos(datos) {

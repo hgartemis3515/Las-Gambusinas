@@ -54,7 +54,7 @@ import { esLlevarColor, normalizarTipoServicioLinea } from '../utils/tipoServici
 import { msRestantesEntregaAutomatica, formatearCountdownEntrega, tiempoSalioRequiereAncla } from '../utils/entregaAutomatica';
 import { usuarioPuedeAplicarDescuentos, brutoGrupoComandas, montoDescuentoGrupo, montosDescuentoPorComanda, clampMontoDescuento, motivoDescuentoFinal, motivoDescuentoEsValido, comandaTieneDescuentoMozo } from '../utils/descuentoMozo';
 import RasterTicketCocina from '../utils/ticketRasterCocina';
-import { imprimirTicketsMozoYCocina } from '../utils/imprimirTicketsTermicos';
+import { imprimirTicketsMozoYCocina, platosPlanosParaTicket } from '../utils/imprimirTicketsTermicos';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -443,6 +443,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           anuladoAt: platoItem.anuladoAt, // Fecha de anulación
           index: index, // Índice en la comanda original
           complementosSeleccionados: platoItem.complementosSeleccionados || [],
+          guarnicionesCambio: platoItem.guarnicionesCambio || null,
           // NUEVO: Tipo de servicio (Mesa vs Para llevar). Default 'mesa' para comandas antiguas.
           tipoServicio: platoItem.tipoServicio || 'mesa',
           tipoPedido: slugTipoPedido(platoItem.tipoPedido),
@@ -1896,7 +1897,17 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       setModalDescuentoVisible(false);
       setDescuentoMontoInput('');
       setMotivoDescuento('');
-      await refrescarComandas();
+      const docsDescuento = await refrescarComandas();
+      if (rasterTicketRef.current && Array.isArray(docsDescuento) && docsDescuento.length) {
+        await imprimirTicketsMozoYCocina({
+          rasterizar: (payload) => rasterTicketRef.current?.rasterizar(payload),
+          comandas: docsDescuento,
+          platos: platosPlanosParaTicket(docsDescuento),
+          mesa,
+          incluirPagados: false,
+          configMoneda,
+        });
+      }
       const n = targets.length;
       Alert.alert(
         '✅ Descuento Aplicado',
@@ -2232,6 +2243,16 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
       const comandasActualizadas = await refrescarComandas();
       const sinComandasActivas = Array.isArray(comandasActualizadas) && comandasActualizadas.length === 0;
+      if (!sinComandasActivas && rasterTicketRef.current && comandasActualizadas.length) {
+        await imprimirTicketsMozoYCocina({
+          rasterizar: (payload) => rasterTicketRef.current?.rasterizar(payload),
+          comandas: comandasActualizadas,
+          platos: platosPlanosParaTicket(comandasActualizadas),
+          mesa,
+          incluirPagados: false,
+          configMoneda,
+        });
+      }
 
       if (sinComandasActivas) {
         Alert.alert(
