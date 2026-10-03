@@ -25,6 +25,7 @@ export function platosPlanosParaTicket(comandas) {
         comandaId: comanda._id,
         eliminado: platoItem.eliminado === true,
         anulado: platoItem.anulado === true,
+        guarnicionesCambio: platoItem.guarnicionesCambio || null,
         plato,
       });
     });

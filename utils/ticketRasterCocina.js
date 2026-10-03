@@ -32,12 +32,43 @@ function celdaMeta(label, value) {
   </td>`;
 }
 
+function htmlCambioGuarnicion(plato) {
+  const g = plato?.guarnicionesCambio;
+  const salieron = Array.isArray(g?.salieron) ? g.salieron : [];
+  const entraron = Array.isArray(g?.entraron) ? g.entraron : [];
+  const n = Math.max(salieron.length, entraron.length);
+  const partes = [];
+  for (let i = 0; i < n; i += 1) {
+    const salio = String(salieron[i]?.opcion || salieron[i]?.nombre || '').trim();
+    const entro = String(entraron[i]?.opcion || entraron[i]?.nombre || '').trim();
+    if (!salio && !entro) continue;
+    const izq = salio ? `<s>${esc(salio)}</s>` : '';
+    const der = entro ? esc(entro) : '';
+    partes.push(`${izq}${izq && der ? ' → ' : ''}${der}`);
+  }
+  if (!partes.length) return '';
+  return `<div style="font-size:10px;font-weight:700;line-height:1.2;padding-top:1px;">${partes.join('<br/>')}</div>`;
+}
+
 function textoMesaTicket(mesa) {
   const s = String(mesa ?? '').trim();
   if (!s || s === '—' || s === '-') return '—';
   if (/^sin mesa$/i.test(s)) return s;
   if (/^m/i.test(s)) return s;
   return `M${s}`;
+}
+
+function celdaMozoTicket(mozo, cliente) {
+  const texto = String(mozo || '—').toLocaleUpperCase('es-PE');
+  const n = texto.length;
+  const size = n <= 4 ? 26 : n <= 9 ? 20 : n <= 16 ? 15 : 12;
+  const chico = cliente
+    ? `<div style="font-size:9px;font-weight:600;line-height:1.1;padding:1px 2px 0;">${esc(cliente)}</div>`
+    : '';
+  return `<td style="width:50%;padding:0;border:1px solid #000;vertical-align:middle;text-align:center;">
+    ${chico}
+    <div style="font-size:${size}px;font-weight:800;line-height:1;text-align:center;padding:1px 2px;word-break:break-word;">${esc(texto)}</div>
+  </td>`;
 }
 
 function celdaLlena(value) {
@@ -64,7 +95,7 @@ function htmlCuerpo(datos) {
       : '';
     filas += `<tr class="prod-item">${cuadro}
       <td style="padding:3px 2px;text-align:center;font-weight:700;width:22px;">${esc(p.cant)}</td>
-      <td style="padding:3px 2px;">${esc(p.nombre)}</td>
+      <td style="padding:3px 2px;">${esc(p.nombre)}${htmlCambioGuarnicion(p)}</td>
       <td style="padding:3px 2px;text-align:right;white-space:nowrap;">${fmt(p.unit)}</td>
       <td style="padding:3px 2px;text-align:right;white-space:nowrap;font-weight:700;">${fmt(line)}</td>
     </tr>`;
@@ -74,10 +105,19 @@ function htmlCuerpo(datos) {
   const thCuadro = cocina ? '<th style="width:18px;border-bottom:1px solid #000;"></th>' : '';
   let html = '';
   html += `<div style="text-align:left;font-size:14px;font-weight:800;letter-spacing:1px;line-height:1.1;">${cocina ? 'COCINA' : 'CAJA'}</div>`;
+  const clienteTicket = String(d.clienteNombre || '').trim();
+  const esReserva = d.reserva === true;
+  const tipoTicket = tipoCuadroTicket(d.platos, {
+    sinMesa: d.sinMesa === true || /^sin mesa$/i.test(String(d.mesa || '')),
+    reserva: esReserva,
+  });
   html += `<div style="text-align:center;font-size:22px;font-weight:800;letter-spacing:0.5px;line-height:1.15;padding:4px 0 6px;">${esc(d.letrero || '#—')}</div>`;
+  if (d.anulacion) {
+    html += `<div style="text-align:center;font-size:13px;font-weight:700;line-height:1.35;padding:0 0 6px;">${esc(d.anulacion.usuario)}<br/>${esc(d.anulacion.hora)}<br/>${esc(d.anulacion.motivo)}</div>`;
+  }
   html += `<table style="width:100%;border-collapse:collapse;margin-bottom:6px;">
-    <tr>${celdaLlena(String(d.mozo || '—').toLocaleUpperCase('es-PE'))}${celdaLlena(textoMesaTicket(d.mesa).toLocaleUpperCase('es-PE'))}</tr>
-    <tr>${celdaMeta('Fecha', d.fecha)}${celdaMeta('Tipo', tipoCuadroTicket(d.platos, { sinMesa: d.sinMesa === true || /^sin mesa$/i.test(String(d.mesa || '')) }))}</tr>
+    <tr>${celdaMozoTicket(d.mozo, clienteTicket)}${celdaLlena(textoMesaTicket(d.mesa).toLocaleUpperCase('es-PE'))}</tr>
+    <tr>${celdaMeta(esReserva && d.fechaAtencion ? 'Atención' : 'Fecha', esReserva && d.fechaAtencion ? d.fechaAtencion : d.fecha)}${celdaMeta('Tipo', tipoTicket)}</tr>
   </table>`;
   html += `<table style="width:100%;border-collapse:collapse;font-size:11px;">
     <thead><tr>
@@ -94,6 +134,9 @@ function htmlCuerpo(datos) {
     html += `<div style="text-align:right;padding:4px 0 0;font-size:11px;">Descuento${mot}: -${esc(simbolo)}${fmt(desc)}</div>`;
   }
   html += `<div style="text-align:right;font-size:14px;font-weight:800;padding:4px 0 2px;border-top:1px solid #000;margin-top:4px;">TOTAL ${esc(simbolo)}${fmt(neto)}</div>`;
+  if (d.anulacion) {
+    html += `<div style="text-align:center;font-size:26px;font-weight:900;letter-spacing:1px;padding:10px 0 2px;">ANULADO X</div>`;
+  }
   return html;
 }
 
