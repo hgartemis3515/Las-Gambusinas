@@ -67,7 +67,7 @@ import { etiquetaMesa, mesaSoloAdmin, mesaBloqueada, coloresBarraEspecial } from
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../../../utils/verificarEstadoComanda';
 // Hook catálogo de tipos de plato (dinámico desde backend)
 import useTiposPlato from "../../../hooks/useTiposPlato";
-import { resolverSlugMenuPorHora } from "../../../utils/horaTipoMenu";
+import { resolverSlugMenuPorHora, slugTipoPorHoraActual } from "../../../utils/horaTipoMenu";
 import { SELECCION_SIN_MESA, COLOR_PARA_LLEVAR } from "../../../utils/sinMesaOrden";
 import { leerOcultarParaLlevar } from "../../../utils/ocultarParaLlevar";
 import { useDensidadOrdenes } from "../../../context/DensidadOrdenesContext";
@@ -2090,21 +2090,20 @@ const InicioScreen = () => {
     }, [])
   );
 
-  const abrirSinMesaSoloLlevar = async () => {
-    try {
-      await AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(SELECCION_SIN_MESA));
-    } catch (_) {}
-    setMesaSeleccionada(null);
-    let tipoMenuHora = null;
-    try {
-      tipoMenuHora = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
-    } catch (_) {}
-    navigation.navigate("Ordenes", {
-      modoExtraLlevar: false,
-      mesa: SELECCION_SIN_MESA,
-      abrirMenu: true,
-      ...(tipoMenuHora ? { tipoMenuHora } : {}),
-    });
+  const abrirSinMesaSoloLlevar = () => {
+    AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(SELECCION_SIN_MESA))
+      .catch(() => {})
+      .finally(() => {
+        setMesaSeleccionada(null);
+        // Slug de la hora con el catálogo en memoria: navegar ya, sin await de red.
+        const tipoMenuHora = slugTipoPorHoraActual(tiposPlatoCatalogo);
+        navigation.navigate("Ordenes", {
+          modoExtraLlevar: false,
+          mesa: SELECCION_SIN_MESA,
+          abrirMenu: true,
+          ...(tipoMenuHora ? { tipoMenuHora } : {}),
+        });
+      });
   };
 
   const tarjetaSinMesaSoloLlevar = (
@@ -5366,39 +5365,34 @@ const InicioScreen = () => {
             {/* ============================================ */}
             <TouchableOpacity
               style={styles.barraItem}
-              onPress={async () => {
-                try {
-                  if (mesaSeleccionada && String(mesaSeleccionada.estado || '').toLowerCase() !== 'libre') {
-                    const delCiclo = await fetchComandasCicloMesa(mesaSeleccionada);
-                    const locales = getComandasPorMesa(mesaSeleccionada.nummesa);
-                    const lista = delCiclo.length ? delCiclo : locales;
-                    if (mesaOcupadaPorOtroMozo(lista, userInfo?._id)) {
-                      Alert.alert(
-                        "Acceso Denegado",
-                        mensajeMesaOtroMozo(getEstadoMesa(mesaSeleccionada)),
-                        [{ text: "OK" }]
-                      );
-                      return;
-                    }
+              onPress={() => {
+                // “¿Es de otro mozo?” con las comandas que Inicio ya tiene en memoria.
+                // El GET del ciclo queda para el detalle de la mesa, no para este botón.
+                if (mesaSeleccionada && String(mesaSeleccionada.estado || '').toLowerCase() !== 'libre') {
+                  const locales = getComandasPorMesa(mesaSeleccionada.nummesa);
+                  if (locales.length && mesaOcupadaPorOtroMozo(locales, userInfo?._id)) {
+                    Alert.alert(
+                      "Acceso Denegado",
+                      mensajeMesaOtroMozo(getEstadoMesa(mesaSeleccionada)),
+                      [{ text: "OK" }]
+                    );
+                    return;
                   }
-                  if (mesaSeleccionada) {
-                    await AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesaSeleccionada));
-                  }
-                } catch (error) {
-                  console.error("Error guardando mesa seleccionada:", error);
                 }
-                let tipoMenuHora = null;
-                if (mesaSeleccionada) {
-                  try {
-                    tipoMenuHora = await resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo);
-                  } catch (_) { /* usa catálogo en memoria en Órdenes */ }
-                }
-                navigation.navigate("Ordenes", {
-                  modoExtraLlevar: false,
-                  ...(mesaSeleccionada ? { mesa: mesaSeleccionada } : {}),
-                  ...(mesaSeleccionada && abrirMenuNuevaOrden ? { abrirMenu: true } : {}),
-                  ...(mesaSeleccionada && abrirMenuNuevaOrden && tipoMenuHora ? { tipoMenuHora } : {}),
-                });
+                AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesaSeleccionada || null))
+                  .catch((error) => {
+                    console.error("Error guardando mesa seleccionada:", error);
+                  })
+                  .finally(() => {
+                    // Slug de la hora con el catálogo en memoria: navegar ya, sin await de red.
+                    const tipoMenuHora = slugTipoPorHoraActual(tiposPlatoCatalogo);
+                    navigation.navigate("Ordenes", {
+                      modoExtraLlevar: false,
+                      ...(mesaSeleccionada ? { mesa: mesaSeleccionada } : {}),
+                      ...(mesaSeleccionada && abrirMenuNuevaOrden ? { abrirMenu: true } : {}),
+                      ...(mesaSeleccionada && abrirMenuNuevaOrden && tipoMenuHora ? { tipoMenuHora } : {}),
+                    });
+                  });
               }}
             >
               <View style={styles.barraItemContent}>

@@ -987,7 +987,7 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
       transparent={true}
       animationType="slide"
       statusBarTranslucent
-      onRequestClose={handleConfirmar}
+      onRequestClose={handleCancelar}
       presentationStyle={Platform.OS === "ios" ? "overFullScreen" : undefined}
     >
       <KeyboardAvoidingView
@@ -998,6 +998,19 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
         <View style={styles.modalContent}>
           {/* Header con nombre del plato */}
           <View style={styles.modalHeader}>
+            {/* X a la izquierda: cierra sin agregar el plato, aunque falten opciones. */}
+            <TouchableOpacity
+              onPress={handleCancelar}
+              style={styles.closeButton}
+              accessibilityLabel="Cerrar sin agregar"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MaterialCommunityIcons
+                name="close"
+                size={24}
+                color={theme.colors.text.primary}
+              />
+            </TouchableOpacity>
             <View style={styles.headerTitleContainer}>
               <MaterialCommunityIcons
                 name="food"
@@ -1013,13 +1026,6 @@ const ModalComplementos = ({ visible, plato, onConfirm, onClose, complementosIni
                 onPress={onEnviarOrden ? handleEnviarDesdeModal : undefined}
                 disabled={enviandoOrden || bloqueadoConfirmar}
               />
-              <TouchableOpacity onPress={handleConfirmar} style={styles.closeButton} accessibilityLabel="Guardar y cerrar">
-                <MaterialCommunityIcons
-                  name="close"
-                  size={24}
-                  color={theme.colors.text.primary}
-                />
-              </TouchableOpacity>
             </View>
           </View>
 
