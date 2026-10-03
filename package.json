@@ -1,6 +1,6 @@
 {
   "name": "appmozo",
-  "version": "2.1.60v",
+  "version": "2.1.62v",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start --go --lan",

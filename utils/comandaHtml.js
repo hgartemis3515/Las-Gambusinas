@@ -217,7 +217,6 @@ export function generarHtmlComanda({ datos, plantilla, serverOrigin }) {
           if (mostrarPrecios) html += '<td></td>';
           html += '</tr>';
         }
-
         // v3.0: fila de resumen agregado si el plato lo activa
         if (prod.mostrarResumenComplementos) {
           const flags = prod.resumenComplementosImpresion || {};
@@ -428,6 +427,7 @@ function mapLineaProductoImpresion(p, comanda, index) {
       grupo: c.grupo,
       opcion: c.opcion,
     })),
+    guarnicionesCambio: p.guarnicionesCambio || null,
     notaEspecial: p.notaEspecial || '',
     paraLlevar,
   };

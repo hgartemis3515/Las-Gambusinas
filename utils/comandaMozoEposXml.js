@@ -212,10 +212,23 @@ export function datosImpresionTicket({
   const motivo = elegidas.map((c) => c.motivoDescuento).find((m) => m) || '';
   const decimales = configMoneda?.decimales ?? 2;
   const meta = metaDeComanda(base, mesa);
+  const reserva = elegidas.some((c) => c?.origenCreacion === 'reserva' || c?.programadaPorReserva === true || c?.origenReserva);
+  const fechaAtencionRaw = elegidas.map((c) => c?.fechaAtencion || c?.origenReserva?.fechaReserva).find(Boolean);
+  const clienteNombre = elegidas.map((c) => String(
+    c?.clienteNombre
+    || c?.clienteNombreParaLlevar
+    || (c?.cliente && typeof c.cliente === 'object' ? c.cliente.nombre : '')
+    || ''
+  ).trim()).find(Boolean) || '';
   return {
     ok: true,
     letrero,
     ...meta,
+    reserva,
+    fechaAtencion: fechaAtencionRaw
+      ? moment(fechaAtencionRaw).tz('America/Lima').format('DD/MM/YYYY HH:mm')
+      : '',
+    clienteNombre,
     mozo: etiquetaMozosComandas(elegidas) || meta.mozo,
     fecha: fechaIgualCocina(base.createdAt),
     simbolo: configMoneda?.simboloMoneda || 'S/.',
@@ -226,6 +239,7 @@ export function datosImpresionTicket({
       cant: Number(p.cantidad) || 1,
       nombre: nombrePlato(p),
       tipoServicio: p.tipoServicio || 'mesa',
+      guarnicionesCambio: p.guarnicionesCambio || null,
       unit: Number(p.precio ?? p.precioUnitario ?? p.plato?.precio) || 0,
       line: montoLinea(p),
     })),

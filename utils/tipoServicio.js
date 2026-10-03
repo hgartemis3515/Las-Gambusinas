@@ -30,7 +30,8 @@ export function etiquetaLlevarMozo(tipo) {
 }
 
 /** Texto del cuadro Tipo en el ticket de caja y de cocina. */
-export function tipoCuadroTicket(lineas, { sinMesa = false } = {}) {
+export function tipoCuadroTicket(lineas, { sinMesa = false, reserva = false } = {}) {
+  if (reserva) return 'Reserva';
   const tipos = (lineas || [])
     .filter((p) => p && p.eliminado !== true && p.anulado !== true)
     .map((p) => String(p.tipoServicio || 'mesa').toLowerCase());

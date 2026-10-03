@@ -17,6 +17,8 @@ import { apiConfig } from "../apiConfig";
 import { getFallbackApiBase } from "../config/envDefaults";
 import configuracionService from "../services/configuracionService";
 import ModalComplementos from "../Components/ModalComplementos";
+import RasterTicketCocina from "../utils/ticketRasterCocina";
+import { imprimirTicketsMozoYCocina } from "../utils/imprimirTicketsTermicos";
 import { resolverPlatoConGrupos, guarnicionesElegidas, preseleccionComplementosDePlato, cantidadGuarnicionEfectiva, platoEditableEnOrdenes, resolverPartesComplementos } from "../utils/platoGuarniciones";
 import { hidratarUnidadesDesdeLineas, cantidadDeLinea, fusionarGuarnicionesPreseleccionadasEnLista } from "../utils/unidadesComplemento";
 import { numeroSerieEsValido, normalizarNumeroSerie } from "../utils/numeroSeriePlato";
@@ -91,6 +93,7 @@ export default function ReservaWizardScreen() {
 
   const [paso, setPaso] = useState(0);
   const [userInfo, setUserInfo] = useState(null);
+  const rasterTicketRef = useRef(null);
   const [mesas, setMesas] = useState([]);
   const [cocineros, setCocineros] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -756,6 +759,50 @@ export default function ReservaWizardScreen() {
       const reserva = res.data?.reserva;
       const comanda = res.data?.comanda;
       const mesaObj = mesas.find((m) => m._id === mesaId) || mesaPre;
+      try {
+        const doc = {
+          ...(comanda || {}),
+          _id: comanda?._id || reserva?._id || 'reserva',
+          origenCreacion: 'reserva',
+          fechaAtencion: reserva?.fechaReserva,
+          clienteNombre: reserva?.clienteNombre || clienteNombre.trim(),
+          mozos: comanda?.mozos?.name ? comanda.mozos : { name: userInfo?.name || userInfo?.nombre || '—' },
+          mozoNombre: userInfo?.name || userInfo?.nombre || '',
+          mesas: comanda?.mesas || mesaObj,
+          createdAt: comanda?.createdAt || new Date().toISOString(),
+          platos: (comanda?.platos?.length ? comanda.platos : selPlatos.map((p) => ({
+            plato: p,
+            nombre: p.nombre,
+            cantidad: p.cantidad,
+            tipoServicio: p.tipoServicio || 'mesa',
+            precioUnitario: p.precioUnitario ?? p.precio,
+            complementosSeleccionados: p.complementosElegidos || p.complementosSeleccionados || [],
+          }))),
+          cantidades: comanda?.cantidades?.length
+            ? comanda.cantidades
+            : selPlatos.map((p) => p.cantidad || 1),
+        };
+        const platosTicket = (doc.platos || []).map((platoItem, index) => {
+          const plato = platoItem.plato && typeof platoItem.plato === 'object' ? platoItem.plato : platoItem;
+          return {
+            _id: platoItem._id || plato?._id,
+            nombre: platoItem.nombreCocinaPedido || plato?.nombreCocina || plato?.nombre || platoItem.nombre || 'Plato',
+            cantidad: doc.cantidades?.[index] || platoItem.cantidad || 1,
+            tipoServicio: platoItem.tipoServicio || 'mesa',
+            precio: platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (Number(plato?.precio) || 0),
+            comandaId: doc._id,
+            plato,
+          };
+        });
+        await imprimirTicketsMozoYCocina({
+          rasterizar: (payload) => rasterTicketRef.current?.rasterizar(payload),
+          comandas: [doc],
+          platos: platosTicket,
+          mesa: mesaObj,
+        });
+      } catch (printErr) {
+        Alert.alert('Impresión', printErr?.message || 'La reserva se creó, pero no se pudo imprimir.');
+      }
       submittedThisVisitRef.current = true;
       setExito({
         ...exitoDesdeReserva(reserva, mesaObj),
@@ -1196,6 +1243,7 @@ export default function ReservaWizardScreen() {
           || ""
         }
       />
+      <RasterTicketCocina ref={rasterTicketRef} />
     </View>
   );
 }
