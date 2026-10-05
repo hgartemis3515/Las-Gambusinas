@@ -112,14 +112,16 @@ export function esCostoCeroPlatos(todosLosPlatos) {
   return netoPlatosActivos(activos) <= 0.009;
 }
 
-/** Liberar sin caja: todo entregado/pagado y total 0. */
-export function puedeLiberarComandaCostoCero(todosLosPlatos) {
-  if (!esCostoCeroPlatos(todosLosPlatos)) return false;
+/** Liberar sin caja: todo entregado/pagado y no hay cobro (precio 0 o descuento al 100%). */
+export function puedeLiberarComandaCostoCero(todosLosPlatos, netoTrasDescuento = null) {
   const activos = (todosLosPlatos || []).filter((p) => !p?.eliminado && !p?.anulado);
-  return activos.every((p) => {
+  const entregados = activos.length > 0 && activos.every((p) => {
     const e = String(p.estado || '').toLowerCase();
     return e === 'entregado' || e === 'pagado';
   });
+  if (!entregados) return false;
+  if (netoTrasDescuento != null && Number(netoTrasDescuento) <= 0.009) return true;
+  return esCostoCeroPlatos(todosLosPlatos);
 }
 
 export function getReglasBotonesComandaDetalle(todosLosPlatos) {
