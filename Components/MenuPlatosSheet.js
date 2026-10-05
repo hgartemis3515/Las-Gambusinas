@@ -200,7 +200,7 @@ export default function MenuPlatosSheet({
 }) {
   const themeContext = useTheme();
   const theme = themeContext?.theme || themeLight;
-  const styles = makeStyles(theme);
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const { size: sizeEnviar } = useBotonEnviarOrden();
   const { cerrarColor } = useBotonesMenuOrden();
   const { gapCategorias, chipCategoriaEscala, cuadroCategoriaEscala } = useDensidadOrdenes();
@@ -214,14 +214,19 @@ export default function MenuPlatosSheet({
 
   useEffect(() => {
     if (!visible || !Array.isArray(categoriasInfo) || !categoriasInfo.length) return undefined;
-    const task = InteractionManager.runAfterInteractions(() => {
-      categoriasInfo.forEach((c) => {
-        const uri = urlMediaServidor(c.imagenUrl);
-        if (uri) Image.prefetch(uri).catch(() => {});
+    let cancel = false;
+    const timer = setTimeout(() => {
+      InteractionManager.runAfterInteractions(() => {
+        if (cancel) return;
+        categoriasInfo.forEach((c) => {
+          const uri = urlMediaServidor(c.imagenUrl);
+          if (uri) Image.prefetch(uri).catch(() => {});
+        });
       });
-    });
+    }, 700);
     return () => {
-      if (task && typeof task.cancel === 'function') task.cancel();
+      cancel = true;
+      clearTimeout(timer);
     };
   }, [visible, categoriasInfo]);
 
@@ -334,11 +339,13 @@ export default function MenuPlatosSheet({
 
   const searchActive = (searchPlato || '').trim().length > 0;
 
+  if (!visible) return null;
+
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="none"
       statusBarTranslucent
       onRequestClose={onClose}
       presentationStyle={Platform.OS === 'ios' ? 'overFullScreen' : undefined}
@@ -762,11 +769,11 @@ export default function MenuPlatosSheet({
                 keyboardDismissMode="on-drag"
                 onScroll={onListScroll}
                 scrollEventThrottle={16}
-                initialNumToRender={10}
-                maxToRenderPerBatch={8}
-                windowSize={7}
+                initialNumToRender={6}
+                maxToRenderPerBatch={4}
+                windowSize={5}
                 updateCellsBatchingPeriod={50}
-                removeClippedSubviews={Platform.OS === 'android'}
+                removeClippedSubviews={false}
                 ListEmptyComponent={
                   <View style={styles.emptyPlatosContainer}>
                     {!cartaLoaded ? (
