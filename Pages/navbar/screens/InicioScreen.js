@@ -2090,20 +2090,20 @@ const InicioScreen = () => {
     }, [])
   );
 
+  const irAOrdenes = (params) => {
+    navigation.navigate('Ordenes', params);
+  };
+
   const abrirSinMesaSoloLlevar = () => {
-    AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(SELECCION_SIN_MESA))
-      .catch(() => {})
-      .finally(() => {
-        setMesaSeleccionada(null);
-        // Slug de la hora con el catálogo en memoria: navegar ya, sin await de red.
-        const tipoMenuHora = slugTipoPorHoraActual(tiposPlatoCatalogo);
-        navigation.navigate("Ordenes", {
-          modoExtraLlevar: false,
-          mesa: SELECCION_SIN_MESA,
-          abrirMenu: true,
-          ...(tipoMenuHora ? { tipoMenuHora } : {}),
-        });
-      });
+    setMesaSeleccionada(null);
+    const tipoMenuHora = slugTipoPorHoraActual(tiposPlatoCatalogo);
+    irAOrdenes({
+      modoExtraLlevar: false,
+      mesa: SELECCION_SIN_MESA,
+      abrirMenu: true,
+      ...(tipoMenuHora ? { tipoMenuHora } : {}),
+    });
+    AsyncStorage.setItem('mesaSeleccionada', JSON.stringify(SELECCION_SIN_MESA)).catch(() => {});
   };
 
   const tarjetaSinMesaSoloLlevar = (
@@ -5379,20 +5379,17 @@ const InicioScreen = () => {
                     return;
                   }
                 }
-                AsyncStorage.setItem("mesaSeleccionada", JSON.stringify(mesaSeleccionada || null))
-                  .catch((error) => {
-                    console.error("Error guardando mesa seleccionada:", error);
-                  })
-                  .finally(() => {
-                    // Slug de la hora con el catálogo en memoria: navegar ya, sin await de red.
-                    const tipoMenuHora = slugTipoPorHoraActual(tiposPlatoCatalogo);
-                    navigation.navigate("Ordenes", {
-                      modoExtraLlevar: false,
-                      ...(mesaSeleccionada ? { mesa: mesaSeleccionada } : {}),
-                      ...(mesaSeleccionada && abrirMenuNuevaOrden ? { abrirMenu: true } : {}),
-                      ...(mesaSeleccionada && abrirMenuNuevaOrden && tipoMenuHora ? { tipoMenuHora } : {}),
-                    });
-                  });
+                const mesa = mesaSeleccionada || null;
+                const tipoMenuHora = slugTipoPorHoraActual(tiposPlatoCatalogo);
+                irAOrdenes({
+                  modoExtraLlevar: false,
+                  ...(mesa ? { mesa } : {}),
+                  ...(mesa && abrirMenuNuevaOrden ? { abrirMenu: true } : {}),
+                  ...(mesa && abrirMenuNuevaOrden && tipoMenuHora ? { tipoMenuHora } : {}),
+                });
+                AsyncStorage.setItem('mesaSeleccionada', JSON.stringify(mesa)).catch((error) => {
+                  console.error('Error guardando mesa seleccionada:', error);
+                });
               }}
             >
               <View style={styles.barraItemContent}>

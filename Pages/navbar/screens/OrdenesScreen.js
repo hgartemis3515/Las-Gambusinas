@@ -275,7 +275,10 @@ const OrdenesScreen = ({ route }) => {
     accionesEscala,
   } = useOrdenesAcciones();
   const orientation = useOrientation();
-  const styles = OrdenesScreenStyles(theme, orientation, compacto, accionesEscala);
+  const styles = useMemo(
+    () => OrdenesScreenStyles(theme, orientation, compacto, accionesEscala),
+    [theme, orientation.isLandscape, orientation.isTablet, compacto, accionesEscala]
+  );
   const accionIconSize = Math.max(16, Math.round(24 * (clampAccionesEscala(accionesEscala) / 100)));
   
   // Obtener parámetros de navegación (mesa y reserva desde ComandaDetalle)
@@ -289,15 +292,16 @@ const OrdenesScreen = ({ route }) => {
   const cargaMesaGenRef = useRef(0);
   abrirSelectorMesaRef.current = abrirSelectorMesaParam === true;
   
+  const abrirMenuAlEntrar = abrirMenuParam === true;
   const [userInfo, setUserInfo] = useState(null);
-  const [selectedMesa, setSelectedMesa] = useState(null);
+  const [selectedMesa, setSelectedMesa] = useState(() => mesaParam || null);
   const [mozosEspecial, setMozosEspecial] = useState([]);
   const [mozoElegidoEspecial, setMozoElegidoEspecial] = useState(null);
   const [mostrarMozosEspecial, setMostrarMozosEspecial] = useState(false);
   const [descuentoEspecial, setDescuentoEspecial] = useState("");
   const [mesas, setMesas] = useState([]);
   const [modalMesasVisible, setModalMesasVisible] = useState(false);
-  const [modalPlatosVisible, setModalPlatosVisible] = useState(false);
+  const [modalPlatosVisible, setModalPlatosVisible] = useState(abrirMenuAlEntrar);
   const [selectedPlatos, setSelectedPlatos] = useState([]);
   const [cantidades, setCantidades] = useState({});
   const [observaciones, setObservaciones] = useState("");
@@ -305,12 +309,16 @@ const OrdenesScreen = ({ route }) => {
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [favoritoIds, setFavoritoIds] = useState([]);
-  const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(null);
+  const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(() => (
+    abrirMenuAlEntrar ? (tipoMenuHoraParam || null) : null
+  ));
   // Catálogo dinámico de tipos de plato desde el backend
   const { tipos: tiposPlatoCatalogo, labelFor: labelForTipo, refresh: refreshTiposPlato } = useTiposPlato();
   // Tipo de servicio para los platos que se agreguen desde el modal de menú:
   // 'mesa' (default, Switch OFF) o 'para_llevar' (Switch ON).
-  const [tipoServicioModal, setTipoServicioModal] = useState('mesa');
+  const [tipoServicioModal, setTipoServicioModal] = useState(() => (
+    esSeleccionSinMesa(mesaParam) ? TIPO_PARA_LLEVAR : 'mesa'
+  ));
   const [isSendingComanda, setIsSendingComanda] = useState(false);
   const [areas, setAreas] = useState([]);
   const [filtroAreaMesa, setFiltroAreaMesa] = useState("All"); // Filtro para el modal de mesas
@@ -364,7 +372,23 @@ const OrdenesScreen = ({ route }) => {
   const favoritosDirtyRef = useRef(false);
   const userInfoRef = useRef(null);
   // Espejo de modalPlatosVisible para limpiar filtros después del cierre sin pisar una reapertura.
-  const modalPlatosVisibleRef = useRef(false);
+  const modalPlatosVisibleRef = useRef(abrirMenuAlEntrar);
+  const abrirPendienteRef = useRef(false);
+  const mesaParamRef = useRef(mesaParam);
+  mesaParamRef.current = mesaParam;
+  if (!abrirMenuParam) {
+    abrirPendienteRef.current = false;
+  } else if (!abrirPendienteRef.current) {
+    abrirPendienteRef.current = true;
+    modalPlatosVisibleRef.current = true;
+    setModalPlatosVisible(true);
+    setTipoPlatoFiltro(tipoMenuHoraParam || slugTipoPorHoraActual(tiposPlatoCatalogo) || null);
+    setCategoriaFiltro(null);
+    setSearchPlato("");
+    setSearchPlatoDebounced("");
+    if (mesaParam) setSelectedMesa(mesaParam);
+    if (esSeleccionSinMesa(mesaParam)) setTipoServicioModal(TIPO_PARA_LLEVAR);
+  }
 
   // Debounce búsqueda 300ms para no re-filtrar en cada tecla
   const debouncedSetSearchRef = useRef(
@@ -443,9 +467,21 @@ const OrdenesScreen = ({ route }) => {
 
   useEffect(() => {
     loadUserData();
-    refreshCatalogo({ force: false });
-    loadSelectedPlatos();
-    obtenerAreas();
+    let cancel = false;
+    const run = () => {
+      if (cancel) return;
+      cancel = true;
+      loadSelectedPlatos();
+      obtenerAreas();
+      if (!abrirMenuParam) refreshCatalogo({ force: false });
+    };
+    const task = InteractionManager.runAfterInteractions(run);
+    const timer = setTimeout(run, 500);
+    return () => {
+      cancel = true;
+      clearTimeout(timer);
+      if (task && typeof task.cancel === 'function') task.cancel();
+    };
   }, []);
 
   // Manejar parámetros de navegación (mesa y reserva desde ComandaDetalle)
@@ -487,36 +523,28 @@ const OrdenesScreen = ({ route }) => {
 
   useEffect(() => {
     if (!abrirMenuParam) return;
+    let cancelled = false;
     if (esSeleccionSinMesa(mesaParam)) {
-      setSelectedMesa(mesaParam);
-      setTipoServicioModal(TIPO_PARA_LLEVAR);
       setSelectedPlatos((prev) => conTipoParaLlevar(prev));
     }
-    if (mesaParam) setSelectedMesa(mesaParam);
-    refreshCatalogo({ force: false });
-    let cancelled = false;
-    // Slug de la hora con el catálogo en memoria: abrir el buscador ya, sin await de red.
-    let slug = tipoMenuHoraParam || slugTipoPorHoraActual(tiposPlatoCatalogo) || null;
-    setTipoPlatoFiltro(slug || null);
-    setCategoriaFiltro(null);
-    setSearchPlato("");
-    setSearchPlatoDebounced("");
-    if (esSeleccionSinMesa(mesaParam)) {
-      setTipoServicioModal(tipoServicioOrdenes("para_llevar"));
-    }
-    modalPlatosVisibleRef.current = true;
-    setModalPlatosVisible(true);
-    // Catálogo de tipos aún no cargado: resolver en fondo y aplicar sin cerrar el menú.
-    if (!slug && !(tiposPlatoCatalogo || []).length) {
+    const slugYa = tipoMenuHoraParam || slugTipoPorHoraActual(tiposPlatoCatalogo) || null;
+    if (slugYa) setTipoPlatoFiltro((prev) => prev || slugYa);
+    if (!slugYa && !(tiposPlatoCatalogo || []).length) {
       resolverSlugMenuPorHora(refreshTiposPlato, tiposPlatoCatalogo)
         .then((res) => {
           if (!cancelled && res) setTipoPlatoFiltro((prev) => prev ?? res);
         })
         .catch(() => {});
     }
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (!cancelled) refreshCatalogo({ force: false });
+    });
     navigation.setParams({ abrirMenu: undefined, tipoMenuHora: undefined });
-    return () => { cancelled = true; };
-  }, [abrirMenuParam, mesaParam, tipoMenuHoraParam, navigation, refreshTiposPlato]);
+    return () => {
+      cancelled = true;
+      if (task && typeof task.cancel === 'function') task.cancel();
+    };
+  }, [abrirMenuParam, mesaParam, tipoMenuHoraParam, navigation, refreshTiposPlato, tiposPlatoCatalogo, refreshCatalogo]);
 
   useEffect(() => {
     if (modoExtraLlevar) {
@@ -643,6 +671,7 @@ const OrdenesScreen = ({ route }) => {
 
   const loadMesaData = async () => {
     if (abrirSelectorMesaRef.current) return;
+    if (mesaParamRef.current) return;
     const gen = cargaMesaGenRef.current;
     try {
       const mesaData = await AsyncStorage.getItem("mesaSeleccionada");
@@ -921,10 +950,10 @@ const OrdenesScreen = ({ route }) => {
   };
 
   const cerrarModalPlatos = useCallback(() => {
-    // Cerrar ya: el rearme de la carta (tipo null → ordenar + clonar todo) va después
-    // de la animación para no bloquear el frame del cierre en la Tab A11.
+    // Cerrar ya: el rearme de la carta va después para no bloquear el frame en la Tab A11.
     modalPlatosVisibleRef.current = false;
     setModalPlatosVisible(false);
+    navigation.setParams({ abrirMenu: undefined, tipoMenuHora: undefined });
     InteractionManager.runAfterInteractions(() => {
       if (modalPlatosVisibleRef.current) return;
       setTipoPlatoFiltro(null);
@@ -932,7 +961,7 @@ const OrdenesScreen = ({ route }) => {
       setSearchPlato("");
       setSearchPlatoDebounced("");
     });
-  }, []);
+  }, [navigation]);
 
   const marcarInicioArmado = () => {
     if (!armadoIniciadoEnRef.current) {
@@ -1825,13 +1854,19 @@ const OrdenesScreen = ({ route }) => {
     return tipoNormalizado(p?.tipo) === target;
   };
 
+  const menuVisible = modalPlatosVisible || (abrirMenuParam === true && modalPlatosVisibleRef.current);
+  const tipoAlAbrir = abrirMenuParam
+    ? (tipoMenuHoraParam || slugTipoPorHoraActual(tiposPlatoCatalogo) || null)
+    : null;
+  const tipoFiltroActivo = tipoAlAbrir || tipoPlatoFiltro;
+
   const categorias = useMemo(() => {
-    if (!tipoPlatoFiltro) return [];
+    if (!menuVisible || !tipoFiltroActivo) return [];
     const names = [...new Set(
-      platos.filter((p) => platoEsDeTipo(p, tipoPlatoFiltro)).flatMap((p) => categoriasDePlato(p))
+      platos.filter((p) => platoEsDeTipo(p, tipoFiltroActivo)).flatMap((p) => categoriasDePlato(p))
     )].filter(Boolean);
-    return ordenarCategoriasMozo(names, categoriasInfo, tipoPlatoFiltro);
-  }, [platos, tipoPlatoFiltro, categoriasInfo]);
+    return ordenarCategoriasMozo(names, categoriasInfo, tipoFiltroActivo);
+  }, [menuVisible, platos, tipoFiltroActivo, categoriasInfo]);
 
   useEffect(() => {
     if (!categoriaFiltro || categoriaFiltro === CAT_FAVORITOS) return;
@@ -1840,14 +1875,16 @@ const OrdenesScreen = ({ route }) => {
 
   // Platos disponibles (tipo + stock > 0)
   const platosPorTipoDisponibles = useMemo(
-    () =>
-      platos.filter((p) => {
-        const matchTipo = !tipoPlatoFiltro || platoEsDeTipo(p, tipoPlatoFiltro);
+    () => {
+      if (!menuVisible || !tipoFiltroActivo) return [];
+      return platos.filter((p) => {
+        const matchTipo = platoEsDeTipo(p, tipoFiltroActivo);
         const disponible = (p.stock == null || p.stock === undefined || Number(p.stock) > 0);
-        const visibleCarta = platoVisibleEnCarta(p, categoriasInfo, tipoPlatoFiltro);
+        const visibleCarta = platoVisibleEnCarta(p, categoriasInfo, tipoFiltroActivo);
         return matchTipo && disponible && visibleCarta;
-      }),
-    [platos, tipoPlatoFiltro, categoriasInfo]
+      });
+    },
+    [menuVisible, platos, tipoFiltroActivo, categoriasInfo]
   );
 
   // Búsqueda global: si hay texto, filtra por nombre en TODOS (ignora categoría). Si no hay texto, filtra por categoría.
@@ -1861,16 +1898,16 @@ const OrdenesScreen = ({ route }) => {
         list = list.filter((p) => platoEsDeCategoria(p, categoriaFiltro));
       }
     }
-    const ordenados = ordenarPlatosPorCategoriaYCodigo(list, categoriasInfo, tipoPlatoFiltro);
+    const ordenados = ordenarPlatosPorCategoriaYCodigo(list, categoriasInfo, tipoFiltroActivo);
     const conAlias = expandirFilasBuscadorPlatos(ordenados);
     if (search.length > 0) {
       const matched = conAlias.filter((p) => platoCoincideBusqueda(p, search));
       return ordenarPlatosPorCodigoBusqueda(matched, search, (a, b) =>
-        cmpPlatosCategoriaYCodigo(a, b, categoriasInfo, tipoPlatoFiltro)
+        cmpPlatosCategoriaYCodigo(a, b, categoriasInfo, tipoFiltroActivo)
       );
     }
     return conAlias;
-  }, [platosPorTipoDisponibles, searchPlatoDebounced, categoriaFiltro, favoritoIds, categoriasInfo, tipoPlatoFiltro]);
+  }, [platosPorTipoDisponibles, searchPlatoDebounced, categoriaFiltro, favoritoIds, categoriasInfo, tipoFiltroActivo]);
 
   // El + y el texto de búsqueda no tocan la categoría elegida
   const handleSearchFocus = useCallback(() => {}, []);
@@ -1891,7 +1928,9 @@ const OrdenesScreen = ({ route }) => {
         return next;
       });
     }
-    refreshCatalogo({ force: false });
+    InteractionManager.runAfterInteractions(() => {
+      refreshCatalogo({ force: false });
+    });
     const catalogo = platos.find((p) => String(p._id) === String(platoLinea?._id));
     const slugLinea = slugTipoPedido(platoLinea?.tipoPedido);
     const slugCatalogo = (tiposPlatoCatalogo || []).find((t) => catalogo && platoEsDeTipo(catalogo, t.slug))?.slug;
@@ -1932,7 +1971,9 @@ const OrdenesScreen = ({ route }) => {
 
   const abrirMenuPlatos = () => {
     marcarInicioArmado();
-    refreshCatalogo({ force: false });
+    InteractionManager.runAfterInteractions(() => {
+      refreshCatalogo({ force: false });
+    });
     // Slug de la hora con el catálogo en memoria: abrir ya; sin await de red.
     const autoSlug = slugTipoPorHoraActual(tiposPlatoCatalogo);
     setTipoPlatoFiltro(autoSlug || null);
@@ -2372,10 +2413,10 @@ const OrdenesScreen = ({ route }) => {
 
       {/* Overlay menú de platos (in-tree, no Modal nativo) */}
       <MenuPlatosSheet
-        visible={modalPlatosVisible}
+        visible={menuVisible}
         onClose={cerrarModalPlatos}
         tiposPlatoCatalogo={tiposPlatoCatalogo}
-        tipoPlatoFiltro={tipoPlatoFiltro}
+        tipoPlatoFiltro={tipoFiltroActivo}
         onSelectTipo={setTipoPlatoFiltro}
         onClearTipo={() => {
                       setTipoPlatoFiltro(null);

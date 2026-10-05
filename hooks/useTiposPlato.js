@@ -6,6 +6,32 @@ import { getFallbackApiBase } from '../config/envDefaults';
 
 export const EVT_TIPOS_PLATO_ACTUALIZADOS = 'tipos-plato-reglas-actualizadas';
 
+const CACHE_TIPOS_MS = 10 * 60 * 1000;
+let cacheTipos = [];
+let cacheTiposAt = 0;
+let cacheTiposFirma = '';
+
+function firmaTipos(list) {
+  return (list || []).map((t) => [
+    t?.slug,
+    t?.activo,
+    t?.horaRedirectActiva,
+    t?.horaRedirectInicio,
+    t?.horaRedirectFin,
+    t?.orden,
+    t?.nombre,
+  ].join(':')).join('|');
+}
+
+function guardarCacheTipos(sorted) {
+  const firma = firmaTipos(sorted);
+  cacheTiposAt = Date.now();
+  if (firma === cacheTiposFirma && cacheTipos.length) return cacheTipos;
+  cacheTiposFirma = firma;
+  cacheTipos = sorted;
+  return cacheTipos;
+}
+
 function listaTipos(data) {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.tipos)) return data.tipos;
@@ -32,14 +58,20 @@ function ordenarTipos(data) {
  */
 const useTiposPlato = (opts = {}) => {
   const { soloActivos = true, autoLoad = true } = opts;
-  const [tipos, setTipos] = useState([]);
-  const tiposRef = useRef([]);
+  const [tipos, setTipos] = useState(cacheTipos);
+  const tiposRef = useRef(cacheTipos);
   tiposRef.current = tipos;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const fetchTipos = useCallback(async () => {
-    setLoading(true);
+    const cacheVivo = cacheTipos.length > 0 && (Date.now() - cacheTiposAt) < CACHE_TIPOS_MS;
+    if (cacheVivo) {
+      if (tiposRef.current !== cacheTipos) setTipos(cacheTipos);
+      return cacheTipos;
+    }
+    const primeraCarga = tiposRef.current.length === 0;
+    if (primeraCarga) setLoading(true);
     setError(null);
     try {
       const url = apiConfig.isConfigured
@@ -48,8 +80,8 @@ const useTiposPlato = (opts = {}) => {
       const qs = soloActivos ? '?activos=true' : '';
       const response = await axios.get(`${url}${qs}`, { timeout: 5000 });
       const data = Array.isArray(response.data) ? response.data : (response.data?.value || []);
-      const sorted = ordenarTipos(data);
-      setTipos(sorted);
+      const sorted = guardarCacheTipos(ordenarTipos(data));
+      if (tiposRef.current !== sorted) setTipos(sorted);
       return sorted;
     } catch (e) {
       console.warn('useTiposPlato: no se pudo cargar catálogo, fallback legacy', e?.message);
@@ -59,8 +91,8 @@ const useTiposPlato = (opts = {}) => {
         { slug: 'platos-desayuno', nombre: 'Desayuno', nombreCorto: 'DESAYUNO', icono: '🌅', color: '#ffa502', orden: 1, activo: true },
         { slug: 'plato-carta normal', nombre: 'Carta', nombreCorto: 'CARTA', icono: '🍽️', color: '#3498db', orden: 2, activo: true },
       ];
-      setTipos(fallback);
-      return fallback;
+      if (!tiposRef.current.length) setTipos(fallback);
+      return tiposRef.current.length ? tiposRef.current : fallback;
     } finally {
       setLoading(false);
     }
@@ -73,8 +105,11 @@ const useTiposPlato = (opts = {}) => {
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(EVT_TIPOS_PLATO_ACTUALIZADOS, (data) => {
       const sorted = ordenarTipos(data);
-      if (sorted.length) setTipos(sorted);
-      else fetchTipos();
+      if (sorted.length) setTipos(guardarCacheTipos(sorted));
+      else {
+        cacheTiposAt = 0;
+        fetchTipos();
+      }
     });
     return () => sub.remove();
   }, [fetchTipos]);
