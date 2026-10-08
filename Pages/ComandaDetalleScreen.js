@@ -36,7 +36,7 @@ import { separarPlatosEditables, filtrarPlatosPorEstado, detectarPlatosPreparado
 import { reducirRespuestasCicloMesa } from '../utils/cicloComandasMesa';
 import { extraerComandaDeEventoSocket } from '../utils/socketComandaPatch';
 import { mesaOcupadaPorOtroMozo, mensajeMesaOtroMozo, mozoAsignadoEnComandas } from '../utils/accesoMesaMozo';
-import { esMesaEspecial, esMesaInvitados, mesaPermiteDescuentoAdmin } from '../utils/mesaEspecial';
+import { esMesaEspecial, esMesaInvitados } from '../utils/mesaEspecial';
 import { resolverPlatoConGrupos, guarnicionesElegidas, idCatalogoPlato, cantidadGuarnicionEfectiva, preseleccionComplementosDePlato, mismasGuarniciones, platoEditableEnOrdenes, resolverPartesComplementos } from '../utils/platoGuarniciones';
 import { hidratarUnidadesDesdeLineas, cantidadDeLinea, fusionarGuarnicionesPreseleccionadasEnLista } from '../utils/unidadesComplemento';
 import { platoRequiereNumeroSerie, numeroSerieEsValido, normalizarNumeroSerie } from '../utils/numeroSeriePlato';
@@ -53,7 +53,7 @@ import { esSeleccionSinMesa, SELECCION_SIN_MESA } from '../utils/sinMesaOrden';
 import { leerOcultarParaLlevar } from '../utils/ocultarParaLlevar';
 import { esLlevarColor, normalizarTipoServicioLinea } from '../utils/tipoServicio';
 import { msRestantesEntregaAutomatica, formatearCountdownEntrega, tiempoSalioRequiereAncla } from '../utils/entregaAutomatica';
-import { brutoGrupoComandas, montoDescuentoGrupo, montosDescuentoPorComanda, clampMontoDescuento, motivoDescuentoFinal, motivoDescuentoEsValido, comandaTieneDescuentoMozo } from '../utils/descuentoMozo';
+import { brutoGrupoComandas, montoDescuentoGrupo, montosDescuentoPorComanda, clampMontoDescuento, motivoDescuentoFinal, motivoDescuentoEsValido, comandaTieneDescuentoMozo, usuarioPuedeAplicarDescuentos } from '../utils/descuentoMozo';
 import RasterTicketCocina from '../utils/ticketRasterCocina';
 import { imprimirTicketsMozoYCocina, platosPlanosParaTicket } from '../utils/imprimirTicketsTermicos';
 
@@ -1188,7 +1188,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     : subtotalPlatosReserva;
   const puedeLiberarReserva = esReservaFlow && puedePagar && saldoReserva <= 0.009;
   const puedeConfirmarEntrega = puedeLiberarMesaTrasPPA(todosLosPlatos);
-  const puedeLiberarCostoCero = puedeLiberarComandaCostoCero(todosLosPlatos);
+  const netoCobroDetalle = Number(Math.max(0, brutoGrupoComandas(comandas) - montoDescuentoGrupo(comandas)).toFixed(2));
+  const puedeLiberarCostoCero = puedeLiberarComandaCostoCero(todosLosPlatos, netoCobroDetalle);
   const comandaYaPagada = mesaEstadoEfectivo === 'pagado'
     || comandas.some((c) => ['pagado', 'completado'].includes(String(c.status || '').toLowerCase()));
   const todosEntregadosKds = platosActivosDetalle.length > 0
@@ -1837,11 +1838,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   
   // ==================== FUNCIÓN DE DESCUENTO (permiso aplicar-descuentos) ====================
   
-  const puedeAplicarDescuento = String(userInfo?.rol || '').toLowerCase() === 'admin'
-    && (
-      mesaPermiteDescuentoAdmin(mesa)
-      || (comandas || []).some((c) => mesaPermiteDescuentoAdmin(c?.mesas))
-    );
+  const puedeAplicarDescuento = usuarioPuedeAplicarDescuentos(userInfo);
   
   const handleAbrirDescuento = () => {
     if (!puedeAplicarDescuento) {

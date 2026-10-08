@@ -1,5 +1,6 @@
 import React, {
   createContext,
+  startTransition,
   useCallback,
   useContext,
   useEffect,
@@ -56,6 +57,38 @@ function urlCategoriasFallback() {
     : `${getFallbackApiBase()}/categorias-plato?ligero=1`;
 }
 
+function firmaCarta(list) {
+  if (!Array.isArray(list) || list.length === 0) return '0';
+  let h = list.length | 0;
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
+    if (!p) continue;
+    const id = p._id != null ? String(p._id) : (p.id != null ? String(p.id) : '');
+    h = Math.imul(h, 33) ^ id.length;
+    h ^= Number(p.precio) || 0;
+    h = Math.imul(h, 31) ^ (Number(p.orden) || 0);
+    h ^= Number(p.stock) || 0;
+    h ^= p.isActive === false ? 1 : 0;
+    const nombre = p.nombre ? String(p.nombre) : '';
+    for (let j = 0; j < nombre.length; j += 2) h = Math.imul(h, 33) ^ nombre.charCodeAt(j);
+    const upd = p.updatedAt ? String(p.updatedAt) : '';
+    for (let j = 0; j < upd.length; j++) h = Math.imul(h, 33) ^ upd.charCodeAt(j);
+    const comps = Array.isArray(p.complementos) ? p.complementos : [];
+    h ^= comps.length;
+    for (let c = 0; c < comps.length; c++) {
+      const g = comps[c];
+      const gn = g && (g.nombre || g.titulo) ? String(g.nombre || g.titulo) : '';
+      h = Math.imul(h, 33) ^ gn.length ^ (gn.charCodeAt(0) || 0);
+      const ops = g && (g.opciones || g.items);
+      h ^= Array.isArray(ops) ? ops.length : 0;
+    }
+    h ^= Array.isArray(p.nombresSincronizados) ? p.nombresSincronizados.length : 0;
+    h ^= Array.isArray(p.tipos) ? p.tipos.length : 0;
+    if (p.tipo) h ^= String(p.tipo).length;
+  }
+  return String(h);
+}
+
 function fetchedAtMs(iso) {
   if (!iso) return 0;
   const n = Date.parse(iso);
@@ -92,13 +125,27 @@ export function CatalogoPlatosProvider({ children }) {
   const diskTimer = useRef(null);
   const inflightRef = useRef(null);
   const hydratingRef = useRef(false);
+  const firmaRef = useRef('');
+  const loadedRef = useRef(false);
   const refreshRef = useRef(async () => ({ platos: [], categoriasInfo: [] }));
 
   const commitPlatos = useCallback((next, { persist } = {}) => {
-    platosRef.current = next;
-    setPlatos(next);
-    setLoaded(true);
-    if (persist === false) return;
+    const list = Array.isArray(next) ? next : [];
+    const firma = firmaCarta(list);
+    const misma = firma === firmaRef.current;
+    if (!misma) {
+      firmaRef.current = firma;
+      platosRef.current = list;
+      loadedRef.current = true;
+      startTransition(() => {
+        setPlatos(list);
+        setLoaded(true);
+      });
+    } else if (!loadedRef.current) {
+      loadedRef.current = true;
+      setLoaded(true);
+    }
+    if (persist === false || misma) return;
     if (diskTimer.current) clearTimeout(diskTimer.current);
     diskTimer.current = setTimeout(() => {
       escribirCatalogoPlatosDisk({
@@ -109,10 +156,18 @@ export function CatalogoPlatosProvider({ children }) {
     }, DISK_DEBOUNCE_MS);
   }, []);
 
+  const firmaCatsRef = useRef('');
   const commitCats = useCallback((next) => {
     const list = Array.isArray(next) ? next : [];
+    let firma = String(list.length);
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      firma += `|${c?.nombre || ''}:${c?.codigoMozo || ''}:${c?.orden || ''}:${c?.imagenUrl || ''}`;
+    }
+    if (firma === firmaCatsRef.current) return;
+    firmaCatsRef.current = firma;
     catsRef.current = list;
-    setCategoriasInfo(list);
+    startTransition(() => setCategoriasInfo(list));
   }, []);
 
   const refresh = useCallback(async ({ force } = {}) => {
@@ -136,7 +191,8 @@ export function CatalogoPlatosProvider({ children }) {
     }
 
     const run = (async () => {
-      setRefreshing(true);
+      const mostrarSpinner = platosRef.current.length === 0;
+      if (mostrarSpinner) setRefreshing(true);
       try {
         const token = await AsyncStorage.getItem('authToken');
         if (!token) {
@@ -164,7 +220,7 @@ export function CatalogoPlatosProvider({ children }) {
         setError(e?.message || 'No se pudo cargar la carta');
         return { platos: platosRef.current, categoriasInfo: catsRef.current };
       } finally {
-        setRefreshing(false);
+        if (mostrarSpinner) setRefreshing(false);
         inflightRef.current = null;
       }
     })();
