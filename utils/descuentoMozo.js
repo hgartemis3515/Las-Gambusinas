@@ -20,7 +20,7 @@ export function brutoParaDescuento(c) {
   return 0;
 }
 
-/** Peso para prorratear (igual que comandas.html aplicarDescuentoGrupo). */
+/** Peso del bruto. El descuento de grupo cae en la comanda de mayor valor. */
 export function pesoBrutoComanda(c) {
   const sin = Number(c?.totalSinDescuento) || 0;
   if (sin > 0) return sin;
@@ -38,20 +38,20 @@ export function montoDescuentoGrupo(comandas) {
   return Number((comandas || []).reduce((s, c) => s + (Number(c?.montoDescuento) || 0), 0).toFixed(2));
 }
 
-export function repartirCentesimos(pesos, montoTotal) {
-  const vals = (pesos || []).map((p) => Math.max(0, Number(p) || 0));
-  const cents = Math.round((Number(montoTotal) || 0) * 100);
-  if (!vals.length || cents <= 0) return vals.map(() => 0);
-  const totalPesos = vals.reduce((s, p) => s + p, 0);
-  if (totalPesos <= 0) return vals.map(() => 0);
-  const raw = vals.map((p) => (p / totalPesos) * cents);
-  const floors = raw.map((x) => Math.floor(x + 1e-9));
-  let resto = cents - floors.reduce((s, x) => s + x, 0);
-  const order = raw
-    .map((x, i) => ({ i, frac: x - Math.floor(x + 1e-9) }))
-    .sort((a, b) => b.frac - a.frac || a.i - b.i);
-  for (let k = 0; k < resto; k++) floors[order[k % order.length].i] += 1;
-  return floors.map((c) => c / 100);
+function montosEnLaMayor(pesos, monto) {
+  const vals = (pesos || []).map((p) => Math.max(0, Math.round((Number(p) || 0) * 100)));
+  const out = vals.map(() => 0);
+  let resto = Math.max(0, Math.round((Number(monto) || 0) * 100));
+  const tope = vals.reduce((s, c) => s + c, 0);
+  if (resto > tope) resto = tope;
+  const order = vals.map((cents, i) => ({ i, cents })).sort((a, b) => b.cents - a.cents || a.i - b.i);
+  for (const item of order) {
+    if (resto <= 0 || item.cents <= 0) continue;
+    const toma = Math.min(item.cents, resto);
+    out[item.i] = toma / 100;
+    resto -= toma;
+  }
+  return out;
 }
 
 export function montosDescuentoPorComanda(comandas, monto) {
@@ -60,7 +60,7 @@ export function montosDescuentoPorComanda(comandas, monto) {
   const total = pesos.reduce((s, p) => s + p, 0);
   const m = Math.min(Math.max(0, Number(monto) || 0), total);
   if (!(m > 0) || !(total > 0)) return list.map(() => 0);
-  return repartirCentesimos(pesos, m);
+  return montosEnLaMayor(pesos, m);
 }
 
 export function clampMontoDescuento(monto, bruto) {

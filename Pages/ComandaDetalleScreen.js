@@ -53,7 +53,7 @@ import { esSeleccionSinMesa, SELECCION_SIN_MESA } from '../utils/sinMesaOrden';
 import { leerOcultarParaLlevar } from '../utils/ocultarParaLlevar';
 import { esLlevarColor, normalizarTipoServicioLinea } from '../utils/tipoServicio';
 import { msRestantesEntregaAutomatica, formatearCountdownEntrega, tiempoSalioRequiereAncla } from '../utils/entregaAutomatica';
-import { brutoGrupoComandas, montoDescuentoGrupo, montosDescuentoPorComanda, clampMontoDescuento, motivoDescuentoFinal, motivoDescuentoEsValido, comandaTieneDescuentoMozo, usuarioPuedeAplicarDescuentos } from '../utils/descuentoMozo';
+import { brutoGrupoComandas, montoDescuentoGrupo, montosDescuentoPorComanda, pesoBrutoComanda, clampMontoDescuento, motivoDescuentoFinal, motivoDescuentoEsValido, comandaTieneDescuentoMozo, usuarioPuedeAplicarDescuentos } from '../utils/descuentoMozo';
 import RasterTicketCocina from '../utils/ticketRasterCocina';
 import { imprimirTicketsMozoYCocina, platosPlanosParaTicket } from '../utils/imprimirTicketsTermicos';
 
@@ -1871,27 +1871,44 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       return;
     }
     const motivoFinal = String(motivo || '').trim();
-    const montos = monto > 0 ? montosDescuentoPorComanda(targets, monto) : null;
+    const bruto = brutoGrupoComandas(targets);
+    const aplicar = monto > 0
+      ? monto
+      : (Number(descuento) > 0 ? bruto * Math.min(100, Number(descuento)) / 100 : 0);
+    const montos = montosDescuentoPorComanda(targets, aplicar);
     setAplicandoDescuento(true);
     try {
       let exitosos = 0;
       let ahorro = 0;
       let nuevoTotal = 0;
-      for (let i = 0; i < targets.length; i++) {
-        const comanda = targets[i];
+      const orden = targets
+        .map((c, i) => ({ c, i, peso: pesoBrutoComanda(c) }))
+        .sort((a, b) => b.peso - a.peso || a.i - b.i);
+      for (const item of orden) {
+        const comanda = item.c;
+        const montoLinea = montos[item.i];
+        if (!(montoLinea > 0)) {
+          if (comandaTieneDescuentoMozo(comanda)) {
+            await axios.delete(urlDescuentoComanda(comanda._id), {
+              timeout: 10000,
+              data: {
+                usuarioId: userInfo._id,
+                usuarioRol: userInfo.rol,
+                motivoEliminacion: 'Descuento del grupo pasado a la comanda de mayor monto',
+                sourceApp: 'mozos',
+              },
+            });
+          }
+          continue;
+        }
         const body = {
           motivo: motivoFinal,
           usuarioId: userInfo._id,
           usuarioRol: userInfo.rol,
           sourceApp: 'mozos',
+          monto: Number(Number(montoLinea).toFixed(2)),
+          descuento: 0,
         };
-        if (montos) {
-          if (!(montos[i] > 0)) continue;
-          body.monto = Number(Number(montos[i]).toFixed(2));
-          body.descuento = 0;
-        } else {
-          body.descuento = descuento;
-        }
         const response = await axios.put(urlDescuentoComanda(comanda._id), body, {
           timeout: 10000,
           headers: { 'Content-Type': 'application/json' },
