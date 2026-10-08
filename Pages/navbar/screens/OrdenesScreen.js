@@ -294,6 +294,8 @@ const OrdenesScreen = ({ route }) => {
   const [mozoElegidoEspecial, setMozoElegidoEspecial] = useState(null);
   const [mostrarMozosEspecial, setMostrarMozosEspecial] = useState(false);
   const [descuentoEspecial, setDescuentoEspecial] = useState("");
+  // PLAN_METODO_PRUEBA_ADMIN: orden de prueba del admin (monto 0, etiqueta PRUEBA en cocina)
+  const [esPruebaOrden, setEsPruebaOrden] = useState(false);
   const [mesas, setMesas] = useState([]);
   const [modalMesasVisible, setModalMesasVisible] = useState(false);
   const [modalPlatosVisible, setModalPlatosVisible] = useState(false);
@@ -1334,28 +1336,95 @@ const OrdenesScreen = ({ route }) => {
   };
 
   const renderTotalesOrden = (landscape) => (
-    <View style={[styles.totalSection, landscape && styles.totalSectionLandscape]}>
-      <View style={styles.totalBreakdown}>
-        <View style={styles.totalBreakdownRow}>
-          <Text style={styles.totalBreakdownLabel}>Subtotal</Text>
-          <Text style={styles.totalBreakdownValue}>
-            {simboloOrden} {Number(totalesOrden.subtotalSinIGV || 0).toFixed(decimalesOrden)}
-          </Text>
-        </View>
-        <View style={styles.totalBreakdownRow}>
-          <Text style={styles.totalBreakdownLabel}>{nombreImpuestoOrden} ({igvPctOrden}%)</Text>
-          <Text style={styles.totalBreakdownValue}>
-            {simboloOrden} {Number(totalesOrden.igv || 0).toFixed(decimalesOrden)}
-          </Text>
-        </View>
-        <View style={styles.totalBreakdownRow}>
-          <Text style={styles.totalLabel}>TOTAL</Text>
-          <Text style={styles.totalText}>
-            {simboloOrden} {totalConDescuentoEspecial.toFixed(decimalesOrden)}
-          </Text>
+    <>
+      <View style={[styles.totalSection, landscape && styles.totalSectionLandscape]}>
+        <View style={styles.totalBreakdown}>
+          <View style={styles.totalBreakdownRow}>
+            <Text style={styles.totalBreakdownLabel}>Subtotal</Text>
+            <Text style={styles.totalBreakdownValue}>
+              {simboloOrden} {Number(esPruebaOrden ? 0 : totalesOrden.subtotalSinIGV || 0).toFixed(decimalesOrden)}
+            </Text>
+          </View>
+          <View style={styles.totalBreakdownRow}>
+            <Text style={styles.totalBreakdownLabel}>{nombreImpuestoOrden} ({igvPctOrden}%)</Text>
+            <Text style={styles.totalBreakdownValue}>
+              {simboloOrden} {Number(esPruebaOrden ? 0 : totalesOrden.igv || 0).toFixed(decimalesOrden)}
+            </Text>
+          </View>
+          <View style={styles.totalBreakdownRow}>
+            <Text style={styles.totalLabel}>TOTAL</Text>
+            <Text style={styles.totalText}>
+              {simboloOrden} {(esPruebaOrden ? 0 : totalConDescuentoEspecial).toFixed(decimalesOrden)}
+            </Text>
+          </View>
+          {esPruebaOrden ? (
+            <Text style={{ color: '#A78BFA', fontWeight: '700', fontSize: 13, marginTop: 2 }}>
+              Orden de PRUEBA — monto 0, sin cobro
+            </Text>
+          ) : null}
         </View>
       </View>
-    </View>
+      {/* PLAN_METODO_PRUEBA_ADMIN: botón PRUEBA debajo del cuadro del total (solo admin) */}
+      {esAdminOrden ? (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={esPruebaOrden ? 'Modo PRUEBA activo' : 'Marcar orden como PRUEBA'}
+          style={[
+            styles.botonPruebaOrden,
+            esPruebaOrden && styles.botonPruebaOrdenActivo,
+          ]}
+          onPress={() => {
+            Haptics.selectionAsync();
+            if (esPruebaOrden) {
+              Alert.alert(
+                'PRUEBA',
+                '¿Quitar el modo PRUEBA de esta orden?',
+                [
+                  { text: 'Cancelar', style: 'cancel' },
+                  { text: 'Quitar', style: 'destructive', onPress: () => setEsPruebaOrden(false) },
+                ]
+              );
+              return;
+            }
+            Alert.alert(
+              'Modo PRUEBA',
+              'La orden se enviará como PRUEBA: monto 0, sin cobro y con etiqueta PRUEBA en cocina.\n\n¿Autorizar?',
+              [
+                { text: 'Cancelar', style: 'cancel' },
+                { text: 'Sí, PRUEBA', onPress: () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setEsPruebaOrden(true); } },
+              ]
+            );
+          }}
+        >
+          <View style={[
+            styles.botonPruebaOrdenIcono,
+            esPruebaOrden && styles.botonPruebaOrdenIconoActivo,
+          ]}>
+            <MaterialCommunityIcons
+              name="flask"
+              size={24}
+              color={esPruebaOrden ? '#FFFFFF' : '#A78BFA'}
+            />
+          </View>
+          <View style={styles.botonPruebaOrdenTextos}>
+            <Text style={[styles.botonPruebaOrdenTitulo, esPruebaOrden && { color: '#FFFFFF' }]}>
+              {esPruebaOrden ? 'PRUEBA ACTIVA' : 'PRUEBA'}
+            </Text>
+            <Text style={[styles.botonPruebaOrdenSub, esPruebaOrden && { color: '#EDE9FE' }]}>
+              {esPruebaOrden
+                ? 'La orden se enviará como prueba · monto 0'
+                : 'Marca esta orden como prueba · monto 0'}
+            </Text>
+          </View>
+          <MaterialCommunityIcons
+            name={esPruebaOrden ? 'check-circle' : 'chevron-right'}
+            size={24}
+            color={esPruebaOrden ? '#FFFFFF' : '#A78BFA'}
+          />
+        </TouchableOpacity>
+      ) : null}
+    </>
   );
 
   // 🔥 Función para verificar si la comanda se creó en el backend
@@ -1463,6 +1532,7 @@ const OrdenesScreen = ({ route }) => {
         setCantidades({});
         setObservaciones('');
         setNombreClienteParaLlevar('');
+        setEsPruebaOrden(false);
         setIsSendingComanda(false);
         setMostrarOverlayCarga(false);
         limpiarBorrador();
@@ -1488,6 +1558,7 @@ const OrdenesScreen = ({ route }) => {
       setCantidades({});
       setObservaciones('');
       setNombreClienteParaLlevar('');
+      setEsPruebaOrden(false);
       setIsSendingComanda(false);
       setMostrarOverlayCarga(false);
       if (modoExtraLlevar) {
@@ -1593,6 +1664,7 @@ const OrdenesScreen = ({ route }) => {
         ...( (tipoServicioEnvio === TIPO_PARA_LLEVAR || tipoServicioEnvio === TIPO_EXTRA_LLEVAR || esSinMesaOrden)
           ? { clienteNombreParaLlevar: (nombreClienteParaLlevar || '').trim() || null }
           : {}),
+        ...(esPruebaOrden ? { esPrueba: true } : {}),
         status: "en_espera",
         IsActive: true,
         ...(t0Armado
@@ -1688,7 +1760,7 @@ const OrdenesScreen = ({ route }) => {
         }
       }
       
-      if (mesaEspecialOrden && montoDescuentoEspecial > 0 && comandaCreada?._id) {
+      if (mesaEspecialOrden && montoDescuentoEspecial > 0 && !esPruebaOrden && comandaCreada?._id) {
         try {
           const descUrl = apiConfig.isConfigured
             ? apiConfig.getEndpoint(`/comanda/${comandaCreada._id}/descuento`)
@@ -2810,6 +2882,53 @@ const OrdenesScreenStyles = (theme, orientation, compacto = COMPACTO_DEFAULT, ac
     fontSize: 16,
     fontWeight: "700",
     textAlign: "right",
+  },
+  // PLAN_METODO_PRUEBA_ADMIN: botón PRUEBA bajo el cuadro del total (solo admin)
+  botonPruebaOrden: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    minHeight: 56,
+    marginTop: 10,
+    marginHorizontal: theme.spacing.lg,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderStyle: "dashed",
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(124, 58, 237, 0.08)",
+  },
+  botonPruebaOrdenActivo: {
+    borderStyle: "solid",
+    borderColor: "#7C3AED",
+    backgroundColor: "#7C3AED",
+  },
+  botonPruebaOrdenIcono: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(167, 139, 250, 0.18)",
+  },
+  botonPruebaOrdenIconoActivo: {
+    backgroundColor: "rgba(255, 255, 255, 0.22)",
+  },
+  botonPruebaOrdenTextos: {
+    flex: 1,
+    minWidth: 0,
+  },
+  botonPruebaOrdenTitulo: {
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+    color: "#A78BFA",
+  },
+  botonPruebaOrdenSub: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#C4B5FD",
+    marginTop: 1,
   },
   mozoModalFondo: {
     flex: 1,

@@ -1208,6 +1208,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   ].includes(mesaEstadoEfectivo);
   const tieneComandaActiva = comandas.length > 0 && !comandaYaPagada;
   const mesaEspecialDetalle = esMesaEspecial(mesa) || esMesaInvitados(mesa);
+  // PLAN_METODO_PRUEBA_ADMIN: alguna comanda del ciclo es de prueba
+  const esPruebaDetalle = comandas.some((c) => c?.esPrueba === true);
   const adminEnMesaEspecial = mesaEspecialDetalle && String(userInfo?.rol || '').toLowerCase() === 'admin';
   const esOtroMozo = !adminEnMesaEspecial
     && !((mesaEspecialDetalle && mozoAsignadoEnComandas(comandas, userInfo?._id)))
@@ -3242,6 +3244,12 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           }
         ]}>
           <ScrollView style={styles.optionsScrollView}>
+            {esPruebaDetalle && (
+            <View style={styles.bannerPruebaDetalle}>
+              <MaterialCommunityIcons name="flask" size={18} color="#FFFFFF" />
+              <Text style={styles.bannerPruebaDetalleTexto}>PRUEBA — monto 0, sin cobro</Text>
+            </View>
+            )}
             {puedeEditar && (
             <TouchableOpacity
               style={[
@@ -4935,6 +4943,24 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '600',
     textTransform: 'uppercase',
+  },
+  // PLAN_METODO_PRUEBA_ADMIN: banner PRUEBA en el detalle de comanda
+  bannerPruebaDetalle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 44,
+    paddingHorizontal: 10,
+    marginBottom: 10,
+    borderRadius: 10,
+    backgroundColor: '#7C3AED',
+  },
+  bannerPruebaDetalleTexto: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   // ===== NUEVO: Toggle Mesa / Para llevar y badge =====
   tipoServicioRow: {
