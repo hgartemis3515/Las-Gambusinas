@@ -71,6 +71,7 @@ function filaDesdeComandas(comandas, key) {
     _id: first._id,
     comandaLabel: formatGrupoComandasLabel(comandas),
     pendienteCobro: round2(comandas.reduce((s, c) => s + (Number(c.pendienteCobro) || 0), 0)),
+    total: round2(comandas.reduce((s, c) => s + (Number(c.total) || 0), 0)),
     status: estadoMasCritico(comandas),
     platos: comandas.flatMap((c) => c.platos || []),
     mesaEstado: first.mesaEstado,
