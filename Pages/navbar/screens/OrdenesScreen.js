@@ -1526,7 +1526,11 @@ const OrdenesScreen = ({ route }) => {
           const res = await axios.get(url, { timeout: 8000 });
           doc = res.data?.comanda || res.data || doc;
         }
-        if (!doc?._id || !rasterTicketRef.current) return;
+        if (esPruebaOrden && doc) doc = { ...doc, esPrueba: true };
+        if (!doc?._id || !rasterTicketRef.current) {
+          Alert.alert('Impresión', 'La orden se envió, pero no se pudo preparar el ticket.');
+          return;
+        }
         await imprimirTicketsMozoYCocina({
           rasterizar: (payload) => rasterTicketRef.current.rasterizar(payload),
           comandas: [doc],

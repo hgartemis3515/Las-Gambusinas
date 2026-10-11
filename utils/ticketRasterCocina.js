@@ -120,6 +120,9 @@ function htmlCuerpo(datos) {
     reserva: esReserva,
   });
   html += `<div style="text-align:center;font-size:22px;font-weight:800;letter-spacing:0.5px;line-height:1.15;padding:4px 0 6px;">${esc(d.letrero || '#—')}</div>`;
+  if (d.esPrueba === true) {
+    html += '<div style="text-align:center;font-size:18px;font-weight:900;letter-spacing:2px;line-height:1.1;padding:0 0 6px;">PRUEBA</div>';
+  }
   if (d.anulacion) {
     html += `<div style="text-align:center;font-size:13px;font-weight:700;line-height:1.35;padding:0 0 6px;">${esc(d.anulacion.usuario)}<br/>${esc(d.anulacion.hora)}<br/>${esc(d.anulacion.motivo)}</div>`;
   }

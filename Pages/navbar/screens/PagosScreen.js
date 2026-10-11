@@ -1225,6 +1225,8 @@ const PagosScreen = () => {
     if (cobroPorCantidad) {
       const cuenta = Number(totalesMaxPago?.total) || 0;
       const tope = totalRestante != null && totalRestante > 0 ? Math.min(cuenta, Number(totalRestante)) : cuenta;
+      const mesaEspecialPago = mesa?.especial === true || route.params?.mesa?.especial === true;
+      if (mesaEspecialPago && tope > 0) return tope;
       const parsed = parseMonto(montoPagoStr);
       if (parsed > 0) return tope > 0 ? Math.min(parsed, tope) : parsed;
       return tope;
@@ -1237,7 +1239,7 @@ const PagosScreen = () => {
     const igvPorcentaje = configMoneda?.igvPorcentaje || 18;
     const incluyeIGV = configMoneda?.preciosIncluyenIGV || false;
     return incluyeIGV ? totalParam : totalParam * (1 + igvPorcentaje / 100);
-  }, [platosSeleccionadosPago, totalesPagoActual, route.params, total, configMoneda, cobroPorCantidad, totalesMaxPago?.total, totalRestante, montoPagoStr]);
+  }, [platosSeleccionadosPago, totalesPagoActual, route.params, mesa?.especial, total, configMoneda, cobroPorCantidad, totalesMaxPago?.total, totalRestante, montoPagoStr]);
 
   const puedeSolicitarPago = !isGenerating && !procesandoPago && (
     cobroPorCantidad

@@ -1760,7 +1760,7 @@ const InicioScreen = () => {
         return c.IsActive !== false && !['pagado', 'completado', 'cancelado', 'cerrado'].includes(status);
       });
       if (algunaActiva) {
-        if (mesa.especial === true && estadoMesaSrv === 'entregado') return "Pendiente de aprobación";
+        if (mesa.especial === true) return "Pendiente de aprobación";
         return "Entregado";
       }
     }
@@ -1894,7 +1894,7 @@ const InicioScreen = () => {
         }
         // Si hay comandas entregadas (listas para pagar), mostrar Entregado (verde) para distinguir de Preparado
         if (hayComandasEntregadas) {
-          if (mesa.especial === true && estadoLower === 'entregado') return "Pendiente de aprobación";
+          if (mesa.especial === true) return "Pendiente de aprobación";
           return "Entregado";
         }
       }
@@ -1925,7 +1925,7 @@ const InicioScreen = () => {
     });
 
     // Prioridad: Entregado (todos platos entregados) > Preparado (recoger/salio) > Pedido
-    if (hayEntregadas) return "Entregado";
+    if (hayEntregadas) return mesa.especial === true ? "Pendiente de aprobación" : "Entregado";
     if (hayPreparadas) return "Preparado";
     return "Pedido";
   };
@@ -2196,7 +2196,9 @@ const InicioScreen = () => {
     }
 
     const estado = getEstadoMesa(mesa);
-    const pagarTodoJunto = estado === "Pendiente de aprobación" && estadoCrudo === "entregado";
+    const pagarTodoJunto = mesa?.especial === true
+      && estado === "Pendiente de aprobación"
+      && !["pendiente_aprobar", "pagado", "pagando", "reportado"].includes(estadoCrudo);
     const adminMesaEspecial = mesa?.especial === true && rol === "admin";
 
     if (estado === "Espera...") {

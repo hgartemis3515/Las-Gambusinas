@@ -145,6 +145,10 @@ export function generarHtmlComanda({ datos, plantilla, serverOrigin }) {
     html += `<div style="text-align:center;font-weight:bold;font-size:${fontSize + 2}px;margin:4px 0;letter-spacing:2px;">${escapeHtml(p.encabezado?.titulo || 'COMANDA')}</div>`;
     html += divider();
   }
+  if (datos.esPrueba === true) {
+    html += `<div style="text-align:center;font-weight:900;font-size:${fontSize + 2}px;letter-spacing:2px;margin:2px 0;">PRUEBA</div>`;
+    html += divider();
+  }
 
   // === DATOS COMANDA ===
   if (bloques.mostrarDatosComanda !== false) {
@@ -549,6 +553,7 @@ export function mapComandasATicket(comandas, boucherOpcional, config = {}) {
         || (typeof boucherOpcional?.cliente === 'object' ? boucherOpcional.cliente?.dni : null)
         || '',
     },
+    esPrueba: lista.some((c) => c?.esPrueba === true) || boucherOpcional?.esPrueba === true,
     voucherId: boucherOpcional?.voucherId || boucherOpcional?.boucherNumber || null,
     montoRecibido: boucherOpcional?.montoRecibido ?? null,
     vuelto: boucherOpcional?.vuelto ?? null,

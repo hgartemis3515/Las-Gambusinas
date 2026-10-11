@@ -9,6 +9,23 @@ import { leerImpresorasTermicas } from '../config/impresorasTermicas';
 import { imprimirEposEnIp } from './eposPrintHttp';
 import { imprimirBoucherTmAssistant, buildTmPrintAssistantUrl } from './boucherTmPrint';
 
+const IP_COCINA_PRUEBA = '192.168.50.228';
+const IP_CAJA_PRUEBA = '192.168.50.150';
+
+async function imprimirEposPorServidor(ip, xml) {
+  const url = apiConfig.isConfigured && apiConfig.getEndpoint
+    ? apiConfig.getEndpoint('/impresion/epos')
+    : `${getFallbackApiBase()}/impresion/epos`;
+  const headers = await getMozoAuthHeaders();
+  const res = await axios.post(url, { ip, xml }, {
+    timeout: 20000,
+    headers,
+    validateStatus: () => true,
+  });
+  if (res.status >= 200 && res.status < 300 && res.data?.ok === true) return;
+  throw new Error(res.data?.message || `No se alcanzó la impresora ${ip}.`);
+}
+
 export function platosPlanosParaTicket(comandas) {
   const platos = [];
   for (const comanda of comandas || []) {
@@ -77,13 +94,22 @@ export async function imprimirTicketsMozoYCocina({
     detenerCaja = false;
     detenerCocina = false;
   }
+  const forzarAmbas = (comandas || []).some((c) => c?.esPrueba === true);
+  if (forzarAmbas) {
+    detenerCaja = false;
+    detenerCocina = false;
+  }
   if (detenerCaja && detenerCocina) return;
   try {
     const mozo = detenerCaja ? null : await rasterizar({ ...datos, cocina: false });
     const cocinaImg = detenerCocina ? null : await rasterizar({ ...datos, cocina: true });
     const cfg = await leerImpresorasTermicas();
-    const ipCaja = String(cfg?.caja?.ip || '').trim();
-    const ipCocina = String(cfg?.cocina?.ip || '').trim();
+    let ipCaja = String(cfg?.caja?.ip || '').trim();
+    let ipCocina = String(cfg?.cocina?.ip || '').trim();
+    if (forzarAmbas) {
+      ipCaja = IP_CAJA_PRUEBA;
+      ipCocina = IP_COCINA_PRUEBA;
+    }
     if (!ipCaja && !ipCocina) {
       if (mozo && cocinaImg) {
         const junto = xmlDosImagenesEpos(mozo, cocinaImg);
@@ -102,7 +128,15 @@ export async function imprimirTicketsMozoYCocina({
     if (ipCocina && cocinaImg) trabajos.push({ nombre: 'Cocina', ip: ipCocina, xml: xmlImagenEpos(cocinaImg) });
     const resultados = await Promise.all(trabajos.map(async (job) => {
       try {
-        await imprimirEposEnIp(job.ip, job.xml);
+        if (forzarAmbas) {
+          try {
+            await imprimirEposPorServidor(job.ip, job.xml);
+          } catch {
+            await imprimirEposEnIp(job.ip, job.xml);
+          }
+        } else {
+          await imprimirEposEnIp(job.ip, job.xml);
+        }
         return { ...job, ok: true };
       } catch (e) {
         return { ...job, ok: false, error: e?.message || 'Error' };

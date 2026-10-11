@@ -244,6 +244,7 @@ export function datosImpresionTicket({
       line: montoLinea(p),
     })),
     sinMesa: !!(mesa?.sinMesa || elegidas.some((c) => c?.sinMesa === true)),
+    esPrueba: elegidas.some((c) => c?.esPrueba === true),
   };
 }
 
