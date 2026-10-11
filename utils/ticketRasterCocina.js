@@ -70,11 +70,10 @@ function celdaMozoTicket(mozo) {
 function celdaTipoTicket(tipo, cliente) {
   const nombre = String(cliente || '').trim();
   const linea = nombre
-    ? `<div style="font-size:10.8px;font-weight:700;line-height:1.15;padding-bottom:1px;">${esc(nombre)}</div>`
+    ? `<div style="font-size:10.8px;font-weight:700;line-height:1.15;letter-spacing:0.3px;padding-bottom:1px;">${esc(nombre)}</div>`
     : '';
   return `<td style="width:50%;padding:2px 3px;border:1px solid #000;vertical-align:top;">
     ${linea}
-    <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.3px;">Tipo</div>
     <div style="font-size:12px;font-weight:700;line-height:1.2;">${esc(tipo || '—')}</div>
   </td>`;
 }
