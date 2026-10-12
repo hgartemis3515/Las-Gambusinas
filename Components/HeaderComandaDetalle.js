@@ -133,6 +133,9 @@ const HeaderComandaDetalle = ({ mesa, comanda, comandas, onSync, onImprimir, nav
           <Text style={styles.headerText}>Mozo: {mozoNombre}</Text>
           <Text style={styles.headerText}> • </Text>
           <Text style={styles.headerText}>Mesa: {etiquetaMesa}</Text>
+          {(comanda?.clienteNombre || comanda?.clienteNombreParaLlevar) ? (
+            <Text style={[styles.headerText, { fontWeight: '800' }]}> • {comanda.clienteNombre || comanda.clienteNombreParaLlevar}</Text>
+          ) : null}
           <Text style={styles.headerText}> • </Text>
           <Text style={styles.headerText}>{fechaComanda}</Text>
           <Text style={styles.headerText}> • </Text>

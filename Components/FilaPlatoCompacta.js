@@ -19,6 +19,7 @@ const FilaPlatoCompacta = ({
   plato, 
   onMarcarEntregado,
   onToggleSeleccion,
+  onEditarCliente,
   seleccionado = false,
   estilos,
   puedeMarcarEntregado = false,
@@ -114,6 +115,16 @@ const FilaPlatoCompacta = ({
             ❌ {plato.anuladoRazon}
           </Text>
         )}
+        <TouchableOpacity
+          style={styles.nombreClientePegado}
+          onPress={() => onEditarCliente && onEditarCliente(plato)}
+          disabled={!onEditarCliente}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+        >
+          <Text style={styles.nombreClientePegadoText} numberOfLines={1}>
+            {(plato.clienteNombreLinea || plato.clienteNombreComanda || 'Cliente').toString()}
+          </Text>
+        </TouchableOpacity>
       </View>
       
       {/* Cantidad (10%) */}
@@ -225,6 +236,8 @@ const styles = StyleSheet.create({
   columnaNombre: {
     flex: 0.4,
     paddingRight: 8,
+    paddingBottom: 16,
+    position: 'relative',
   },
   columnaCantidad: {
     flex: 0.1,
@@ -242,8 +255,23 @@ const styles = StyleSheet.create({
   nombre: {
     fontSize: 15,
     fontWeight: '500',
-    color: '#1F2937',
+    color: '#111827',
     flexWrap: 'wrap',
+  },
+  nombreClientePegado: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    maxWidth: '100%',
+    backgroundColor: '#5B21B6',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  nombreClientePegadoText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
   },
   nombreAnulado: {
     textDecorationLine: 'line-through',
@@ -261,8 +289,8 @@ const styles = StyleSheet.create({
   },
   cantidad: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
+    fontWeight: '700',
+    color: '#111827',
   },
   cantidadEntregado: {
     color: '#FFFFFF',
@@ -270,8 +298,8 @@ const styles = StyleSheet.create({
   },
   precio: {
     fontSize: 15,
-    fontWeight: '600',
-    color: '#059669',
+    fontWeight: '700',
+    color: '#065F46',
   },
   checkboxButton: {
     flexDirection: 'row',

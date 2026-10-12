@@ -337,6 +337,10 @@ const PagosScreen = () => {
   const { ocultarPropina } = useOcultarPropina();
   const [rolUsuario, setRolUsuario] = useState(null);
   const esCobroDirectoCaja = rolUsuario === 'cajero' || rolUsuario === 'admin';
+  const [enPartes, setEnPartes] = useState(false);
+  const [modoEnPartes, setModoEnPartes] = useState('monto');
+  const [idsEnPartes, setIdsEnPartes] = useState([]);
+  const [partesPago, setPartesPago] = useState([]);
   
   // ✅ NUEVO FLUJO: Usar SOLO route.params - Backend = FUENTE ÚNICA DE VERDAD
   useEffect(() => {
@@ -1074,6 +1078,22 @@ const PagosScreen = () => {
     [platosEnPantalla]
   );
 
+  const saldoPendientePartes = () => {
+    const lista = comandas.length ? comandas : (route.params?.comandasParaPagar || []);
+    const ids = idsEnPartes.length ? idsEnPartes : lista.map((c) => String(c._id));
+    const sel = lista.filter((c) => ids.includes(String(c._id)));
+    const conPendiente = sel.length > 0 && sel.every((c) => Number.isFinite(Number(c.pendienteCobro)));
+    if (conPendiente) {
+      return Number(sel.reduce((s, c) => s + Math.max(0, Number(c.pendienteCobro)), 0).toFixed(2));
+    }
+    const todos = !idsEnPartes.length || idsEnPartes.length >= lista.length;
+    if (todos && totalRestante != null && Number(totalRestante) >= 0) return Number(totalRestante);
+    return Number(platosPagables
+      .filter((p) => ids.includes(String(p.comandaId)))
+      .reduce((s, p) => s + (Number(p.subtotal) || 0), 0)
+      .toFixed(2));
+  };
+
   const infoPagoToken = route.params?.abrirInfoPagoToken;
   useEffect(() => {
     if (!route.params?.abrirInfoPago || !infoPagoToken) return;
@@ -1549,11 +1569,23 @@ const PagosScreen = () => {
     const paramsParaPago = route.params || {};
     const comandasParaPagar = paramsParaPago.comandasParaPagar || [];
     const mesaParaPago = paramsParaPago.mesa || mesa;
-    // FIX: No usar || con totalPendiente porque 0 es válido (descuento 100%)
     const totalPendienteParams = paramsParaPago.totalPendiente != null ? paramsParaPago.totalPendiente : 0;
 
-    // Si no hay comandas en params, usar estado local (fallback)
-    const comandasFinales = comandasParaPagar.length > 0 ? comandasParaPagar : comandas;
+    const comandasBase = comandasParaPagar.length > 0 ? comandasParaPagar : comandas;
+    const pagoPorMonto = cobroPorCantidad || (enPartes && modoEnPartes === 'monto');
+    let comandasFinales = comandasBase;
+    if (enPartes) {
+      if (!idsEnPartes.length) {
+        Alert.alert('En partes', 'Marca al menos una comanda.');
+        return;
+      }
+      const setIds = new Set(idsEnPartes.map(String));
+      comandasFinales = comandasBase.filter((c) => setIds.has(String(c._id)));
+      if (!comandasFinales.length) {
+        Alert.alert('En partes', 'Esas comandas ya no están en este pago.');
+        return;
+      }
+    }
     const mesaFinal = mesaParaPago || mesa;
     const totalCobroSeleccion = totalesPagoActual?.total ?? 0;
     const totalFinal =
@@ -1579,20 +1611,26 @@ const PagosScreen = () => {
     }
 
     // FIX: Permitir total=0 cuando hay descuento 100% aplicado
-    if (totalFinal < 0 || (totalFinal === 0 && !tieneDescuento)) {
+    if (!pagoPorMonto && (totalFinal < 0 || (totalFinal === 0 && !tieneDescuento))) {
       Alert.alert("Error", "El total a pagar debe ser mayor a cero. Por favor, verifica las comandas.");
       return;
     }
 
     // Validar selección de platos para pago parcial
-    if (!cobroPorCantidad && platosPagables.length > 0 && platosSeleccionadosPago.length === 0) {
+    if (enPartes && modoEnPartes === 'monto') {
+      const m = parseMonto(montoPagoStr);
+      if (!(m > 0)) {
+        Alert.alert('Monto', 'Ingresa el monto de esta parte.');
+        return;
+      }
+    } else if (!pagoPorMonto && platosPagables.length > 0 && platosSeleccionadosPago.length === 0) {
       Alert.alert(
         "Sin selección",
         "Selecciona al menos un plato para confirmar el pago."
       );
       return;
     }
-    if (cobroPorCantidad && !(Number(totalBaseCobro) > 0) && Number(totalesMaxPago?.total) > 0) {
+    if (pagoPorMonto && !(Number(enPartes ? parseMonto(montoPagoStr) : totalBaseCobro) > 0) && Number(totalesMaxPago?.total) > 0) {
       Alert.alert("Monto", "Ingresa el monto a cobrar.");
       return;
     }
@@ -1603,7 +1641,7 @@ const PagosScreen = () => {
       const qty = Number(cantidadesPago[p.key] ?? p.cantidad) || 0;
       return qty < (Number(p.cantidad) || 1);
     });
-    const esSeleccionParcial = !cobroPorCantidad && platosPagables.length > 0 &&
+    const esSeleccionParcial = !pagoPorMonto && platosPagables.length > 0 &&
       platosSeleccionadosPago.length > 0 &&
       (platosSeleccionadosPago.length < platosPagables.length || hayCantidadMenor);
     if (esSeleccionParcial && !omitirConfirmacionParcial) {
@@ -1633,15 +1671,17 @@ const PagosScreen = () => {
     setMensajeCarga("Procesando pago...");
     
     try {
-      const platosPayload = cobroPorCantidad
+      const platosPayload = pagoPorMonto
         ? []
         : buildPlatosSeleccionadosPayload(
         platosSeleccionadosPago,
-        platosPagables,
+        enPartes
+          ? platosPagables.filter((p) => idsEnPartes.includes(String(p.comandaId)))
+          : platosPagables,
         cantidadesPago
       );
 
-      if (!cobroPorCantidad && platosPayload.length === 0) {
+      if (!pagoPorMonto && platosPayload.length === 0) {
         setProcesandoPago(false);
         Alert.alert(
           "Error",
@@ -1684,7 +1724,10 @@ const PagosScreen = () => {
         mozoId: mozoId,
         clienteId: cliente._id,
         platosSeleccionados: platosPayload,
-        ...(cobroPorCantidad && { montoCobro: totalBaseCobro, cobroPorCantidad: true }),
+        ...(pagoPorMonto && {
+          montoCobro: enPartes ? parseMonto(montoPagoStr) : totalBaseCobro,
+          cobroPorCantidad: true,
+        }),
         comandasIds: comandasFinales.map((c) => c._id).filter(Boolean).map(String),
         observaciones:
           comandasFinales.map((c) => c.observaciones).filter(Boolean).join("; ") || "",
@@ -2542,6 +2585,7 @@ const PagosScreen = () => {
             })
           ) : platosEnPantalla.length > 0 ? (
             platosEnPantalla.map((item) => {
+              if (enPartes && modoEnPartes === 'platos' && idsEnPartes.length && !idsEnPartes.includes(String(item.comandaId))) return null;
               const seleccionado = platosSeleccionadosPago.includes(item.key);
               const yaPagado = item.yaPagado === true;
               const maxQty = Math.max(1, Number(item.cantidad) || 1);
@@ -2918,6 +2962,206 @@ const PagosScreen = () => {
             </>
           )}
         </Animated.View>
+
+        <View style={{ marginTop: 8, marginBottom: 12 }}>
+          <TouchableOpacity
+            onPress={() => {
+              const lista = comandas.length ? comandas : (route.params?.comandasParaPagar || []);
+              setEnPartes((v) => !v);
+              if (!enPartes) {
+                setIdsEnPartes(lista.map((c) => String(c._id)));
+                setPartesPago((prev) => (prev.length ? prev : [
+                  { id: 'p1', nombre: '', metodoPago: 'efectivo', modo: 'monto', monto: '', platoLineaIds: [] },
+                  { id: 'p2', nombre: '', metodoPago: 'efectivo', modo: 'monto', monto: '', platoLineaIds: [] },
+                ]));
+              }
+            }}
+            style={{ minHeight: 48, borderRadius: 12, backgroundColor: enPartes ? '#6D28D9' : '#4C1D95', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>En partes</Text>
+          </TouchableOpacity>
+          {enPartes && (
+            <View style={{ marginTop: 8 }}>
+              <Text style={{ color: theme.colors?.text?.primary || '#111', fontSize: 13, marginBottom: 6 }}>
+                Saldo pendiente por cobrar: {configMoneda?.simboloMoneda || 'S/.'} {saldoPendientePartes().toFixed(configMoneda?.decimales ?? 2)}. Las partes se arman sobre ese saldo.
+                {' '}
+                {esCobroDirectoCaja
+                  ? 'Administrador: todas las partes se cobran directo, sin aprobación de caja.'
+                  : 'El mozo arma todas las partes. Caja las aprueba juntas.'}
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {(comandas.length ? comandas : (route.params?.comandasParaPagar || [])).map((c) => {
+                  const id = String(c._id);
+                  const on = idsEnPartes.includes(id);
+                  return (
+                    <TouchableOpacity
+                      key={id}
+                      onPress={() => setIdsEnPartes((prev) => on ? prev.filter((x) => x !== id) : [...prev, id])}
+                      style={{ minHeight: 44, paddingHorizontal: 10, borderRadius: 10, backgroundColor: on ? '#7C3AED' : '#312E81', justifyContent: 'center', borderWidth: on ? 2 : 0, borderColor: '#fff' }}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '800' }}>
+                        #{numeroComandaVisible(c) || '—'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    const saldo = saldoPendientePartes();
+                    const n = Math.max(2, partesPago.length || 2);
+                    const cents = Math.round(saldo * 100);
+                    const base = Math.floor(cents / n);
+                    const resto = cents - base * n;
+                    setPartesPago(Array.from({ length: n }, (_, i) => ({
+                      id: `ig-${i}-${Date.now()}`,
+                      nombre: '',
+                      metodoPago: 'efectivo',
+                      modo: 'monto',
+                      monto: ((base + (i === n - 1 ? resto : 0)) / 100).toFixed(2),
+                      platoLineaIds: [],
+                    })));
+                  }}
+                  style={{ flex: 1, minHeight: 44, borderRadius: 10, backgroundColor: '#B45309', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '800' }}>En iguales</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    const platos = platosPagables.filter((p) => idsEnPartes.includes(String(p.comandaId)) && p.platoSubdocId);
+                    const grupos = new Map();
+                    platos.forEach((p) => {
+                      const nombre = String(p.platoItem?.clienteNombreLinea || '').trim();
+                      const key = nombre || 'sin';
+                      if (!grupos.has(key)) grupos.set(key, { nombre, ids: [] });
+                      grupos.get(key).ids.push(String(p.platoSubdocId));
+                    });
+                    const partes = [...grupos.entries()].filter(([k]) => k !== 'sin').map(([_, g]) => ({
+                      id: `n-${g.nombre}`,
+                      nombre: g.nombre,
+                      metodoPago: 'efectivo',
+                      modo: 'platos',
+                      monto: '',
+                      platoLineaIds: g.ids,
+                    }));
+                    const sueltos = grupos.get('sin');
+                    if (sueltos) partes.push({ id: 'sueltos', nombre: '', metodoPago: 'efectivo', modo: 'platos', monto: '', platoLineaIds: sueltos.ids });
+                    setPartesPago(partes.length ? partes : [
+                      { id: 'p1', nombre: '', metodoPago: 'efectivo', modo: 'monto', monto: '', platoLineaIds: [] },
+                      { id: 'p2', nombre: '', metodoPago: 'efectivo', modo: 'monto', monto: '', platoLineaIds: [] },
+                    ]);
+                  }}
+                  style={{ flex: 1, minHeight: 44, borderRadius: 10, backgroundColor: '#0369A1', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '800' }}>Por nombre</Text>
+                </TouchableOpacity>
+              </View>
+              {partesPago.map((parte, idx) => (
+                <View key={parte.id} style={{ marginTop: 8, padding: 10, borderRadius: 12, backgroundColor: '#111827' }}>
+                  <Text style={{ color: '#fff', fontWeight: '800', marginBottom: 6 }}>Parte {idx + 1}</Text>
+                  <TextInput
+                    value={parte.nombre}
+                    onChangeText={(t) => setPartesPago((prev) => prev.map((x) => x.id === parte.id ? { ...x, nombre: t } : x))}
+                    placeholder="Quién paga"
+                    placeholderTextColor="#9CA3AF"
+                    style={{ minHeight: 44, color: '#fff', backgroundColor: '#1F2937', borderRadius: 8, paddingHorizontal: 10, marginBottom: 6 }}
+                  />
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity onPress={() => setPartesPago((prev) => prev.map((x) => x.id === parte.id ? { ...x, modo: 'monto' } : x))} style={{ flex: 1, minHeight: 40, borderRadius: 8, backgroundColor: parte.modo === 'monto' ? '#B45309' : '#374151', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: '#fff', fontWeight: '700' }}>Monto</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setPartesPago((prev) => prev.map((x) => x.id === parte.id ? { ...x, modo: 'platos' } : x))} style={{ flex: 1, minHeight: 40, borderRadius: 8, backgroundColor: parte.modo === 'platos' ? '#B45309' : '#374151', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: '#fff', fontWeight: '700' }}>Platos</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {parte.modo === 'monto' ? (
+                    <TextInput
+                      value={parte.monto}
+                      onChangeText={(t) => setPartesPago((prev) => prev.map((x) => x.id === parte.id ? { ...x, monto: t } : x))}
+                      keyboardType="decimal-pad"
+                      placeholder="Monto"
+                      placeholderTextColor="#9CA3AF"
+                      style={{ marginTop: 6, minHeight: 44, color: '#fff', backgroundColor: '#1F2937', borderRadius: 8, paddingHorizontal: 10 }}
+                    />
+                  ) : (
+                    platosPagables.filter((p) => idsEnPartes.includes(String(p.comandaId)) && p.platoSubdocId).map((p) => {
+                      const id = String(p.platoSubdocId);
+                      const on = parte.platoLineaIds.includes(id);
+                      return (
+                        <TouchableOpacity
+                          key={id}
+                          onPress={() => setPartesPago((prev) => prev.map((x) => {
+                            const sin = x.platoLineaIds.filter((n) => n !== id);
+                            if (x.id !== parte.id) return { ...x, platoLineaIds: sin };
+                            return { ...x, platoLineaIds: on ? sin : [...sin, id] };
+                          }))}
+                          style={{ marginTop: 4, padding: 8, borderRadius: 8, backgroundColor: on ? '#15803D' : '#1F2937' }}
+                        >
+                          <Text style={{ color: '#fff', fontSize: 13 }}>{p.nombre} · S/ {Number(p.subtotal || 0).toFixed(2)}{p.platoItem?.clienteNombreLinea ? ` · ${p.platoItem.clienteNombreLinea}` : ''}</Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+                    {['efectivo', 'digital', 'tarjeta'].map((m) => (
+                      <TouchableOpacity key={m} onPress={() => setPartesPago((prev) => prev.map((x) => x.id === parte.id ? { ...x, metodoPago: m } : x))} style={{ flex: 1, minHeight: 40, borderRadius: 8, backgroundColor: parte.metodoPago === m ? '#6D28D9' : '#374151', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>{m}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              ))}
+              <TouchableOpacity
+                onPress={() => {
+                  const suma = partesPago.reduce((s, p) => s + (p.modo === 'monto' ? (Number(p.monto) || 0) : 0), 0);
+                  const queda = Math.max(0, Number((saldoPendientePartes() - suma).toFixed(2)));
+                  setPartesPago((prev) => [...prev, { id: `n-${Date.now()}`, nombre: '', metodoPago: 'efectivo', modo: 'monto', monto: queda.toFixed(2), platoLineaIds: [] }]);
+                }}
+                style={{ marginTop: 8, minHeight: 44, borderRadius: 10, backgroundColor: '#374151', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '800' }}>Agregar parte</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={async () => {
+                  if (!idsEnPartes.length || !partesPago.length) {
+                    Alert.alert('En partes', 'Marca la mesa y arma las partes.');
+                    return;
+                  }
+                  const url = apiConfig.isConfigured
+                    ? apiConfig.getEndpoint('/aprobacion/pago-en-partes')
+                    : `${getFallbackApiBase()}/aprobacion/pago-en-partes`;
+                  try {
+                    setProcesandoPago(true);
+                    const res = await axios.post(url, {
+                      comandaIds: idsEnPartes,
+                      cobroDirecto: esCobroDirectoCaja,
+                      partes: partesPago.map((p) => ({
+                        nombre: p.nombre,
+                        metodoPago: p.metodoPago,
+                        modo: p.modo,
+                        monto: Number(p.monto),
+                        platoLineaIds: p.platoLineaIds,
+                      })),
+                    });
+                    const directo = res?.data?.cobroDirectoAplicado === true;
+                    Alert.alert(directo ? 'Cobrado' : 'Partes creadas', directo
+                      ? 'Las partes de la mesa se cobraron directo.'
+                      : 'Caja debe aprobar las partes en la tabla de tickets.');
+                    setEnPartes(false);
+                  } catch (e) {
+                    Alert.alert('No se crearon', e?.response?.data?.message || e.message);
+                  } finally {
+                    setProcesandoPago(false);
+                  }
+                }}
+                style={{ marginTop: 8, minHeight: 52, borderRadius: 12, backgroundColor: '#15803D', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>Crear partes</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </ScrollView>
 
       <View style={[styles.buttonsContainer, { paddingHorizontal: 20 * escala, gap: 16 * escala }]}>

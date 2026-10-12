@@ -1714,9 +1714,8 @@ const OrdenesScreen = ({ route }) => {
         platos: platosData,
         cantidades: cantidadesArray,
         observaciones: observaciones || "",
-        ...( (tipoServicioEnvio === TIPO_PARA_LLEVAR || tipoServicioEnvio === TIPO_EXTRA_LLEVAR || esSinMesaOrden)
-          ? { clienteNombreParaLlevar: (nombreClienteParaLlevar || '').trim() || null }
-          : {}),
+        ...( { clienteNombre: (nombreClienteParaLlevar || '').trim().slice(0, 60) || null,
+          clienteNombreParaLlevar: (nombreClienteParaLlevar || '').trim().slice(0, 60) || null } ),
         ...(esPruebaOrden ? { esPrueba: true } : {}),
         status: "en_espera",
         IsActive: true,
@@ -2310,12 +2309,11 @@ const OrdenesScreen = ({ route }) => {
           )}
         </View>
 
-        {/* Cliente para llevar, encima de observaciones */}
-        {(modoExtraLlevar || tipoServicioModal === TIPO_PARA_LLEVAR || tipoServicioModal === TIPO_EXTRA_LLEVAR || esSeleccionSinMesa(selectedMesa)) && (
-          <View style={styles.section}>
+        {/* Cliente, encima de observaciones. Mesa y para llevar. */}
+        <View style={styles.section}>
             <Text style={styles.sectionLabel}>Cliente</Text>
             <TextInput
-              style={styles.observacionesInput}
+              style={[styles.observacionesInput, { minHeight: 48, fontSize: 16, color: '#111827' }]}
               placeholder="Nombre del cliente (opcional)"
               placeholderTextColor={theme.colors.text.light}
               value={nombreClienteParaLlevar}
@@ -2323,11 +2321,14 @@ const OrdenesScreen = ({ route }) => {
             />
             <Text style={styles.ticketClienteHint}>
               {nombreClienteParaLlevar.trim()
-                ? `Ticket de cliente: ${nombreClienteParaLlevar.trim()}`
-                : 'Ticket de cliente: se asigna al enviar'}
+                ? ((tipoServicioModal === TIPO_PARA_LLEVAR || tipoServicioModal === TIPO_EXTRA_LLEVAR || esSeleccionSinMesa(selectedMesa))
+                  ? `Ticket de cliente: ${nombreClienteParaLlevar.trim()}`
+                  : `Se ve en la comanda y en tickets: ${nombreClienteParaLlevar.trim()}`)
+                : ((tipoServicioModal === TIPO_PARA_LLEVAR || tipoServicioModal === TIPO_EXTRA_LLEVAR || esSeleccionSinMesa(selectedMesa))
+                  ? 'Ticket de cliente: se asigna al enviar'
+                  : 'Opcional. Se ve en la comanda y en tickets.')}
             </Text>
           </View>
-        )}
 
         {/* Observaciones y Total - Layout adaptado para horizontal */}
         {orientation.isLandscape ? (

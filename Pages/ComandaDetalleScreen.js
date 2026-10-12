@@ -447,6 +447,8 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           guarnicionesCambio: platoItem.guarnicionesCambio || null,
           // NUEVO: Tipo de servicio (Mesa vs Para llevar). Default 'mesa' para comandas antiguas.
           tipoServicio: platoItem.tipoServicio || 'mesa',
+          clienteNombreLinea: platoItem.clienteNombreLinea || '',
+          clienteNombreComanda: comanda.clienteNombre || comanda.clienteNombreParaLlevar || '',
           tipoPedido: slugTipoPedido(platoItem.tipoPedido),
           nombreCocinaPedido: platoItem.nombreCocinaPedido || '',
           variantePlato: platoItem.variantePlato || null,
@@ -2974,6 +2976,33 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     ? moment(comandaPrincipal.createdAt).tz("America/Lima").format("DD/MM/YYYY, h:mm:ss a")
     : 'Fecha no disponible';
   
+  const [nombreLineaEdit, setNombreLineaEdit] = useState(null);
+  const [nombreLineaTexto, setNombreLineaTexto] = useState('');
+
+  const abrirNombreLinea = (plato) => {
+    setNombreLineaEdit(plato);
+    setNombreLineaTexto(String(plato?.clienteNombreLinea || ''));
+  };
+
+  const guardarNombreLinea = async () => {
+    const plato = nombreLineaEdit;
+    if (!plato?._id || !plato?.comandaId) {
+      setNombreLineaEdit(null);
+      return;
+    }
+    try {
+      const endpoint = apiConfig.isConfigured
+        ? `${apiConfig.getEndpoint('/comanda')}/${plato.comandaId}/plato/${plato._id}/cliente-nombre`
+        : `${getFallbackApiBase()}/comanda/${plato.comandaId}/plato/${plato._id}/cliente-nombre`;
+      await axios.put(endpoint, { clienteNombreLinea: nombreLineaTexto });
+      setNombreLineaEdit(null);
+      await refrescarComandas();
+    } catch (error) {
+      const msg = error.response?.data?.message || error.message;
+      Alert.alert('No se guardó', msg);
+    }
+  };
+
   // Renderizar fila de plato
   const renderFilaPlato = ({ item: plato, index }) => {
     // Si el plato tiene pago adelantado pendiente, mostrar estado PENDIENTE en naranja
@@ -2996,6 +3025,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
       <FilaPlatoCompacta
         plato={plato}
         estilos={estilos}
+        onEditarCliente={abrirNombreLinea}
         onMarcarEntregado={handleMarcarPlatoEntregado}
         onToggleSeleccion={toggleSeleccionarPlatoEntregar}
         seleccionado={estaSeleccionado}
@@ -3171,6 +3201,30 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         </View>
       )}
       
+      {/* Nombre de cliente en el plato */}
+      <Modal visible={!!nombreLineaEdit} transparent animationType="fade" onRequestClose={() => setNombreLineaEdit(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: '#111827', borderRadius: 16, padding: 16 }}>
+            <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 8 }}>Nombre del cliente</Text>
+            <TextInput
+              value={nombreLineaTexto}
+              onChangeText={setNombreLineaTexto}
+              placeholder="Nombre en este plato"
+              placeholderTextColor="#9CA3AF"
+              style={{ backgroundColor: '#1F2937', color: '#fff', borderRadius: 10, minHeight: 48, paddingHorizontal: 12, fontSize: 16 }}
+            />
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+              <TouchableOpacity onPress={() => setNombreLineaEdit(null)} style={{ flex: 1, minHeight: 48, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#374151' }}>
+                <Text style={{ color: '#fff', fontWeight: '700' }}>Cerrar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={guardarNombreLinea} style={{ flex: 1, minHeight: 48, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6D28D9' }}>
+                <Text style={{ color: '#fff', fontWeight: '800' }}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Layout de dos columnas */}
       <View style={styles.twoColumnLayout}>
         {/* Columna Izquierda: Tabla de Platos (70%) */}
