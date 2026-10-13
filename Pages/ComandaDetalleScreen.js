@@ -1266,6 +1266,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     setFocoComplementos(null);
     setOcultarSumarComplementos(false);
     setEditandoInstanceId(null);
+    setEditandoGrupoIds(null);
+    setUnidadesInicialesModal(null);
+    setCantidadInicialModal(1);
     tipoServicioAlComplementarRef.current = platoLinea.tipoServicio || 'mesa';
     setComplementosInicialesModal(guarnicionesElegidas(platoLinea));
     setNotaInicialModal(platoLinea.notaEspecial || '');

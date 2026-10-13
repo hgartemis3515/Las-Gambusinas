@@ -689,6 +689,9 @@ export default function ReservaWizardScreen() {
     setFocoComplementos(null);
     setOcultarSumarComplementos(false);
     setEditandoInstanceId(null);
+    setEditandoGrupoIds(null);
+    setUnidadesInicialesModal(null);
+    setCantidadInicialModal(1);
     setComplementosInicialesModal(guarnicionesElegidas(linea));
     setNotaInicialModal(linea.notaEspecial || "");
     tipoServicioAlComplementarRef.current = linea.tipoServicio === "para_llevar" ? "para_llevar" : "mesa";
@@ -783,10 +786,13 @@ export default function ReservaWizardScreen() {
             : selPlatos.map((p) => p.cantidad || 1),
         };
         const platosTicket = (doc.platos || []).map((platoItem, index) => {
-          const plato = platoItem.plato && typeof platoItem.plato === 'object' ? platoItem.plato : platoItem;
+          const platoObj = platoItem.plato && typeof platoItem.plato === 'object' ? platoItem.plato : null;
+          const idPlato = String(platoObj?._id || platoItem.plato || '');
+          const local = selPlatos.find((p) => String(p._id) === idPlato);
+          const plato = platoObj || platoItem;
           return {
             _id: platoItem._id || plato?._id,
-            nombre: platoItem.nombreCocinaPedido || plato?.nombreCocina || plato?.nombre || platoItem.nombre || 'Plato',
+            nombre: platoItem.nombreCocinaPedido || plato?.nombreCocina || plato?.nombre || platoItem.nombre || local?.nombreCocinaPedido || local?.nombre || 'Plato',
             cantidad: doc.cantidades?.[index] || platoItem.cantidad || 1,
             tipoServicio: platoItem.tipoServicio || 'mesa',
             precio: platoItem.precioUnitario != null ? Number(platoItem.precioUnitario) : (Number(plato?.precio) || 0),

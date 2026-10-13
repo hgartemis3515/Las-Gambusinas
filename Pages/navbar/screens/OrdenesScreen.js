@@ -1279,6 +1279,9 @@ const OrdenesScreen = ({ route }) => {
     setFocoComplementos(null);
     setOcultarSumarComplementos(false);
     setEditandoInstanceId(null);
+    setEditandoGrupoIds(null);
+    setUnidadesInicialesModal(null);
+    setCantidadInicialModal(1);
     abrirModalGuarniciones(platoLinea, {
       iniciales: guarnicionesElegidas(platoLinea),
       nota: platoLinea.notaEspecial || "",
