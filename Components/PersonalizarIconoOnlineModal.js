@@ -13,6 +13,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useOnlineBadge, DEFAULT_ONLINE_BADGE_OPACITY } from '../context/OnlineBadgeContext';
 import { useAvisoPlatoAgregado } from '../context/AvisoPlatoAgregadoContext';
+import { useAprovechadorMenuPlatos } from '../context/AprovechadorMenuPlatosContext';
 import { useOmitirConfirmacionPago } from '../context/OmitirConfirmacionPagoContext';
 import { useOcultarPropina } from '../context/OcultarPropinaContext';
 import { useBotonCantidadPlato } from '../context/BotonCantidadPlatoContext';
@@ -264,6 +265,7 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
   const theme = themeContext?.theme || themeLight;
   const { opacity, setOpacity } = useOnlineBadge();
   const { mostrarAviso, setMostrarAviso } = useAvisoPlatoAgregado();
+  const { aprovechador, setAprovechador } = useAprovechadorMenuPlatos();
   const { omitirConfirmacionPago, setOmitirConfirmacionPago } = useOmitirConfirmacionPago();
   const { ocultarPropina, setOcultarPropina } = useOcultarPropina();
   const { abrirMenuNuevaOrden, setAbrirMenuNuevaOrden } = useAbrirMenuNuevaOrden();
@@ -365,6 +367,32 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
               trackColor={{ false: theme.colors.border, true: theme.colors.primary + '88' }}
               thumbColor={mostrarAviso ? theme.colors.primary : theme.colors.text.light}
               accessibilityLabel="Mostrar nota al agregar un plato"
+            />
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>
+            Lista de platos
+          </Text>
+          <Text style={[styles.hint, { color: theme.colors.text.secondary }]}>
+            Los cuadros del menú van pegados, sin hueco entre tarjetas. Desactívalo si prefieres separación.
+          </Text>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={[styles.label, { color: theme.colors.text.primary }]}>
+                Aprovechador
+              </Text>
+              <Text style={[styles.switchHint, { color: theme.colors.text.secondary }]}>
+                {aprovechador ? 'Cuadros pegados' : 'Con separación entre platos'}
+              </Text>
+            </View>
+            <Switch
+              value={aprovechador}
+              onValueChange={setAprovechador}
+              trackColor={{ false: theme.colors.border, true: theme.colors.primary + '88' }}
+              thumbColor={aprovechador ? theme.colors.primary : theme.colors.text.light}
+              accessibilityLabel="Aprovechador, cuadros de platos pegados"
             />
           </View>
 

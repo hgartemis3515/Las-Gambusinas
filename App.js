@@ -11,6 +11,7 @@ import { CatalogoPlatosProvider } from './context/CatalogoPlatosContext';
 import { SocketProvider } from './context/SocketContext';
 import { OnlineBadgeProvider } from './context/OnlineBadgeContext';
 import { AvisoPlatoAgregadoProvider } from './context/AvisoPlatoAgregadoContext';
+import { AprovechadorMenuPlatosProvider } from './context/AprovechadorMenuPlatosContext';
 import { OmitirConfirmacionPagoProvider } from './context/OmitirConfirmacionPagoContext';
 import { OcultarPropinaProvider } from './context/OcultarPropinaContext';
 import { BotonCantidadPlatoProvider } from './context/BotonCantidadPlatoContext';
@@ -88,6 +89,7 @@ export default function App() {
         <ThemeProvider>
           <OnlineBadgeProvider>
           <AvisoPlatoAgregadoProvider>
+          <AprovechadorMenuPlatosProvider>
           <OmitirConfirmacionPagoProvider>
           <OcultarPropinaProvider>
           <BotonCantidadPlatoProvider>
@@ -177,6 +179,7 @@ export default function App() {
           </BotonCantidadPlatoProvider>
           </OcultarPropinaProvider>
           </OmitirConfirmacionPagoProvider>
+          </AprovechadorMenuPlatosProvider>
           </AvisoPlatoAgregadoProvider>
           </OnlineBadgeProvider>
         </ThemeProvider>

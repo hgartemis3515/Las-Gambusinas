@@ -514,9 +514,9 @@ export default function MenuPlatosSheet({
                         style={styles.searchClearButton}
                         onPress={onClearSearch}
                         accessibilityLabel="Limpiar búsqueda"
-                        hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <MaterialCommunityIcons name="close-circle" size={22} color={theme.colors.text.light} />
+                        <MaterialCommunityIcons name="close-circle" size={24} color={theme.colors.text.primary} />
                       </TouchableOpacity>
                     )}
                     <TouchableOpacity
@@ -530,6 +530,11 @@ export default function MenuPlatosSheet({
                       <MaterialCommunityIcons name="filter-variant" size={22} color={theme.colors.text.white} />
                     </TouchableOpacity>
                   </View>
+                  {searchActive && platosFiltrados.length > 0 ? (
+                    <Text style={styles.searchCount}>
+                      {`${new Set(platosFiltrados.map((p) => String(p._id))).size} platos`}
+                    </Text>
+                  ) : null}
 
                   <ScrollView
                     horizontal
@@ -785,9 +790,11 @@ export default function MenuPlatosSheet({
                       <Text style={styles.emptyPlatosText}>
                         {cartaError
                           ? 'Sin carta / reintenta'
-                          : (categoriaFiltro === CAT_FAVORITOS && !searchActive
-                            ? 'No tienes platos favoritos. Toca la estrella debajo del nombre.'
-                            : 'No hay platos disponibles')}
+                          : (searchActive
+                            ? `Nada con «${String(searchPlato).trim()}»`
+                            : (categoriaFiltro === CAT_FAVORITOS
+                              ? 'No tienes platos favoritos. Toca la estrella debajo del nombre.'
+                              : 'No hay platos disponibles'))}
                       </Text>
                     )}
                     {cartaRefreshing && cartaLoaded ? (
@@ -860,23 +867,33 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   searchInputWrapper: {
     position: 'relative',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   searchInput: {
-    backgroundColor: theme.colors.background,
-    padding: theme.spacing.md,
-    paddingRight: 84,
+    backgroundColor: theme.colors.surface || '#FFFFFF',
+    minHeight: 52,
+    paddingVertical: 12,
+    paddingLeft: 14,
+    paddingRight: 108,
     borderRadius: theme.borderRadius.md,
     borderWidth: 2,
-    borderColor: theme.colors.border,
-    fontSize: 14,
+    borderColor: theme.colors.primary,
+    fontSize: 16,
     color: theme.colors.text.primary,
+  },
+  searchCount: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.colors.text.primary,
+    marginBottom: 6,
   },
   searchClearButton: {
     position: 'absolute',
-    right: 42,
+    right: 50,
     top: 0,
     bottom: 0,
+    width: 48,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   searchFilterBtn: {
@@ -884,7 +901,7 @@ const makeStyles = (theme) => StyleSheet.create({
     right: 2,
     top: 2,
     bottom: 2,
-    width: 38,
+    width: 48,
     borderRadius: 10,
     backgroundColor: theme.colors.primary,
     alignItems: 'center',
@@ -1096,8 +1113,8 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   emptyPlatosText: {
     fontSize: 16,
-    color: theme.colors.text.light,
-    fontStyle: 'italic',
+    color: theme.colors.text.primary,
+    fontWeight: '600',
     textAlign: 'center',
   },
   filtroPanel: {

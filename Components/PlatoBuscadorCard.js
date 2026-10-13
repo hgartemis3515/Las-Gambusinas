@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { useAprovechadorMenuPlatos } from '../context/AprovechadorMenuPlatosContext';
 import { useBotonCantidadPlato } from '../context/BotonCantidadPlatoContext';
 import { themeLight } from '../constants/theme';
 import { platoMuestraBotonG, platoMuestraBotonV, codigoMozoVisible } from '../utils/platoBuscador';
@@ -47,6 +48,7 @@ function PlatoBuscadorCard({
   const theme = themeContext?.theme || themeLight;
   const styles = makeStyles(theme);
   const { estilo: estiloQty, iconSize: iconSizeQty, estiloAgregar } = useBotonCantidadPlato();
+  const { aprovechador } = useAprovechadorMenuPlatos();
   const muestraG = platoMuestraBotonG(plato);
   const muestraV = platoMuestraBotonV(plato);
   const modoAgregar = estiloAgregar === ESTILO_CANTIDAD_AGREGAR;
@@ -71,12 +73,27 @@ function PlatoBuscadorCard({
   const marcasGuar = resumenMarcasGuarnicion(plato);
 
   return (
-    <View style={[styles.card, esLlevar && styles.cardLlevar]}>
+    <View style={[styles.card, aprovechador && styles.cardPegada, esLlevar && styles.cardLlevar]}>
       <View style={[styles.topRow, marcasGuar ? styles.topRowConMarcas : null]}>
         <View style={styles.nombreWrap}>
           <Text style={styles.nombre} numberOfLines={2}>{nombreVisible}</Text>
           {codigoMozo ? (
             <Text style={styles.codigo}>{codigoMozo}</Text>
+          ) : null}
+          {onToggleFavorito ? (
+            <TouchableOpacity
+              style={styles.fav}
+              onPress={() => onToggleFavorito(plato)}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={esFav ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+            >
+              <MaterialCommunityIcons
+                name={esFav ? 'star' : 'star-outline'}
+                size={22}
+                color={esFav ? '#FFC107' : '#9E9E9E'}
+              />
+            </TouchableOpacity>
           ) : null}
         </View>
         <View style={styles.precioRow}>
@@ -89,21 +106,6 @@ function PlatoBuscadorCard({
       ) : null}
       <View style={styles.bottomRow}>
         <View style={styles.gvRow}>
-          {onToggleFavorito ? (
-            <TouchableOpacity
-              style={styles.fav}
-              onPress={() => onToggleFavorito(plato)}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              accessibilityRole="button"
-              accessibilityLabel={esFav ? 'Quitar de favoritos' : 'Agregar a favoritos'}
-            >
-              <MaterialCommunityIcons
-                name={esFav ? 'star' : 'star-outline'}
-                size={22}
-                color={esFav ? '#FFC107' : '#9E9E9E'}
-              />
-            </TouchableOpacity>
-          ) : null}
           {muestraG ? (
             <TouchableOpacity
               style={styles.btnG}
@@ -202,6 +204,10 @@ const makeStyles = (theme) => StyleSheet.create({
     marginBottom: 8,
     borderWidth: 1,
     borderColor: theme.colors.border,
+  },
+  cardPegada: {
+    marginBottom: 0,
+    borderRadius: 0,
   },
   cardLlevar: {
     borderWidth: 2,

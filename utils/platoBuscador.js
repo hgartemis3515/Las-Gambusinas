@@ -62,25 +62,72 @@ export function platoMuestraBotonV(plato) {
   return gruposAnexarNombreDePlato(plato).length > 0;
 }
 
-/** Coincide nombre, alias de buscador o código. */
-export function platoCoincideBusqueda(plato, termino) {
-  const q = String(termino || '').trim();
-  if (!q) return true;
-  const qLower = q.toLowerCase();
-  const qUpper = q.toUpperCase();
-  const nombres = [
-    plato?.nombre,
-    plato?.nombreMostrado,
-    ...(Array.isArray(plato?.nombresSincronizados) ? plato.nombresSincronizados : []),
+/** Frase de búsqueda: sin tildes y con ñ → n. `chicharron` queda igual que Chicharrón. */
+export function textoBusqueda(s) {
+  return String(s || '')
+    .trim()
+    .toLowerCase()
+    .replace(/ñ/g, 'n')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+/** Cadena ya plegada del plato. No lee `_busca` para poder recalcularla. */
+export function cadenaBusquedaPlato(plato) {
+  if (!plato) return '';
+  const partes = [
+    plato.nombre,
+    plato.nombreMostrado,
+    ...(Array.isArray(plato.nombresSincronizados) ? plato.nombresSincronizados : []),
+    resumenMarcasGuarnicion(plato),
+    codigoMozoVisible(plato),
+    plato.codigo,
   ];
-  if (nombres.some((n) => String(n || '').toLowerCase().includes(qLower))) return true;
-  const marcas = resumenMarcasGuarnicion(plato);
-  if (marcas && marcas.toLowerCase().includes(qLower)) return true;
-  const codigoMozo = codigoMozoVisible(plato);
-  if (codigoMozo && (codigoMozo === qUpper || codigoMozo.includes(qUpper))) return true;
-  const codigoCocina = String(plato?.codigo || '').trim().toUpperCase();
-  if (codigoCocina && (codigoCocina === qUpper || codigoCocina.includes(qUpper))) return true;
-  return false;
+  return textoBusqueda(partes.filter((x) => x != null && String(x).trim()).join(' '));
+}
+
+export function asegurarBusquedaPlato(plato) {
+  if (!plato) return plato;
+  const next = cadenaBusquedaPlato(plato);
+  if (plato._busca !== next) plato._busca = next;
+  return plato;
+}
+
+function palabrasBusqueda(termino) {
+  return textoBusqueda(termino).split(/\s+/).filter(Boolean);
+}
+
+/** Coincide nombre, alias, guarnición o código, ignorando tildes y eñe. */
+export function platoCoincideBusqueda(plato, termino) {
+  const palabras = palabrasBusqueda(termino);
+  if (!palabras.length) return true;
+  const blob = plato?._busca || cadenaBusquedaPlato(plato);
+  return palabras.every((w) => blob.includes(w));
+}
+
+/** 80 código exacto … 20 alias. 0 si no entra. */
+export function puntajeBusquedaPlato(plato, termino) {
+  const palabras = palabrasBusqueda(termino);
+  if (!palabras.length || !plato) return 0;
+  const q = palabras.join(' ');
+  const nombre = textoBusqueda(plato.nombreMostrado || plato.nombre || '');
+  const cm = textoBusqueda(codigoMozoVisible(plato));
+  const ck = textoBusqueda(plato.codigo || '');
+  const blob = plato._busca || cadenaBusquedaPlato(plato);
+  if (palabras.length === 1) {
+    const w = palabras[0];
+    if (cm && cm === w) return 80;
+    if (ck && ck === w) return 70;
+    if (cm && cm.startsWith(w)) return 60;
+    if (ck && ck.startsWith(w)) return 50;
+    if (nombre.startsWith(w)) return 40;
+    if (nombre.includes(w)) return 30;
+    if (blob.includes(w)) return 20;
+    return 0;
+  }
+  if (palabras.every((w) => nombre.includes(w))) return 25;
+  if (q && palabras.every((w) => blob.includes(w))) return 15;
+  return 0;
 }
 
 /** Una fila por nombre sincronizado: mismo plato, distinto rótulo en el buscador. */
@@ -121,21 +168,11 @@ export function ordenarPlatosMenu(platos) {
   });
 }
 
-/** Prioriza coincidencia exacta / prefijo de código. */
+/** Prioriza código exacto y, después, el nombre que empieza por lo escrito (sin tildes). */
 export function ordenarPlatosPorCodigoBusqueda(platos, termino, cmpTie) {
-  const qU = String(termino || '').trim().toUpperCase();
-  if (!qU || !Array.isArray(platos)) return platos;
-  const score = (p) => {
-    const cm = codigoMozoVisible(p);
-    const ck = String(p?.codigo || '').trim().toUpperCase();
-    if (cm === qU) return 6;
-    if (ck === qU) return 5;
-    if (cm.startsWith(qU)) return 4;
-    if (ck.startsWith(qU)) return 3;
-    if (cm.includes(qU)) return 2;
-    if (ck.includes(qU)) return 1;
-    return 0;
-  };
+  const q = textoBusqueda(termino);
+  if (!q || !Array.isArray(platos)) return platos;
+  const score = (p) => puntajeBusquedaPlato(p, termino);
   return [...platos].sort((a, b) => {
     const d = score(b) - score(a);
     if (d) return d;

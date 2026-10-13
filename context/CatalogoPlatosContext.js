@@ -14,6 +14,7 @@ import axios from '../config/axiosConfig';
 import { apiConfig } from '../apiConfig';
 import { getFallbackApiBase } from '../config/envDefaults';
 import { leerCatalogoPlatosDisk, escribirCatalogoPlatosDisk } from '../utils/catalogoPlatosStorage';
+import { asegurarBusquedaPlato } from '../utils/platoBuscador';
 import { EVT_MOZO_SESSION } from './DensidadOrdenesContext';
 
 const { applyMenuEventBatch, idCarta } = require('../utils/catalogoPlatosApply');
@@ -131,6 +132,7 @@ export function CatalogoPlatosProvider({ children }) {
 
   const commitPlatos = useCallback((next, { persist } = {}) => {
     const list = Array.isArray(next) ? next : [];
+    for (let i = 0; i < list.length; i++) asegurarBusquedaPlato(list[i]);
     const firma = firmaCarta(list);
     const misma = firma === firmaRef.current;
     if (!misma) {

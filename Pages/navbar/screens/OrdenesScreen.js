@@ -326,7 +326,6 @@ const OrdenesScreen = ({ route }) => {
   const [filtroAreaMesa, setFiltroAreaMesa] = useState("All"); // Filtro para el modal de mesas
   const [mostrarOverlayCarga, setMostrarOverlayCarga] = useState(false);
   const [mensajeCarga, setMensajeCarga] = useState("Creando comanda...");
-  const [searchPlatoDebounced, setSearchPlatoDebounced] = useState("");
   const [reservaActiva, setReservaActiva] = useState(null); // Reserva activa para asociar a la comanda
   const [configMoneda, setConfigMoneda] = useState(null);
 
@@ -387,19 +386,9 @@ const OrdenesScreen = ({ route }) => {
     setTipoPlatoFiltro(tipoMenuHoraParam || slugTipoPorHoraActual(tiposPlatoCatalogo) || null);
     setCategoriaFiltro(null);
     setSearchPlato("");
-    setSearchPlatoDebounced("");
     if (mesaParam) setSelectedMesa(mesaParam);
     if (esSeleccionSinMesa(mesaParam)) setTipoServicioModal(TIPO_PARA_LLEVAR);
   }
-
-  // Debounce búsqueda 300ms para no re-filtrar en cada tecla
-  const debouncedSetSearchRef = useRef(
-    debounce((text) => setSearchPlatoDebounced(text), 300)
-  ).current;
-  useEffect(() => {
-    debouncedSetSearchRef(searchPlato);
-    return () => debouncedSetSearchRef.cancel?.();
-  }, [searchPlato, debouncedSetSearchRef]);
 
   const persistFavoritosRemoteRef = useRef(
     debounce(async (mozoId, ids) => {
@@ -961,7 +950,6 @@ const OrdenesScreen = ({ route }) => {
       setTipoPlatoFiltro(null);
       setCategoriaFiltro(null);
       setSearchPlato("");
-      setSearchPlatoDebounced("");
     });
   }, [navigation]);
 
@@ -1968,7 +1956,7 @@ const OrdenesScreen = ({ route }) => {
   // Búsqueda global: si hay texto, filtra por nombre en TODOS (ignora categoría). Si no hay texto, filtra por categoría.
   const platosFiltrados = useMemo(() => {
     let list = platosPorTipoDisponibles;
-    const search = (searchPlatoDebounced || "").trim();
+    const search = (searchPlato || "").trim();
     if (!search) {
       if (categoriaFiltro === CAT_FAVORITOS) {
         list = list.filter((p) => favoritoIds.includes(String(p._id)));
@@ -1985,7 +1973,7 @@ const OrdenesScreen = ({ route }) => {
       );
     }
     return conAlias;
-  }, [platosPorTipoDisponibles, searchPlatoDebounced, categoriaFiltro, favoritoIds, categoriasInfo, tipoFiltroActivo]);
+  }, [platosPorTipoDisponibles, searchPlato, categoriaFiltro, favoritoIds, categoriasInfo, tipoFiltroActivo]);
 
   // El + y el texto de búsqueda no tocan la categoría elegida
   const handleSearchFocus = useCallback(() => {}, []);
@@ -1994,7 +1982,6 @@ const OrdenesScreen = ({ route }) => {
   }, []);
   const handleClearSearch = useCallback(() => {
     setSearchPlato("");
-    setSearchPlatoDebounced("");
   }, []);
   const handleCambiarPlato = useCallback((platoLinea) => {
     const instanceId = platoLinea?.instanceId || platoLinea?._id;
@@ -2020,7 +2007,6 @@ const OrdenesScreen = ({ route }) => {
     setTipoPlatoFiltro(slug);
     setCategoriaFiltro(null);
     setSearchPlato("");
-    setSearchPlatoDebounced("");
     if (esSeleccionSinMesa(selectedMesa)) {
       setTipoServicioModal(tipoServicioOrdenes("para_llevar"));
     }
@@ -2057,7 +2043,6 @@ const OrdenesScreen = ({ route }) => {
     setTipoPlatoFiltro(autoSlug || null);
     setCategoriaFiltro(null);
     setSearchPlato("");
-    setSearchPlatoDebounced("");
     if (esSeleccionSinMesa(selectedMesa)) {
       setTipoServicioModal(tipoServicioOrdenes("para_llevar"));
     }
