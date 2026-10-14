@@ -14,6 +14,7 @@ import PanelGestionScreen from "../PanelGestion/PanelGestionScreen";
 import { useTheme } from "../../context/ThemeContext";
 import { useSocket } from "../../context/SocketContext";
 import SocketStatus from "../../Components/SocketStatus";
+import NoticiasIngreso from "../../Components/NoticiasIngreso";
 
 function NavbarSocketBanner() {
   const { connected, connectionStatus, reconnectAttempts } = useSocket();
@@ -104,6 +105,7 @@ const NavbarContent = () => {
   return (
     <View style={{ flex: 1 }}>
       <NavbarSocketBanner />
+      <NoticiasIngreso />
 
       {/* Screens encima */}
       <View style={{ flex: 1 }}>

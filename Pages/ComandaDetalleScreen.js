@@ -44,6 +44,7 @@ import { mismaVariantePlato, esSeleccionVariantePlato } from '../utils/varianteP
 import { platoRequiereModalAlSumar, platoRequiereModalOp, ultimaLineaDelPlato, lineasDelPlatoEnCarrito, cantidadTotalDelPlato, platoCoincideBusqueda, expandirFilasBuscadorPlatos, ordenarPlatosPorCodigoBusqueda, categoriasDePlato, platoEsDeCategoria } from '../utils/platoBuscador';
 import { ordenarCategoriasMozo, platoVisibleEnCarta, ordenarPlatosPorCategoriaYCodigo, cmpPlatosCategoriaYCodigo } from '../utils/ordenCategoriaMozo';
 import { CAT_FAVORITOS, loadFavoritosLocal, saveFavoritosLocal, normalizeFavoritoIds } from '../helpers/platosFavoritosMozo';
+import { CAT_TOP, cargarTopSemana, platosDelTop } from '../helpers/noticiasDia';
 import { calcularPrecioUnitarioConComplementos, textoOpcionComplemento, camposSnapshotComplemento } from '../utils/precioComplementos';
 import { verificarYActualizarEstadoComanda, verificarComandasEnLote, invalidarCacheComandasVerificadas } from '../utils/verificarEstadoComanda';
 import configuracionService from '../services/configuracionService';
@@ -291,6 +292,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [menuEditarVisible, setMenuEditarVisible] = useState(false);
   const [favoritoIds, setFavoritoIds] = useState([]);
+  const [topPlatos, setTopPlatos] = useState([]);
   // Tipo de servicio para los platos que se agreguen desde esta pantalla:
   // 'mesa' (default, Switch OFF) o 'para_llevar' (Switch ON).
   const [tipoServicioModal, setTipoServicioModal] = useState('mesa');
@@ -1654,6 +1656,9 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     return true;
   });
     if (!search) {
+      if (categoriaFiltro === CAT_TOP) {
+        return expandirFilasBuscadorPlatos(platosDelTop(platos, topPlatos));
+      }
       if (categoriaFiltro === CAT_FAVORITOS) {
         list = list.filter((p) => favoritoIds.includes(String(p._id)));
       } else if (categoriaFiltro) {
@@ -1667,7 +1672,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
     return ordenarPlatosPorCodigoBusqueda(matched, search, (a, b) =>
       cmpPlatosCategoriaYCodigo(a, b, categoriasInfo, tipoPlatoFiltro)
     );
-  }, [platos, tipoPlatoFiltro, categoriasInfo, searchPlato, categoriaFiltro, favoritoIds]);
+  }, [platos, topPlatos, tipoPlatoFiltro, categoriasInfo, searchPlato, categoriaFiltro, favoritoIds]);
 
   const categorias = useMemo(() => {
     const names = [...new Set(
@@ -1678,9 +1683,18 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
 
   useEffect(() => {
     if (!categoriaFiltro) return;
-    if (categoriaFiltro === CAT_FAVORITOS) return;
+    if (categoriaFiltro === CAT_FAVORITOS || categoriaFiltro === CAT_TOP) return;
     if (!categorias.includes(categoriaFiltro)) setCategoriaFiltro(null);
   }, [categorias, categoriaFiltro]);
+
+  useEffect(() => {
+    if (!menuEditarVisible) return undefined;
+    let cancel = false;
+    cargarTopSemana().then((data) => {
+      if (!cancel) setTopPlatos(data.platos || []);
+    }).catch(() => {});
+    return () => { cancel = true; };
+  }, [menuEditarVisible]);
 
   useEffect(() => {
     const mozoId = userInfo?._id;

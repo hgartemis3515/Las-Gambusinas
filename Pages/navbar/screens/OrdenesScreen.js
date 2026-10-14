@@ -73,6 +73,7 @@ import {
   saveFavoritosLocal,
   normalizeFavoritoIds,
 } from "../../../helpers/platosFavoritosMozo";
+import { CAT_TOP, cargarTopSemana, platosDelTop } from "../../../helpers/noticiasDia";
 // Animaciones Premium 60fps
 import Animated, {
   useSharedValue,
@@ -311,6 +312,7 @@ const OrdenesScreen = ({ route }) => {
   const [searchPlato, setSearchPlato] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState(null);
   const [favoritoIds, setFavoritoIds] = useState([]);
+  const [topPlatos, setTopPlatos] = useState([]);
   const [tipoPlatoFiltro, setTipoPlatoFiltro] = useState(() => (
     abrirMenuAlEntrar ? (tipoMenuHoraParam || null) : null
   ));
@@ -1935,9 +1937,18 @@ const OrdenesScreen = ({ route }) => {
   }, [menuVisible, platos, tipoFiltroActivo, categoriasInfo]);
 
   useEffect(() => {
-    if (!categoriaFiltro || categoriaFiltro === CAT_FAVORITOS) return;
+    if (!categoriaFiltro || categoriaFiltro === CAT_FAVORITOS || categoriaFiltro === CAT_TOP) return;
     if (!categorias.includes(categoriaFiltro)) setCategoriaFiltro(null);
   }, [categorias, categoriaFiltro]);
+
+  useEffect(() => {
+    if (!menuVisible) return undefined;
+    let cancel = false;
+    cargarTopSemana().then((data) => {
+      if (!cancel) setTopPlatos(data.platos || []);
+    }).catch(() => {});
+    return () => { cancel = true; };
+  }, [menuVisible]);
 
   // Platos disponibles (tipo + stock > 0)
   const platosPorTipoDisponibles = useMemo(
@@ -1958,6 +1969,10 @@ const OrdenesScreen = ({ route }) => {
     let list = platosPorTipoDisponibles;
     const search = (searchPlato || "").trim();
     if (!search) {
+      if (categoriaFiltro === CAT_TOP) {
+        const ranked = platosDelTop(platos, topPlatos);
+        return expandirFilasBuscadorPlatos(ranked);
+      }
       if (categoriaFiltro === CAT_FAVORITOS) {
         list = list.filter((p) => favoritoIds.includes(String(p._id)));
       } else if (categoriaFiltro) {
@@ -1973,7 +1988,7 @@ const OrdenesScreen = ({ route }) => {
       );
     }
     return conAlias;
-  }, [platosPorTipoDisponibles, searchPlato, categoriaFiltro, favoritoIds, categoriasInfo, tipoFiltroActivo]);
+  }, [platosPorTipoDisponibles, platos, topPlatos, searchPlato, categoriaFiltro, favoritoIds, categoriasInfo, tipoFiltroActivo]);
 
   // El + y el texto de búsqueda no tocan la categoría elegida
   const handleSearchFocus = useCallback(() => {}, []);

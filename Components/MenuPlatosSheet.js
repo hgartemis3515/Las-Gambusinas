@@ -21,6 +21,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { themeLight } from '../constants/theme';
 import { CAT_FAVORITOS } from '../helpers/platosFavoritosMozo';
+import { CAT_TOP } from '../helpers/noticiasDia';
 import { ordenarCategoriasMozo, infoCategoriaPorNombre } from '../utils/ordenCategoriaMozo';
 import PlatoBuscadorCard from './PlatoBuscadorCard';
 import BotonEnviarOrden from './BotonEnviarOrden';
@@ -249,8 +250,8 @@ export default function MenuPlatosSheet({
       const q = qtyById[id];
       return `${id}:${q.total}:${q.mesa}:${q.llevar}`;
     }).join('|');
-    return `${tipoServicioModal}:${cartaLoaded}:${(favoritoIds || []).join(',')}:${qtyKey}`;
-  }, [qtyById, tipoServicioModal, favoritoIds, cartaLoaded]);
+    return `${tipoServicioModal}:${cartaLoaded}:${categoriaFiltro}:${(favoritoIds || []).join(',')}:${qtyKey}`;
+  }, [qtyById, tipoServicioModal, favoritoIds, cartaLoaded, categoriaFiltro]);
 
   const catsFiltro = useMemo(() => {
     const names = ordenarCategoriasMozo(categorias || [], categoriasInfo, tipoPlatoFiltro);
@@ -594,6 +595,33 @@ export default function MenuPlatosSheet({
                         Favoritos
                       </Text>
                     </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.categoriaChip,
+                        styles.categoriaChipTop,
+                        {
+                          paddingHorizontal: chipEstilo.paddingHorizontal,
+                          paddingVertical: chipEstilo.paddingVertical,
+                          borderRadius: chipEstilo.borderRadius,
+                          minHeight: Math.max(chipEstilo.minHeight || 0, 48),
+                          gap: chipEstilo.gap,
+                        },
+                        categoriaFiltro === CAT_TOP && styles.categoriaChipTopActive,
+                      ]}
+                      onPress={() => onSelectCategoria(CAT_TOP)}
+                      accessibilityRole="button"
+                      accessibilityLabel="TOP"
+                    >
+                      <Text
+                        style={[
+                          styles.categoriaChipText,
+                          { fontSize: chipEstilo.fontSize, fontWeight: '800' },
+                          categoriaFiltro === CAT_TOP && styles.categoriaChipTopTextActive,
+                        ]}
+                      >
+                        TOP
+                      </Text>
+                    </TouchableOpacity>
                     {catsFiltro.map((c) => {
                       const cat = c.nombre;
                       const infoCat = c;
@@ -737,6 +765,25 @@ export default function MenuPlatosSheet({
                           placeholderIcon="star"
                         />
                       ) : null}
+                      {!filtroCatQ.trim() ? (
+                        <CategoriaFiltroCard
+                          width={filtroLayout.cardW}
+                          imgH={filtroLayout.imgH}
+                          fontSize={filtroLayout.fontSize}
+                          codeFontSize={filtroLayout.codeFontSize}
+                          iconSize={filtroLayout.iconSize}
+                          uri=""
+                          codigo=""
+                          label="TOP"
+                          selected={categoriaFiltro === CAT_TOP}
+                          onPress={() => {
+                            onSelectCategoria(CAT_TOP);
+                            setFiltroCatOpen(false);
+                          }}
+                          theme={theme}
+                          placeholderIcon="trophy"
+                        />
+                      ) : null}
                       {catsFiltroVisibles.map((c) => (
                         <CategoriaFiltroCard
                           key={c.nombre}
@@ -794,7 +841,9 @@ export default function MenuPlatosSheet({
                             ? `Nada con «${String(searchPlato).trim()}»`
                             : (categoriaFiltro === CAT_FAVORITOS
                               ? 'No tienes platos favoritos. Toca la estrella debajo del nombre.'
-                              : 'No hay platos disponibles'))}
+                              : (categoriaFiltro === CAT_TOP
+                                ? 'Sin platos en el TOP de esta semana.'
+                                : 'No hay platos disponibles')))}
                       </Text>
                     )}
                     {cartaRefreshing && cartaLoaded ? (
@@ -953,6 +1002,20 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   categoriaChipFavoritoTextActive: {
     color: '#1A1A1A',
+  },
+  categoriaChipTop: {
+    minWidth: 48,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderColor: '#c2410c',
+  },
+  categoriaChipTopActive: {
+    backgroundColor: '#c2410c',
+    borderColor: '#c2410c',
+  },
+  categoriaChipTopTextActive: {
+    color: '#fff',
   },
   favoritoToggle: {
     alignSelf: 'flex-start',

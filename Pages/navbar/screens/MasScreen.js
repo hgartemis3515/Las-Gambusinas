@@ -29,6 +29,7 @@ import PersonalizarAlertaSalioModal from "../../../Components/PersonalizarAlerta
 import PersonalizarMesasModal from "../../../Components/PersonalizarMesasModal";
 import PersonalizarRedireccionEnvioModal from "../../../Components/PersonalizarRedireccionEnvioModal";
 import axios from "../../../config/axiosConfig";
+import { NoticiasManual } from "../../../Components/NoticiasIngreso";
 import { apiConfig } from "../../../apiConfig";
 import {
   getPushNotificationsPrefEnabled,
@@ -86,6 +87,7 @@ const MasScreen = () => {
   const [alertaSalioOpen, setAlertaSalioOpen] = useState(false);
   const [mesasApodoOpen, setMesasApodoOpen] = useState(false);
   const [redireccionEnvioOpen, setRedireccionEnvioOpen] = useState(false);
+  const [noticiasOpen, setNoticiasOpen] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(true);
   const [profileSyncing, setProfileSyncing] = useState(false);
   const [serverOk, setServerOk] = useState(null);
@@ -325,7 +327,20 @@ const MasScreen = () => {
         visible={redireccionEnvioOpen}
         onClose={() => setRedireccionEnvioOpen(false)}
       />
+      <NoticiasManual visible={noticiasOpen} onClose={() => setNoticiasOpen(false)} />
       <ScrollView style={styles.scrollView}>
+        <TouchableOpacity
+          style={styles.noticiasBtn}
+          onPress={() => {
+            Haptics.selectionAsync();
+            setNoticiasOpen(true);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Noticias"
+        >
+          <MaterialCommunityIcons name="newspaper-variant-outline" size={26} color="#1A1A1A" />
+          <Text style={styles.noticiasTxt}>NOTICIAS</Text>
+        </TouchableOpacity>
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.profileContainer}
@@ -697,6 +712,23 @@ const MasScreenStyles = (theme) =>
     },
     scrollView: {
       flex: 1,
+    },
+    noticiasBtn: {
+      minHeight: 56,
+      margin: 12,
+      marginBottom: 0,
+      borderRadius: 12,
+      backgroundColor: '#d4af37',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+    },
+    noticiasTxt: {
+      color: '#1A1A1A',
+      fontSize: 18,
+      fontWeight: '800',
+      letterSpacing: 0.6,
     },
     header: {
       backgroundColor: theme.colors.primary,

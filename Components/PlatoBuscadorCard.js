@@ -18,6 +18,7 @@ function platoBuscadorCardPropsIguales(prev, next) {
     && prev.plato?.nombre === next.plato?.nombre
     && prev.plato?.precio === next.plato?.precio
     && prev.plato?.codigoMozo === next.plato?.codigoMozo
+    && prev.plato?._puesto === next.plato?._puesto
     && prev.plato?.complementos === next.plato?.complementos
     && prev.cantidadTotal === next.cantidadTotal
     && prev.cantidadMesa === next.cantidadMesa
@@ -76,7 +77,9 @@ function PlatoBuscadorCard({
     <View style={[styles.card, aprovechador && styles.cardPegada, esLlevar && styles.cardLlevar]}>
       <View style={[styles.topRow, marcasGuar ? styles.topRowConMarcas : null]}>
         <View style={styles.nombreWrap}>
-          <Text style={styles.nombre} numberOfLines={2}>{nombreVisible}</Text>
+          <Text style={styles.nombre} numberOfLines={2}>
+            {plato?._puesto ? `${plato._puesto}. ` : ''}{nombreVisible}
+          </Text>
           {codigoMozo ? (
             <Text style={styles.codigo}>{codigoMozo}</Text>
           ) : null}
