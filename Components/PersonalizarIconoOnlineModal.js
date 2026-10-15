@@ -151,16 +151,17 @@ function ColorSwatches({ value, onChange, presets }) {
   return (
     <View style={styles.colorRow}>
       {presets.map((p) => {
-        const active = String(value || '').toUpperCase() === p.value.toUpperCase();
+        const color = p.value;
+        const active = String(value || '').toUpperCase() === color.toUpperCase();
         return (
           <TouchableOpacity
-            key={p.value}
+            key={color}
             style={[
               styles.colorSwatch,
-              { backgroundColor: p.value },
+              { backgroundColor: color },
               active && styles.colorSwatchActive,
             ]}
-            onPress={() => onChange(p.value)}
+            onPress={() => onChange(color)}
             accessibilityLabel={p.label}
             activeOpacity={0.8}
           >
@@ -661,16 +662,17 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
           </Text>
           <View style={styles.colorRow}>
             {BOTON_CANTIDAD_COLOR_PRESETS.map((p) => {
-              const active = qtyColor.toUpperCase() === p.value.toUpperCase();
+              const color = p.value;
+              const active = qtyColor.toUpperCase() === color.toUpperCase();
               return (
                 <TouchableOpacity
-                  key={p.value}
+                  key={color}
                   style={[
                     styles.colorSwatch,
-                    { backgroundColor: p.value },
+                    { backgroundColor: color },
                     active && styles.colorSwatchActive,
                   ]}
-                  onPress={() => setQtyColor(p.value)}
+                  onPress={() => setQtyColor(color)}
                   accessibilityLabel={p.label}
                   activeOpacity={0.8}
                 >
@@ -772,16 +774,17 @@ export default function PersonalizarIconoOnlineModal({ visible, onClose }) {
           </Text>
           <View style={styles.colorRow}>
             {BOTON_ENVIAR_COLOR_PRESETS.map((p) => {
-              const active = enviarColor.toUpperCase() === p.value.toUpperCase();
+              const color = p.value;
+              const active = enviarColor.toUpperCase() === color.toUpperCase();
               return (
                 <TouchableOpacity
-                  key={p.value}
+                  key={color}
                   style={[
                     styles.colorSwatch,
-                    { backgroundColor: p.value },
+                    { backgroundColor: color },
                     active && styles.colorSwatchActive,
                   ]}
-                  onPress={() => setEnviarColor(p.value)}
+                  onPress={() => setEnviarColor(color)}
                   accessibilityLabel={p.label}
                   activeOpacity={0.8}
                 >

@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   AccessibilityInfo,
   Pressable,
+  useWindowDimensions,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MotiView, AnimatePresence } from 'moti';
@@ -70,7 +71,7 @@ function htmlNoticias(noticias, nuevasIds = []) {
 }
 
 /** Hoja oscura con borde dorado. Entra desde abajo y sale hacia abajo. */
-function Hoja({ titulo, subtitulo, children, onListo, listoLabel, reduce, icono = 'newspaper-variant-outline' }) {
+function Hoja({ titulo, subtitulo, children, onListo, listoLabel, reduce, icono = 'newspaper-variant-outline', ajustar = false }) {
   const t = reduce ? { type: 'timing', duration: 0 } : { type: 'spring', damping: 18, stiffness: 220, mass: 0.9 };
   return (
     <View style={styles.fondo} pointerEvents="box-none">
@@ -89,7 +90,7 @@ function Hoja({ titulo, subtitulo, children, onListo, listoLabel, reduce, icono 
         exit={{ opacity: 0, translateY: 40, scale: 0.97 }}
         transition={t}
         exitTransition={{ type: 'timing', duration: reduce ? 0 : 180 }}
-        style={styles.hoja}
+        style={[styles.hoja, ajustar && styles.hojaAjuste]}
       >
         <View style={styles.franja} />
         <View style={styles.cabecera}>
@@ -101,7 +102,7 @@ function Hoja({ titulo, subtitulo, children, onListo, listoLabel, reduce, icono 
             {subtitulo ? <Text style={styles.subtitulo}>{subtitulo}</Text> : null}
           </View>
         </View>
-        <View style={styles.cuerpo}>{children}</View>
+        <View style={ajustar ? styles.cuerpoAjuste : styles.cuerpo}>{children}</View>
         <TouchableOpacity
           style={styles.listo}
           onPress={() => { haptic(); onListo?.(); }}
@@ -145,16 +146,35 @@ function ListaTop({ top, reduce }) {
   );
 }
 
-function WebNoticias({ noticias, nuevasIds, reduce }) {
+const MEDIR_ALTO = `(function(){
+  function alto(){ return Math.ceil(Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)); }
+  function send(){ try { window.ReactNativeWebView.postMessage(String(alto())); } catch (e) {} }
+  send();
+  setTimeout(send, 60);
+  setTimeout(send, 350);
+  true;
+})();`;
+
+function WebNoticias({ noticias, nuevasIds, reduce, ajustar = false }) {
+  const { height: ventana } = useWindowDimensions();
+  const tope = Math.round(ventana * 0.62);
+  const [alto, setAlto] = useState(ajustar ? 72 : 0);
   const [listo, setListo] = useState(false);
+  const altoVista = ajustar ? Math.min(tope, Math.max(72, alto)) : undefined;
   return (
-    <View style={{ flex: 1 }}>
+    <View style={ajustar ? { height: altoVista } : { flex: 1, minHeight: 220 }}>
       {!listo ? <ActivityIndicator color={GOLD} style={StyleSheet.absoluteFill} /> : null}
       <MotiView animate={{ opacity: listo ? 1 : 0 }} transition={{ type: 'timing', duration: reduce ? 0 : 220 }} style={{ flex: 1 }}>
         <WebView
           originWhitelist={['*']}
           source={{ html: htmlNoticias(noticias, nuevasIds), baseUrl: origenServidor() }}
-          style={styles.web}
+          style={ajustar ? { height: altoVista, backgroundColor: '#141414' } : styles.web}
+          scrollEnabled={!ajustar || alto > tope}
+          injectedJavaScript={ajustar ? MEDIR_ALTO : undefined}
+          onMessage={(e) => {
+            const n = Number(e.nativeEvent.data);
+            if (Number.isFinite(n) && n > 0) setAlto(n);
+          }}
           onLoadEnd={() => setListo(true)}
         />
       </MotiView>
@@ -221,6 +241,7 @@ export default function NoticiasIngreso() {
   const [noticias, setNoticias] = useState([]);
   const [nuevasIds, setNuevasIds] = useState([]);
   const [fecha, setFecha] = useState('');
+  const [flash, setFlash] = useState(null);
 
   const evaluar = useCallback(async (porSocket = false) => {
     try {
@@ -255,8 +276,15 @@ export default function NoticiasIngreso() {
   useEffect(() => {
     if (!socket) return undefined;
     const onNueva = () => { if (faseRef.current !== 'top') evaluar(true); };
+    const onTemporal = (aviso) => {
+      if (aviso && aviso.titulo) setFlash(aviso);
+    };
     socket.on('noticia-publicada', onNueva);
-    return () => socket.off('noticia-publicada', onNueva);
+    socket.on('noticia-temporal', onTemporal);
+    return () => {
+      socket.off('noticia-publicada', onNueva);
+      socket.off('noticia-temporal', onTemporal);
+    };
   }, [socket, evaluar]);
 
   const cerrarTop = async () => {
@@ -273,29 +301,41 @@ export default function NoticiasIngreso() {
     setFase(null);
   };
 
-  if (!montado) return null;
+  const hojaFlash = flash ? (
+    <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={() => setFlash(null)}>
+      <Hoja titulo="Aviso" subtitulo="Solo esta vez. No queda guardado." onListo={() => setFlash(null)} reduce={reduce} ajustar>
+        <WebNoticias noticias={[flash]} nuevasIds={[]} reduce={reduce} ajustar />
+      </Hoja>
+    </Modal>
+  ) : null;
+
+  if (!montado) return hojaFlash;
 
   return (
-    <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={fase === 'top' ? cerrarTop : cerrarNoticias}>
-      <AnimatePresence exitBeforeEnter onExitComplete={() => { if (!faseRef.current) setMontado(false); }}>
-        {fase === 'top' ? (
-          <Hoja key="top" titulo="TOP de la semana" subtitulo="Lo más pedido en los últimos 7 días" icono="trophy-outline" onListo={cerrarTop} reduce={reduce}>
-            <ListaTop top={top} reduce={reduce} />
-          </Hoja>
-        ) : null}
-        {fase === 'noticias' ? (
-          <Hoja
-            key="noticias"
-            titulo="Noticias de hoy"
-            subtitulo={nuevasIds.length ? `${nuevasIds.length} ${nuevasIds.length === 1 ? 'nueva' : 'nuevas'}` : ''}
-            onListo={cerrarNoticias}
-            reduce={reduce}
-          >
-            <WebNoticias noticias={noticias} nuevasIds={nuevasIds} reduce={reduce} />
-          </Hoja>
-        ) : null}
-      </AnimatePresence>
-    </Modal>
+    <>
+      {hojaFlash}
+      <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={fase === 'top' ? cerrarTop : cerrarNoticias}>
+        <AnimatePresence exitBeforeEnter onExitComplete={() => { if (!faseRef.current) setMontado(false); }}>
+          {fase === 'top' ? (
+            <Hoja key="top" titulo="TOP de la semana" subtitulo="Lo más pedido en los últimos 7 días" icono="trophy-outline" onListo={cerrarTop} reduce={reduce}>
+              <ListaTop top={top} reduce={reduce} />
+            </Hoja>
+          ) : null}
+          {fase === 'noticias' ? (
+            <Hoja
+              key="noticias"
+              titulo="Noticias de hoy"
+              subtitulo={nuevasIds.length ? `${nuevasIds.length} ${nuevasIds.length === 1 ? 'nueva' : 'nuevas'}` : ''}
+              onListo={cerrarNoticias}
+              reduce={reduce}
+              ajustar
+            >
+              <WebNoticias noticias={noticias} nuevasIds={nuevasIds} reduce={reduce} ajustar />
+            </Hoja>
+          ) : null}
+        </AnimatePresence>
+      </Modal>
+    </>
   );
 }
 
@@ -321,6 +361,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 16 },
     elevation: 16,
   },
+  hojaAjuste: { height: undefined, maxHeight: '88%' },
+  cuerpoAjuste: { flexGrow: 0, flexShrink: 1, minHeight: 0 },
   franja: { height: 4, backgroundColor: GOLD, marginHorizontal: -16, marginBottom: 14 },
   cabecera: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   iconoWrap: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(212,175,55,0.12)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(212,175,55,0.3)' },

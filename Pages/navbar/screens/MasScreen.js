@@ -265,6 +265,16 @@ const MasScreen = () => {
   const menuItems = useMemo(
     () => [
     {
+      id: 0,
+      title: "Noticias",
+      icon: "newspaper-variant-outline",
+      color: "#d4af37",
+      onPress: () => {
+        Haptics.selectionAsync();
+        setNoticiasOpen(true);
+      },
+    },
+    {
       id: 1,
       title: "Mi Perfil",
       icon: "account-circle",
@@ -329,18 +339,6 @@ const MasScreen = () => {
       />
       <NoticiasManual visible={noticiasOpen} onClose={() => setNoticiasOpen(false)} />
       <ScrollView style={styles.scrollView}>
-        <TouchableOpacity
-          style={styles.noticiasBtn}
-          onPress={() => {
-            Haptics.selectionAsync();
-            setNoticiasOpen(true);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Noticias"
-        >
-          <MaterialCommunityIcons name="newspaper-variant-outline" size={26} color="#1A1A1A" />
-          <Text style={styles.noticiasTxt}>NOTICIAS</Text>
-        </TouchableOpacity>
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.profileContainer}
@@ -712,23 +710,6 @@ const MasScreenStyles = (theme) =>
     },
     scrollView: {
       flex: 1,
-    },
-    noticiasBtn: {
-      minHeight: 56,
-      margin: 12,
-      marginBottom: 0,
-      borderRadius: 12,
-      backgroundColor: '#d4af37',
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 10,
-    },
-    noticiasTxt: {
-      color: '#1A1A1A',
-      fontSize: 18,
-      fontWeight: '800',
-      letterSpacing: 0.6,
     },
     header: {
       backgroundColor: theme.colors.primary,
