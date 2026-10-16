@@ -69,7 +69,7 @@ export function listarPlatosPagables(comandas) {
 }
 
 /** Lista para UI de Pagos: entregados (seleccionables) + pagados (solo lectura con check).
- *  Si esPagoAdelantado=true, también incluye platos en pedido/en_espera (elegibles para PPA).
+ *  Si esPagoAdelantado=true, también incluye platos en pedido/en_espera/salio (elegibles para PPA).
  *
  *  ADAPTACIÓN PPA EN PARTES: los platos con pagoAdelantado (estadoTicket pendiente_aprobacion
  *  o aprobado) se muestran SIEMPRE (no solo en modo PPA) marcados con check de "ya pagado vía
@@ -94,8 +94,8 @@ export function listarPlatosEnPantallaPago(comandas, esPagoAdelantado = false) {
         // OK, platos pendientes de aprobación (esperando cocina) siempre se muestran
       } else if (estado === 'pedido') {
         // OK, platos en pedido (cocina aprobó, entraron al KDS) se muestran para reimprimir comanda
-      } else if (esPagoAdelantado && (estado === 'en_espera')) {
-        // OK, en modo PPA se muestran platos en espera
+      } else if (esPagoAdelantado && (estado === 'en_espera' || estado === 'salio')) {
+        // OK, en modo PPA se muestran platos en espera y los que ya salieron de cocina
       } else if (tienePPA) {
         // ADAPTACIÓN PPA EN PARTES: mostrar siempre (incluso en modo Pagar normal)
         // los platos ya cobrados vía PPA, para que aparezcan con check y el mozo sepa

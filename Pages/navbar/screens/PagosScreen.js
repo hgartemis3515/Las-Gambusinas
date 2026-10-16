@@ -1765,7 +1765,7 @@ const PagosScreen = () => {
         
         // Verificar si hay error en la respuesta
         if (boucherResponse.status >= 400) {
-          const errorMsg = boucherResponse.data?.message || `Error ${boucherResponse.status}: ${boucherResponse.statusText}`;
+          const errorMsg = boucherResponse.data?.error || boucherResponse.data?.message || `Error ${boucherResponse.status}`;
           throw new Error(errorMsg);
         }
         
@@ -1844,7 +1844,7 @@ const PagosScreen = () => {
                   });
                   
                   if (retryResponse.status >= 400) {
-                    throw new Error(retryResponse.data?.message || `Error ${retryResponse.status}`);
+                    throw new Error(retryResponse.data?.error || retryResponse.data?.message || `Error ${retryResponse.status}`);
                   }
                   
                   const parsedRetry = parseBoucherResponse(retryResponse.data);
@@ -1891,7 +1891,7 @@ const PagosScreen = () => {
                 });
                 
                 if (retryResponse.status >= 400) {
-                  throw new Error(retryResponse.data?.message || `Error ${retryResponse.status}`);
+                  throw new Error(retryResponse.data?.error || retryResponse.data?.message || `Error ${retryResponse.status}`);
                 }
                 
                 const parsedRetry2 = parseBoucherResponse(retryResponse.data);
