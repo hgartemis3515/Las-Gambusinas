@@ -28,6 +28,8 @@ import PlatoBuscadorCard from "../Components/PlatoBuscadorCard";
 import { calcularPrecioUnitarioConComplementos } from "../utils/precioComplementos";
 import StepIndicator, { PASOS } from "../Components/reserva/StepIndicator";
 import HoraPicker from "../Components/reserva/HoraPicker";
+import CronometroCobroReserva from "../Components/CronometroCobroReserva";
+import { ETIQUETA_PENDIENTE_COBRO, MOTIVO_RESERVA_NO_COBRADA, fechaLimiteCobroDe } from "../utils/cobroReserva";
 
 // PLAN_RESERVAS_WIZARD_V2 — Wizard de reserva con mesa preseleccionada,
 // selector de hora intuitivo, buscador de platos con complementos y PPA con autorización.
@@ -57,6 +59,8 @@ function exitoDesdeReserva(reserva, mesaFallback) {
     saldo,
     modo,
     metodo: ppa.metodoPago || "efectivo",
+    fechaLimiteCobro: fechaLimiteCobroDe(reserva),
+    notas: reserva?.notas || "",
   };
 }
 
@@ -144,6 +148,7 @@ export default function ReservaWizardScreen() {
   const [exito, setExito] = useState(null);
   const [aprobado, setAprobado] = useState(false);
   const [rechazado, setRechazado] = useState(false);
+  const [motivoCierre, setMotivoCierre] = useState("");
   const debounceRef = useRef(null);
   const exitoRef = useRef(null);
   const aprobadoRef = useRef(false);
@@ -340,7 +345,10 @@ export default function ReservaWizardScreen() {
           marcarAprobado(data.reserva);
           return;
         }
-        if (estado === "rechazada" || estado === "cancelada") {
+        if (estado === "rechazada" || estado === "cancelada" || /reserva no cobrada/i.test(String(data?.motivo || ""))) {
+          if (/reserva no cobrada/i.test(String(data?.motivo || data?.reserva?.notas || ""))) {
+            setMotivoCierre(MOTIVO_RESERVA_NO_COBRADA);
+          }
           marcarRechazado();
           return;
         }
@@ -365,7 +373,10 @@ export default function ReservaWizardScreen() {
           const r = await axios.get(getApiUrl(`/reservas/${exitoRef.current.reservaId}`), { timeout: 5000, headers });
           const est = (r.data?.estado || "").toLowerCase();
           if (est === "pendiente" || est === "activa") marcarAprobado(r.data);
-          else if (est === "rechazada" || est === "cancelada") marcarRechazado();
+          else if (est === "rechazada" || est === "cancelada") {
+            if (/reserva no cobrada/i.test(String(r.data?.notas || ""))) setMotivoCierre(MOTIVO_RESERVA_NO_COBRADA);
+            marcarRechazado();
+          }
         } catch (err) {}
       }, 4000);
       return () => {
@@ -856,12 +867,13 @@ export default function ReservaWizardScreen() {
     const fase = rechazado ? "rechazado" : aprobado ? "aprobado" : "espera";
     const iconName = fase === "aprobado" ? "check-circle" : fase === "rechazado" ? "close-circle" : "clock-outline";
     const iconColor = fase === "aprobado" ? cSuccess : fase === "rechazado" ? cDanger : cWarn;
-    const titulo = fase === "aprobado" ? "Aprobado" : fase === "rechazado" ? "Rechazado" : "Espera...";
+    const noCobrada = motivoCierre === MOTIVO_RESERVA_NO_COBRADA;
+    const titulo = fase === "aprobado" ? "Aprobado" : fase === "rechazado" ? (noCobrada ? MOTIVO_RESERVA_NO_COBRADA : "Rechazado") : ETIQUETA_PENDIENTE_COBRO;
     const badge = fase === "aprobado"
-      ? "Cocina aprobó la reserva"
+      ? "Caja cobró la reserva"
       : fase === "rechazado"
-        ? "Cocina rechazó la reserva"
-        : "Solicitud enviada a cocina";
+        ? (noCobrada ? "Pasó 1 hora sin cobro" : "Caja rechazó la reserva")
+        : "Caja debe cobrarla en la tabla de tickets";
     return (
       <View style={s.container}>
         <View style={s.exitoWrap}>
@@ -878,7 +890,14 @@ export default function ReservaWizardScreen() {
             <View style={s.exitoRow}><MaterialCommunityIcons name="cash-multiple" size={16} color={cPrimary} /><Text style={s.exitoLine}>{modoLabel}{exito.adelanto > 0 ? `: S/ ${exito.adelanto.toFixed(2)} (${exito.metodo})` : ""}</Text></View>
             <View style={s.exitoRow}><MaterialCommunityIcons name="clock-alert-outline" size={16} color={cMuted} /><Text style={s.exitoLine}>Saldo pendiente: S/ {exito.saldo.toFixed(2)}</Text></View>
             {fase === "espera" ? (
-              <Text style={s.hint}>La reserva se confirma cuando cocina apruebe. Puedes seguir atendiendo otras mesas.</Text>
+              <View style={{ alignItems: "center", marginTop: 8 }}>
+                <CronometroCobroReserva
+                  fechaLimite={exito.fechaLimiteCobro}
+                  style={s.cronometroCobro}
+                  alVencer={() => setMotivoCierre(MOTIVO_RESERVA_NO_COBRADA)}
+                />
+                <Text style={s.hint}>Si caja no cobra en 1 hora, la comanda se anula con el motivo "{MOTIVO_RESERVA_NO_COBRADA}".</Text>
+              </View>
             ) : fase === "aprobado" ? (
               <Text style={s.hint}>Abriendo el detalle de la reserva…</Text>
             ) : (
@@ -958,7 +977,7 @@ export default function ReservaWizardScreen() {
                 <View style={s.resumenCocina}>
                   <View style={s.resumenRow}><MaterialCommunityIcons name="clock-outline" size={16} color={cPrimary} /><Text style={s.resumenLine}>Atención: {moment.tz(fechaReserva, TZ).format("DD/MM HH:mm")}</Text></View>
                   <View style={s.resumenRow}><MaterialCommunityIcons name="fire" size={16} color={cWarn} /><Text style={s.resumenLine}>Cocina: {fechaCocina ? fechaCocina.format("DD/MM HH:mm") : "—"} ({(Number(cfg.minutosAntesCocina) || 15)} min antes)</Text></View>
-                  {inmediato && <Text style={s.warn}>Si cocina aprueba, se activará de inmediato.</Text>}
+                  {inmediato && <Text style={s.warn}>Si caja cobra y la hora de cocina ya llegó, entra a cocina de inmediato.</Text>}
                 </View>
                 <Text style={s.label}>Encargado de cocina (opcional)</Text>
                 <View style={s.chips}>
@@ -1183,7 +1202,7 @@ export default function ReservaWizardScreen() {
                   <View style={s.resumenRow}><MaterialCommunityIcons name="cash-multiple" size={16} color={cPrimary} /><Text style={s.resumenLine}>Adelanto: {ppaModo === "ninguno" ? "Sin adelanto" : `S/ ${adelantoMonto.toFixed(2)} (${ppaMetodo})`}</Text></View>
                   {notas ? <View style={s.resumenRow}><MaterialCommunityIcons name="note-text" size={16} color={cMuted} /><Text style={s.resumenLine}>Notas: {notas.trim()}</Text></View> : null}
                 </View>
-                {inmediato && <Text style={s.warn}>Si cocina aprueba, se activará de inmediato.</Text>}
+                {inmediato && <Text style={s.warn}>Si caja cobra y la hora de cocina ya llegó, entra a cocina de inmediato.</Text>}
                 {errorBanner && (
                   <MotiView from={{ opacity: 0, translateY: -8 }} animate={{ opacity: 1, translateY: 0 }} style={s.errorBanner}>
                     <MaterialCommunityIcons name="alert-circle-outline" size={18} color={cDanger} />
@@ -1374,6 +1393,7 @@ const makeStyles = (theme) => {
     exitoWrap: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
     exitoIcon: { marginBottom: 12 },
     exitoTitle: { fontSize: 24, fontWeight: "800", color: cText, marginBottom: 4 },
+    cronometroCobro: { fontSize: 40, fontWeight: "800", color: cWarn, letterSpacing: 1, marginBottom: 6 },
     exitoSub: { fontSize: 15, color: cMuted, marginBottom: 16 },
     exitoCard: { width: "100%", padding: 16, borderRadius: 14, backgroundColor: cSurface, borderWidth: 1, borderColor: cBorder, marginBottom: 20, ...sh },
     exitoRow: { flexDirection: "row", alignItems: "center", gap: 8, marginVertical: 4 },

@@ -13,6 +13,7 @@ const LABELS = {
   reservado: 'Reservado',
   pendiente_aprobar: 'Pendiente de aprobación',
   espera: 'Espera...',
+  pendiente_cobro: 'Pendiente de Cobro',
 };
 
 export function labelEstadoMesaComanda(item) {
@@ -70,6 +71,7 @@ export function colorEstadoMesa(estado, theme) {
     case 'pendiente de aprobación':
     case 'espera...':
     case 'espera':
+    case 'pendiente de cobro':
       return pal.pendiente_aprobar || '#FF9800';
     case 'pagado':
       return pal.pagado || '#2E7D32';
@@ -88,6 +90,7 @@ export function colorEstadoMesa(estado, theme) {
 export function etiquetaEstadoMesa(estado) {
   const e = String(estado || 'libre').toLowerCase().trim();
   if (e === 'espera...' || e === 'espera') return 'Espera...';
+  if (e === 'pendiente de cobro') return 'Pendiente de Cobro';
   if (e === 'pendiente_aprobar' || e === 'pendiente de aprobación') return 'Pendiente de aprobación';
   if (e === 'pendiente_pago' || e === 'pendiente de pago') return 'Pendiente de pago';
   if (e === 'recoger' || e === 'salio') return 'Preparado';

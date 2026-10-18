@@ -21,6 +21,8 @@ import AlertaSalioFondo, { MesaDestelloCaja } from './AlertaSalioFondo';
 import axios from '../config/axiosConfig';
 import { getMesasAPI } from '../apiConfig';
 import { etiquetaMesa, mesaBloqueada, coloresBarraEspecial } from '../utils/mesaEspecial';
+import { ETIQUETA_PENDIENTE_COBRO, fechaLimiteCobroDe } from '../utils/cobroReserva';
+import CronometroCobroReserva from './CronometroCobroReserva';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -37,6 +39,7 @@ const MesaMapItem = React.memo(({
   scale,
   theme,
   alertaSalio = false,
+  limiteCobro = null,
 }) => {
   const config = mesa.mapaConfig || {};
   const isDark = theme?.dark || false;
@@ -111,9 +114,15 @@ const MesaMapItem = React.memo(({
           {apodo}
         </Text>
       ) : null}
-      <Text style={[styles.mesaEstado, { color: alertaSalio ? '#9A3412' : colores.textColor, opacity: 0.8 }]}>
+      <Text style={[styles.mesaEstado, { color: alertaSalio ? '#9A3412' : colores.textColor, opacity: 0.8 }]} numberOfLines={2}>
         {estado}
       </Text>
+      {limiteCobro ? (
+        <CronometroCobroReserva
+          fechaLimite={limiteCobro}
+          style={[styles.mesaEstado, { color: alertaSalio ? '#9A3412' : colores.textColor, fontWeight: '800' }]}
+        />
+      ) : null}
     </TouchableOpacity>
     </MesaDestelloCaja>
   );
@@ -188,7 +197,7 @@ const MesaMapView = ({
         const mesaId = r.mesa?._id?.toString() || r.mesa?.toString();
         return mesaId === mesa._id?.toString() && r.estado === 'pendiente_aprobar';
       });
-      return espera ? 'Espera...' : 'Pendiente de aprobación';
+      return espera ? ETIQUETA_PENDIENTE_COBRO : 'Pendiente de aprobación';
     }
     const estadoMap = {
       'libre': 'Libre',
@@ -259,6 +268,15 @@ const MesaMapView = ({
             key={mesa._id}
             mesa={mesa}
             estado={getEstadoMesa(mesa)}
+            limiteCobro={(() => {
+              const etiqueta = getEstadoMesa(mesa);
+              if (etiqueta !== ETIQUETA_PENDIENTE_COBRO) return null;
+              const reserva = reservas.find((r) => {
+                const mesaId = r.mesa?._id?.toString() || r.mesa?.toString();
+                return mesaId === mesa._id?.toString() && r.estado === 'pendiente_aprobar';
+              });
+              return fechaLimiteCobroDe(reserva);
+            })()}
             onPress={onMesaPress}
             scale={scale}
             theme={theme}

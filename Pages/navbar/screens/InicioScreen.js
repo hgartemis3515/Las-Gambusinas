@@ -30,6 +30,8 @@ import { themeLight } from "../../../constants/theme";
 import { colors } from "../../../constants/colors";
 import logger from "../../../utils/logger";
 import { usuarioPuedeCrearReservas, elegirReservaDeMesa, elegirReservaEspera, reservaEsDeMozo, comandaEsDeMozo } from "../../../utils/reservasMozo";
+import { ETIQUETA_PENDIENTE_COBRO, fechaLimiteCobroDe } from "../../../utils/cobroReserva";
+import CronometroCobroReserva from "../../../Components/CronometroCobroReserva";
 import { calcularPendienteCobroComandas, formatPendienteCobro } from "../../../helpers/pendienteCobroMozo";
 import { avisarPlatoAgregado } from "../../../utils/avisoPlatoAgregado";
 import { useSocket } from "../../../context/SocketContext";
@@ -348,6 +350,7 @@ const MesaAnimada = React.memo(({
   mesaPrincipalNum = null,
   formatearGrupo = "",
   alertaSalio = false,
+  limiteCobro = null,
 }) => {
   const { apodoDe } = useApodosMesa();
   const apodo = apodoDe(mesa);
@@ -531,6 +534,20 @@ const MesaAnimada = React.memo(({
           >
             {apodo}
           </Text>
+        ) : null}
+        {limiteCobro ? (
+          <>
+            <Text
+              style={[styles.mesaMozo, { fontSize: Math.max(9, mesaSize * 0.1), fontWeight: '700', color: alertaSalio ? '#9A3412' : theme.colors.text.white }]}
+              numberOfLines={2}
+            >
+              {ETIQUETA_PENDIENTE_COBRO}
+            </Text>
+            <CronometroCobroReserva
+              fechaLimite={limiteCobro}
+              style={{ fontSize: Math.max(11, mesaSize * 0.13), fontWeight: '800', color: alertaSalio ? '#9A3412' : theme.colors.text.white }}
+            />
+          </>
         ) : null}
         {zoomLevel >= 0 && mozoLabel ? (
           <Text
@@ -1282,16 +1299,26 @@ const InicioScreen = () => {
         onNuevaComanda: handleNuevaComanda,
         onReservaCambio: (data) => {
           const reserva = data?.reserva;
-          if (reserva?._id) {
-            setReservas((prev) => {
-              const id = reserva._id.toString();
-              const idx = prev.findIndex((r) => (r._id?.toString() || r._id) === id);
-              if (idx === -1) return [...prev, reserva];
+          const id = reserva?._id || data?.reservaId;
+          const estadoNuevo = reserva?.estado
+            || data?.cambios?.estado
+            || (data?.motivo === "Reserva no cobrada" ? "cancelada" : null);
+          if (!id) return;
+          setReservas((prev) => {
+            const sid = id.toString();
+            const idx = prev.findIndex((r) => (r._id?.toString() || r._id) === sid);
+            if (estadoNuevo === "cancelada" || estadoNuevo === "rechazada") {
+              if (idx === -1) return prev;
               const next = [...prev];
-              next[idx] = { ...next[idx], ...reserva };
+              next[idx] = { ...next[idx], estado: estadoNuevo };
               return next;
-            });
-          }
+            }
+            if (!reserva?._id) return prev;
+            if (idx === -1) return [...prev, reserva];
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...reserva };
+            return next;
+          });
         },
         onMesasJuntadas: (data) => {
           console.log('🔗 [INICIO] Evento mesas-juntadas recibido:', data);
@@ -1772,16 +1799,16 @@ const InicioScreen = () => {
     // mostrarla Libre SIEMPRE aunque queden comandas huérfanas en el state local (se limpian
     // al liberar via cleanup en mesas.repository.js, pero el state de React puede estar desactualizado).
     if (mesa.estado && mesa.estado.toLowerCase() === "libre") {
-      if (estadoReserva === "pendiente_aprobar") return "Espera...";
+      if (estadoReserva === "pendiente_aprobar") return ETIQUETA_PENDIENTE_COBRO;
       if (estadoReserva === "pendiente" || estadoReserva === "activa") return "Reservado";
       return "Libre";
     }
 
-    // PLAN_PLANTILLA_COMANDAS: estados de aprobación de cocina
-    // pendiente_aprobar de reserva = Espera...; el de pago sigue como "Pendiente de aprobación"
+    // pendiente_aprobar de reserva = Pendiente de Cobro; el de pago sigue como "Pendiente de aprobación"
     if (mesa.estado && mesa.estado.toLowerCase() === "pendiente_aprobar") {
-      if (estadoReserva === "pendiente_aprobar") return "Espera...";
+      if (estadoReserva === "pendiente_aprobar") return ETIQUETA_PENDIENTE_COBRO;
       if (estadoReserva === "pendiente" || estadoReserva === "activa") return "Reservado";
+      if (estadoReserva === "cancelada" || estadoReserva === "rechazada") return "Libre";
       return "Pendiente de aprobación";
     }
     // reportado = cocina reportó un problema (rojo)
@@ -2064,6 +2091,7 @@ const InicioScreen = () => {
       case "pendiente_aprobar":
       case "pendiente de aprobación":
       case "espera...":
+      case "pendiente de cobro":
         return theme.colors.mesaEstado.pendiente_aprobar || "#FF9800";
       case "pagado":
         return theme.colors.mesaEstado.pagado || "#2E7D32"; // Verde oscuro (aprobado por cocina)
@@ -2201,7 +2229,7 @@ const InicioScreen = () => {
       && !["pendiente_aprobar", "pagado", "pagando", "reportado"].includes(estadoCrudo);
     const adminMesaEspecial = mesa?.especial === true && rol === "admin";
 
-    if (estado === "Espera...") {
+    if (estado === ETIQUETA_PENDIENTE_COBRO || estado === "Espera...") {
       const reservaEspera = elegirReservaEspera(reservas, mesa, userInfo?._id);
       navigation.navigate("ReservaWizard", {
         mesa,
@@ -5258,6 +5286,7 @@ const InicioScreen = () => {
                       }
                       formatearGrupo={formatearGrupoMesas(mesa)}
                       alertaSalio={mesaAlertaSalio(mesa)}
+                      limiteCobro={estado === ETIQUETA_PENDIENTE_COBRO ? fechaLimiteCobroDe(elegirReservaDeMesa(reservas, mesa, userInfo?._id)) : null}
                     />
                   );
                 })}
@@ -5297,11 +5326,12 @@ const InicioScreen = () => {
                       }
                       formatearGrupo={formatearGrupoMesas(mesa)}
                       alertaSalio={mesaAlertaSalio(mesa)}
+                      limiteCobro={estado === ETIQUETA_PENDIENTE_COBRO ? fechaLimiteCobroDe(elegirReservaDeMesa(reservas, mesa, userInfo?._id)) : null}
                     />
                   );
                 })}
                 </>
-              )}
+                )}
             </ScrollView>
           )}
         </View>
