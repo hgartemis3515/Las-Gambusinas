@@ -18,6 +18,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 // 🔥 Usar axios configurado globalmente (timeout 10s, anti-bloqueo)
 import axios from "../../../config/axiosConfig";
+import RasterTicketCocina from "../../../utils/ticketRasterCocina";
+import { imprimirParejaBajaMozo } from "../../../utils/imprimirTicketsTermicos";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, AREAS_API, MESAS_API_UPDATE, apiConfig } from "../../../apiConfig";
 import { getFallbackApiBase } from "../../../config/envDefaults";
@@ -647,6 +649,7 @@ const InicioScreen = () => {
   
   // Refs y estado para scroll de tabs áreas
   const tabsScrollViewRef = useRef(null);
+  const rasterTicketRef = useRef(null);
   const tabPositionsRef = useRef({}); // { "areaId": xPosition }
   // Ref para leer params sin provocar re-ejecución de useFocusEffect (anti-loop)
   const routeParamsRef = useRef(route.params);
@@ -3836,6 +3839,17 @@ const InicioScreen = () => {
       setMensajeLoadingEliminar("✓ Platos eliminados correctamente");
       await delay(1000);
       setLoadingEliminarPlatos(false);
+
+      if (!comandaEliminadaCompleta && response.data?.ticketsBaja && rasterTicketRef.current) {
+        try {
+          await imprimirParejaBajaMozo({
+            rasterizar: (payload) => rasterTicketRef.current?.rasterizar(payload),
+            ticketsBaja: response.data.ticketsBaja,
+          });
+        } catch (printErr) {
+          Alert.alert('Impresión', printErr?.message || 'Los platos se eliminaron, pero no se imprimieron los tickets.');
+        }
+      }
       
       // Limpiar estados
       setComandaEliminarPlatos(null);
@@ -7058,6 +7072,7 @@ const InicioScreen = () => {
         mensaje={mensajeLoadingEliminar}
         pasos={pasosEliminar}
       />
+      <RasterTicketCocina ref={rasterTicketRef} />
       
       {/* Overlay antiguo (mantener para compatibilidad) */}
       {eliminandoPlatos && (

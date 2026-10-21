@@ -56,7 +56,7 @@ import { esLlevarColor, normalizarTipoServicioLinea } from '../utils/tipoServici
 import { msRestantesEntregaAutomatica, formatearCountdownEntrega, tiempoSalioRequiereAncla } from '../utils/entregaAutomatica';
 import { brutoGrupoComandas, montoDescuentoGrupo, montosDescuentoPorComanda, pesoBrutoComanda, clampMontoDescuento, motivoDescuentoFinal, motivoDescuentoEsValido, comandaTieneDescuentoMozo, usuarioPuedeAplicarDescuentos } from '../utils/descuentoMozo';
 import RasterTicketCocina from '../utils/ticketRasterCocina';
-import { imprimirTicketsMozoYCocina, platosPlanosParaTicket } from '../utils/imprimirTicketsTermicos';
+import { imprimirTicketsMozoYCocina, imprimirDatosTicketMozo, platosPlanosParaTicket } from '../utils/imprimirTicketsTermicos';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -2256,6 +2256,7 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         }
       });
       
+      const bajasImpresion = [];
       for (const [comandaId, indices] of Object.entries(platosPorComanda)) {
         if (indices.length === 0) continue;
 
@@ -2279,16 +2280,25 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
           mozoId: userInfo._id
         });
 
-        await axios.put(endpoint, dataAEnviar, {
+        const resBaja = await axios.put(endpoint, dataAEnviar, {
           timeout: 15000,
           headers: {
             'Content-Type': 'application/json'
           }
         });
+        if (resBaja?.data?.ticketsBaja?.eliminados?.datos) bajasImpresion.push(resBaja.data.ticketsBaja);
       }
 
       const comandasActualizadas = await refrescarComandas();
       const sinComandasActivas = Array.isArray(comandasActualizadas) && comandasActualizadas.length === 0;
+      if (rasterTicketRef.current) {
+        for (const tb of bajasImpresion) {
+          await imprimirDatosTicketMozo({
+            rasterizar: (payload) => rasterTicketRef.current?.rasterizar(payload),
+            datos: tb.eliminados.datos,
+          });
+        }
+      }
       if (!sinComandasActivas && rasterTicketRef.current && comandasActualizadas.length) {
         await imprimirTicketsMozoYCocina({
           rasterizar: (payload) => rasterTicketRef.current?.rasterizar(payload),

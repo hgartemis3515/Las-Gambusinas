@@ -50,30 +50,55 @@ export function platosPlanosParaTicket(comandas) {
   return platos;
 }
 
-/** Ticket de caja y ticket de cocina. Avisa solo si falta IP o falla una impresora. */
-export async function imprimirTicketsMozoYCocina({
-  rasterizar,
-  comandas,
-  platos,
-  mesa = null,
-  incluirPagados = false,
-  configMoneda = null,
-}) {
-  const datos = datosImpresionTicket({
-    comandas,
-    platos,
-    mesa,
-    incluirPagados,
-    configMoneda,
+function fechaTicket(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('es-PE', {
+    timeZone: 'America/Lima',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
   });
-  if (!datos.ok) {
-    Alert.alert('Sin platos', 'No hay platos para imprimir.');
-    return;
-  }
-  if (typeof rasterizar !== 'function') {
-    Alert.alert('Error', 'No se pudo preparar la impresión.');
-    return;
-  }
+}
+
+/** Foto del backend (productos) → el mismo cuerpo que imprime el mozo. */
+export function datosRasterDesdeTicket(datos) {
+  const d = datos || {};
+  const productos = d.platos || d.productos || [];
+  return {
+    letrero: d.comandaNumeroDisplay || d.letrero || '#—',
+    mozo: d.mozo || '',
+    mesa: d.mesa || '—',
+    fecha: d.fecha || fechaTicket(d.fechaPedido),
+    clienteNombre: d.clienteNombre || '',
+    sinMesa: d.sinMesa === true,
+    reserva: d.reserva === true,
+    fechaAtencion: d.fechaAtencion || '',
+    esPrueba: d.esPrueba === true,
+    sinTotal: d.sinTotal === true,
+    anulacion: d.sinTotal ? null : (d.anulacion || null),
+    descuentoMonto: d.sinTotal ? 0 : (Number(d.montoDescuento ?? d.descuentoMonto) || 0),
+    descuentoMotivo: d.sinTotal ? '' : (d.descuentoMotivo || d.descuentos?.[0]?.motivo || ''),
+    simbolo: d.simbolo || 'S/.',
+    platos: productos.map((p) => {
+      const cant = Number(p.cant ?? p.cantidad) || 1;
+      const unit = Number(p.unit ?? p.precio ?? p.precioUnitario) || 0;
+      return {
+        cant,
+        nombre: p.nombre || 'Plato',
+        unit,
+        line: Number(p.line ?? p.subtotal) || Number((cant * unit).toFixed(2)),
+        tipoServicio: p.tipoServicio || 'mesa',
+        guarnicionesCambio: p.guarnicionesCambio || null,
+        lineaAnulada: p.lineaAnulada || null,
+      };
+    }),
+  };
+}
+
+async function imprimirRasterListo({ rasterizar, datos, esPrueba }) {
   let detenerCaja = false;
   let detenerCocina = false;
   try {
@@ -94,7 +119,7 @@ export async function imprimirTicketsMozoYCocina({
     detenerCaja = false;
     detenerCocina = false;
   }
-  const forzarAmbas = (comandas || []).some((c) => c?.esPrueba === true);
+  const forzarAmbas = esPrueba === true;
   if (forzarAmbas) {
     detenerCaja = false;
     detenerCocina = false;
@@ -151,5 +176,51 @@ export async function imprimirTicketsMozoYCocina({
     if (lineas.length) Alert.alert('Impresión', lineas.join('\n'));
   } catch (err) {
     Alert.alert('Error', err?.message || 'No se pudo armar el ticket.');
+  }
+}
+
+/** Ticket de caja y ticket de cocina. Avisa solo si falta IP o falla una impresora. */
+export async function imprimirTicketsMozoYCocina({
+  rasterizar,
+  comandas,
+  platos,
+  mesa = null,
+  incluirPagados = false,
+  configMoneda = null,
+}) {
+  const datos = datosImpresionTicket({
+    comandas,
+    platos,
+    mesa,
+    incluirPagados,
+    configMoneda,
+  });
+  if (!datos.ok) {
+    Alert.alert('Sin platos', 'No hay platos para imprimir.');
+    return;
+  }
+  if (typeof rasterizar !== 'function') {
+    Alert.alert('Error', 'No se pudo preparar la impresión.');
+    return;
+  }
+  const esPrueba = (comandas || []).some((c) => c?.esPrueba === true) || datos.esPrueba === true;
+  await imprimirRasterListo({ rasterizar, datos, esPrueba });
+}
+
+/** Imprime una foto ya armada (eliminados o una letra del historial). */
+export async function imprimirDatosTicketMozo({ rasterizar, datos }) {
+  if (typeof rasterizar !== 'function') return;
+  const listo = datosRasterDesdeTicket(datos);
+  if (!listo.platos.length && !listo.anulacion) return;
+  await imprimirRasterListo({ rasterizar, datos: listo, esPrueba: listo.esPrueba === true });
+}
+
+/** Los dos papeles de una baja: eliminados y lo que queda. */
+export async function imprimirParejaBajaMozo({ rasterizar, ticketsBaja }) {
+  if (ticketsBaja?.eliminados?.datos) {
+    await imprimirDatosTicketMozo({ rasterizar, datos: ticketsBaja.eliminados.datos });
+  }
+  if (ticketsBaja?.restantes?.datos) {
+    await imprimirDatosTicketMozo({ rasterizar, datos: ticketsBaja.restantes.datos });
   }
 }

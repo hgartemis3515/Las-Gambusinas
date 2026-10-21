@@ -78,6 +78,18 @@ function celdaTipoTicket(tipo, cliente) {
   </td>`;
 }
 
+function raya(top) {
+  return `<span style="position:absolute;left:0;right:0;top:${top};height:0;border-top:1.5px solid #000;"></span>`;
+}
+
+function htmlTachadoDoble(texto) {
+  return `<span style="position:relative;display:inline-block;white-space:nowrap;">${esc(texto)}${raya('34%')}${raya('64%')}</span>`;
+}
+
+function htmlTachadoTriple(texto) {
+  return `<span style="position:relative;display:inline-block;white-space:nowrap;">${esc(texto)}${raya('22%')}${raya('50%')}${raya('78%')}</span>`;
+}
+
 function celdaLlena(value) {
   const texto = String(value || '—');
   const n = texto.length;
@@ -96,15 +108,21 @@ function htmlCuerpo(datos) {
   let bruto = 0;
   for (const p of d.platos || []) {
     const line = Number(p.line) || 0;
-    bruto += line;
+    const tachada = !!p.lineaAnulada;
+    if (!tachada) bruto += line;
     const cuadro = cocina
       ? `<td style="width:18px;padding:3px 2px;vertical-align:middle;"><span style="display:inline-block;width:12px;height:12px;border:1.6px solid #000;box-sizing:border-box;"></span></td>`
       : '';
+    const nombreHtml = tachada
+      ? `${htmlTachadoDoble(p.nombre)} <span style="font-size:11px;font-weight:900;">Anulado</span> <span style="font-weight:700;">${esc(p.lineaAnulada.usuario || '—')}</span>`
+      : `${esc(p.nombre)}${cocina ? htmlCambioGuarnicion(p) : ''}`;
+    const unitHtml = tachada ? htmlTachadoTriple(fmt(p.unit)) : fmt(p.unit);
+    const lineHtml = tachada ? htmlTachadoTriple(fmt(line)) : fmt(line);
     filas += `<tr class="prod-item">${cuadro}
       <td style="padding:3px 2px;text-align:center;font-weight:700;width:22px;">${esc(p.cant)}</td>
-      <td style="padding:3px 2px;">${esc(p.nombre)}${cocina ? htmlCambioGuarnicion(p) : ''}</td>
-      <td style="padding:3px 2px;text-align:right;white-space:nowrap;">${fmt(p.unit)}</td>
-      <td style="padding:3px 2px;text-align:right;white-space:nowrap;font-weight:700;">${fmt(line)}</td>
+      <td style="padding:3px 2px;">${nombreHtml}</td>
+      <td style="padding:3px 2px;text-align:right;white-space:nowrap;">${unitHtml}</td>
+      <td style="padding:3px 2px;text-align:right;white-space:nowrap;font-weight:700;">${lineHtml}</td>
     </tr>`;
   }
   const desc = Number(d.descuentoMonto) || 0;
@@ -139,12 +157,14 @@ function htmlCuerpo(datos) {
     </tr></thead>
     <tbody>${filas}</tbody>
   </table>`;
-  if (desc > 0) {
-    const mot = d.descuentoMotivo ? ` (${esc(d.descuentoMotivo)})` : '';
-    html += `<div style="text-align:right;padding:4px 0 0;font-size:11px;">Descuento${mot}: -${esc(simbolo)}${fmt(desc)}</div>`;
+  if (d.sinTotal !== true) {
+    if (desc > 0) {
+      const mot = d.descuentoMotivo ? ` (${esc(d.descuentoMotivo)})` : '';
+      html += `<div style="text-align:right;padding:4px 0 0;font-size:11px;">Descuento${mot}: -${esc(simbolo)}${fmt(desc)}</div>`;
+    }
+    html += `<div style="text-align:right;font-size:14px;font-weight:800;padding:4px 0 2px;border-top:1px solid #000;margin-top:4px;">TOTAL ${esc(simbolo)}${fmt(neto)}</div>`;
   }
-  html += `<div style="text-align:right;font-size:14px;font-weight:800;padding:4px 0 2px;border-top:1px solid #000;margin-top:4px;">TOTAL ${esc(simbolo)}${fmt(neto)}</div>`;
-  if (d.anulacion) {
+  if (d.anulacion && d.sinTotal !== true) {
     html += `<div style="text-align:center;font-size:26px;font-weight:900;letter-spacing:1px;padding:10px 0 2px;">ANULADO X</div>`;
   }
   return html;
