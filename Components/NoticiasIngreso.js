@@ -15,6 +15,7 @@ import { WebView } from 'react-native-webview';
 import { MotiView, AnimatePresence } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSocket } from '../context/SocketContext';
 import {
   cargarNoticiasHoy,
@@ -231,6 +232,21 @@ export function NoticiasManual({ visible, onClose }) {
   );
 }
 
+async function avisoParaEsteMozo(aviso) {
+  if (!aviso) return true;
+  const dest = aviso.destinos?.length ? aviso.destinos : ['mozos', 'cocina'];
+  if (!dest.includes('mozos')) return false;
+  if ((aviso.mozosAlcance || 'todos') !== 'algunos') return true;
+  try {
+    const raw = await AsyncStorage.getItem('user');
+    const user = raw ? JSON.parse(raw) : null;
+    const id = String(user?._id || user?.id || '');
+    return (aviso.mozoIds || []).map(String).includes(id);
+  } catch (_) {
+    return false;
+  }
+}
+
 export default function NoticiasIngreso() {
   const { socket } = useSocket();
   const reduce = useReduceMotion();
@@ -275,9 +291,14 @@ export default function NoticiasIngreso() {
 
   useEffect(() => {
     if (!socket) return undefined;
-    const onNueva = () => { if (faseRef.current !== 'top') evaluar(true); };
-    const onTemporal = (aviso) => {
-      if (aviso && aviso.titulo) setFlash(aviso);
+    const onNueva = async (aviso) => {
+      if (!(await avisoParaEsteMozo(aviso))) return;
+      if (faseRef.current !== 'top') evaluar(true);
+    };
+    const onTemporal = async (aviso) => {
+      if (!aviso?.titulo) return;
+      if (!(await avisoParaEsteMozo(aviso))) return;
+      setFlash(aviso);
     };
     socket.on('noticia-publicada', onNueva);
     socket.on('noticia-temporal', onTemporal);
