@@ -57,7 +57,7 @@ function htmlNoticias(noticias, nuevasIds = []) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   body { margin:0; padding:12px 14px 24px; background:#141414; color:#f5f5f5; font-family: system-ui, sans-serif; font-size:32px; line-height:1.45; }
-  article { margin-bottom:14px; background:#1f1f1f; border:1px solid rgba(255,255,255,0.06); border-radius:14px; padding:14px; opacity:0; transform: translateY(10px); animation: entra .38s ease-out forwards; }
+  article { margin-bottom:14px; background:#1f1f1f; border:1px solid rgba(255,255,255,0.06); border-radius:14px; padding:14px; overflow:hidden; opacity:0; transform: translateY(10px); animation: entra .38s ease-out forwards; }
   article:nth-child(2) { animation-delay: .07s } article:nth-child(3) { animation-delay: .14s } article:nth-child(n+4) { animation-delay: .2s }
   @keyframes entra { to { opacity:1; transform:none } }
   @media (prefers-reduced-motion: reduce) { article { animation:none; opacity:1; transform:none } }
@@ -65,7 +65,7 @@ function htmlNoticias(noticias, nuevasIds = []) {
   h3 { margin:0 0 6px; font-size:34px; }
   p { margin:0 0 8px; }
   ul, ol { padding-left: 22px; margin: 0 0 8px; }
-  img { max-width:100%; height:auto; border-radius:10px; display:block; margin:8px 0; }
+  img { width:calc(100% + 28px); max-width:none; height:auto; display:block; margin:10px -14px; border-radius:0; }
   .nuevo { font-size:10px; font-weight:800; text-transform:uppercase; background:${GOLD}; color:#1a1a1a; border-radius:6px; padding:2px 6px; letter-spacing:.04em; }
   .autor { color:#8a8a8a; font-size:12px; margin:8px 0 0; }
 </style></head><body>${bloques}</body></html>`;
@@ -208,11 +208,11 @@ const MEDIR_ALTO = `(function(){
 
 function WebNoticias({ noticias, nuevasIds, reduce, ajustar = false }) {
   const { height: ventana } = useWindowDimensions();
-  const tope = Math.round(ventana * 0.62);
+  const tope = Math.round(ventana * 0.66);
   const hayFoto = (noticias || []).some((n) => /<img\b/i.test(n.cuerpoHtml || ''));
   const [alto, setAlto] = useState(ajustar ? (hayFoto ? tope : 72) : 0);
   const [listo, setListo] = useState(false);
-  const altoVista = ajustar ? Math.min(tope, Math.max(hayFoto ? Math.round(tope * 0.72) : 72, alto)) : undefined;
+  const altoVista = ajustar ? Math.min(tope, Math.max(hayFoto ? tope : 72, alto)) : undefined;
   return (
     <View style={ajustar ? { height: altoVista } : { flex: 1, minHeight: 220 }}>
       {!listo ? <ActivityIndicator color={GOLD} style={StyleSheet.absoluteFill} /> : null}
