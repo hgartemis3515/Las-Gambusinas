@@ -72,8 +72,30 @@ function htmlNoticias(noticias, nuevasIds = []) {
 }
 
 /** Hoja oscura con borde dorado. Entra desde abajo y sale hacia abajo. */
-function Hoja({ titulo, subtitulo, children, onListo, listoLabel, reduce, icono = 'newspaper-variant-outline', ajustar = false }) {
+function Hoja({ titulo, subtitulo, children, onListo, listoLabel, reduce, icono = 'newspaper-variant-outline', ajustar = false, esperaSegundos = 0, esperaKey = 0, cierreRef = null }) {
+  const [resta, setResta] = useState(esperaSegundos);
+  useEffect(() => {
+    if (!esperaSegundos) { setResta(0); return undefined; }
+    const fin = Date.now() + esperaSegundos * 1000;
+    setResta(esperaSegundos);
+    const id = setInterval(() => {
+      const queda = Math.max(0, Math.ceil((fin - Date.now()) / 1000));
+      setResta(queda);
+      if (queda <= 0) clearInterval(id);
+    }, 200);
+    return () => clearInterval(id);
+  }, [esperaSegundos, esperaKey]);
+  const cerrar = () => {
+    if (resta > 0) return;
+    onListo?.();
+  };
+  useEffect(() => {
+    if (!cierreRef) return undefined;
+    cierreRef.current = cerrar;
+    return () => { cierreRef.current = () => {}; };
+  });
   const t = reduce ? { type: 'timing', duration: 0 } : { type: 'spring', damping: 18, stiffness: 220, mass: 0.9 };
+  const etiqueta = listoLabel || 'Listo';
   return (
     <View style={styles.fondo} pointerEvents="box-none">
       <MotiView
@@ -83,7 +105,7 @@ function Hoja({ titulo, subtitulo, children, onListo, listoLabel, reduce, icono 
         transition={{ type: 'timing', duration: reduce ? 0 : 200 }}
         style={[StyleSheet.absoluteFill, styles.velo]}
       >
-        <Pressable style={StyleSheet.absoluteFill} onPress={onListo} accessibilityLabel="Cerrar" />
+        <Pressable style={StyleSheet.absoluteFill} onPress={cerrar} accessibilityLabel="Cerrar" />
       </MotiView>
       <MotiView
         from={{ opacity: 0, translateY: 48, scale: 0.96 }}
@@ -105,13 +127,36 @@ function Hoja({ titulo, subtitulo, children, onListo, listoLabel, reduce, icono 
         </View>
         <View style={ajustar ? styles.cuerpoAjuste : styles.cuerpo}>{children}</View>
         <TouchableOpacity
-          style={styles.listo}
-          onPress={() => { haptic(); onListo?.(); }}
+          style={[styles.listo, resta > 0 && styles.listoEspera]}
+          onPress={() => { if (resta > 0) return; haptic(); cerrar(); }}
+          disabled={resta > 0}
           activeOpacity={0.85}
           accessibilityRole="button"
-          accessibilityLabel={listoLabel || 'Listo'}
+          accessibilityLabel={resta > 0 ? `Listo en ${resta} segundos` : etiqueta}
+          accessibilityState={{ disabled: resta > 0 }}
         >
-          <Text style={styles.listoTxt}>{listoLabel || 'Listo'}</Text>
+          {resta > 0 ? (
+            <View style={styles.listoFila}>
+              <View style={styles.crono}>
+                <MotiView
+                  key={resta}
+                  from={{ scale: reduce ? 1 : 0.82 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'timing', duration: reduce ? 0 : 180 }}
+                >
+                  <Text style={styles.cronoNum}>{resta}</Text>
+                </MotiView>
+              </View>
+              <Text style={styles.listoEsperaTxt}>Listo en {resta}</Text>
+            </View>
+          ) : (
+            <Text style={styles.listoTxt}>{etiqueta}</Text>
+          )}
+          {resta > 0 ? (
+            <View style={styles.cronoPista}>
+              <View style={[styles.cronoRelleno, { width: `${((esperaSegundos - resta) / esperaSegundos) * 100}%` }]} />
+            </View>
+          ) : null}
         </TouchableOpacity>
       </MotiView>
     </View>
@@ -265,6 +310,8 @@ export default function NoticiasIngreso() {
   const [nuevasIds, setNuevasIds] = useState([]);
   const [fecha, setFecha] = useState('');
   const [flash, setFlash] = useState(null);
+  const cerrarFlashRef = useRef(() => {});
+  const cerrarNoticiaRef = useRef(() => {});
 
   const evaluar = useCallback(async (porSocket = false) => {
     try {
@@ -310,7 +357,7 @@ export default function NoticiasIngreso() {
     const onTemporal = async (aviso) => {
       if (!aviso?.titulo) return;
       if (!(await avisoParaEsteMozo(aviso))) return;
-      setFlash(aviso);
+      setFlash({ ...aviso, _abrio: Date.now() });
     };
     socket.on('noticia-publicada', onNueva);
     socket.on('noticia-temporal', onTemporal);
@@ -335,8 +382,8 @@ export default function NoticiasIngreso() {
   };
 
   const hojaFlash = flash ? (
-    <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={() => setFlash(null)}>
-      <Hoja titulo="Aviso" subtitulo="Solo esta vez. No queda guardado." onListo={() => setFlash(null)} reduce={reduce} ajustar>
+      <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={() => cerrarFlashRef.current?.()}>
+      <Hoja titulo="Aviso" subtitulo="Solo esta vez. No queda guardado." onListo={() => setFlash(null)} reduce={reduce} ajustar esperaSegundos={6} esperaKey={flash._abrio} cierreRef={cerrarFlashRef}>
         <WebNoticias noticias={[flash]} nuevasIds={[]} reduce={reduce} ajustar />
       </Hoja>
     </Modal>
@@ -347,7 +394,7 @@ export default function NoticiasIngreso() {
   return (
     <>
       {hojaFlash}
-      <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={fase === 'top' ? cerrarTop : cerrarNoticias}>
+      <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={() => { if (fase === 'top') cerrarTop(); else cerrarNoticiaRef.current?.(); }}>
         <AnimatePresence exitBeforeEnter onExitComplete={() => { if (!faseRef.current) setMontado(false); }}>
           {fase === 'top' ? (
             <Hoja key="top" titulo="TOP de la semana" subtitulo="Lo más pedido en los últimos 7 días" icono="trophy-outline" onListo={cerrarTop} reduce={reduce}>
@@ -362,6 +409,9 @@ export default function NoticiasIngreso() {
               onListo={cerrarNoticias}
               reduce={reduce}
               ajustar
+              esperaSegundos={6}
+              esperaKey={nuevasIds.join('|') || noticias.map((n) => n._id).join('|')}
+              cierreRef={cerrarNoticiaRef}
             >
               <WebNoticias noticias={noticias} nuevasIds={nuevasIds} reduce={reduce} ajustar />
             </Hoja>
@@ -409,7 +459,35 @@ const styles = StyleSheet.create({
     backgroundColor: GOLD,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
+  listoEspera: {
+    backgroundColor: '#2a2416',
+    borderWidth: 1,
+    borderColor: 'rgba(212,175,55,0.5)',
+  },
+  listoFila: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  crono: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: GOLD,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(212,175,55,0.16)',
+  },
+  cronoNum: { color: GOLD, fontSize: 18, fontWeight: '900' },
+  listoEsperaTxt: { color: '#f5e6b8', fontSize: 18, fontWeight: '800' },
+  cronoPista: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 4,
+    backgroundColor: 'rgba(212,175,55,0.22)',
+  },
+  cronoRelleno: { height: 4, backgroundColor: GOLD },
   listoTxt: { color: '#1a1a1a', fontSize: 18, fontWeight: '800' },
   item: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 12, marginBottom: 4 },
   itemPrimero: { backgroundColor: 'rgba(212,175,55,0.1)', borderWidth: 1, borderColor: 'rgba(212,175,55,0.3)' },
