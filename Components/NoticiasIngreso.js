@@ -355,7 +355,7 @@ export default function NoticiasIngreso() {
       if (faseRef.current !== 'top') evaluar(true);
     };
     const onTemporal = async (aviso) => {
-      if (!aviso?.titulo) return;
+      if (!aviso) return;
       if (!(await avisoParaEsteMozo(aviso))) return;
       setFlash({ ...aviso, _abrio: Date.now() });
     };
