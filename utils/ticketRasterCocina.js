@@ -109,15 +109,16 @@ function htmlCuerpo(datos) {
   for (const p of d.platos || []) {
     const line = Number(p.line) || 0;
     const tachada = !!p.lineaAnulada;
-    if (!tachada) bruto += line;
+    const anulaComanda = !tachada && !!d.anulacion;
+    if (!tachada && !anulaComanda) bruto += line;
     const cuadro = cocina
       ? `<td style="width:18px;padding:3px 2px;vertical-align:middle;"><span style="display:inline-block;width:12px;height:12px;border:1.6px solid #000;box-sizing:border-box;"></span></td>`
       : '';
-    const nombreHtml = tachada
-      ? `${htmlTachadoDoble(p.nombre)} <span style="font-size:11px;font-weight:900;">Anulado</span> <span style="font-weight:700;">${esc(p.lineaAnulada.usuario || '—')}</span>`
+    const nombreHtml = (tachada || anulaComanda)
+      ? `${htmlTachadoDoble(p.nombre)} <span style="font-size:11px;font-weight:900;">Anulado</span> <span style="font-weight:700;">${esc((p.lineaAnulada && p.lineaAnulada.usuario) || (d.anulacion && d.anulacion.usuario) || '—')}</span>`
       : `${esc(p.nombre)}${cocina ? htmlCambioGuarnicion(p) : ''}`;
-    const unitHtml = tachada ? htmlTachadoTriple(fmt(p.unit)) : fmt(p.unit);
-    const lineHtml = tachada ? htmlTachadoTriple(fmt(line)) : fmt(line);
+    const unitHtml = (tachada || anulaComanda) ? htmlTachadoTriple(fmt(p.unit)) : fmt(p.unit);
+    const lineHtml = (tachada || anulaComanda) ? htmlTachadoTriple(fmt(line)) : fmt(line);
     filas += `<tr class="prod-item">${cuadro}
       <td style="padding:3px 2px;text-align:center;font-weight:700;width:22px;">${esc(p.cant)}</td>
       <td style="padding:3px 2px;">${nombreHtml}</td>
@@ -130,6 +131,9 @@ function htmlCuerpo(datos) {
   const thCuadro = cocina ? '<th style="width:18px;border-bottom:1px solid #000;"></th>' : '';
   let html = '';
   html += `<div style="text-align:left;font-size:14px;font-weight:800;letter-spacing:1px;line-height:1.1;">${cocina ? 'COCINA' : 'CAJA'}</div>`;
+  if (d.sinTotal === true || (d.anulacion && d.sinTotal !== true)) {
+    html += '<div style="text-align:center;font-size:26px;font-weight:900;letter-spacing:1px;padding:6px 0 0;">ANULADO X</div>';
+  }
   const clienteTicket = String(d.clienteNombre || '').trim();
   const esReserva = d.reserva === true;
   const tipoTicket = tipoCuadroTicket(d.platos, {
@@ -163,9 +167,6 @@ function htmlCuerpo(datos) {
       html += `<div style="text-align:right;padding:4px 0 0;font-size:11px;">Descuento${mot}: -${esc(simbolo)}${fmt(desc)}</div>`;
     }
     html += `<div style="text-align:right;font-size:14px;font-weight:800;padding:4px 0 2px;border-top:1px solid #000;margin-top:4px;">TOTAL ${esc(simbolo)}${fmt(neto)}</div>`;
-  }
-  if (d.anulacion && d.sinTotal !== true) {
-    html += `<div style="text-align:center;font-size:26px;font-weight:900;letter-spacing:1px;padding:10px 0 2px;">ANULADO X</div>`;
   }
   return html;
 }
