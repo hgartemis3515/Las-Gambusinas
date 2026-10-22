@@ -56,13 +56,13 @@ function htmlNoticias(noticias, nuevasIds = []) {
   }).join('');
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  body { margin:0; padding:12px 14px 24px; background:#141414; color:#f5f5f5; font-family: system-ui, sans-serif; font-size:16px; line-height:1.5; }
+  body { margin:0; padding:12px 14px 24px; background:#141414; color:#f5f5f5; font-family: system-ui, sans-serif; font-size:32px; line-height:1.45; }
   article { margin-bottom:14px; background:#1f1f1f; border:1px solid rgba(255,255,255,0.06); border-radius:14px; padding:14px; opacity:0; transform: translateY(10px); animation: entra .38s ease-out forwards; }
   article:nth-child(2) { animation-delay: .07s } article:nth-child(3) { animation-delay: .14s } article:nth-child(n+4) { animation-delay: .2s }
   @keyframes entra { to { opacity:1; transform:none } }
   @media (prefers-reduced-motion: reduce) { article { animation:none; opacity:1; transform:none } }
-  h2 { margin:0 0 8px; font-size:20px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-  h3 { margin:0 0 6px; font-size:17px; }
+  h2 { margin:0 0 8px; font-size:40px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  h3 { margin:0 0 6px; font-size:34px; }
   p { margin:0 0 8px; }
   ul, ol { padding-left: 22px; margin: 0 0 8px; }
   img { max-width:100%; height:auto; border-radius:10px; display:block; margin:8px 0; }
@@ -151,17 +151,23 @@ const MEDIR_ALTO = `(function(){
   function alto(){ return Math.ceil(Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)); }
   function send(){ try { window.ReactNativeWebView.postMessage(String(alto())); } catch (e) {} }
   send();
-  setTimeout(send, 60);
-  setTimeout(send, 350);
+  setTimeout(send, 80);
+  setTimeout(send, 400);
+  Array.prototype.forEach.call(document.images || [], function(img){
+    if (img.complete) return;
+    img.addEventListener('load', send);
+    img.addEventListener('error', send);
+  });
   true;
 })();`;
 
 function WebNoticias({ noticias, nuevasIds, reduce, ajustar = false }) {
   const { height: ventana } = useWindowDimensions();
   const tope = Math.round(ventana * 0.62);
-  const [alto, setAlto] = useState(ajustar ? 72 : 0);
+  const hayFoto = (noticias || []).some((n) => /<img\b/i.test(n.cuerpoHtml || ''));
+  const [alto, setAlto] = useState(ajustar ? (hayFoto ? tope : 72) : 0);
   const [listo, setListo] = useState(false);
-  const altoVista = ajustar ? Math.min(tope, Math.max(72, alto)) : undefined;
+  const altoVista = ajustar ? Math.min(tope, Math.max(hayFoto ? Math.round(tope * 0.72) : 72, alto)) : undefined;
   return (
     <View style={ajustar ? { height: altoVista } : { flex: 1, minHeight: 220 }}>
       {!listo ? <ActivityIndicator color={GOLD} style={StyleSheet.absoluteFill} /> : null}
@@ -170,7 +176,8 @@ function WebNoticias({ noticias, nuevasIds, reduce, ajustar = false }) {
           originWhitelist={['*']}
           source={{ html: htmlNoticias(noticias, nuevasIds), baseUrl: origenServidor() }}
           style={ajustar ? { height: altoVista, backgroundColor: '#141414' } : styles.web}
-          scrollEnabled={!ajustar || alto > tope}
+          scrollEnabled={!ajustar || hayFoto || alto > tope}
+          mixedContentMode="always"
           injectedJavaScript={ajustar ? MEDIR_ALTO : undefined}
           onMessage={(e) => {
             const n = Number(e.nativeEvent.data);
@@ -272,6 +279,7 @@ export default function NoticiasIngreso() {
       setFecha(ymd);
       setTop(platos);
       setNoticias(lista);
+      if (porSocket && faseRef.current === 'noticias' && !lista.length) setFase(null);
       const vistas = await idsNoticiasVistas(ymd);
       const nuevas = lista.filter((item) => !vistas.includes(String(item._id))).map((item) => String(item._id));
       setNuevasIds(nuevas);
@@ -292,6 +300,10 @@ export default function NoticiasIngreso() {
   useEffect(() => {
     if (!socket) return undefined;
     const onNueva = async (aviso) => {
+      if (aviso?.accion === 'retirada') {
+        await evaluar(true);
+        return;
+      }
       if (!(await avisoParaEsteMozo(aviso))) return;
       if (faseRef.current !== 'top') evaluar(true);
     };
