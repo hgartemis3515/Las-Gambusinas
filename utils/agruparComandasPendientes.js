@@ -61,11 +61,26 @@ function tsCreated(c) {
   return Number.isFinite(t) ? t : 0;
 }
 
+function nombreClienteEscrito(c) {
+  const candidatos = [c?.clienteNombre, c?.clienteNombreParaLlevar];
+  for (const v of candidatos) {
+    const s = String(v || '').trim();
+    if (s && !/^cliente-\d+$/i.test(s)) return s;
+  }
+  return '';
+}
+
 function filaDesdeComandas(comandas, key) {
   const first = comandas[0];
   const esGrupo = comandas.length > 1;
+  const nombres = [];
+  for (const c of comandas) {
+    const n = nombreClienteEscrito(c);
+    if (n && !nombres.includes(n)) nombres.push(n);
+  }
   return {
     ...first,
+    clienteNombre: nombres.length ? nombres.join(' · ') : null,
     tipo: esGrupo ? 'grupo' : 'individual',
     id: esGrupo ? key : String(first._id),
     _id: first._id,

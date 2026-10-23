@@ -128,12 +128,19 @@ function FilaPendiente({
       style={[styles.row, alertaOn && { borderLeftWidth: 4, borderLeftColor: pal.chip }]}
     >
       <View style={styles.rowContent} collapsable={false}>
-      <Text
-        style={[styles.cell, styles.colMesa, styles.cellFront, sinMesa && styles.cellParaLlevar]}
-        numberOfLines={2}
-      >
-        {labelMesa(item)}
-      </Text>
+      <View style={[styles.colMesa, styles.mesaYCliente, styles.cellFront]}>
+        <Text
+          style={[styles.cell, styles.mesaNumero, sinMesa && styles.cellParaLlevar]}
+          numberOfLines={1}
+        >
+          {labelMesa(item)}
+        </Text>
+        {item.clienteNombre ? (
+          <Text style={[styles.cell, styles.clienteJuntoMesa]} numberOfLines={1}>
+            {item.clienteNombre}
+          </Text>
+        ) : null}
+      </View>
       <Text style={[styles.cell, styles.colComanda, styles.cellFront]} numberOfLines={1}>
         {comandaTxt}
       </Text>
@@ -570,7 +577,19 @@ const makeStyles = (theme) => StyleSheet.create({
     color: theme.colors.text?.primary || theme.colors.text?.white || "#111",
     zIndex: 1,
   },
-  colMesa: { flex: 1.15 },
+  colMesa: { flex: 1.55 },
+  mesaYCliente: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    minWidth: 0,
+  },
+  mesaNumero: { flexShrink: 0 },
+  clienteJuntoMesa: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
+  },
   colComanda: { flex: 1.05 },
   colEstado: { flex: 1.15 },
   colTotal: { flex: 0.95, fontWeight: "700" },

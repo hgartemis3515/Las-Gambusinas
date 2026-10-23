@@ -131,9 +131,6 @@ function htmlCuerpo(datos) {
   const thCuadro = cocina ? '<th style="width:18px;border-bottom:1px solid #000;"></th>' : '';
   let html = '';
   html += `<div style="text-align:left;font-size:14px;font-weight:800;letter-spacing:1px;line-height:1.1;">${cocina ? 'COCINA' : 'CAJA'}</div>`;
-  if (d.sinTotal === true || (d.anulacion && d.sinTotal !== true)) {
-    html += '<div style="text-align:center;font-size:26px;font-weight:900;letter-spacing:1px;padding:6px 0 0;">ANULADO X</div>';
-  }
   const clienteTicket = String(d.clienteNombre || '').trim();
   const esReserva = d.reserva === true;
   const tipoTicket = tipoCuadroTicket(d.platos, {
@@ -167,6 +164,9 @@ function htmlCuerpo(datos) {
       html += `<div style="text-align:right;padding:4px 0 0;font-size:11px;">Descuento${mot}: -${esc(simbolo)}${fmt(desc)}</div>`;
     }
     html += `<div style="text-align:right;font-size:14px;font-weight:800;padding:4px 0 2px;border-top:1px solid #000;margin-top:4px;">TOTAL ${esc(simbolo)}${fmt(neto)}</div>`;
+  }
+  if (d.sinTotal === true || (d.anulacion && d.sinTotal !== true)) {
+    html += '<div style="text-align:center;font-size:26px;font-weight:900;letter-spacing:1px;padding:6px 0 0;">ANULADO X</div>';
   }
   return html;
 }
