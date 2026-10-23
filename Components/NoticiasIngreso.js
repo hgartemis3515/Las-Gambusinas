@@ -41,6 +41,12 @@ function useReduceMotion() {
   return reduce;
 }
 
+function segundosAviso(aviso) {
+  const n = Number(aviso?.segundosEnPantalla);
+  if (!Number.isFinite(n)) return 15;
+  return Math.min(120, Math.max(5, Math.round(n)));
+}
+
 function haptic() {
   try { Haptics.selectionAsync(); } catch (_) {}
 }
@@ -383,7 +389,7 @@ export default function NoticiasIngreso() {
 
   const hojaFlash = flash ? (
       <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={() => cerrarFlashRef.current?.()}>
-      <Hoja titulo="Aviso" subtitulo="Solo esta vez. No queda guardado." onListo={() => setFlash(null)} reduce={reduce} ajustar esperaSegundos={6} esperaKey={flash._abrio} cierreRef={cerrarFlashRef}>
+      <Hoja titulo="Aviso" subtitulo="Solo esta vez. No queda guardado." onListo={() => setFlash(null)} reduce={reduce} ajustar esperaSegundos={segundosAviso(flash)} esperaKey={flash._abrio} cierreRef={cerrarFlashRef}>
         <WebNoticias noticias={[flash]} nuevasIds={[]} reduce={reduce} ajustar />
       </Hoja>
     </Modal>
