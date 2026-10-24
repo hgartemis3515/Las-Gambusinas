@@ -59,10 +59,13 @@ export async function cargarTopSemana(forzar = false) {
 }
 
 export async function cargarNoticiasHoy() {
-  const res = await axios.get(urlApi('/noticias/hoy'), { timeout: 12000 });
+  const res = await axios.get(urlApi('/noticias/hoy'), { timeout: 12000, params: { destino: 'mozos' } });
   return {
     fechaOperativa: res.data?.fechaOperativa || ymdOperativoLima(),
-    noticias: Array.isArray(res.data?.noticias) ? res.data.noticias : [],
+    noticias: (Array.isArray(res.data?.noticias) ? res.data.noticias : []).filter((n) => {
+      const d = n?.destinos;
+      return !Array.isArray(d) || d.length === 0 || d.includes('mozos');
+    }),
   };
 }
 
