@@ -81,6 +81,17 @@ class ApiConfig {
       const configJson = await AsyncStorage.getItem('apiConfig');
       if (configJson) {
         const config = JSON.parse(configJson);
+        const guardada = String(config.baseURL || '');
+        if (/192\.168\.1\.172|192\.168\.50\.156/.test(guardada)) {
+          this.setDefaultConfig();
+          await AsyncStorage.setItem('apiConfig', JSON.stringify({
+            baseURL: this.baseURL,
+            wsURL: this.wsURL,
+            apiVersion: this.apiVersion,
+            timeout: this.timeout
+          }));
+          return;
+        }
         this.baseURL = config.baseURL;
         this.wsURL = this.normalizeSocketOrigin(config.wsURL || config.baseURL);
         this.apiVersion = config.apiVersion || 'v1';

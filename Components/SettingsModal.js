@@ -325,7 +325,7 @@ const SettingsModal = ({ visible, onClose, logoutOnServerChange = false }) => {
                 keyboardType="url"
               />
               <Text style={styles.hint}>
-                Ejemplo: 192.168.50.156 o http://192.168.50.156:3000/api
+                Ejemplo: 192.168.50.102 o http://192.168.50.102:3000/api
               </Text>
             </View>
 

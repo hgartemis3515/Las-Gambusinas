@@ -4,7 +4,7 @@
  * Fallback: misma LAN que appcocina/backend en este proyecto.
  */
 
-const FALLBACK_API_BASE = 'http://192.168.50.156:3000/api';
+const FALLBACK_API_BASE = 'http://192.168.50.102:3000/api';
 
 /**
  * @returns {string} URL base del API (debe incluir /api)
@@ -30,11 +30,11 @@ export const getFallbackServerOrigin = () => {
     const u = new URL(getFallbackApiBase());
     return `${u.protocol}//${u.host}`;
   } catch {
-    return 'http://192.168.50.156:3000';
+    return 'http://192.168.50.102:3000';
   }
 };
 
-/** Acepta IP suelta (192.168.50.156) o URL y la deja como http://host:puerto/api */
+/** Acepta IP suelta (192.168.50.102) o URL y la deja como http://host:puerto/api */
 export const normalizarUrlApi = (raw) => {
   let s = String(raw || '').trim();
   if (!s) return '';
