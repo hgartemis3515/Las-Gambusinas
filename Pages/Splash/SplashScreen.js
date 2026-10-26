@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Image, Dimensions, InteractionManager } from 'react-native';
+import { View, Text, StyleSheet, Image, Dimensions } from 'react-native';
+import { runAfterInteractions } from '../../utils/runAfterInteractions';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useSharedValue,
@@ -162,7 +163,7 @@ export default function SplashScreen({ onFinish }) {
             cancelAnimation(barOpacity);
             cancelAnimation(subtitleOpacity);
             cancelAnimation(pulseScale);
-            await new Promise((r) => InteractionManager.runAfterInteractions(() => r()));
+            await new Promise((r) => runAfterInteractions(() => r()));
             await new Promise((r) => setTimeout(r, 400));
             setProgress(100);
             try {

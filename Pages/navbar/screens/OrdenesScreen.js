@@ -9,7 +9,6 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
-  InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -17,6 +16,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "../../../config/axiosConfig";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { COMANDA_API, SELECTABLE_API_GET, MESAS_API_UPDATE, AREAS_API, COMANDASEARCH_API_GET, apiConfig } from "../../../apiConfig";
+import { runAfterInteractions } from "../../../utils/runAfterInteractions";
 import { getFallbackApiBase } from "../../../config/envDefaults";
 import { useTheme } from "../../../context/ThemeContext";
 import { useBotonCantidadPlato } from "../../../context/BotonCantidadPlatoContext";
@@ -468,7 +468,7 @@ const OrdenesScreen = ({ route }) => {
       obtenerAreas();
       if (!abrirMenuParam) refreshCatalogo({ force: false });
     };
-    const task = InteractionManager.runAfterInteractions(run);
+    const task = runAfterInteractions(run);
     const timer = setTimeout(run, 500);
     return () => {
       cancel = true;
@@ -529,7 +529,7 @@ const OrdenesScreen = ({ route }) => {
         })
         .catch(() => {});
     }
-    const task = InteractionManager.runAfterInteractions(() => {
+    const task = runAfterInteractions(() => {
       if (!cancelled) refreshCatalogo({ force: false });
     });
     navigation.setParams({ abrirMenu: undefined, tipoMenuHora: undefined });
@@ -947,7 +947,7 @@ const OrdenesScreen = ({ route }) => {
     modalPlatosVisibleRef.current = false;
     setModalPlatosVisible(false);
     navigation.setParams({ abrirMenu: undefined, tipoMenuHora: undefined });
-    InteractionManager.runAfterInteractions(() => {
+    runAfterInteractions(() => {
       if (modalPlatosVisibleRef.current) return;
       setTipoPlatoFiltro(null);
       setCategoriaFiltro(null);
@@ -2008,7 +2008,7 @@ const OrdenesScreen = ({ route }) => {
         return next;
       });
     }
-    InteractionManager.runAfterInteractions(() => {
+    runAfterInteractions(() => {
       refreshCatalogo({ force: false });
     });
     const catalogo = platos.find((p) => String(p._id) === String(platoLinea?._id));
@@ -2050,7 +2050,7 @@ const OrdenesScreen = ({ route }) => {
 
   const abrirMenuPlatos = () => {
     marcarInicioArmado();
-    InteractionManager.runAfterInteractions(() => {
+    runAfterInteractions(() => {
       refreshCatalogo({ force: false });
     });
     // Slug de la hora con el catálogo en memoria: abrir ya; sin await de red.

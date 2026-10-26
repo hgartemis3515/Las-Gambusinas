@@ -14,7 +14,6 @@ import {
   StyleSheet,
   useWindowDimensions,
   Image,
-  InteractionManager,
   ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -23,6 +22,7 @@ import { themeLight } from '../constants/theme';
 import { CAT_FAVORITOS } from '../helpers/platosFavoritosMozo';
 import { CAT_TOP } from '../helpers/noticiasDia';
 import { ordenarCategoriasMozo, infoCategoriaPorNombre } from '../utils/ordenCategoriaMozo';
+import { runAfterInteractions } from '../utils/runAfterInteractions';
 import PlatoBuscadorCard from './PlatoBuscadorCard';
 import BotonEnviarOrden from './BotonEnviarOrden';
 import BotonSumarBusqueda from './BotonSumarBusqueda';
@@ -217,7 +217,7 @@ export default function MenuPlatosSheet({
     if (!visible || !Array.isArray(categoriasInfo) || !categoriasInfo.length) return undefined;
     let cancel = false;
     const timer = setTimeout(() => {
-      InteractionManager.runAfterInteractions(() => {
+      runAfterInteractions(() => {
         if (cancel) return;
         categoriasInfo.forEach((c) => {
           const uri = urlMediaServidor(c.imagenUrl);
