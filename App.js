@@ -1,4 +1,5 @@
 import 'react-native-gesture-handler';
+import './utils/runAfterInteractions';
 import './utils/registerGsapPlugins';
 import { installJsCrashGuard } from './utils/installJsCrashGuard';
 import React, { useState, useEffect } from 'react';
