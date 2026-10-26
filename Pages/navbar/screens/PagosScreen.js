@@ -418,7 +418,23 @@ const PagosScreen = () => {
         });
       }
     } catch (error) {
-      console.warn('⚠️ No se pudo cargar plantilla de voucher, usando valores por defecto:', error.message);
+      console.warn('⚠️ No se pudo cargar plantilla de voucher, usando datos del restaurante:', error.message);
+      try {
+        const config = await configuracionService.obtenerConfiguracion();
+        const df = config?.datosFiscales || {};
+        setPlantillaVoucher({
+          ...PLANTILLA_DEFAULT,
+          restaurante: {
+            ...PLANTILLA_DEFAULT.restaurante,
+            nombre: df.nombreComercial || PLANTILLA_DEFAULT.restaurante.nombre,
+            ruc: df.ruc || '',
+            direccion: df.direccionFiscal || '',
+            telefono: df.telefono || '',
+          },
+        });
+      } catch (configError) {
+        console.warn('⚠️ Tampoco se pudo leer la configuración del restaurante:', configError.message);
+      }
     }
   }, []);
 
@@ -1304,11 +1320,11 @@ const PagosScreen = () => {
   const PLANTILLA_DEFAULT = {
     logo: '',
     restaurante: { 
-      nombre: 'LAS GAMBUSINAS', 
+      nombre: 'SAN BENITO', 
       eslogan: '* Comidas Típicas y Parrilla *', 
-      ruc: '20123456789', 
-      direccion: 'Calle Principal 123, Lima', 
-      telefono: '01-1234567' 
+      ruc: '', 
+      direccion: '', 
+      telefono: '' 
     },
     encabezado: { 
       tipoComprobante: 'BOLETA DE VENTA ELECTRONICA', 
