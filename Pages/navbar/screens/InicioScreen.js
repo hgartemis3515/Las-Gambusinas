@@ -19,7 +19,7 @@ import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/nativ
 // 🔥 Usar axios configurado globalmente (timeout 10s, anti-bloqueo)
 import axios from "../../../config/axiosConfig";
 import RasterTicketCocina from "../../../utils/ticketRasterCocina";
-import { imprimirParejaBajaMozo } from "../../../utils/imprimirTicketsTermicos";
+import { imprimirParejaBajaMozo, imprimirDatosTicketMozo } from "../../../utils/imprimirTicketsTermicos";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { COMANDASEARCH_API_GET, SELECTABLE_API_GET, COMANDA_API, AREAS_API, MESAS_API_UPDATE, apiConfig } from "../../../apiConfig";
 import { getFallbackApiBase } from "../../../config/envDefaults";
@@ -3161,9 +3161,21 @@ const InicioScreen = () => {
       const comandaUpdateURL = apiConfig.isConfigured 
         ? `${apiConfig.getEndpoint('/comanda')}/${comandaEditando._id}`
         : `${COMANDA_API}/${comandaEditando._id}`;
-      await axios.put(comandaUpdateURL, updateData, { timeout: 5000 });
-      
-      Alert.alert("✅", "Comanda actualizada exitosamente");
+      const resEdicion = await axios.put(comandaUpdateURL, updateData, { timeout: 15000 });
+      const ticketEdicion = resEdicion.data?.ticketEdicion;
+      if (ticketEdicion?.datos && rasterTicketRef.current) {
+        await imprimirDatosTicketMozo({
+          rasterizar: (payload) => rasterTicketRef.current?.rasterizar(payload),
+          datos: ticketEdicion.datos,
+        });
+      }
+
+      Alert.alert(
+        "✅",
+        ticketEdicion?.letrero
+          ? `Comanda actualizada. Ticket ${ticketEdicion.letrero}`
+          : "Comanda actualizada exitosamente"
+      );
       setModalEditVisible(false);
       setComandaEditando(null);
       setTipoPlatoFiltro(null);

@@ -1832,9 +1832,21 @@ const ComandaDetalleScreen = ({ route, navigation }) => {
         ? `${apiConfig.getEndpoint('/comanda')}/${comandaEditando._id}`
         : `${COMANDA_API}/${comandaEditando._id}`;
       
-      await axios.put(comandaUpdateURL, updateData, { timeout: 5000 });
-      
-      Alert.alert('✅', 'Comanda actualizada exitosamente');
+      const resEdicion = await axios.put(comandaUpdateURL, updateData, { timeout: 15000 });
+      const ticketEdicion = resEdicion.data?.ticketEdicion;
+      if (ticketEdicion?.datos && rasterTicketRef.current) {
+        await imprimirDatosTicketMozo({
+          rasterizar: (payload) => rasterTicketRef.current?.rasterizar(payload),
+          datos: ticketEdicion.datos,
+        });
+      }
+
+      Alert.alert(
+        '✅',
+        ticketEdicion?.letrero
+          ? `Comanda actualizada. Ticket ${ticketEdicion.letrero}`
+          : 'Comanda actualizada exitosamente'
+      );
       setModalEditarVisible(false);
       setMenuEditarVisible(false);
       setComandaEditando(null);
