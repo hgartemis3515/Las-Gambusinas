@@ -22,7 +22,7 @@ const { applyMenuEventBatch, idCarta } = require('../utils/catalogoPlatosApply')
 export const EVT_PLATO_MENU_ACTUALIZADO = 'plato-menu-actualizado';
 export const EVT_CATALOGO_PLATOS_RECONNECT = 'catalogo-platos-reconnect';
 
-const TTL_FOREGROUND_MS = 10 * 60 * 1000;
+const TTL_FOREGROUND_MS = 5 * 60 * 1000;
 const TTL_RECONNECT_MS = 30 * 1000;
 const COALESCE_MS = 300;
 const DISK_DEBOUNCE_MS = 600;

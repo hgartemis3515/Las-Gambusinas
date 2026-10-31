@@ -268,6 +268,12 @@ export default function SplashScreen({ onFinish }) {
         </Animated.Text>
       </Animated.View>
 
+      <View style={styles.esqueleto} accessibilityLabel="Cargando turno">
+        <View style={styles.hueso} />
+        <View style={[styles.hueso, styles.huesoMedio]} />
+        <View style={[styles.hueso, styles.huesoCorto]} />
+      </View>
+
       {/* Barra de progreso */}
       <Animated.View style={[styles.progressContainer, barContainerStyle]}>
         <View style={styles.progressTrack}>
@@ -351,6 +357,18 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textTransform: 'uppercase',
   },
+  esqueleto: {
+    width: Math.min(SCREEN_WIDTH - 80, 280),
+    marginBottom: 28,
+    gap: 8,
+  },
+  hueso: {
+    height: 10,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  huesoMedio: { width: '72%' },
+  huesoCorto: { width: '46%' },
   progressContainer: {
     width: '70%',
     maxWidth: 300,
