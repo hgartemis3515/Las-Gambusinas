@@ -70,8 +70,16 @@ function htmlNoticias(noticias, nuevasIds = []) {
 </style></head><body>${bloques}</body></html>`;
 }
 
+function relojDe(aviso) {
+  const crudo = Number(aviso?.segundosEnPantalla);
+  const total = Math.min(120, Math.max(5, Number.isFinite(crudo) && crudo > 0 ? Math.round(crudo) : 15));
+  const salirCrudo = Number(aviso?.segundosSalirMozos);
+  const salir = Math.min(total, Math.max(0, Number.isFinite(salirCrudo) ? Math.round(salirCrudo) : 6));
+  return { total, salir };
+}
+
 /** Hoja oscura con borde dorado. Entra desde abajo y sale hacia abajo. */
-function Hoja({ titulo, subtitulo, children, onListo, listoLabel, reduce, icono = 'newspaper-variant-outline', ajustar = false }) {
+function Hoja({ titulo, subtitulo, children, onListo, listoLabel, reduce, icono = 'newspaper-variant-outline', ajustar = false, cerrarBloqueado = false }) {
   const t = reduce ? { type: 'timing', duration: 0 } : { type: 'spring', damping: 18, stiffness: 220, mass: 0.9 };
   return (
     <View style={styles.fondo} pointerEvents="box-none">
@@ -82,7 +90,7 @@ function Hoja({ titulo, subtitulo, children, onListo, listoLabel, reduce, icono 
         transition={{ type: 'timing', duration: reduce ? 0 : 200 }}
         style={[StyleSheet.absoluteFill, styles.velo]}
       >
-        <Pressable style={StyleSheet.absoluteFill} onPress={onListo} accessibilityLabel="Cerrar" />
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => { if (!cerrarBloqueado) onListo?.(); }} accessibilityLabel="Cerrar" />
       </MotiView>
       <MotiView
         from={{ opacity: 0, translateY: 48, scale: 0.96 }}
@@ -104,10 +112,12 @@ function Hoja({ titulo, subtitulo, children, onListo, listoLabel, reduce, icono 
         </View>
         <View style={ajustar ? styles.cuerpoAjuste : styles.cuerpo}>{children}</View>
         <TouchableOpacity
-          style={styles.listo}
-          onPress={() => { haptic(); onListo?.(); }}
+          style={[styles.listo, cerrarBloqueado && styles.listoOff]}
+          onPress={() => { if (cerrarBloqueado) return; haptic(); onListo?.(); }}
+          disabled={cerrarBloqueado}
           activeOpacity={0.85}
           accessibilityRole="button"
+          accessibilityState={{ disabled: !!cerrarBloqueado }}
           accessibilityLabel={listoLabel || 'Listo'}
         >
           <Text style={styles.listoTxt}>{listoLabel || 'Listo'}</Text>
@@ -242,6 +252,10 @@ export default function NoticiasIngreso() {
   const [nuevasIds, setNuevasIds] = useState([]);
   const [fecha, setFecha] = useState('');
   const [flash, setFlash] = useState(null);
+  const [quedaSalirFlash, setQuedaSalirFlash] = useState(0);
+  const [relojNoticias, setRelojNoticias] = useState(null);
+  const [quedaSalirNoticias, setQuedaSalirNoticias] = useState(0);
+  const cerrarNoticiasRef = useRef(null);
 
   const evaluar = useCallback(async (porSocket = false) => {
     try {
@@ -259,6 +273,16 @@ export default function NoticiasIngreso() {
       const vistas = await idsNoticiasVistas(ymd);
       const nuevas = lista.filter((item) => !vistas.includes(String(item._id))).map((item) => String(item._id));
       setNuevasIds(nuevas);
+      if (nuevas.length) {
+        const fuente = lista.find((item) => nuevas.includes(String(item._id))) || lista[0];
+        const reloj = relojDe(fuente);
+        const id = String(fuente?._id || nuevas[0]);
+        setRelojNoticias((prev) => (
+          prev && prev.id === id && prev.total === reloj.total && prev.salir === reloj.salir
+            ? prev
+            : { id, ...reloj }
+        ));
+      }
       if (!porSocket && platos.length && !(await topYaVisto(ymd))) {
         setFase('top');
         return;
@@ -306,10 +330,58 @@ export default function NoticiasIngreso() {
     }
     setFase(null);
   };
+  cerrarNoticiasRef.current = cerrarNoticias;
+
+  useEffect(() => {
+    if (!flash) return undefined;
+    const { total, salir } = relojDe(flash);
+    const fin = Date.now() + total * 1000;
+    const finSalir = Date.now() + salir * 1000;
+    let cerrado = false;
+    setQuedaSalirFlash(salir);
+    const id = setInterval(() => {
+      const ahora = Date.now();
+      const queda = Math.max(0, Math.ceil((finSalir - ahora) / 1000));
+      setQuedaSalirFlash((prev) => (prev === queda ? prev : queda));
+      if (ahora >= fin && !cerrado) {
+        cerrado = true;
+        clearInterval(id);
+        setFlash(null);
+      }
+    }, 200);
+    return () => clearInterval(id);
+  }, [flash]);
+
+  useEffect(() => {
+    if (fase !== 'noticias' || !relojNoticias) return undefined;
+    const fin = Date.now() + relojNoticias.total * 1000;
+    const finSalir = Date.now() + relojNoticias.salir * 1000;
+    let cerrado = false;
+    setQuedaSalirNoticias(relojNoticias.salir);
+    const id = setInterval(() => {
+      const ahora = Date.now();
+      const queda = Math.max(0, Math.ceil((finSalir - ahora) / 1000));
+      setQuedaSalirNoticias((prev) => (prev === queda ? prev : queda));
+      if (ahora >= fin && !cerrado) {
+        cerrado = true;
+        clearInterval(id);
+        cerrarNoticiasRef.current?.();
+      }
+    }, 200);
+    return () => clearInterval(id);
+  }, [fase, relojNoticias]);
 
   const hojaFlash = flash ? (
-    <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={() => setFlash(null)}>
-      <Hoja titulo="Aviso" subtitulo="Solo esta vez. No queda guardado." onListo={() => setFlash(null)} reduce={reduce} ajustar>
+    <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={() => { if (quedaSalirFlash <= 0) setFlash(null); }}>
+      <Hoja
+        titulo="Aviso"
+        subtitulo="Se cierra solo al acabar el tiempo."
+        onListo={() => setFlash(null)}
+        listoLabel={quedaSalirFlash > 0 ? `Salir ${quedaSalirFlash}` : 'Salir'}
+        cerrarBloqueado={quedaSalirFlash > 0}
+        reduce={reduce}
+        ajustar
+      >
         <WebNoticias noticias={[flash]} nuevasIds={[]} reduce={reduce} ajustar />
       </Hoja>
     </Modal>
@@ -320,7 +392,7 @@ export default function NoticiasIngreso() {
   return (
     <>
       {hojaFlash}
-      <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={fase === 'top' ? cerrarTop : cerrarNoticias}>
+      <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={() => { if (fase === 'top') cerrarTop(); else if (quedaSalirNoticias <= 0) cerrarNoticias(); }}>
         <AnimatePresence exitBeforeEnter onExitComplete={() => { if (!faseRef.current) setMontado(false); }}>
           {fase === 'top' ? (
             <Hoja key="top" titulo="TOP de la semana" subtitulo="Lo más pedido en los últimos 7 días" icono="trophy-outline" onListo={cerrarTop} reduce={reduce}>
@@ -333,6 +405,8 @@ export default function NoticiasIngreso() {
               titulo="Noticias de hoy"
               subtitulo={nuevasIds.length ? `${nuevasIds.length} ${nuevasIds.length === 1 ? 'nueva' : 'nuevas'}` : ''}
               onListo={cerrarNoticias}
+              listoLabel={quedaSalirNoticias > 0 ? `Salir ${quedaSalirNoticias}` : 'Salir'}
+              cerrarBloqueado={quedaSalirNoticias > 0}
               reduce={reduce}
               ajustar
             >
@@ -384,6 +458,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   listoTxt: { color: '#1a1a1a', fontSize: 18, fontWeight: '800' },
+  listoOff: { opacity: 0.45 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 12, marginBottom: 4 },
   itemPrimero: { backgroundColor: 'rgba(212,175,55,0.1)', borderWidth: 1, borderColor: 'rgba(212,175,55,0.3)' },
   puesto: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
