@@ -82,7 +82,7 @@ class ApiConfig {
       if (configJson) {
         const config = JSON.parse(configJson);
         const guardada = String(config.baseURL || '');
-        if (/192\.168\.1\.172|192\.168\.50\.156/.test(guardada)) {
+        if (/192\.168\.1\.172|192\.168\.50\.(102|153)\b/.test(guardada)) {
           this.setDefaultConfig();
           await AsyncStorage.setItem('apiConfig', JSON.stringify({
             baseURL: this.baseURL,

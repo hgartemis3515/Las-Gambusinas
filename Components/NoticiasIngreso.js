@@ -64,7 +64,7 @@ function htmlNoticias(noticias, nuevasIds = []) {
   h3 { margin:0 0 6px; font-size:17px; }
   p { margin:0 0 8px; }
   ul, ol { padding-left: 22px; margin: 0 0 8px; }
-  img { max-width:100%; height:auto; border-radius:10px; display:block; margin:8px 0; }
+  img { display:block; max-width:100%; width:auto; height:auto; max-height:240px; object-fit:contain; border-radius:10px; margin:8px 0; }
   .nuevo { font-size:10px; font-weight:800; text-transform:uppercase; background:${GOLD}; color:#1a1a1a; border-radius:6px; padding:2px 6px; letter-spacing:.04em; }
   .autor { color:#8a8a8a; font-size:12px; margin:8px 0 0; }
 </style></head><body>${bloques}</body></html>`;
@@ -162,6 +162,11 @@ const MEDIR_ALTO = `(function(){
   send();
   setTimeout(send, 60);
   setTimeout(send, 350);
+  document.querySelectorAll('img').forEach(function (img) {
+    if (img.complete) return;
+    img.addEventListener('load', send);
+    img.addEventListener('error', send);
+  });
   true;
 })();`;
 
