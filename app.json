@@ -2,13 +2,16 @@
   "expo": {
     "name": "appmozo",
     "slug": "appmozo",
-    "version": "2.3.1v",
-    "runtimeVersion": "1.0.26",
+    "version": "2.36v",
+    "runtimeVersion": "1.0.27",
     "updates": {
       "url": "https://u.expo.dev/afcea184-5e43-4fc0-8fb9-553db952ce44",
       "enabled": true,
-      "checkAutomatically": "NEVER",
-      "fallbackToCacheTimeout": 0
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0,
+      "requestHeaders": {
+        "expo-channel-name": "preview"
+      }
     },
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -24,7 +27,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.carlos121.appmozo",
-      "buildNumber": "27",
+      "buildNumber": "28",
       "infoPlist": {
         "CFBundleShortVersionString": "1.9.5",
         "NSCameraUsageDescription": "Permite tomar una foto para tu perfil de mozo.",
@@ -37,7 +40,7 @@
       }
     },
     "android": {
-      "versionCode": 27,
+      "versionCode": 28,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F8F4ED"
