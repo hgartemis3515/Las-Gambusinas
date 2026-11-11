@@ -126,8 +126,9 @@ function htmlCuerpo(datos) {
       <td style="padding:3px 2px;text-align:right;white-space:nowrap;font-weight:700;">${lineHtml}</td>
     </tr>`;
   }
-  const desc = Number(d.descuentoMonto) || 0;
-  const neto = Math.max(0, bruto - desc);
+  const anulacionCompleta = !!d.anulacion && d.sinTotal !== true;
+  const desc = anulacionCompleta ? 0 : (Number(d.descuentoMonto) || 0);
+  const neto = anulacionCompleta ? 0 : Math.max(0, bruto - desc);
   const thCuadro = cocina ? '<th style="width:18px;border-bottom:1px solid #000;"></th>' : '';
   let html = '';
   html += `<div style="text-align:left;font-size:14px;font-weight:800;letter-spacing:1px;line-height:1.1;">${cocina ? 'COCINA' : 'CAJA'}</div>`;
